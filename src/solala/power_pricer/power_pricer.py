@@ -8,11 +8,11 @@ from solala.utils.json import JSONDict
 
 @dataclass(frozen=True)
 class Price:
-    start_time: datetime  # date + time + timezone
-    end_time: datetime  # date + time + timezone
-    renewables: float  # percentage
     buy_price: float  # c per kWh
     feed_in_price: float  # c per kWh
+    renewables: float  # percentage
+    start_time: datetime  # date + time + timezone
+    end_time: datetime  # date + time + timezone
 
     # Optional tariff information.
     tariff_period: str = ''
@@ -21,11 +21,11 @@ class Price:
 
     def as_dict(self, datetime_format: str) -> JSONDict:
         return {
-            'start_time': self.start_time.strftime(datetime_format),
-            'end_time': self.end_time.strftime(datetime_format),
-            'renewables': self.renewables,
             'buy_price': self.buy_price,
             'feed_in_price': self.feed_in_price,
+            'renewables': self.renewables,
+            'start_time': self.start_time.strftime(datetime_format),
+            'end_time': self.end_time.strftime(datetime_format),
             'tariff_period': self.tariff_period,
             'tariff_season': self.tariff_season,
             'tariff_demand_window': self.tariff_demand_window,

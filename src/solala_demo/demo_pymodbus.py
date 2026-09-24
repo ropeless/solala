@@ -1,15 +1,11 @@
 from pymodbus.client import ModbusTcpClient
+from pymodbus.pdu import ModbusPDU
 
-from local_config import MASTER_INVERTER_MAC_ADDR
-from solala.utils.network import find_ip_by_mac
+from local_config import MASTER_INVERTER_ADDR
 
 
 def main() -> None:
-    mac_address = MASTER_INVERTER_MAC_ADDR
-    print(f'MAC address: {mac_address}')
-    ip_address = find_ip_by_mac([mac_address])[mac_address]
-    print(f'IP address: {ip_address}')
-    client = ModbusTcpClient(ip_address, port=502)
+    client = ModbusTcpClient(MASTER_INVERTER_ADDR, port=502)
     client.connect()
     print()
 
@@ -19,7 +15,7 @@ def main() -> None:
         current_address = 40002
         while current_address < 45000:
             # Read the Model ID and Length (2 registers)
-            result = client.read_holding_registers(address=current_address, count=2, device_id=device_id)
+            result: ModbusPDU = client.read_holding_registers(address=current_address, count=2, device_id=device_id)
 
             if result.isError():
                 break
@@ -30,7 +26,7 @@ def main() -> None:
             if model_id == 65535:
                 break
 
-            print(f'device_id={device_id}, address={current_address+address_offset}, model_id={model_id}')
+            print(f'device_id={device_id}, address={current_address + address_offset}, model_id={model_id}')
 
             # Move to the next block identifier
             current_address += 2 + block_length

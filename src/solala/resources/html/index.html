@@ -14,8 +14,9 @@
     <h1>{{ title }}</h1>
     <div class="container">
         <h2>Status</h2>
-        <pre style="text-align: left; margin-left: 0; padding-left: 10px;"><code class="language-json">{{ status_json }}</code></pre>
+        <pre style="text-align: left; margin-left: 0; padding-left: 10px;"><code>{{ status_json }}</code></pre>
         <a href="/registers.html">Registers</a>
+        <a href="/constants.html">Constants</a>
         <p>
         <button id="button_toggle_refresh" class="button-on">auto-refresh: on</button>
     </div>
@@ -28,10 +29,11 @@
         <button id="button_battery_cheap_charge" class="{{ 'button-on' if battery_button == 'CHEAP_CHARGE' else 'button-off' }}">cheap ⇒ force charge</button>
     </div>
     <div class="container">
-        <h2>Export</h2>
-        <button id="button_export_enable" class="{{ 'button-on' if export_button == 'ENABLE' else 'button-off' }}">enable</button>
-        <button id="button_export_disable" class="{{ 'button-on' if export_button == 'DISABLE' else 'button-off' }}">disable</button>
-        <button id="button_neg_feed_in_disable" class="{{ 'button-on' if export_button == 'NEG_FEED_IN_DISABLE' else 'button-off' }}">neg feed-in ⇒ disable</button>
+        <h2>Inverter</h2>
+        <button id="button_inverter_enable" class="{{ 'button-on' if inverter_button == 'ENABLE' else 'button-off' }}">enable</button>
+        <button id="button_inverter_disable" class="{{ 'button-on' if inverter_button == 'DISABLE' else 'button-off' }}">disable</button>
+        <button id="button_inverter_zero_export" class="{{ 'button-on' if inverter_button == 'ZERO_EXPORT' else 'button-off' }}">zero export</button>
+        <button id="button_inverter_neg_feed_in_zero_export" class="{{ 'button-on' if inverter_button == 'NEG_FEED_IN_ZERO_EXPORT' else 'button-off' }}">neg feed-in ⇒ zero export</button>
     </div>
 
     <script>
@@ -44,9 +46,10 @@
         const button_battery_force_discharge = document.getElementById('button_battery_force_discharge');
         const button_battery_cheap_charge = document.getElementById('button_battery_cheap_charge');
 
-        const button_export_enable = document.getElementById('button_export_enable');
-        const button_export_disable = document.getElementById('button_export_disable');
-        const button_neg_feed_in_disable = document.getElementById('button_neg_feed_in_disable');
+        const button_inverter_enable = document.getElementById('button_inverter_enable');
+        const button_inverter_disable = document.getElementById('button_inverter_disable');
+        const button_inverter_zero_export = document.getElementById('button_inverter_zero_export');
+        const button_inverter_neg_feed_in_zero_export = document.getElementById('button_inverter_neg_feed_in_zero_export');
 
         // Core Auto-Refresh Mechanism
         // Convert Jinja interval (seconds) to JavaScript milliseconds
@@ -107,16 +110,20 @@
             window.location.reload();
         });
 
-        button_export_enable.addEventListener('click', async () => {
-            await fetch('/export/enable', {method: 'PUT'});
+        button_inverter_enable.addEventListener('click', async () => {
+            await fetch('/inverter/enable', {method: 'PUT'});
             window.location.reload();
         });
-        button_export_disable.addEventListener('click', async () => {
-            await fetch('/export/disable', {method: 'PUT'});
+        button_inverter_disable.addEventListener('click', async () => {
+            await fetch('/inverter/disable', {method: 'PUT'});
             window.location.reload();
         });
-        button_neg_feed_in_disable.addEventListener('click', async () => {
-            await fetch('/export/neg_feed_in_disable', {method: 'PUT'});
+        button_inverter_zero_export.addEventListener('click', async () => {
+            await fetch('/inverter/zero_export', {method: 'PUT'});
+            window.location.reload();
+        });
+        button_inverter_neg_feed_in_zero_export.addEventListener('click', async () => {
+            await fetch('/inverter/neg_feed_in_zero_export', {method: 'PUT'});
             window.location.reload();
         });
 

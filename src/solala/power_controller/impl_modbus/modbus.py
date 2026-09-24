@@ -22,13 +22,19 @@ class Modbus(Mapping[str, str | int | float]):
     Register names are of the form `logical_device_id/register_name`.
     """
 
-    def __init__(self, devices: Mapping[str, ModbusDevice] | ModbusTcpClient):
+    def __init__(self, devices: Mapping[str | None, ModbusDevice] | ModbusTcpClient):
         """
         Wraps a ModbusTcpClient to provide access to Modbus registers.
-        If the given client is not connected, it will be connected.
+
+        If `devices` is a Mappint, then it maps logical device IDs to ModbusDevice objects. If the logical
+        device ID is a string, then registers are named `{logical_device_id}/register_name`. If the logical
+        device ID is None, then registers are named `register_name`.
 
         If `devices` is a ModbusTcpClient, then it is assumed that all devices are on the same client,
         and a ModbusDevice is created for each device ID found, with `logical_device_id = str(device_id)`.
+
+        Args:
+            devices: A mapping of logical device IDs to ModbusDevice objects, or a ModbusTcpClient object.
         """
         if isinstance(devices, ModbusTcpClient):
             client: ModbusTcpClient = devices
@@ -68,7 +74,7 @@ class Modbus(Mapping[str, str | int | float]):
         # Construct logical devices
         # logical_device_id =>LogicalDevice
         device_registers: Dict[str, _Register] = {}
-        logical_device_id: str
+        logical_device_id: str | None
         for logical_device_id, device in devices.items():
             client: ModbusTcpClient = device.client
             device_id: int = device.device_id
@@ -94,7 +100,11 @@ class Modbus(Mapping[str, str | int | float]):
 
                 for register_name, register_access in model_registers.items():
                     context = RegisterContext(client, device_id, modbus_model, address_offset)
-                    device_registers[f'{logical_device_id}/{register_name}'] = _Register(register_access, context)
+                    full_name: str = (
+                        register_name if logical_device_id is None
+                        else f'{logical_device_id}/{register_name}'
+                    )
+                    device_registers[full_name] = _Register(register_access, context)
 
         # Create fields
         self._clients: Sequence[ModbusTcpClient] = list(clients_by_client_id.values())
