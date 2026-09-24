@@ -21,7 +21,7 @@ Currently implemented control policies:
   - Battery Auto: Force Cheap Energy ⇒ Force Charge (force charge if energy is cheap)
   - Export Manual: Enable (the normal condition, allow export to the grid)
   - Export Manual: Disable (try to not export to the grid)
-  - Export Auto: Force Negative Feed-in Tariff ⇒ Disable (force discharge if the feed-in tariff is negative)
+  - Export Auto: Force Negative Feed-in Tariff ⇒ Disable (force disable if the feed-in tariff is negative)
 
 As it is a personal project, there are a few limitations.
   - Currently only supports Fonius GEN4 inverters.
@@ -33,7 +33,7 @@ Getting Started
 ===============
 
 See the demonstration scripts in the `src/solala_demo` directory.
-A web app can be started using the `src/solala_demo` script.
+A web app can be started using the `src/solala_demo/demo_server.py` script.
 
 For the demos, private constants are declared in a file `local_config.py`
 which needs to be in your Python path. An example is provided in the file
