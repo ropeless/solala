@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <style>
+        body { font-family: sans-serif; margin: 40px; background: #f4f4f9; }
+        .container { max-width: 100%; margin: 0 auto; }
+        .button-on {background-color: #55c95a; color: black; }
+        .button-off {background-color: white;  color: black; }
+    </style>
+</head>
+<body>
+    <h1>{{ title }}</h1>
+    <div class="container">
+        <h2>Status</h2>
+        <pre style="text-align: left; margin-left: 0; padding-left: 10px;"><code class="language-json">{{ status_json }}</code></pre>
+        <a href="/registers.html">Registers</a>
+        <p>
+        <button id="button_toggle_refresh" class="button-on">auto-refresh: on</button>
+    </div>
+    <div class="container">
+        <h2>Battery</h2>
+        <button id="button_battery_enable" class="{{ 'button-on' if battery_button == 'ENABLE' else 'button-off' }}">enable</button>
+        <button id="button_battery_disable" class="{{ 'button-on' if battery_button == 'DISABLE' else 'button-off' }}">disable</button>
+        <button id="button_battery_force_charge" class="{{ 'button-on' if battery_button == 'FORCE_CHARGE' else 'button-off' }}">force charge</button>
+        <button id="button_battery_force_discharge" class="{{ 'button-on' if battery_button == 'FORCE_DISCHARGE' else 'button-off' }}">force discharge</button>
+        <button id="button_battery_cheap_charge" class="{{ 'button-on' if battery_button == 'CHEAP_CHARGE' else 'button-off' }}">cheap ⇒ force charge</button>
+    </div>
+    <div class="container">
+        <h2>Export</h2>
+        <button id="button_export_enable" class="{{ 'button-on' if export_button == 'ENABLE' else 'button-off' }}">enable</button>
+        <button id="button_export_disable" class="{{ 'button-on' if export_button == 'DISABLE' else 'button-off' }}">disable</button>
+        <button id="button_neg_feed_in_disable" class="{{ 'button-on' if export_button == 'NEG_FEED_IN_DISABLE' else 'button-off' }}">neg feed-in ⇒ disable</button>
+    </div>
+
+    <script>
+        // DOM Elements
+        const button_toggle_refresh = document.getElementById('button_toggle_refresh');
+
+        const button_battery_enable = document.getElementById('button_battery_enable');
+        const button_battery_disable = document.getElementById('button_battery_disable');
+        const button_battery_force_charge = document.getElementById('button_battery_force_charge');
+        const button_battery_force_discharge = document.getElementById('button_battery_force_discharge');
+        const button_battery_cheap_charge = document.getElementById('button_battery_cheap_charge');
+
+        const button_export_enable = document.getElementById('button_export_enable');
+        const button_export_disable = document.getElementById('button_export_disable');
+        const button_neg_feed_in_disable = document.getElementById('button_neg_feed_in_disable');
+
+        // Core Auto-Refresh Mechanism
+        // Convert Jinja interval (seconds) to JavaScript milliseconds
+        const refreshIntervalMs = Number("{{ refresh_interval }}") * 1000;
+        let refreshTimeoutId = null;
+        // Load initial state from browser storage. Default to true if not set yet.
+        let isRefreshEnabled = localStorage.getItem('autoRefreshEnabled') !== 'false';
+
+        function startAutoRefresh() {
+            isRefreshEnabled = true;
+            localStorage.setItem('autoRefreshEnabled', 'true');
+            button_toggle_refresh.textContent = "auto-refresh: on";
+            button_toggle_refresh.classList.replace("button-off", "button-on")
+
+            // Queue up a full page refresh
+            refreshTimeoutId = setTimeout(() => {
+                window.location.reload();
+            }, refreshIntervalMs);
+        }
+
+        function stopAutoRefresh() {
+            isRefreshEnabled = false;
+            localStorage.setItem('autoRefreshEnabled', 'false');
+            button_toggle_refresh.textContent = "auto-refresh: off";
+            button_toggle_refresh.classList.replace("button-on", "button-off")
+
+            // Cancel the queued full page refresh completely
+            clearTimeout(refreshTimeoutId);
+        }
+
+        // Event Listeners
+        button_toggle_refresh.addEventListener('click', () => {
+            if (isRefreshEnabled) {
+                stopAutoRefresh();
+            } else {
+                startAutoRefresh();
+            }
+        });
+
+        button_battery_enable.addEventListener('click', async () => {
+            await fetch('/battery/enable', {method: 'PUT'});
+            window.location.reload();
+        });
+        button_battery_disable.addEventListener('click', async () => {
+            await fetch('/battery/disable', {method: 'PUT'});
+            window.location.reload();
+        });
+        button_battery_force_charge.addEventListener('click', async () => {
+            await fetch('/battery/force_charge', {method: 'PUT'});
+            window.location.reload();
+        });
+        button_battery_force_discharge.addEventListener('click', async () => {
+            await fetch('/battery/force_discharge', {method: 'PUT'});
+            window.location.reload();
+        });
+        button_battery_cheap_charge.addEventListener('click', async () => {
+            await fetch('/battery/cheap_charge', {method: 'PUT'});
+            window.location.reload();
+        });
+
+        button_export_enable.addEventListener('click', async () => {
+            await fetch('/export/enable', {method: 'PUT'});
+            window.location.reload();
+        });
+        button_export_disable.addEventListener('click', async () => {
+            await fetch('/export/disable', {method: 'PUT'});
+            window.location.reload();
+        });
+        button_neg_feed_in_disable.addEventListener('click', async () => {
+            await fetch('/export/neg_feed_in_disable', {method: 'PUT'});
+            window.location.reload();
+        });
+
+        // Initialize Engine On Page Load
+        if (isRefreshEnabled) {
+            startAutoRefresh();
+        } else {
+            stopAutoRefresh();
+        }
+    </script>
+</body>
+</html>
