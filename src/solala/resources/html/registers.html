@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <style>
+        body { font-family: sans-serif; margin: 40px; background: #f4f4f9; }
+        .container { max-width: 100%; margin: 0 auto; }
+        .button-on {background-color: #55c95a; color: black; }
+        .button-off {background-color: white;  color: black; }
+    </style>
+</head>
+<body>
+    <h1>{{ title }}</h1>
+    <div class="container">
+        <h2>Registers</h2>
+        <pre style="text-align: left; margin-left: 0; padding-left: 10px;"><code class="language-json">{{ registers_json }}</code></pre>
+        <a href="/">Home</a>
+        <p>
+        <button id="button_toggle_refresh" class="button-on">auto-refresh: on</button>
+    </div>
+
+    <script>
+        // DOM Elements
+        const button_toggle_refresh = document.getElementById('button_toggle_refresh');
+
+        // Core Auto-Refresh Mechanism
+        // Convert Jinja interval (seconds) to JavaScript milliseconds
+        const refreshIntervalMs = Number("{{ refresh_interval }}") * 1000;
+        let refreshTimeoutId = null;
+        // Load initial state from browser storage. Default to true if not set yet.
+        let isRefreshEnabled = localStorage.getItem('autoRefreshEnabled') !== 'false';
+
+        function startAutoRefresh() {
+            isRefreshEnabled = true;
+            localStorage.setItem('autoRefreshEnabled', 'true');
+            button_toggle_refresh.textContent = "auto-refresh: on";
+            button_toggle_refresh.classList.replace("button-off", "button-on")
+
+            // Queue up a full page refresh
+            refreshTimeoutId = setTimeout(() => {
+                window.location.reload();
+            }, refreshIntervalMs);
+        }
+
+        function stopAutoRefresh() {
+            isRefreshEnabled = false;
+            localStorage.setItem('autoRefreshEnabled', 'false');
+            button_toggle_refresh.textContent = "auto-refresh: off";
+            button_toggle_refresh.classList.replace("button-on", "button-off")
+
+            // Cancel the queued full page refresh completely
+            clearTimeout(refreshTimeoutId);
+        }
+
+        // Event Listeners
+        button_toggle_refresh.addEventListener('click', () => {
+            if (isRefreshEnabled) {
+                stopAutoRefresh();
+            } else {
+                startAutoRefresh();
+            }
+        });
+
+        // Initialize Engine On Page Load
+        if (isRefreshEnabled) {
+            startAutoRefresh();
+        } else {
+            stopAutoRefresh();
+        }
+    </script>
+</body>
+</html>

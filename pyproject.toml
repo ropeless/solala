@@ -1,0 +1,21 @@
+[project]
+name = "Solala"
+version = "0.0.0"
+description = "Testing Synthorus"
+requires-python = ">= 3.12"
+
+[tool.poetry]
+package-mode = false  # only using poetry for dependency management
+
+[tool.poetry.dependencies]
+python = "^3.13"
+scapy = "^2.7.0"
+pymodbus = "*"
+uvicorn = "*"
+fastapi = "*"
+requests = "*"
+jinja2 = "*"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
