@@ -13,11 +13,13 @@
 <body>
     <h1>{{ title }}</h1>
     <div class="container">
-        <h2>Registers</h2>
-        <pre style="text-align: left; margin-left: 0; padding-left: 10px;"><code class="language-json">{{ registers_json }}</code></pre>
+        <h2>{{ name }}</h2>
+        <pre style="text-align: left; margin-left: 0; padding-left: 10px;"><code class="language-json">{{ json_data }}</code></pre>
         <a href="/">Home</a>
+        {% if refresh_interval > 0 %}
         <p>
         <button id="button_toggle_refresh" class="button-on">auto-refresh: on</button>
+        {% endif %}
     </div>
 
     <script>

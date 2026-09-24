@@ -1,4 +1,4 @@
-from typing import Iterable, List, Tuple, Dict
+from typing import Iterable, List, Tuple, Dict, Sequence
 
 from solala.log import LOGGER
 from solala.power_controller.impl_modbus.modbus import Modbus
@@ -195,25 +195,28 @@ class ModbusPowerController(PowerController):
     #  Grid Export Control
     # =================================================
 
-    def enable_export(self) -> None:
-        """
-        Don't put any limit on inverter output power, so there is no limit on exports.
-        This is the normal state.
-        """
-        LOGGER.info(f'{_START} enable_export')
-        self._set_all_default(self._WMaxLim_Ena)
+    def enable_inverter(self) -> None:
+        LOGGER.info(f'{_START} enable_inverter')
         self._set_all_default(self._WMaxLimPct)
         self._set_all_default(self._WMaxLimPct_RvrtTms)
-        LOGGER.info(f'{_STOP} enable_export')
+        self._set_all_default(self._WMaxLim_Ena)
+        LOGGER.info(f'{_STOP} enable_inverter')
 
-    def disable_export(self, *, change_duration: int) -> None:
+    def disable_inverter(self, *, change_duration: int) -> None:
+        LOGGER.info(f'{_START} disable_inverter')
+        self._set_all(self._WMaxLimPct, 0)
+        self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
+        self._set_all(self._WMaxLim_Ena, 1, force=True)  # keep alive
+        LOGGER.info(f'{_STOP} disable_inverter')
+
+    def zero_export(self, *, change_duration: int) -> None:
         """
         Limit inverter output power to balance consumption, so there is no export.
         Will still allow drawing from the grid if insufficient solar supply for demand.
         This may need to be repeatedly called as the consumption may change,
         or the change duration expires.
         """
-        LOGGER.info(f'{_START} disable_export')
+        LOGGER.info(f'{_START} zero_export')
 
         # METHOD 1 - calculate the exact needed change
         #
@@ -271,7 +274,7 @@ class ModbusPowerController(PowerController):
         self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
         self._set_all(self._WMaxLim_Ena, 1, force=True)  # keep alive
 
-        LOGGER.info(f'{_STOP} disable_export')
+        LOGGER.info(f'{_STOP} zero_export')
 
     # =================================================
     #  Support
@@ -326,16 +329,16 @@ class ModbusPowerController(PowerController):
             raise TypeError(msg)
         return value
 
-    def _get_sum(self, names: Iterable[str]) -> int | float:
-        LOGGER.info('GET-SUM')
+    def _get_sum(self, names: Sequence[str]) -> int | float:
+        LOGGER.info(f'SUM {names}')
         result = sum(self._get(name) for name in names)
-        LOGGER.info(f'GOT-SUM {result}')
+        LOGGER.info(f'SUM = {result}')
         return result
 
-    def _get_sum_abs(self, names: Iterable[str]) -> int | float:
-        LOGGER.info('GET-SUM-ABS')
+    def _get_sum_abs(self, names: Sequence[str]) -> int | float:
+        LOGGER.info(f'SUM-ABS {names}')
         result = sum(abs(self._get(name)) for name in names)
-        LOGGER.info(f'GOT-SUM-ABS {result}')
+        LOGGER.info(f'SUM-ABS = {result}')
         return result
 
 

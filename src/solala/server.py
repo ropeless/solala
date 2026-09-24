@@ -10,14 +10,18 @@ from fastapi.templating import Jinja2Templates
 from jinja2 import FunctionLoader, select_autoescape, Environment
 
 from solala import control_loop
-from solala.control_loop import BatteryMode, ExportMode, BatteryPolicy, ExportPolicy, _LOOP_SLEEP
+from solala.control_loop import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
 from solala.log import LOGGER
 from solala.resources import HTML_FILES
 from solala.settings import Settings
 from solala.utils.json import JSONDict, json_dict, JSONValue
 
-_ADDRESS_DELIMITERS_PATTERN = re.compile(r'[,;\s]+')
-_LINE_ENDINGS_PATTERN = re.compile(r'}?[,{}]\s*(?=\n|$)')
+_APP_NAME: str = 'Solala'
+_REFRESH_INTERVAL = control_loop.Constants.LOOP_SLEEP
+_DEFAULT_SETTINGS = Settings()
+
+_ADDRESS_DELIMITERS_PATTERN = re.compile(r'[,;&\s]+')
+_LINE_ENDINGS_PATTERN = re.compile(r'[,{} \t]*\s*(?=\n|$)')
 _BLANK_LINES_PATTERN = re.compile(r'^[ \t]*\r?\n', flags=re.MULTILINE)
 
 # Support function to load HTML files from the resources directory.
@@ -31,8 +35,6 @@ _JINJA_ENV = Environment(
     ),
     autoescape=select_autoescape(['html'])
 )
-
-_DEFAULT_SETTINGS = Settings()
 
 
 def run_server(host: str, port: int, settings: Settings = _DEFAULT_SETTINGS) -> None:
@@ -77,9 +79,9 @@ def configure_from_settings(settings: Settings):
     # Initialise control modes
     result = control_loop.set_control(
         battery_mode=settings.battery_mode,
-        export_mode=settings.export_mode,
+        inverter_mode=settings.inverter_mode,
         battery_policy=settings.battery_policy,
-        export_policy=settings.export_policy,
+        inverter_policy=settings.inverter_policy,
     )
     LOGGER.info(f'initial modes: {json.dumps(result)}')
 
@@ -87,7 +89,7 @@ def configure_from_settings(settings: Settings):
 def split_addresses(addresses: str) -> List[str]:
     """
     Helper for connecting to devices.
-    Split addresses separated by commas, semicolons, or whitespace.
+    Split addresses separated by commas, semicolons, ampersands, or whitespace.
     """
     return _ADDRESS_DELIMITERS_PATTERN.split(addresses)
 
@@ -103,6 +105,10 @@ def _format_json(data: JSONDict) -> str:
     text = json.dumps(data, indent=4)
     text = _LINE_ENDINGS_PATTERN.sub('', text)
     text = _BLANK_LINES_PATTERN.sub('', text)
+
+    # convert dictionary entry separator from ':' to '='
+    text = re.sub(r'(\s*[\w+"]): ', r'\1 = ', text)
+
     text = text.replace('_', ' ').replace('"', '')
     return text
 
@@ -132,7 +138,7 @@ def serve_index(request: Request):
     try:
         control_json: JSONDict = json_dict(status_json['control'])
         battery_status: JSONDict = json_dict(control_json['battery'])
-        export_status: JSONDict = json_dict(control_json['export'])
+        inverter_status: JSONDict = json_dict(control_json['inverter'])
 
         battery_mode = battery_status['mode']
         battery_policy = battery_status['policy']
@@ -141,45 +147,62 @@ def serve_index(request: Request):
             if battery_policy != BatteryPolicy.MANUAL.name
             else battery_mode
         )
-        export_mode = export_status['mode']
-        export_policy = export_status['policy']
-        export_button = (
-            export_policy
-            if export_policy != ExportPolicy.MANUAL.name
-            else export_mode
+        inverter_mode = inverter_status['mode']
+        inverter_policy = inverter_status['policy']
+        inverter_button = (
+            inverter_policy
+            if inverter_policy != InverterPolicy.MANUAL.name
+            else inverter_mode
         )
 
     except (KeyError, TypeError, IOError) as err:
         LOGGER.error(f'Error getting control status: {err}')
         battery_button = ''
-        export_button = ''
+        inverter_button = ''
 
     templates = Jinja2Templates(env=_JINJA_ENV)
     return templates.TemplateResponse(
         request=request,
         name='index.html',
         context={
-            'title': 'Solala',
+            'title': _APP_NAME,
             'status_json': _format_json(status_json),
-            'refresh_interval': _LOOP_SLEEP,
+            'refresh_interval': _REFRESH_INTERVAL,
             'battery_button': battery_button,
-            'export_button': export_button,
+            'inverter_button': inverter_button,
         }
     )
 
 
 @app.get('/registers.html', response_class=HTMLResponse)
-def serve_index(request: Request):
-    registers_json: JSONDict = control_loop.get_registers()
+def serve_registers(request: Request):
+    json_data: JSONDict = control_loop.get_registers()
 
     templates = Jinja2Templates(env=_JINJA_ENV)
     return templates.TemplateResponse(
         request=request,
-        name='registers.html',
+        name='json.html',
         context={
-            'title': 'Solala',
-            'registers_json': _format_json(registers_json),
-            'refresh_interval': _LOOP_SLEEP,
+            'title': _APP_NAME,
+            'name': 'Registers',
+            'json_data': _format_json(json_data),
+            'refresh_interval': _REFRESH_INTERVAL,
+        }
+    )
+
+
+@app.get('/constants.html', response_class=HTMLResponse)
+def serve_constants(request: Request):
+    json_data: JSONDict = control_loop.Constants.as_dict()
+    templates = Jinja2Templates(env=_JINJA_ENV)
+    return templates.TemplateResponse(
+        request=request,
+        name='json.html',
+        context={
+            'title': _APP_NAME,
+            'name': 'Constants',
+            'json_data': _format_json(json_data),
+            'refresh_interval': 0,  # no auto refresh
         }
     )
 
@@ -214,6 +237,13 @@ def get_power():
 def get_registers():
     return {
         'registers': control_loop.get_registers(),
+    }
+
+
+@app.get('/constants')
+def get_constants():
+    return {
+        'constants': control_loop.Constants.as_dict(),
     }
 
 
@@ -256,31 +286,38 @@ def set_battery_cheap_charge():
     )
 
 
-@app.put('/export/enable')
-def set_export_enable():
+@app.put('/inverter/enable')
+def set_inverter_enable():
     return control_loop.set_control(
-        export_mode=ExportMode.ENABLE,
-        export_policy=ExportPolicy.MANUAL,
+        inverter_mode=InverterMode.ENABLE,
+        inverter_policy=InverterPolicy.MANUAL,
     )
 
 
-@app.put('/export/disable')
-def set_export_disable():
+@app.put('/inverter/disable')
+def set_inverter_disable():
     return control_loop.set_control(
-        export_mode=ExportMode.DISABLE,
-        export_policy=ExportPolicy.MANUAL,
+        inverter_mode=InverterMode.DISABLE,
+        inverter_policy=InverterPolicy.MANUAL,
     )
 
 
-@app.put('/export/neg_feed_in_disable')
-def set_export_neg_feed_in_disable():
+@app.put('/inverter/zero_export')
+def set_inverter_zero_export():
     return control_loop.set_control(
-        export_policy=ExportPolicy.NEG_FEED_IN_DISABLE,
+        inverter_mode=InverterMode.ZERO_EXPORT,
+        inverter_policy=InverterPolicy.MANUAL,
+    )
+
+
+@app.put('/inverter/neg_feed_in_zero_export')
+def set_inverter_neg_feed_in_zero_export():
+    return control_loop.set_control(
+        inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT,
     )
 
 
 @app.put('/parameters')
-@app.get('/parameters')  # DEBUG
 def set_parameters(
         disable_export_price_threshold: float | None = None,
         enable_export_price_threshold: float | None = None,
@@ -301,13 +338,12 @@ def set_parameters(
     return result, status_code
 
 
-
 @app.put('/control/connect_modbus/{addresses}')
 def connect_modbus(addresses: str):
     """
     Establish a modbus connection to the inverter.
-    Address can be a MAC address or an IP address.
-    Slave addresses are appended, separated by commas, semicolons, or whitespace.
+    Each address can be a MAC address or an IP address.
+    Slave addresses are appended, separated by commas, semicolons, ampersands, or whitespace.
     """
     addresses: List[str] = split_addresses(addresses)
     result = control_loop.connect_modbus(addresses[0], addresses[1:])

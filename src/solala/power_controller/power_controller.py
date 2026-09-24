@@ -92,11 +92,11 @@ class PowerController(ABC):
         ...
 
     # =================================================
-    #  Grid Export Control
+    #  Inverter Control
     # =================================================
 
     @abstractmethod
-    def enable_export(self) -> None:
+    def enable_inverter(self) -> None:
         """
         Don't put any limit on inverter output power, so there is no limit on exports.
         This is the normal state.
@@ -104,7 +104,14 @@ class PowerController(ABC):
         ...
 
     @abstractmethod
-    def disable_export(self, *, change_duration: int) -> None:
+    def disable_inverter(self, *, change_duration: int) -> None:
+        """
+        Stop the inverter providing output power.
+        """
+        ...
+
+    @abstractmethod
+    def zero_export(self, *, change_duration: int) -> None:
         """
         Limit inverter output power to balance consumption, so there is no export.
         Will still allow drawing from the grid if insufficient solar supply for demand.

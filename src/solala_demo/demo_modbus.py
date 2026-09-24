@@ -1,14 +1,12 @@
 from pymodbus.client import ModbusTcpClient
 
-from local_config import MASTER_INVERTER_MAC_ADDR, SLAVE_INVERTER_MAC_ADDR
+from local_config import MASTER_INVERTER_ADDR, SLAVE_INVERTER_ADDR
 from solala.power_controller.impl_modbus.modbus import Modbus, ModbusDevice
-from solala.utils.network import find_ip_by_mac
 
 
 def main() -> None:
-    ip_address = find_ip_by_mac([MASTER_INVERTER_MAC_ADDR, SLAVE_INVERTER_MAC_ADDR])
-    master = ModbusTcpClient(ip_address[MASTER_INVERTER_MAC_ADDR])
-    slave = ModbusTcpClient(ip_address[SLAVE_INVERTER_MAC_ADDR])
+    master = ModbusTcpClient(MASTER_INVERTER_ADDR)
+    slave = ModbusTcpClient(SLAVE_INVERTER_ADDR)
 
     devices = {
         'master': ModbusDevice(master, 1),

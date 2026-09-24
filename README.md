@@ -19,12 +19,13 @@ Currently implemented control policies:
   - Battery Manual: Force Charge
   - Battery Manual: Force Discharge
   - Battery Auto: Force Cheap Energy ⇒ Force Charge (force charge if energy is cheap)
-  - Export Manual: Enable (the normal condition, allow export to the grid)
-  - Export Manual: Disable (try to not export to the grid)
-  - Export Auto: Force Negative Feed-in Tariff ⇒ Disable (force disable if the feed-in tariff is negative)
+  - Inverter Manual: Enable (the normal condition, allow export to the grid)
+  - Inverter Manual: Disable (stop inverter providing solar power)
+  - Inverter Manual: Zero Export (try to not export to or import from the grid)
+  - Inverter Auto: Force Negative Feed-in Tariff ⇒ Disable (force disable if the feed-in tariff is negative)
 
 As it is a personal project, there are a few limitations.
-  - Currently only supports Fonius GEN4 inverters.
+  - Currently only supports Fronius GEN4 inverters.
   - Currently only supports Amber as the power price provider.
   - The web app is very basic.
   - The web app needs to run on the same LAN as the inverters.

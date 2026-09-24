@@ -1,4 +1,5 @@
-from local_config import MASTER_INVERTER_MAC_ADDR, SLAVE_INVERTER_MAC_ADDR, AMBER_API_TOKEN, NMI
+from local_config import MASTER_INVERTER_ADDR, SLAVE_INVERTER_ADDR, AMBER_API_TOKEN, NMI
+from solala.control_loop import Constants
 from solala import server
 from solala.log import configure_logger
 from solala.settings import Settings
@@ -13,14 +14,14 @@ def main():
 
     # Optional initial control loop parameters.
     settings = Settings(
-        power_controller_addresses=f'{MASTER_INVERTER_MAC_ADDR};{SLAVE_INVERTER_MAC_ADDR}',
+        power_controller_addresses=f'{MASTER_INVERTER_ADDR};{SLAVE_INVERTER_ADDR}',
         power_pricer_api_token=AMBER_API_TOKEN,
         power_pricer_nmi=NMI,
 
         # DEBUG
 
-        # export_mode=ExportMode.ENABLE,
-        # export_policy=ExportPolicy.NEG_FEED_IN_DISABLE,
+        # inverter_mode=InverterMode.ENABLE,
+        # inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT,
         # disable_export_price_threshold=100,
         # enable_export_price_threshold=200,
         # battery_mode=BatteryMode.DISABLE,
@@ -30,6 +31,9 @@ def main():
         # start_charge_price_threshold = 1,
         # stop_charge_price_threshold = 2,
     )
+
+    # Change control loop constants for testing and debugging.
+    Constants.PRICE_LOOK_AHEAD = 0
 
     server.run_server(host=HOST, port=PORT, settings=settings)
 
