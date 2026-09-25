@@ -212,7 +212,7 @@ def control_step(state: _ControlState, prev_state: _ControlState) -> None:
                     price = state.last_price
                     feed_in_price = price.feed_in_price
                     if feed_in_price < state.disable_export_price_threshold:
-                        state.inverter_mode = InverterMode.DISABLE
+                        state.inverter_mode = InverterMode.ZERO_EXPORT
                     elif feed_in_price > state.disable_export_price_threshold:
                         state.inverter_mode = InverterMode.ENABLE
                     _update_price_check(prices)
@@ -328,13 +328,13 @@ def get_cur_price() -> Price:
     with _control_state_lock:
         price = _control_state.last_price
         if _control_state.power_pricer is None:
-            LOGGER.error(f'Price update not available. Error: power_price not connected')
+            LOGGER.error(f'price update not available. Error: power_price not connected')
         elif price.end_time <= datetime.now(UTC):
             try:
                 price: Price = _control_state.power_pricer.get_price(0)[0]
                 _control_state.last_price = price
             except (JSONDecodeError, IOError) as err:
-                LOGGER.error(f'Price update not available. Error: {err}')
+                LOGGER.error(f'price update not available. Error: {err}')
     return price
 
 
@@ -617,14 +617,14 @@ def _update_price() -> List[Price]:
 
     power_pricer = state.power_pricer
     if power_pricer is None:
-        LOGGER.error(f'[{_LOG_SRC}] Price update not available. Power pricer not connected')
+        LOGGER.error(f'[{_LOG_SRC}] price update not available. Power pricer not connected')
         return [state.last_price]
 
     prices = power_pricer.get_price(Constants.PRICE_LOOK_AHEAD // 5)
     price = prices[0]
     state.last_price = price
-    LOGGER.info(f'[{_LOG_SRC}] Price update, buy: {price.buy_price}')
-    LOGGER.info(f'[{_LOG_SRC}] Price update, feed-in: {price.feed_in_price}')
+    LOGGER.info(f'[{_LOG_SRC}] buy price update: {price.buy_price}')
+    LOGGER.info(f'[{_LOG_SRC}] feed-in price update: {price.feed_in_price}')
     return prices
 
 

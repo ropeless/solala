@@ -26,7 +26,7 @@ _STATUS_TOLERANCE = 100  # Watts
 
 # Tolerance for power change.
 _POWER_CHANGE_TOLERANCE = 100  # Watts
-_SMALL_CHANGE_TOLERANCE = 1000  # Watts
+_SMALL_CHANGE_TOLERANCE = 2000  # Watts
 
 
 class ModbusPowerController(PowerController):
@@ -198,7 +198,7 @@ class ModbusPowerController(PowerController):
         LOGGER.info(f'{_START} zero_export')
 
         cur_grid_power: float = self._get(self._grid_power)
-        cur_pct: float = self._get(self._WMaxLimPct[0])  # just get the master
+        cur_pct: float = self._get(self._WMaxLimPct)
         max_power: float = self._get_sum(self._WMax)
         cur_power: float = self._get_sum(self._inverter_power)
 
