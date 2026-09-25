@@ -25,11 +25,15 @@ class AmberPowerPricer(PowerPricer):
         self._site_id: str = json_str(self._site['id'])
 
     @property
+    def nmi(self) -> str:
+        return self._nmi
+
+    @property
     def site_id(self) -> str:
         return self._site_id
 
     def close(self) -> None:
-        # noting to do
+        # nothing to do
         pass
 
     def get_price(self, forecasts: int) -> List[Price]:

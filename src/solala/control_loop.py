@@ -90,6 +90,7 @@ class Constants:
 class _ControlState:
     power_controller: Optional[PowerController]
     power_pricer: Optional[PowerPricer]
+
     battery_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_mode: InverterMode = InverterMode.UNKNOWN
     battery_policy: BatteryPolicy = BatteryPolicy.MANUAL
@@ -118,10 +119,12 @@ class _ControlState:
         self.next_buy_price_check = _MIN_DATE
 
 
-# Global server state variable
+# Global server state variables
 _control_state: _ControlState = _ControlState(None, None)
 _control_state_lock = threading.RLock()
 _control_loop_running: bool = True  # set as False to terminate the control loop
+_power_controller_status: JSONDict = {'status': 'disconnected'}
+_power_pricer_status: JSONDict = {'status': 'disconnected'}
 
 
 def control_loop() -> None:
@@ -151,7 +154,7 @@ def control_loop() -> None:
             power_controller = state.power_controller
             assert power_controller is not None
 
-            # Battery Policy - may change state.battery_mode
+            # Battery Policy - may change Battery Mode
             if state.battery_policy == BatteryPolicy.CHEAP_CHARGE:
                 if state.next_buy_price_check <= datetime.now(UTC):
                     # time to check the price again
@@ -165,7 +168,7 @@ def control_loop() -> None:
                     _update_price_check(prices)
 
             # Battery Mode
-            if prev_state.battery_mode != state.battery_mode:
+            if state.battery_mode != prev_state.battery_mode:
                 match state.battery_mode:
                     case BatteryMode.ENABLE:
                         power_controller.enable_battery()
@@ -177,7 +180,7 @@ def control_loop() -> None:
                         power_controller.force_discharge()
                 prev_state.battery_mode = state.battery_mode
 
-            # Inverter Policy - may change state.inverter_mode
+            # Inverter Policy - may change Inverter Mode
             if state.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
                 if state.next_feed_in_price_check <= datetime.now(UTC):
                     # time to check the price again
@@ -191,13 +194,14 @@ def control_loop() -> None:
                     _update_price_check(prices)
 
             # Inverter Mode
-            if prev_state.inverter_mode != state.inverter_mode:
+            if state.inverter_mode != prev_state.inverter_mode:
                 if state.inverter_mode == InverterMode.ENABLE:
                     power_controller.enable_inverter()
                 # All other cases managed below as they have a reversion time limit
                 prev_state.inverter_mode = state.inverter_mode
+            # Inverter modes requiring keep-alive pulse
             try:
-                match prev_state.inverter_mode:
+                match state.inverter_mode:
                     case InverterMode.DISABLE:
                         power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
                     case InverterMode.ZERO_EXPORT:
@@ -258,6 +262,14 @@ def get_power_status() -> JSONDict:
             return {'error': 'power controller not connected'}
         result = _control_state.power_controller.get_status().as_dict()
         return result
+
+
+def get_connection_status() -> JSONDict:
+    with _control_state_lock:
+        return {
+            'controller': _power_controller_status,
+            'pricer': _power_pricer_status,
+        }
 
 
 def get_status() -> JSONDict:
@@ -396,11 +408,14 @@ def connect_modbus(
     """
     Establish a power control modbus connection to the inverter.
     """
+    global _power_controller_status
     with _control_state_lock:
         all_addresses: List[str] = [master_address] + list(slave_addresses)
-        all_mac_addresses: List[Optional[str]] = []
-        found_mac_addresses: List[str] = []
         invalid_addresses: List[str] = []
+
+        # Work out what addresses are MAC addresses
+        all_mac_addresses: List[Optional[str]] = []  # coindexed with all_addresses
+        found_mac_addresses: List[str] = []
         for address in all_addresses:
             is_mac = ':' in address
             is_ip = '.' in address
@@ -411,37 +426,64 @@ def connect_modbus(
                 all_mac_addresses.append(None)
             else:
                 invalid_addresses.append(address)
+
+        # Fail if there are any invalid addresses
         if len(invalid_addresses) > 0:
-            return {
-                'connect_modbus': 'Error: invalid address',
-                'addresses': invalid_addresses
-            }
+            _power_controller_status = {'status': 'disconnected'}
+            result: JSONDict = dict(_power_controller_status)
+            result['error'] = 'invalid address'
+            result['addresses'] = invalid_addresses
+            return result
 
-        # Look up IP addresses for MAC addresses, only if there are MAC addresses to look up
+        # Look up IP addresses for MAC addresses
+        all_ip_addresses: List[str] = []  # coindexed with all_addresses
         mac_lookup: Dict[str, str] = find_ip_by_mac(found_mac_addresses)
-
-        all_clients: List[ModbusTcpClient] = []
         for i in range(len(all_addresses)):
             mac_address = all_mac_addresses[i]
             if mac_address is None:
-                ip_address = all_addresses[i]
+                all_ip_addresses.append(all_addresses[i])
             else:
                 ip_address: Optional[str] = mac_lookup.get(mac_address)
                 if ip_address is None:
-                    return {
-                        'connect_modbus': 'Error: IP address not found.',
-                        'mac_address': mac_address,
-                    }
-            all_clients.append(ModbusTcpClient(ip_address))
-        if len(invalid_addresses) > 0:
-            return {
-                'connect_modbus': 'Error: could not find ip address for mac address',
-                'addresses': invalid_addresses
-            }
+                    invalid_addresses.append(mac_address)
+                else:
+                    all_ip_addresses.append(ip_address)
 
+        # Fail if there are any invalid ip addresses
+        if len(invalid_addresses) > 0:
+            _power_controller_status = {'status': 'disconnected'}
+            result: JSONDict = dict(_power_controller_status)
+            result['error'] = 'could not find ip address for mac address'
+            result['addresses'] = invalid_addresses
+            return result
+
+        # get ModbusTcpClient objects
+        all_clients: List[ModbusTcpClient] = []  # coindexed with all_addresses
+        errors: List[JSONDict] = []  # coindexed with all_addresses
+        ip_address: str
+        for i, ip_address in enumerate(all_ip_addresses):
+            try:
+                client = ModbusTcpClient(ip_address, port=502)
+                client.connect()
+                all_clients.append(client)
+            except (IOError, TypeError, ValueError) as err:
+                errors.append({
+                    'host': ip_address,
+                    'mac_address': all_mac_addresses[i],
+                    'error': str(err),
+                })
+
+        # Fail if there are any errors
+        if len(errors) > 0:
+            _power_controller_status = {'status': 'disconnected'}
+            result: JSONDict = dict(_power_controller_status)
+            result['error'] = 'could not connect Modbus TCP client'
+            result['messages'] = errors
+            return result
+
+        # Configure power controller
         master_client: ModbusTcpClient = all_clients[0]
         slave_clients: List[ModbusTcpClient] = all_clients[1:]
-
         devices: Dict[str, ModbusDevice] = {
             'master': ModbusDevice(master_client, master_device_id),
         }
@@ -457,64 +499,81 @@ def connect_modbus(
                 devices[name] = ModbusDevice(slave_client, slave_device_id)
         devices['meter'] = ModbusDevice(master_client, meter_device_id)
 
-        modbus: Modbus = Modbus(devices)
         controller = ModbusPowerController(
-            modbus,
+            Modbus(devices),
             master='master',
             meter='meter',
             slaves=slave_names,
         )
         _control_state.reset_controller(controller)
 
-        result = {
-            'connect_modbus': 'Success',
+        # Update the connection status record
+        _power_controller_status = {
+            'status': 'Modbus connection',
             'devices': {
                 device_name: {
-                    'device_id': device.device_id,
                     'host': device.client.comm_params.host,
+                    'device': device.device_id,
                 }
                 for device_name, device in devices.items()
             },
-            'mac_addresses': mac_lookup,
         }
-        return result
+        if len(mac_lookup) > 0:
+            # noinspection PyTypeChecker
+            _power_controller_status['mac_addresses'] = mac_lookup
+        return _power_controller_status
 
 
 def disconnect_control() -> JSONDict:
     """
     Close the power control connection.
     """
+    global _power_controller_status
     with _control_state_lock:
         if _control_state.power_controller is None:
-            return {'disconnect_control': 'already disconnected'}
+            _power_controller_status = {'status': 'disconnected'}
+            result = dict(_power_controller_status)
+            result['error'] = 'already disconnected'
+            return result
         else:
             _control_state.power_controller.close()
             _control_state.reset_controller(None)
-            return {'disconnect_control': 'Success'}
+            _power_controller_status = {'status': 'disconnected'}
+            return _power_controller_status
 
 
 def connect_amber(api_token: str, nmi: str) -> JSONDict:
     """
     Establish a power price connection using Amber.
     """
+    global _power_pricer_status
     with _control_state_lock:
         amber_pricer = AmberPowerPricer(api_token, nmi)
         _control_state.power_pricer = amber_pricer
-        return {
-            'connect_amber': 'Success',
-            'site_id': amber_pricer.site_id,
+        _power_pricer_status = {
+            'status': 'Amber connection',
+            'nmi': amber_pricer.nmi,
+            'site': amber_pricer.site_id,
         }
+        return _power_pricer_status
 
 
 def disconnect_price() -> JSONDict:
     """
     Close the power control price connection.
     """
+    global _power_pricer_status
     with _control_state_lock:
         if _control_state.power_pricer is None:
-            return {'disconnect_price': 'already disconnected'}
-        _control_state.power_pricer = None
-        return {'disconnect_price': 'Success'}
+            _power_pricer_status = {'status': 'disconnected'}
+            result = dict(_power_pricer_status)
+            result['error'] = 'already disconnected'
+            return result
+        else:
+            _control_state.power_pricer.close()
+            _control_state.power_pricer = None
+            _power_pricer_status = {'status': 'disconnected'}
+            return _power_controller_status
 
 
 # =============================================================================

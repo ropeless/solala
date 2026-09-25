@@ -16,6 +16,8 @@
         <h2>Status</h2>
         <pre style="text-align: left; margin-left: 0; padding-left: 10px;"><code>{{ status_json }}</code></pre>
         <a href="/registers.html">Registers</a>
+        <a href="/parameters.html">Parameters</a>
+        <a href="/connection.html">Connection</a>
         <a href="/constants.html">Constants</a>
         <p>
         <button id="button_toggle_refresh" class="button-on">auto-refresh: on</button>
@@ -85,6 +87,7 @@
             if (isRefreshEnabled) {
                 stopAutoRefresh();
             } else {
+                window.location.reload();
                 startAutoRefresh();
             }
         });

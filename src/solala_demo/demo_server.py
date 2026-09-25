@@ -32,8 +32,8 @@ def main():
         # stop_charge_price_threshold = 2,
     )
 
-    # Change control loop constants for testing and debugging.
-    Constants.PRICE_LOOK_AHEAD = 0
+    # DEBUG: Change control loop constants for testing and debugging.
+    # Constants.PRICE_LOOK_AHEAD = 0
 
     server.run_server(host=HOST, port=PORT, settings=settings)
 

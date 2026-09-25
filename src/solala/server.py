@@ -1,7 +1,7 @@
 import json
 import re
 import threading
-from typing import List
+from typing import List, Optional, Dict
 
 import uvicorn
 from fastapi import FastAPI, Request, status
@@ -23,6 +23,19 @@ _DEFAULT_SETTINGS = Settings()
 _ADDRESS_DELIMITERS_PATTERN = re.compile(r'[,;&\s]+')
 _LINE_ENDINGS_PATTERN = re.compile(r'[,{} \t]*\s*(?=\n|$)')
 _BLANK_LINES_PATTERN = re.compile(r'^[ \t]*\r?\n', flags=re.MULTILINE)
+_DICT_ENTRY_SEPARATOR_PATTERN = re.compile(r'(\s*[\w+"]): ')
+
+# Units for pretty printing status
+_STATUS_UNITS = {
+    'buy_price': ' cents/kWh',
+    'feed_in_price': ' cents/kWh',
+    'renewables': '%',
+    'state_of_charge': '%',
+    'grid_power': 'W',
+    'solar_power': 'W',
+    'battery_power': 'W',
+    'house_power': 'W',
+}
 
 # Support function to load HTML files from the resources directory.
 _JINJA_ENV = Environment(
@@ -94,34 +107,39 @@ def split_addresses(addresses: str) -> List[str]:
     return _ADDRESS_DELIMITERS_PATTERN.split(addresses)
 
 
-def _format_json(data: JSONDict) -> str:
+def _format_json(data: JSONDict, units: Optional[Dict[str, str]] = None, indent: int = 2) -> str:
     """
     Render JSON data as a formatted string for a human to read.
     """
+    if units is None:
+        units = {}
 
-    # Replace floats with formatted strings
-    data = _stringify_floats(data)
+    # Replace floats with formatted strings and add units
+    data = _stringify_values(None, data, units)
 
-    text = json.dumps(data, indent=4)
+    text = json.dumps(data, indent=indent)
     text = _LINE_ENDINGS_PATTERN.sub('', text)
     text = _BLANK_LINES_PATTERN.sub('', text)
-
-    # convert dictionary entry separator from ':' to '='
-    text = re.sub(r'(\s*[\w+"]): ', r'\1 = ', text)
+    text = _DICT_ENTRY_SEPARATOR_PATTERN.sub(r'\1 = ', text)
 
     text = text.replace('_', ' ').replace('"', '')
     return text
 
 
-def _stringify_floats(data: JSONValue) -> JSONValue:
+def _stringify_values(key: Optional[str], data: JSONValue, units: Dict[str, str]) -> JSONValue:
     if isinstance(data, float):
-        return f'{data:.2f}'
+        if key is not None and key in units:
+            return f'{data:.2f}{units[key]}'
+        else:
+            return f'{data:.2f}'
     elif isinstance(data, dict):
-        return {k: _stringify_floats(v) for k, v in data.items()}
+        return {k: _stringify_values(k, v, units) for k, v in data.items()}
     elif isinstance(data, list):
-        return [_stringify_floats(v) for v in data]
+        return [_stringify_values(None, v, units) for v in data]
+    elif key is not None and key in units:
+        return f'{data}{units[key]}'
     else:
-        return data
+        return str(data)
 
 
 # ====================================================================
@@ -166,7 +184,7 @@ def serve_index(request: Request):
         name='index.html',
         context={
             'title': _APP_NAME,
-            'status_json': _format_json(status_json),
+            'status_json': _format_json(status_json, _STATUS_UNITS),
             'refresh_interval': _REFRESH_INTERVAL,
             'battery_button': battery_button,
             'inverter_button': inverter_button,
@@ -187,6 +205,38 @@ def serve_registers(request: Request):
             'name': 'Registers',
             'json_data': _format_json(json_data),
             'refresh_interval': _REFRESH_INTERVAL,
+        }
+    )
+
+
+@app.get('/parameters.html', response_class=HTMLResponse)
+def serve_parameters(request: Request):
+    json_data: JSONDict = control_loop.get_parameters()
+    templates = Jinja2Templates(env=_JINJA_ENV)
+    return templates.TemplateResponse(
+        request=request,
+        name='json.html',
+        context={
+            'title': _APP_NAME,
+            'name': 'Parameters',
+            'json_data': _format_json(json_data),
+            'refresh_interval': 0,  # no auto refresh
+        }
+    )
+
+
+@app.get('/connection.html', response_class=HTMLResponse)
+def serve_connection(request: Request):
+    json_data: JSONDict = control_loop.get_connection_status()
+    templates = Jinja2Templates(env=_JINJA_ENV)
+    return templates.TemplateResponse(
+        request=request,
+        name='json.html',
+        context={
+            'title': _APP_NAME,
+            'name': 'Connection',
+            'json_data': _format_json(json_data),
+            'refresh_interval': 0,  # no auto refresh
         }
     )
 
@@ -214,37 +264,37 @@ def get_status():
 
 @app.get('/status/control')
 def get_control():
-    return {
-        'control': control_loop.get_control_status(),
-    }
+    return control_loop.get_control_status(),
 
 
 @app.get('/status/price')
 def get_price():
-    return {
-        'price': control_loop.get_price_status(),
-    }
+    return control_loop.get_price_status(),
 
 
 @app.get('/status/power')
 def get_power():
-    return {
-        'power': control_loop.get_power_status(),
-    }
+    return control_loop.get_power_status(),
 
 
 @app.get('/registers')
 def get_registers():
-    return {
-        'registers': control_loop.get_registers(),
-    }
+    return control_loop.get_registers(),
+
+
+@app.get('/parameters')
+def get_parameters():
+    return control_loop.get_parameters(),
+
+
+@app.get('/connection')
+def get_connection():
+    return control_loop.get_connection_status(),
 
 
 @app.get('/constants')
 def get_constants():
-    return {
-        'constants': control_loop.Constants.as_dict(),
-    }
+    return control_loop.Constants.as_dict(),
 
 
 @app.put('/battery/enable')
@@ -338,7 +388,7 @@ def set_parameters(
     return result, status_code
 
 
-@app.put('/control/connect_modbus/{addresses}')
+@app.put('/connection/controller/connect_modbus')
 def connect_modbus(addresses: str):
     """
     Establish a modbus connection to the inverter.
@@ -348,22 +398,28 @@ def connect_modbus(addresses: str):
     addresses: List[str] = split_addresses(addresses)
     result = control_loop.connect_modbus(addresses[0], addresses[1:])
 
-    if result['connect_modbus'] == 'Success':
-        status_code = status.HTTP_200_OK
-    else:
+    if 'error' in result:
         status_code = status.HTTP_406_NOT_ACCEPTABLE
+    else:
+        status_code = status.HTTP_200_OK
     return result, status_code
 
 
-@app.put('/control/disconnect')
+@app.put('/connection/controller/disconnect')
 def disconnect_control():
     """
     Close the controller connection to the inverter.
     """
-    return control_loop.disconnect_control()
+    result = control_loop.disconnect_control()
+
+    if 'error' in result:
+        status_code = status.HTTP_406_NOT_ACCEPTABLE
+    else:
+        status_code = status.HTTP_200_OK
+    return result, status_code
 
 
-@app.put('/price/connect_amber')
+@app.put('/connection/pricer/connect_amber')
 def connect_amber(
         api_token: str,
         nmi: str,
@@ -375,16 +431,22 @@ def connect_amber(
     """
     result = control_loop.connect_amber(api_token, nmi)
 
-    if result['connect_modbus'] == 'Success':
-        status_code = status.HTTP_200_OK
-    else:
+    if 'error' in result:
         status_code = status.HTTP_406_NOT_ACCEPTABLE
+    else:
+        status_code = status.HTTP_200_OK
     return result, status_code
 
 
-@app.put('/price/disconnect')
+@app.put('/connection/pricer/disconnect')
 def disconnect_price():
     """
     Close the power pricer connection.
     """
-    return control_loop.disconnect_price()
+    result = control_loop.disconnect_price()
+
+    if 'error' in result:
+        status_code = status.HTTP_406_NOT_ACCEPTABLE
+    else:
+        status_code = status.HTTP_200_OK
+    return result, status_code
