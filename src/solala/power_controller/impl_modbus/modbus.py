@@ -44,14 +44,14 @@ class Modbus(Mapping[str, str | int | float]):
             }
 
         # Get unique clients
-        # client_id => ModbusTcpClient
+        # `clients_by_client_id` is client_id => ModbusTcpClient
         clients_by_client_id: Mapping[int, ModbusTcpClient] = {
             id(device.client): device.client
             for device in devices.values()
         }
 
         # Get unique devices mentioned for each client
-        # client_id => set(device_id)
+        # `devices_by_client_id` is client_id => set(device_id)
         devices_by_client_id: Mapping[int, Set[int]] = {
             client_id: {
                 device.device_id
@@ -62,7 +62,7 @@ class Modbus(Mapping[str, str | int | float]):
         }
 
         # Find offset models for each client
-        # client_id => device_id => MODBUS_MODEL => address_offset
+        # `offset_models` is client_id => device_id => MODBUS_MODEL => address_offset
         offset_models: Dict[int, Dict[int, Dict[MODBUS_MODEL, int]]] = {
             id_client: {
                 device_id: _find_model_offsets(clients_by_client_id[id_client], device_id)
@@ -72,7 +72,7 @@ class Modbus(Mapping[str, str | int | float]):
         }
 
         # Construct logical devices
-        # logical_device_id =>LogicalDevice
+        # `device_registers` is logical_device_id => LogicalDevice
         device_registers: Dict[str, _Register] = {}
         logical_device_id: str | None
         for logical_device_id, device in devices.items():
@@ -175,7 +175,9 @@ def _find_devices(client: ModbusTcpClient) -> Iterable[int]:
 
 
 def _find_model_offsets(client: ModbusTcpClient, device_id: int) -> Dict[MODBUS_MODEL, int]:
-    result: Dict[MODBUS_MODEL, int] = {}
+    result: Dict[MODBUS_MODEL, int] = {
+        0: -1,  # initialise with the special zero model, where registers are in Modicon (40xxx) format.
+    }
     current_address = 40002
     while current_address < 45000:
         # Read the Model ID and Length (2 registers)

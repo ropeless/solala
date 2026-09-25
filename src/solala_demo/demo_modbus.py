@@ -15,8 +15,14 @@ def main() -> None:
     }
 
     with Modbus(devices) as modbus:
-        sum_power(modbus)
+        show_all(modbus)
+        # sum_power(modbus)
         # show_one(modbus, 'master/W')
+
+
+def show_all(modbus):
+    for register, value in modbus.items():
+        print(f'{register}: {value!r}')
 
 
 def show_one(modbus, param):

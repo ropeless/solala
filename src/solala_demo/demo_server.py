@@ -22,8 +22,8 @@ def main():
 
         # inverter_mode=InverterMode.ENABLE,
         # inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT,
-        # disable_export_price_threshold=100,
-        # enable_export_price_threshold=200,
+        # disable_export_price_threshold=10,
+        # enable_export_price_threshold=20,
         # battery_mode=BatteryMode.DISABLE,
 
         # battery_mode=BatteryMode.ENABLE,
@@ -32,8 +32,8 @@ def main():
         # stop_charge_price_threshold = 2,
     )
 
-    # Change control loop constants for testing and debugging.
-    Constants.PRICE_LOOK_AHEAD = 0
+    # DEBUG: Change control loop constants for testing and debugging.
+    # Constants.PRICE_LOOK_AHEAD = 0
 
     server.run_server(host=HOST, port=PORT, settings=settings)
 

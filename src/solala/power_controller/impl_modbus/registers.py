@@ -1,6 +1,6 @@
 from typing import Dict, Tuple, Iterator, Mapping
 
-from solala.power_controller.impl_modbus.register_access import NEXT_SF as _NEXT_SF, uint32, MODBUS_MODEL
+from solala.power_controller.impl_modbus.register_access import NEXT_SF as _NEXT_SF, uint32, MODBUS_MODEL, str2
 from solala.power_controller.impl_modbus.register_access import RegisterAccess, str16, str8, uint16, scaled_uint, \
     scaled_int
 
@@ -23,6 +23,12 @@ _DCW_SF = 5  # Model 160
 _W_SF = 23  # Model 201
 
 MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
+
+    # The special zero model, where registers addresses are in Modicon (40xxx) format.
+    0: {
+      'SID': str2(40001),  # expect 'SunS'
+    },
+
     # Common
     1: {
         'manufacturer': str16(3),
