@@ -111,7 +111,13 @@ def split_addresses(addresses: str) -> List[str]:
     return _ADDRESS_DELIMITERS_PATTERN.split(addresses)
 
 
-def _format_json(data: JSONDict, units: Optional[Dict[str, str]] = None, indent: int = 2) -> str:
+def _format_json(
+        data: JSONDict,
+        *,
+        units: Optional[Dict[str, str]] = None,
+        remove_underscores: bool = True,
+        indent: int = 2,
+) -> str:
     """
     Render JSON data as a formatted string for a human to read.
     """
@@ -126,7 +132,10 @@ def _format_json(data: JSONDict, units: Optional[Dict[str, str]] = None, indent:
     text = _BLANK_LINES_PATTERN.sub('', text)
     text = _DICT_ENTRY_SEPARATOR_PATTERN.sub(r'\1 = ', text)
 
-    text = text.replace('_', ' ').replace('"', '')
+    text = text.replace('"', '')
+    if remove_underscores:
+        text = text.replace('_', ' ')
+
     return text
 
 
@@ -201,7 +210,7 @@ def serve_index(request: Request):
         name='index.html',
         context={
             'title': _APP_NAME,
-            'status_json': _format_json(status_json, _STATUS_UNITS),
+            'status_json': _format_json(status_json, units=_STATUS_UNITS),
             'refresh_interval': _REFRESH_INTERVAL,
             'battery_button': battery_button,
             'inverter_button': inverter_button,
@@ -220,7 +229,7 @@ def serve_registers(request: Request):
         context={
             'title': _APP_NAME,
             'name': 'Registers',
-            'json_data': _format_json(json_data),
+            'json_data': _format_json(json_data, remove_underscores=False),
             'refresh_interval': _REFRESH_INTERVAL,
         }
     )
