@@ -45,10 +45,15 @@ class RegisterContext:
     client: ModbusTcpClient
     device_id: int
     modbus_model: MODBUS_MODEL
-    address_offset: int
+    address_offset: int  # the value to add to the relative address to get the physical, zero-based, address.
 
 
 class RegisterAccess(ABC):
+    """
+    Abstract base class for reading and writing to a register.
+    An implementation of this class takes into account the datatype of the register,
+    including the number of registers to read/write and any scaling factor.
+    """
 
     @abstractmethod
     def get(self, context: RegisterContext) -> int | float | str:
@@ -60,47 +65,73 @@ class RegisterAccess(ABC):
 
 
 def uint16(addr: int, writable: bool = False) -> RegisterAccess:
+    """
+    Define an unsigned 16-bit unsigned integer register, at the given relative address.
+    """
     return RegisterAccessInt(addr, count=1, signed=False, writable=writable)
 
 
 def int16(addr: int, writable: bool = False) -> RegisterAccess:
+    """
+    Define a signed 16-bit unsigned integer register, at the given relative address.
+    """
     return RegisterAccessInt(addr, count=1, signed=True, writable=writable)
 
 
 def uint32(addr: int, writable: bool = False) -> RegisterAccess:
+    """
+    Define an unsigned 32-bit unsigned integer register, at the given relative address.
+    """
     return RegisterAccessInt(addr, count=2, signed=False, writable=writable)
 
 
 def int32(addr: int, writable: bool = False) -> RegisterAccess:
+    """
+    Define a signed 32-bit unsigned integer register, at the given relative address.
+    """
     return RegisterAccessInt(addr, count=2, signed=True, writable=writable)
 
 
 def str2(addr: int) -> RegisterAccess:
+    """
+    Define a string covering 2 registers, at the given relative address.
+    """
     return RegisterAccessStr(addr, count=2)
 
 
 def str4(addr: int) -> RegisterAccess:
+    """
+    Define a string covering 4 registers, at the given relative address.
+    """
     return RegisterAccessStr(addr, count=4)
 
 
 def str8(addr: int) -> RegisterAccess:
+    """
+    Define a string covering 8 registers, at the given relative address.
+    """
     return RegisterAccessStr(addr, count=8)
 
 
 def str16(addr: int) -> RegisterAccess:
+    """
+    Define a string covering 16 registers, at the given relative address.
+    """
     return RegisterAccessStr(addr, count=16)
 
 
 def scaled_uint(addr: int, scale_addr: int, writable: bool = False) -> RegisterAccess:
     """
-    uint16 + scale-factor.
+    Define a scaled unsigned integer at the given relative address.
+    Internal format: uint16 & scale-factor.
     """
     return RegisterAccessScaled(addr, scale_addr, signed=False, writable=writable)
 
 
 def scaled_int(addr: int, scale_addr: int, writable: bool = False) -> RegisterAccess:
     """
-    int16 + scale-factor.
+    Define a scaled unsigned integer at the given relative address.
+    Internal format: int16 & scale-factor.
     """
     return RegisterAccessScaled(addr, scale_addr, signed=True, writable=writable)
 
@@ -111,6 +142,17 @@ def _read_byte_array(
         *,
         count: int,
 ) -> bytearray:
+    """
+    Read `count` registers as a byte array.
+
+    Args:
+        context: The RegisterContext defining where to read from.
+        addr:
+        count:
+
+    Returns:
+        the read byte array.
+    """
     physical_addr = addr + context.address_offset
     result: ModbusPDU = context.client.read_holding_registers(
         physical_addr,
@@ -133,6 +175,16 @@ def _write_int(
         signed: bool,
         value: int,
 ) -> None:
+    """
+    Write an integer, signed or unsigned, covering `count` registers.
+
+    Args:
+        context: The RegisterContext defining where to write to.
+        addr: The relative address of the first register to write to.
+        count: The number of registers to write to.
+        signed: Whether the integer is signed or unsigned.
+        value: The integer value to write.
+    """
     # We only permit writing a single 16bit register at the moment.
     check_valid_int(value=value, count=count, signed=signed)
     physical_addr = addr + context.address_offset

@@ -10,7 +10,7 @@ class PowerStatus:
     state_of_charge: float
     battery_status: str
     grid_status: str
-    power_limit_status: str
+    power_limit: float
     grid_power: float
     solar_power: float
     battery_power: float
@@ -21,7 +21,7 @@ class PowerStatus:
             'state_of_charge': self.state_of_charge,
             'battery_status': self.battery_status,
             'grid_status': self.grid_status,
-            'power_limit_status': self.power_limit_status,
+            'power_limit': self.power_limit,
             'grid_power': self.grid_power,
             'solar_power': self.solar_power,
             'battery_power': self.battery_power,

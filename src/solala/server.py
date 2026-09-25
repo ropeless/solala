@@ -26,15 +26,19 @@ _BLANK_LINES_PATTERN = re.compile(r'^[ \t]*\r?\n', flags=re.MULTILINE)
 _DICT_ENTRY_SEPARATOR_PATTERN = re.compile(r'(\s*[\w+"]): ')
 
 # Units for pretty printing status
+_PRICE = ' cents/kWh'
+_WATTS = ' Watts'
+_PCT = '%'
 _STATUS_UNITS = {
-    'buy_price': ' cents/kWh',
-    'feed_in_price': ' cents/kWh',
-    'renewables': '%',
-    'state_of_charge': '%',
-    'grid_power': 'W',
-    'solar_power': 'W',
-    'battery_power': 'W',
-    'house_power': 'W',
+    'buy_price': _PRICE,
+    'feed_in_price': _PRICE,
+    'renewables': _PCT,
+    'state_of_charge': _PCT,
+    'power_limit': _PCT,
+    'grid_power': _WATTS,
+    'solar_power': _WATTS,
+    'battery_power': _WATTS,
+    'house_power': _WATTS,
 }
 
 # Support function to load HTML files from the resources directory.
@@ -126,20 +130,33 @@ def _format_json(data: JSONDict, units: Optional[Dict[str, str]] = None, indent:
     return text
 
 
-def _stringify_values(key: Optional[str], data: JSONValue, units: Dict[str, str]) -> JSONValue:
-    if isinstance(data, float):
+def _stringify_values(key: Optional[str], value: JSONValue, units: Dict[str, str]) -> JSONValue:
+    """
+    If `value` is a number, return a string rendering of it, including appending units if
+    the key is in the `units` dictionary.
+    If `value` is a container, return a copy with the items recursively stringified.
+
+    Args:
+        key: The key for this value - used to look up units.
+        value: The value to stringify.
+        units: A lookup table of units to append to values.
+
+    Returns:
+
+    """
+    if isinstance(value, float):
+        value_str: str = f'{value:.2f}'.rstrip('0').rstrip('.')
         if key is not None and key in units:
-            return f'{data:.2f}{units[key]}'
-        else:
-            return f'{data:.2f}'
-    elif isinstance(data, dict):
-        return {k: _stringify_values(k, v, units) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [_stringify_values(None, v, units) for v in data]
+            value_str += units[key]
+        return value_str
+    elif isinstance(value, dict):
+        return {k: _stringify_values(k, v, units) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [_stringify_values(None, v, units) for v in value]
     elif key is not None and key in units:
-        return f'{data}{units[key]}'
+        return f'{value}{units[key]}'
     else:
-        return str(data)
+        return str(value)
 
 
 # ====================================================================

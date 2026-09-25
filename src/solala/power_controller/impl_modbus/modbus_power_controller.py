@@ -1,4 +1,4 @@
-from typing import Iterable, List, Tuple, Dict, Sequence
+from typing import Iterable, List, Tuple, Sequence
 
 from solala.log import LOGGER
 from solala.power_controller.impl_modbus.modbus import Modbus
@@ -10,12 +10,11 @@ class _DEFAULT:
     Critical registers and their default values.
     """
     MinRsvPct = 7  # Important - minimum reserve battery percentage
-    OutWRte = 100
     InWRte = 100
-    WchaGra = 100
+    OutWRte = 100
     StorCtl_Mod = 0
     WMaxLimPct = 100
-    WMaxLimPct_RvrtTms = 11
+    WMaxLimPct_RvrtTms = 11  # Standard reversion time in seconds
 
 
 # Prefixes used for logging
@@ -52,13 +51,7 @@ class ModbusPowerController(PowerController):
         self._slaves = list(slaves)
         self._inverters = [self._master] + self._slaves
         self._meter = meter
-        # Default values
-        self._default: Dict[str, int | float] = {
-            f'{inverter}/{reg}': value
-            for inverter in self._inverters
-            for reg, value in vars(_DEFAULT).items()
-            if not reg.startswith('_')
-        }
+
         # Important registers
         self._ChaState: str = f'{master}/ChaState'
         self._charge_power: str = f'{master}/module/3/DCW'
@@ -67,9 +60,9 @@ class ModbusPowerController(PowerController):
         self._grid_power: str = f'{meter}/W'
         self._inverter_power: List[str] = [f'{inverter}/W' for inverter in self._inverters]
         self._WMax: List[str] = [f'{inverter}/WMax' for inverter in self._inverters]
-        self._WMaxLim_Ena: List[str] = [f'{inverter}/WMaxLim_Ena' for inverter in self._inverters]
-        self._WMaxLimPct: List[str] = [f'{inverter}/WMaxLimPct' for inverter in self._inverters]
-        self._WMaxLimPct_RvrtTms: List[str] = [f'{inverter}/WMaxLimPct_RvrtTms' for inverter in self._inverters]
+        self._WMaxLim_Ena: str = f'{master}/WMaxLim_Ena'
+        self._WMaxLimPct: str = f'{master}/WMaxLimPct'
+        self._WMaxLimPct_RvrtTms: str = f'{master}/WMaxLimPct_RvrtTms'
         self._InWRte: str = f'{master}/InWRte'
         self._OutWRte: str = f'{master}/OutWRte'
         self._StorCtl_Mod: str = f'{master}/StorCtl_Mod'
@@ -113,17 +106,8 @@ class ModbusPowerController(PowerController):
 
         battery_status = _status(battery_power, 'discharging', 'charging')
         grid_status = _status(grid_power, 'exporting', 'importing')
-        power_limit_enabled: List[bool] = [(self._get(reg) != 0) for reg in self._WMaxLim_Ena]
-        power_limit_pct: List[float] = [
-            self._get(reg) if enabled else 100.0
-            for reg, enabled in zip(self._WMaxLimPct, power_limit_enabled)
-        ]
-        if all((limit >= 100.0) for limit in power_limit_pct):
-            power_limit_status = 'no limit'
-        elif len(power_limit_pct) == 1:
-            power_limit_status = f'{power_limit_pct[0]:.2f}%'
-        else:
-            power_limit_status = '[' + ', '.join(f'{limit:.2f}%' for limit in power_limit_pct) + ']'
+        power_limit_enabled: bool = (self._get(self._WMaxLim_Ena) != 0)
+        power_limit: float = self._get(self._WMaxLimPct) if power_limit_enabled else 100.0
 
         LOGGER.info(f'{_STOP} get_status')
 
@@ -131,7 +115,7 @@ class ModbusPowerController(PowerController):
             state_of_charge=state_of_charge,
             battery_status=battery_status,
             grid_status=grid_status,
-            power_limit_status=power_limit_status,
+            power_limit=power_limit,
             grid_power=grid_power,
             solar_power=solar_power,
             battery_power=battery_power,
@@ -148,10 +132,10 @@ class ModbusPowerController(PowerController):
         This is the normal state.
         """
         LOGGER.info(f'{_START} enable_battery')
-        self._set_default(self._InWRte)
-        self._set_default(self._OutWRte)
-        self._set_default(self._StorCtl_Mod)
-        self._set_default(self._MinRsvPct)
+        self._set(self._InWRte, _DEFAULT.InWRte)
+        self._set(self._OutWRte, _DEFAULT.OutWRte)
+        self._set(self._StorCtl_Mod, _DEFAULT.StorCtl_Mod)
+        self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
         LOGGER.info(f'{_STOP} enable_battery')
 
     def disable_battery(self) -> None:
@@ -162,7 +146,7 @@ class ModbusPowerController(PowerController):
         self._set(self._InWRte, 0)
         self._set(self._OutWRte, 0)
         self._set(self._StorCtl_Mod, 3)
-        self._set_default(self._MinRsvPct)
+        self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
         LOGGER.info(f'{_STOP} disable_battery')
 
     def force_charge(self) -> None:
@@ -172,9 +156,9 @@ class ModbusPowerController(PowerController):
         even if it means drawing from the grid.
         """
         LOGGER.info(f'{_START} force_charge')
-        self._set_default(self._InWRte)
-        self._set_default(self._OutWRte)
-        self._set_default(self._StorCtl_Mod)
+        self._set(self._InWRte, _DEFAULT.InWRte)
+        self._set(self._OutWRte, _DEFAULT.OutWRte)
+        self._set(self._StorCtl_Mod, 3)
         self._set(self._MinRsvPct, 100)
         LOGGER.info(f'{_STOP} force_charge')
 
@@ -184,10 +168,10 @@ class ModbusPowerController(PowerController):
         This is a way to force stored power to the grid.
         """
         LOGGER.info(f'{_START} force_discharge')
-        self._set(self._InWRte, -self._default[self._InWRte])  # negative flow
-        self._set_default(self._OutWRte)
+        self._set(self._InWRte, -_DEFAULT.InWRte)  # negative flow
+        self._set(self._OutWRte, _DEFAULT.OutWRte)
         self._set(self._StorCtl_Mod, 3)
-        self._set_default(self._MinRsvPct)
+        self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
         LOGGER.info(f'{_STOP} force_discharge')
 
     # =================================================
@@ -268,13 +252,13 @@ class ModbusPowerController(PowerController):
 
     def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
         if pct >= 100:
-            self._set_all_default(self._WMaxLimPct)
-            self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
-            self._set_all(self._WMaxLim_Ena, 0)
+            self._set(self._WMaxLimPct, _DEFAULT.WMaxLimPct)
+            self._set(self._WMaxLimPct_RvrtTms, change_duration)
+            self._set(self._WMaxLim_Ena, 0)
         else:
-            self._set_all(self._WMaxLimPct, pct)
-            self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
-            self._set_all(self._WMaxLim_Ena, 1, force=True)  # force to keep alive
+            self._set(self._WMaxLimPct, pct)
+            self._set(self._WMaxLimPct_RvrtTms, change_duration)
+            self._set(self._WMaxLim_Ena, 1, force=True)  # force to keep alive
 
     def _set(self, name: str, value: int | float, *, force: bool = False) -> None:
         """
@@ -292,25 +276,12 @@ class ModbusPowerController(PowerController):
             msg = 'FAILED' if abs(new - value) > 10e-6 else 'OK'
             LOGGER.info(f'SET {name}: {old!r} -> {value!r} checked {new!r} {msg}')
 
-    def _set_default(self, name: str, *, force: bool = False) -> None:
-        """
-        Set the value of the named register to its default value.
-        """
-        self._set(name, self._default[name], force=force)
-
     def _set_all(self, names: Iterable[str], value: int | float, *, force: bool = False) -> None:
         """
         Set the value of all the named registers to the given value.
         """
         for name in names:
             self._set(name, value, force=force)
-
-    def _set_all_default(self, names: Iterable[str], *, force: bool = False) -> None:
-        """
-        Set the value of all the named registers to their default value.
-        """
-        for name in names:
-            self._set_default(name, force=force)
 
     def _get(self, name: str) -> int | float:
         """
