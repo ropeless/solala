@@ -118,6 +118,12 @@ class _ControlState:
         self.next_feed_in_price_check = _MIN_DATE
         self.next_buy_price_check = _MIN_DATE
 
+    def reset_pricer(self, pricer: Optional[PowerPricer]) -> None:
+        self.power_pricer = pricer
+        self.last_price: Price = _NO_PRICE
+        self.next_feed_in_price_check: datetime = _MIN_DATE
+        self.next_buy_price_check: datetime = _MIN_DATE
+
 
 # Global server state variables
 _control_state: _ControlState = _ControlState(None, None)
@@ -140,21 +146,38 @@ def control_loop() -> None:
     prev_state: _ControlState = _ControlState(None, None)
 
     while _control_loop_running:
-        with _control_state_lock:
-            state = _control_state
+        control_step(_control_state, prev_state)
+        # Server state unlocked
+        # Slow the loop down to keep the network and inverters from being overwhelmed
+        time.sleep(Constants.LOOP_SLEEP)
 
-            if state.power_controller is None:
-                prev_state.power_controller = None
-                time.sleep(Constants.LOOP_SLEEP)
-                continue
-            if prev_state.power_controller is not state.power_controller:
-                # Assume the same power_controller with unknown state.
-                prev_state.power_pricer = state.power_pricer
-                prev_state.reset_controller(state.power_controller)
-            power_controller = state.power_controller
-            assert power_controller is not None
 
-            # Battery Policy - may change Battery Mode
+def control_step(state: _ControlState, prev_state: _ControlState) -> None:
+    """
+    Perform one functional step of the control loop.
+    This function will grab the control state lock.
+    No work is performed if the power controller is None.
+    No non-manual policies are performed if the power pricer is None.
+
+    Args:
+        state: the current control state
+        prev_state: the previous control state
+    """
+    with _control_state_lock:
+        if state.power_controller is None:
+            prev_state.power_controller = None
+            time.sleep(Constants.LOOP_SLEEP)
+            return
+
+        if prev_state.power_controller is not state.power_controller:
+            # Assume the same power_controller with unknown state.
+            prev_state.power_pricer = state.power_pricer
+            prev_state.reset_controller(state.power_controller)
+        power_controller = state.power_controller
+        assert power_controller is not None
+
+        # Battery Policy - may change Battery Mode
+        if state.power_pricer is not None:
             if state.battery_policy == BatteryPolicy.CHEAP_CHARGE:
                 if state.next_buy_price_check <= datetime.now(UTC):
                     # time to check the price again
@@ -167,20 +190,21 @@ def control_loop() -> None:
                         state.battery_mode = BatteryMode.ENABLE
                     _update_price_check(prices)
 
-            # Battery Mode
-            if state.battery_mode != prev_state.battery_mode:
-                match state.battery_mode:
-                    case BatteryMode.ENABLE:
-                        power_controller.enable_battery()
-                    case BatteryMode.DISABLE:
-                        power_controller.disable_battery()
-                    case BatteryMode.FORCE_CHARGE:
-                        power_controller.force_charge()
-                    case BatteryMode.FORCE_DISCHARGE:
-                        power_controller.force_discharge()
-                prev_state.battery_mode = state.battery_mode
+        # Battery Mode
+        if state.battery_mode != prev_state.battery_mode:
+            match state.battery_mode:
+                case BatteryMode.ENABLE:
+                    power_controller.enable_battery()
+                case BatteryMode.DISABLE:
+                    power_controller.disable_battery()
+                case BatteryMode.FORCE_CHARGE:
+                    power_controller.force_charge()
+                case BatteryMode.FORCE_DISCHARGE:
+                    power_controller.force_discharge()
+            prev_state.battery_mode = state.battery_mode
 
-            # Inverter Policy - may change Inverter Mode
+        # Inverter Policy - may change Inverter Mode
+        if state.power_pricer is not None:
             if state.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
                 if state.next_feed_in_price_check <= datetime.now(UTC):
                     # time to check the price again
@@ -193,25 +217,21 @@ def control_loop() -> None:
                         state.inverter_mode = InverterMode.ENABLE
                     _update_price_check(prices)
 
-            # Inverter Mode
-            if state.inverter_mode != prev_state.inverter_mode:
-                if state.inverter_mode == InverterMode.ENABLE:
-                    power_controller.enable_inverter()
-                # All other cases managed below as they have a reversion time limit
-                prev_state.inverter_mode = state.inverter_mode
-            # Inverter modes requiring keep-alive pulse
-            try:
-                match state.inverter_mode:
-                    case InverterMode.DISABLE:
-                        power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
-                    case InverterMode.ZERO_EXPORT:
-                        power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
-            except Exception as e:
-                LOGGER.error(f'[{_LOG_SRC}] Error processing command: {prev_state.inverter_mode}. Error: {e}')
-
-        # Server state unlocked
-        # Slow the loop down to keep the network and inverters from being overwhelmed
-        time.sleep(Constants.LOOP_SLEEP)
+        # Inverter Mode
+        if state.inverter_mode != prev_state.inverter_mode:
+            if state.inverter_mode == InverterMode.ENABLE:
+                power_controller.enable_inverter()
+            # All other cases managed below as they have a reversion time limit
+            prev_state.inverter_mode = state.inverter_mode
+        # Inverter modes requiring keep-alive pulse
+        try:
+            match state.inverter_mode:
+                case InverterMode.DISABLE:
+                    power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
+                case InverterMode.ZERO_EXPORT:
+                    power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
+        except Exception as e:
+            LOGGER.error(f'[{_LOG_SRC}] Error processing command: {prev_state.inverter_mode}. Error: {e}')
 
 
 # =============================================================================
@@ -285,14 +305,10 @@ def get_parameters() -> JSONDict:
     with _control_state_lock:
         state = _control_state
         return {
-            'battery': {
-                'start_charge_price_threshold': state.start_charge_price_threshold,
-                'stop_charge_price_threshold': state.stop_charge_price_threshold,
-            },
-            'inverter': {
-                'disable_export_price_threshold': state.disable_export_price_threshold,
-                'enable_export_price_threshold': state.enable_export_price_threshold,
-            }
+            'start_charge_price_threshold': state.start_charge_price_threshold,
+            'stop_charge_price_threshold': state.stop_charge_price_threshold,
+            'disable_export_price_threshold': state.disable_export_price_threshold,
+            'enable_export_price_threshold': state.enable_export_price_threshold,
         }
 
 
@@ -406,7 +422,7 @@ def connect_modbus(
         slave_device_id: int = 1,
 ) -> JSONDict:
     """
-    Establish a power control modbus connection to the inverter.
+    Establish a power controller modbus connection to the inverter.
     """
     global _power_controller_status
     with _control_state_lock:
@@ -429,11 +445,12 @@ def connect_modbus(
 
         # Fail if there are any invalid addresses
         if len(invalid_addresses) > 0:
-            _power_controller_status = {'status': 'disconnected'}
-            result: JSONDict = dict(_power_controller_status)
-            result['error'] = 'invalid address'
-            result['addresses'] = invalid_addresses
-            return result
+            _power_controller_status = {
+                'status': 'disconnected',
+                'error': 'invalid address',
+                'addresses': invalid_addresses,
+            }
+            return _power_controller_status
 
         # Look up IP addresses for MAC addresses
         all_ip_addresses: List[str] = []  # coindexed with all_addresses
@@ -451,11 +468,12 @@ def connect_modbus(
 
         # Fail if there are any invalid ip addresses
         if len(invalid_addresses) > 0:
-            _power_controller_status = {'status': 'disconnected'}
-            result: JSONDict = dict(_power_controller_status)
-            result['error'] = 'could not find ip address for mac address'
-            result['addresses'] = invalid_addresses
-            return result
+            _power_controller_status = {
+                'status': 'disconnected',
+                'error': 'could not find ip address for mac address',
+                'addresses': invalid_addresses,
+            }
+            return _power_controller_status
 
         # get ModbusTcpClient objects
         all_clients: List[ModbusTcpClient] = []  # coindexed with all_addresses
@@ -475,11 +493,12 @@ def connect_modbus(
 
         # Fail if there are any errors
         if len(errors) > 0:
-            _power_controller_status = {'status': 'disconnected'}
-            result: JSONDict = dict(_power_controller_status)
-            result['error'] = 'could not connect Modbus TCP client'
-            result['messages'] = errors
-            return result
+            _power_controller_status = {
+                'status': 'disconnected',
+                'error': 'could not connect Modbus TCP client',
+                'messages': errors,
+            }
+            return _power_controller_status
 
         # Configure power controller
         master_client: ModbusTcpClient = all_clients[0]
@@ -526,30 +545,33 @@ def connect_modbus(
 
 def disconnect_control() -> JSONDict:
     """
-    Close the power control connection.
+    Close the power controller connection.
     """
     global _power_controller_status
     with _control_state_lock:
-        if _control_state.power_controller is None:
-            _power_controller_status = {'status': 'disconnected'}
-            result = dict(_power_controller_status)
-            result['error'] = 'already disconnected'
-            return result
-        else:
+        if _control_state.power_controller is not None:
             _control_state.power_controller.close()
             _control_state.reset_controller(None)
             _power_controller_status = {'status': 'disconnected'}
-            return _power_controller_status
+        return _power_controller_status
 
 
 def connect_amber(api_token: str, nmi: str) -> JSONDict:
     """
-    Establish a power price connection using Amber.
+    Establish a power pricer connection using Amber.
     """
     global _power_pricer_status
     with _control_state_lock:
-        amber_pricer = AmberPowerPricer(api_token, nmi)
-        _control_state.power_pricer = amber_pricer
+        try:
+            amber_pricer = AmberPowerPricer(api_token, nmi)
+        except (IOError, TypeError, ValueError) as err:
+            _control_state.reset_pricer(None)
+            _power_pricer_status = {
+                'status': 'disconnected',
+                'error': str(err),
+            }
+            return _power_pricer_status
+        _control_state.reset_pricer(amber_pricer)
         _power_pricer_status = {
             'status': 'Amber connection',
             'nmi': amber_pricer.nmi,
@@ -560,20 +582,15 @@ def connect_amber(api_token: str, nmi: str) -> JSONDict:
 
 def disconnect_price() -> JSONDict:
     """
-    Close the power control price connection.
+    Close the power pricer connection.
     """
     global _power_pricer_status
     with _control_state_lock:
-        if _control_state.power_pricer is None:
-            _power_pricer_status = {'status': 'disconnected'}
-            result = dict(_power_pricer_status)
-            result['error'] = 'already disconnected'
-            return result
-        else:
+        if _control_state.power_pricer is not None:
             _control_state.power_pricer.close()
             _control_state.power_pricer = None
             _power_pricer_status = {'status': 'disconnected'}
-            return _power_controller_status
+        return _power_pricer_status
 
 
 # =============================================================================

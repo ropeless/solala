@@ -1,13 +1,15 @@
 import json
 import re
 import threading
-from typing import List, Optional, Dict
+from typing import List, Optional, Mapping
 
 import uvicorn
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from jinja2 import FunctionLoader, select_autoescape, Environment
+from pydantic import BaseModel, ConfigDict
+from starlette.responses import JSONResponse
 
 from solala import control_loop
 from solala.control_loop import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
@@ -28,8 +30,10 @@ _DICT_ENTRY_SEPARATOR_PATTERN = re.compile(r'(\s*[\w+"]): ')
 # Units for pretty printing status
 _PRICE = ' cents/kWh'
 _WATTS = ' Watts'
+_SECONDS = ' seconds'
+_MINUTES = ' minutes'
 _PCT = '%'
-_STATUS_UNITS = {
+_STATUS_UNITS: Mapping[str, str] = {
     'buy_price': _PRICE,
     'feed_in_price': _PRICE,
     'renewables': _PCT,
@@ -39,6 +43,21 @@ _STATUS_UNITS = {
     'solar_power': _WATTS,
     'battery_power': _WATTS,
     'house_power': _WATTS,
+}
+_PARAMETERS_UNITS: Mapping[str, str] = {
+    'start_charge_price_threshold': _PRICE,
+    'stop_charge_price_threshold': _PRICE,
+    'disable_export_price_threshold': _PRICE,
+    'enable_export_price_threshold': _PRICE,
+}
+_CONSTANTS_UNITS: Mapping[str, str] = {
+    "LOOP_SLEEP": _SECONDS,
+    "CONTROL_DURATION": _SECONDS,
+    "PRICE_LOOK_AHEAD": _MINUTES,
+    "DISABLE_FEED_IN_TOLERANCE": _PRICE,
+    "ENABLE_FEED_IN_TOLERANCE": _PRICE,
+    "STOP_BUY_TOLERANCE": _PRICE,
+    "START_BUY_TOLERANCE": _PRICE,
 }
 
 # Support function to load HTML files from the resources directory.
@@ -70,8 +89,10 @@ def run_server(host: str, port: int, settings: Settings = _DEFAULT_SETTINGS) -> 
     control_loop_thread.join()
 
 
-def configure_from_settings(settings: Settings):
-    # Initialise power controller connection
+def configure_from_settings(settings: Settings) -> None:
+    """
+    Initialise connections, control modes, and policy parameters for `settings`.
+    """
     addresses: List[str] = split_addresses(settings.power_controller_addresses)
     if len(addresses) > 0:
         result = control_loop.connect_modbus(addresses[0], addresses[1:])
@@ -105,16 +126,30 @@ def configure_from_settings(settings: Settings):
 
 def split_addresses(addresses: str) -> List[str]:
     """
-    Helper for connecting to devices.
     Split addresses separated by commas, semicolons, ampersands, or whitespace.
+    Helper for connecting to devices.
     """
     return _ADDRESS_DELIMITERS_PATTERN.split(addresses)
+
+
+def _filter_json(data: JSONDict, match: Optional[str]) -> JSONDict:
+    """
+    Filter a JSON dictionary by keys containing a given substring.
+    """
+    if match is None:
+        return data
+    else:
+        return {
+            key: value
+            for key, value in data.items()
+            if match in key
+        }
 
 
 def _format_json(
         data: JSONDict,
         *,
-        units: Optional[Dict[str, str]] = None,
+        units: Optional[Mapping[str, str]] = None,
         remove_underscores: bool = True,
         indent: int = 2,
 ) -> str:
@@ -139,7 +174,7 @@ def _format_json(
     return text
 
 
-def _stringify_values(key: Optional[str], value: JSONValue, units: Dict[str, str]) -> JSONValue:
+def _stringify_values(key: Optional[str], value: JSONValue, units: Mapping[str, str]) -> JSONValue:
     """
     If `value` is a number, return a string rendering of it, including appending units if
     the key is in the `units` dictionary.
@@ -168,6 +203,74 @@ def _stringify_values(key: Optional[str], value: JSONValue, units: Dict[str, str
         return str(value)
 
 
+def _follow_json(rest_of_path: Optional[str], data: JSONDict) -> JSONValue:
+    """
+    Follow a path through a JSON dictionary.
+
+    Returns:
+         the value (if the path exists).
+    Raises:
+        HTTPException(HTTP_404_NOT_FOUND) if the path does not exist.
+    """
+    if rest_of_path:
+        for part in rest_of_path.split('/'):
+            if part not in data:
+                raise HTTPException(status.HTTP_404_NOT_FOUND)
+            data = data[part]
+    return data
+
+
+def _follow_filter_json(rest_of_path: Optional[str], data: JSONDict, match: Optional[str]) -> JSONValue:
+    """
+    Apply `follow_json` and then `filter_json` to the data.
+    """
+    data: JSONValue = _follow_json(rest_of_path, data)
+    if isinstance(data, dict) and match is not None:
+        return _filter_json(data, match)
+    else:
+        return data
+
+
+def _serve_json(
+        name: str,
+        data: JSONDict,
+        request: Request,
+        match: str | None = None,
+        *,
+        units: Optional[Mapping[str, str]] = None,
+        remove_underscores: bool = True,
+):
+    """
+    Helper for HTTP GET requests that merely serve HTML representation of JSON data.
+
+    Args:
+        name: name of the data.
+        data: JSON data to be served.
+        request: needed for Jinja2Templates.
+        match: optional filter to apply to the JSON dict keys.
+
+    Returns:
+         filled template HTTP response.
+    """
+    json_data: JSONDict = _filter_json(data, match)
+
+    templates = Jinja2Templates(env=_JINJA_ENV)
+    return templates.TemplateResponse(
+        request=request,
+        name='json.html',
+        context={
+            'title': _APP_NAME,
+            'name': name,
+            'json_data': _format_json(
+                json_data,
+                units=units,
+                remove_underscores=remove_underscores,
+            ),
+            'refresh_interval': _REFRESH_INTERVAL,
+        }
+    )
+
+
 # ====================================================================
 #  Server API
 # ====================================================================
@@ -178,6 +281,9 @@ app = FastAPI()
 @app.get('/', response_class=HTMLResponse)
 @app.get('/index.html', response_class=HTMLResponse)
 def serve_index(request: Request):
+    """
+    Serve the landing web page.
+    """
     status_json: JSONDict = control_loop.get_status()
     try:
         control_json: JSONDict = json_dict(status_json['control'])
@@ -219,216 +325,201 @@ def serve_index(request: Request):
 
 
 @app.get('/registers.html', response_class=HTMLResponse)
-def serve_registers(request: Request):
-    json_data: JSONDict = control_loop.get_registers()
-
-    templates = Jinja2Templates(env=_JINJA_ENV)
-    return templates.TemplateResponse(
-        request=request,
-        name='json.html',
-        context={
-            'title': _APP_NAME,
-            'name': 'Registers',
-            'json_data': _format_json(json_data, remove_underscores=False),
-            'refresh_interval': _REFRESH_INTERVAL,
-        }
+def serve_registers(request: Request, match: str | None = None):
+    """
+    Show the registers as a formatted web page.
+    Optional query argument `match`: filter to apply to the JSON dict keys.
+    E.g. "/registers.html?match=master/"
+    """
+    return _serve_json(
+        'Registers',
+        control_loop.get_registers(),
+        request,
+        match,
+        remove_underscores=False,
     )
 
 
 @app.get('/parameters.html', response_class=HTMLResponse)
-def serve_parameters(request: Request):
-    json_data: JSONDict = control_loop.get_parameters()
-    templates = Jinja2Templates(env=_JINJA_ENV)
-    return templates.TemplateResponse(
-        request=request,
-        name='json.html',
-        context={
-            'title': _APP_NAME,
-            'name': 'Parameters',
-            'json_data': _format_json(json_data),
-            'refresh_interval': 0,  # no auto refresh
-        }
+def serve_parameters(request: Request, match: str | None = None):
+    """
+    Show the policy parameters as a formatted web page.
+    Optional query argument `match`: filter to apply to the JSON dict keys.
+    E.g. "/parameters.html?match=export"
+    """
+    return _serve_json(
+        'Parameters',
+        control_loop.get_parameters(),
+        request,
+        match,
+        units=_PARAMETERS_UNITS,
     )
 
 
 @app.get('/connection.html', response_class=HTMLResponse)
-def serve_connection(request: Request):
-    json_data: JSONDict = control_loop.get_connection_status()
-    templates = Jinja2Templates(env=_JINJA_ENV)
-    return templates.TemplateResponse(
-        request=request,
-        name='json.html',
-        context={
-            'title': _APP_NAME,
-            'name': 'Connection',
-            'json_data': _format_json(json_data),
-            'refresh_interval': 0,  # no auto refresh
-        }
+def serve_connection(request: Request, match: str | None = None):
+    """
+    Show the connections as a formatted web page.
+    Optional query argument `match`: filter to apply to the JSON dict keys.
+    E.g. "/connection.html?match=pricer"
+    """
+    return _serve_json(
+        'Connection',
+        control_loop.get_connection_status(),
+        request,
+        match,
     )
 
 
 @app.get('/constants.html', response_class=HTMLResponse)
-def serve_constants(request: Request):
-    json_data: JSONDict = control_loop.Constants.as_dict()
-    templates = Jinja2Templates(env=_JINJA_ENV)
-    return templates.TemplateResponse(
-        request=request,
-        name='json.html',
-        context={
-            'title': _APP_NAME,
-            'name': 'Constants',
-            'json_data': _format_json(json_data),
-            'refresh_interval': 0,  # no auto refresh
-        }
+def serve_constants(request: Request, match: str | None = None):
+    """
+    Show the constants as a formatted web page.
+    Optional query argument `match`: filter to apply to the JSON dict keys.
+    E.g. "/constants.html?match=BUY"
+    """
+    return _serve_json(
+        'Constants',
+        control_loop.Constants.as_dict(),
+        request,
+        match,
+        units=_CONSTANTS_UNITS,
     )
 
 
 @app.get('/status')
-def get_status():
-    return control_loop.get_status()
+def get_status(match: str | None = None):
+    return _filter_json(control_loop.get_status(), match)
 
 
-@app.get('/status/control')
-def get_control():
-    return control_loop.get_control_status(),
+@app.get('/status/control/{rest_of_path:path}')
+def get_control(rest_of_path: str | None = None, match: str | None = None):
+    return _follow_filter_json(rest_of_path, control_loop.get_control_status(), match)
 
 
-@app.get('/status/price')
-def get_price():
-    return control_loop.get_price_status(),
+@app.get('/status/price/{rest_of_path:path}')
+def get_price(rest_of_path: str | None = None, match: str | None = None):
+    return _follow_filter_json(rest_of_path, control_loop.get_price_status(), match)
 
 
-@app.get('/status/power')
-def get_power():
-    return control_loop.get_power_status(),
+@app.get('/status/power/{rest_of_path:path}')
+def get_power(rest_of_path: str | None = None, match: str | None = None):
+    return _follow_filter_json(rest_of_path, control_loop.get_power_status(), match)
 
 
-@app.get('/registers')
-def get_registers():
-    return control_loop.get_registers(),
+@app.get('/registers/{rest_of_path:path}')
+def get_registers(rest_of_path: str | None = None, match: str | None = None):
+    return _follow_filter_json(rest_of_path, control_loop.get_registers(), match)
 
 
-@app.get('/parameters')
-def get_parameters():
-    return control_loop.get_parameters(),
+@app.get('/parameters/{rest_of_path:path}')
+def get_parameters(rest_of_path: str | None = None, match: str | None = None):
+    return _follow_filter_json(rest_of_path, control_loop.get_parameters(), match)
 
 
-@app.get('/connection')
-def get_connection():
-    return control_loop.get_connection_status(),
+@app.get('/connection/{rest_of_path:path}')
+def get_connection(rest_of_path: str | None = None, match: str | None = None):
+    return _follow_filter_json(rest_of_path, control_loop.get_connection_status(), match)
 
 
-@app.get('/constants')
-def get_constants():
-    return control_loop.Constants.as_dict(),
+@app.get('/constants/{rest_of_path:path}')
+def get_constants(rest_of_path: str | None = None, match: str | None = None):
+    return _follow_filter_json(rest_of_path, control_loop.Constants.as_dict(), match)
 
 
-@app.put('/battery/enable')
-def set_battery_enable():
-    return control_loop.set_control(
-        battery_mode=BatteryMode.ENABLE,
-        battery_policy=BatteryPolicy.MANUAL,
-    )
+@app.put('/battery')
+def set_battery_enable(mode: str):
+    match mode:
+        case 'enable':
+            return control_loop.set_control(
+                battery_mode=BatteryMode.ENABLE,
+                battery_policy=BatteryPolicy.MANUAL,
+            )
+        case 'disable':
+            return control_loop.set_control(
+                battery_mode=BatteryMode.DISABLE,
+                battery_policy=BatteryPolicy.MANUAL,
+            )
+        case 'force_charge':
+            return control_loop.set_control(
+                battery_mode=BatteryMode.FORCE_CHARGE,
+                battery_policy=BatteryPolicy.MANUAL,
+            )
+        case 'force_discharge':
+            return control_loop.set_control(
+                battery_mode=BatteryMode.FORCE_DISCHARGE,
+                battery_policy=BatteryPolicy.MANUAL,
+            )
+        case 'cheap_charge':
+            return control_loop.set_control(
+                battery_policy=BatteryPolicy.CHEAP_CHARGE,
+            )
+    return JSONResponse({'error': f'Invalid mode: {mode!r}'}, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
-@app.put('/battery/disable')
-def set_battery_disable():
-    return control_loop.set_control(
-        battery_mode=BatteryMode.DISABLE,
-        battery_policy=BatteryPolicy.MANUAL,
-    )
+@app.put('/inverter')
+def set_inverter_enable(mode: str):
+    match mode:
+        case 'enable':
+            return control_loop.set_control(
+                inverter_mode=InverterMode.ENABLE,
+                inverter_policy=InverterPolicy.MANUAL,
+            )
+        case 'disable':
+            return control_loop.set_control(
+                inverter_mode=InverterMode.DISABLE,
+                inverter_policy=InverterPolicy.MANUAL,
+            )
+        case 'zero_export':
+            return control_loop.set_control(
+                inverter_mode=InverterMode.ZERO_EXPORT,
+                inverter_policy=InverterPolicy.MANUAL,
+            )
+        case 'neg_feed_in_zero_export':
+            return control_loop.set_control(
+                inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT,
+            )
+    return JSONResponse({'error': f'Invalid mode: {mode!r}'}, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
-@app.put('/battery/force_charge')
-def set_battery_force_charge():
-    return control_loop.set_control(
-        battery_mode=BatteryMode.FORCE_CHARGE,
-        battery_policy=BatteryPolicy.MANUAL,
-    )
+@app.put('/parameters/{parameter}')
+def set_parameters(parameter: str, value: float):
+    if parameter not in control_loop.get_parameters():
+        return JSONResponse({'error': f'Invalid parameter: {parameter!r}'}, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
-
-@app.put('/battery/force_discharge')
-def set_battery_force_discharge():
-    return control_loop.set_control(
-        battery_mode=BatteryMode.FORCE_DISCHARGE,
-        battery_policy=BatteryPolicy.MANUAL,
-    )
-
-
-@app.put('/battery/cheap_charge')
-def set_battery_cheap_charge():
-    return control_loop.set_control(
-        battery_policy=BatteryPolicy.CHEAP_CHARGE,
-    )
-
-
-@app.put('/inverter/enable')
-def set_inverter_enable():
-    return control_loop.set_control(
-        inverter_mode=InverterMode.ENABLE,
-        inverter_policy=InverterPolicy.MANUAL,
-    )
-
-
-@app.put('/inverter/disable')
-def set_inverter_disable():
-    return control_loop.set_control(
-        inverter_mode=InverterMode.DISABLE,
-        inverter_policy=InverterPolicy.MANUAL,
-    )
-
-
-@app.put('/inverter/zero_export')
-def set_inverter_zero_export():
-    return control_loop.set_control(
-        inverter_mode=InverterMode.ZERO_EXPORT,
-        inverter_policy=InverterPolicy.MANUAL,
-    )
-
-
-@app.put('/inverter/neg_feed_in_zero_export')
-def set_inverter_neg_feed_in_zero_export():
-    return control_loop.set_control(
-        inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT,
-    )
-
-
-@app.put('/parameters')
-def set_parameters(
-        disable_export_price_threshold: float | None = None,
-        enable_export_price_threshold: float | None = None,
-        start_charge_price_threshold: float | None = None,
-        stop_charge_price_threshold: float | None = None,
-):
-    result = control_loop.set_parameters(
-        disable_export_price_threshold=disable_export_price_threshold,
-        enable_export_price_threshold=enable_export_price_threshold,
-        start_charge_price_threshold=start_charge_price_threshold,
-        stop_charge_price_threshold=stop_charge_price_threshold,
-    )
-
+    kwargs = {parameter: value}
+    result = control_loop.set_parameters(**kwargs)
     if 'error' in result.keys():
-        status_code = status.HTTP_406_NOT_ACCEPTABLE
+        status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     else:
         status_code = status.HTTP_200_OK
-    return result, status_code
+    return JSONResponse(result, status_code=status_code)
 
 
-@app.put('/connection/controller/connect_modbus')
-def connect_modbus(addresses: str):
+class ControllerConnectionUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    type: str = 'modbus'
+    addresses: str
+
+
+@app.put('/connection/controller/connect')
+def controller_connect(payload: ControllerConnectionUpdate):
     """
     Establish a modbus connection to the inverter.
     Each address can be a MAC address or an IP address.
     Slave addresses are appended, separated by commas, semicolons, ampersands, or whitespace.
     """
-    addresses: List[str] = split_addresses(addresses)
+    if payload.type != 'modbus':
+        return JSONResponse({'error': 'only modbus is supported'}, status_code=status.HTTP_400_BAD_REQUEST)
+
+    addresses: List[str] = split_addresses(payload.addresses)
     result = control_loop.connect_modbus(addresses[0], addresses[1:])
 
     if 'error' in result:
-        status_code = status.HTTP_406_NOT_ACCEPTABLE
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     else:
         status_code = status.HTTP_200_OK
-    return result, status_code
+    return JSONResponse(result, status_code=status_code)
 
 
 @app.put('/connection/controller/disconnect')
@@ -436,32 +527,33 @@ def disconnect_control():
     """
     Close the controller connection to the inverter.
     """
-    result = control_loop.disconnect_control()
-
-    if 'error' in result:
-        status_code = status.HTTP_406_NOT_ACCEPTABLE
-    else:
-        status_code = status.HTTP_200_OK
-    return result, status_code
+    return control_loop.disconnect_control()
 
 
-@app.put('/connection/pricer/connect_amber')
-def connect_amber(
-        api_token: str,
-        nmi: str,
-):
+class PricerConnectionUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    type: str = 'amber'
+    api_token: str
+    nmi: str
+
+
+@app.put('/connection/pricer/connect')
+def pricer_connect(payload: PricerConnectionUpdate):
     """
     Establish a connection to Amber as the power pricer.
     The arguments should be an API token (starts with psk_)
     and the meter NMI (string of digits).
     """
-    result = control_loop.connect_amber(api_token, nmi)
+    if payload.type != 'amber':
+        return JSONResponse({'error': 'only amber is supported'}, status_code=status.HTTP_400_BAD_REQUEST)
+
+    result = control_loop.connect_amber(payload.api_token, payload.nmi)
 
     if 'error' in result:
-        status_code = status.HTTP_406_NOT_ACCEPTABLE
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     else:
         status_code = status.HTTP_200_OK
-    return result, status_code
+    return JSONResponse(result, status_code=status_code)
 
 
 @app.put('/connection/pricer/disconnect')
@@ -469,10 +561,4 @@ def disconnect_price():
     """
     Close the power pricer connection.
     """
-    result = control_loop.disconnect_price()
-
-    if 'error' in result:
-        status_code = status.HTTP_406_NOT_ACCEPTABLE
-    else:
-        status_code = status.HTTP_200_OK
-    return result, status_code
+    return control_loop.disconnect_price()

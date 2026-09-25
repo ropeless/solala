@@ -93,40 +93,40 @@
         });
 
         button_battery_enable.addEventListener('click', async () => {
-            await fetch('/battery/enable', {method: 'PUT'});
+            await fetch('/battery?mode=enable', {method: 'PUT'});
             window.location.reload();
         });
         button_battery_disable.addEventListener('click', async () => {
-            await fetch('/battery/disable', {method: 'PUT'});
+            await fetch('/battery?mode=disable', {method: 'PUT'});
             window.location.reload();
         });
         button_battery_force_charge.addEventListener('click', async () => {
-            await fetch('/battery/force_charge', {method: 'PUT'});
+            await fetch('/battery?mode=force_charge', {method: 'PUT'});
             window.location.reload();
         });
         button_battery_force_discharge.addEventListener('click', async () => {
-            await fetch('/battery/force_discharge', {method: 'PUT'});
+            await fetch('/battery?mode=force_discharge', {method: 'PUT'});
             window.location.reload();
         });
         button_battery_cheap_charge.addEventListener('click', async () => {
-            await fetch('/battery/cheap_charge', {method: 'PUT'});
+            await fetch('/battery?mode=cheap_charge', {method: 'PUT'});
             window.location.reload();
         });
 
         button_inverter_enable.addEventListener('click', async () => {
-            await fetch('/inverter/enable', {method: 'PUT'});
+            await fetch('/inverter?mode=enable', {method: 'PUT'});
             window.location.reload();
         });
         button_inverter_disable.addEventListener('click', async () => {
-            await fetch('/inverter/disable', {method: 'PUT'});
+            await fetch('/inverter?mode=disable', {method: 'PUT'});
             window.location.reload();
         });
         button_inverter_zero_export.addEventListener('click', async () => {
-            await fetch('/inverter/zero_export', {method: 'PUT'});
+            await fetch('/inverter?mode=zero_export', {method: 'PUT'});
             window.location.reload();
         });
         button_inverter_neg_feed_in_zero_export.addEventListener('click', async () => {
-            await fetch('/inverter/neg_feed_in_zero_export', {method: 'PUT'});
+            await fetch('/inverter?mode=neg_feed_in_zero_export', {method: 'PUT'});
             window.location.reload();
         });
 
