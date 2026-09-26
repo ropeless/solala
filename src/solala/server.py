@@ -15,7 +15,9 @@ from solala import control_loop
 from solala.control_loop import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
 from solala.log import LOGGER
 from solala.resources import HTML_FILES
+from solala.server_nicegui import ui as nicegui_pages
 from solala.settings import Settings
+from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, JSONValue
 
 _APP_NAME: str = 'Solala'
@@ -33,23 +35,26 @@ _WATTS = ' Watts'
 _SECONDS = ' seconds'
 _MINUTES = ' minutes'
 _PCT = '%'
-_STATUS_UNITS: Mapping[str, str] = {
-    'buy_price': _PRICE,
-    'feed_in_price': _PRICE,
-    'renewables': _PCT,
-    'state_of_charge': _PCT,
-    'power_limit': _PCT,
-    'grid_power': _WATTS,
-    'solar_power': _WATTS,
-    'battery_power': _WATTS,
-    'house_power': _WATTS,
-}
 _PARAMETERS_UNITS: Mapping[str, str] = {
     'start_charge_price_threshold': _PRICE,
     'stop_charge_price_threshold': _PRICE,
     'disable_export_price_threshold': _PRICE,
     'enable_export_price_threshold': _PRICE,
 }
+_STATUS_UNITS: Mapping[str, str] = dict_merge(
+    {
+        'buy_price': _PRICE,
+        'feed_in_price': _PRICE,
+        'renewables': _PCT,
+        'state_of_charge': _PCT,
+        'power_limit': _PCT,
+        'grid_power': _WATTS,
+        'solar_power': _WATTS,
+        'battery_power': _WATTS,
+        'house_power': _WATTS,
+    },
+    _PARAMETERS_UNITS,
+)
 _CONSTANTS_UNITS: Mapping[str, str] = {
     "LOOP_SLEEP": _SECONDS,
     "CONTROL_DURATION": _SECONDS,
@@ -86,6 +91,7 @@ def run_server(host: str, port: int, settings: Settings = _DEFAULT_SETTINGS) -> 
 
     # Cleanly stop the control loop thread
     control_loop.exit_control_loop()
+    LOGGER.info('waiting for the control loop to terminate')
     control_loop_thread.join()
 
 
@@ -239,6 +245,7 @@ def _serve_json(
         *,
         units: Optional[Mapping[str, str]] = None,
         remove_underscores: bool = True,
+        refresh_interval: int = 0,
 ):
     """
     Helper for HTTP GET requests that merely serve HTML representation of JSON data.
@@ -266,7 +273,7 @@ def _serve_json(
                 units=units,
                 remove_underscores=remove_underscores,
             ),
-            'refresh_interval': _REFRESH_INTERVAL,
+            'refresh_interval': refresh_interval,
         }
     )
 
@@ -280,7 +287,7 @@ app = FastAPI()
 
 @app.get('/', response_class=HTMLResponse)
 @app.get('/index.html', response_class=HTMLResponse)
-def serve_index(request: Request):
+def index_page(request: Request):
     """
     Serve the landing web page.
     """
@@ -325,7 +332,7 @@ def serve_index(request: Request):
 
 
 @app.get('/registers.html', response_class=HTMLResponse)
-def serve_registers(request: Request, match: str | None = None):
+def registers_page(request: Request, match: str | None = None):
     """
     Show the registers as a formatted web page.
     Optional query argument `match`: filter to apply to the JSON dict keys.
@@ -337,11 +344,12 @@ def serve_registers(request: Request, match: str | None = None):
         request,
         match,
         remove_underscores=False,
+        refresh_interval = _REFRESH_INTERVAL,
     )
 
 
 @app.get('/parameters.html', response_class=HTMLResponse)
-def serve_parameters(request: Request, match: str | None = None):
+def parameters_page(request: Request, match: str | None = None):
     """
     Show the policy parameters as a formatted web page.
     Optional query argument `match`: filter to apply to the JSON dict keys.
@@ -357,7 +365,7 @@ def serve_parameters(request: Request, match: str | None = None):
 
 
 @app.get('/connection.html', response_class=HTMLResponse)
-def serve_connection(request: Request, match: str | None = None):
+def connection_page(request: Request, match: str | None = None):
     """
     Show the connections as a formatted web page.
     Optional query argument `match`: filter to apply to the JSON dict keys.
@@ -372,7 +380,7 @@ def serve_connection(request: Request, match: str | None = None):
 
 
 @app.get('/constants.html', response_class=HTMLResponse)
-def serve_constants(request: Request, match: str | None = None):
+def constants_page(request: Request, match: str | None = None):
     """
     Show the constants as a formatted web page.
     Optional query argument `match`: filter to apply to the JSON dict keys.
@@ -428,7 +436,7 @@ def get_constants(rest_of_path: str | None = None, match: str | None = None):
 
 
 @app.put('/battery')
-def set_battery_enable(mode: str):
+def put_battery(mode: str):
     match mode:
         case 'enable':
             return control_loop.set_control(
@@ -458,7 +466,7 @@ def set_battery_enable(mode: str):
 
 
 @app.put('/inverter')
-def set_inverter_enable(mode: str):
+def put_inverter(mode: str):
     match mode:
         case 'enable':
             return control_loop.set_control(
@@ -483,7 +491,7 @@ def set_inverter_enable(mode: str):
 
 
 @app.put('/parameters/{parameter}')
-def set_parameters(parameter: str, value: float):
+def put_parameters(parameter: str, value: float):
     if parameter not in control_loop.get_parameters():
         return JSONResponse({'error': f'Invalid parameter: {parameter!r}'}, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
@@ -503,7 +511,7 @@ class ControllerConnectionUpdate(BaseModel):
 
 
 @app.put('/connection/controller/connect')
-def controller_connect(payload: ControllerConnectionUpdate):
+def put_controller_connect(payload: ControllerConnectionUpdate):
     """
     Establish a modbus connection to the inverter.
     Each address can be a MAC address or an IP address.
@@ -523,7 +531,7 @@ def controller_connect(payload: ControllerConnectionUpdate):
 
 
 @app.put('/connection/controller/disconnect')
-def disconnect_control():
+def put_controller_disconnect():
     """
     Close the controller connection to the inverter.
     """
@@ -538,7 +546,7 @@ class PricerConnectionUpdate(BaseModel):
 
 
 @app.put('/connection/pricer/connect')
-def pricer_connect(payload: PricerConnectionUpdate):
+def put_pricer_connect(payload: PricerConnectionUpdate):
     """
     Establish a connection to Amber as the power pricer.
     The arguments should be an API token (starts with psk_)
@@ -557,8 +565,13 @@ def pricer_connect(payload: PricerConnectionUpdate):
 
 
 @app.put('/connection/pricer/disconnect')
-def disconnect_price():
+def put_pricer_disconnect():
     """
     Close the power pricer connection.
     """
     return control_loop.disconnect_price()
+
+
+# Mount NiceGUI onto the FastAPI app (processes all nicegui pages).
+# This must come last.
+nicegui_pages.run_with(app, title="My App Dashboard")
