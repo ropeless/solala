@@ -4,8 +4,7 @@ from typing import List
 from nicegui import ui
 
 from solala.log import SOLALA_LOG_FORMAT, LOGGER
-
-_APP_NAME: str = 'Solala'
+from solala.server_constants import APP_NAME
 
 
 class NiceGuiLogHandler(logging.Handler):
@@ -44,13 +43,13 @@ class NiceGuiLogHandler(logging.Handler):
 HANDLER = NiceGuiLogHandler()
 
 
-@ui.page('/log')
+@ui.page('/log_page')
 def log_page():
     """
     Listens to the Solala logger.
     """
     with ui.column().style('width: 100vw; height: 100vh; position: fixed; top: 0; left: 0;').classes('no-wrap p-2'):
-        ui.label(f'{_APP_NAME} log console').classes('text-h6 mb-1')
+        ui.label(f'{APP_NAME} log console').classes('text-h6 mb-1')
         log_ui = ui.log(max_lines=None).classes(
             'w-full grow min-h-0 text-mono text-body2 p-2 overflow-auto'
         )

@@ -13,7 +13,7 @@ from solala.power_controller.impl_modbus.modbus import Modbus, ModbusDevice
 from solala.power_controller.impl_modbus.modbus_power_controller import PowerController, ModbusPowerController
 from solala.power_pricer.impl_amber.amber_power_pricer import Price, AmberPowerPricer
 from solala.power_pricer.power_pricer import PowerPricer
-from solala.utils.json import JSONDict
+from solala.utils.json import JSONDict, JSONContainer
 from solala.utils.network import find_ip_by_mac
 
 DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.1  # disable export below this price
@@ -22,6 +22,15 @@ DEFAULT_START_CHARGE_PRICE_THRESHOLD: float = 10  # start force charging below t
 DEFAULT_STOP_CHARGE_PRICE_THRESHOLD: float = 11  # stop force charging above this price
 
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timestamps
+
+
+class ControlLoopError(RuntimeError):
+
+    def __init__(self, detail: str, errors: Optional[JSONContainer] = None):
+        super().__init__(detail)
+        self.detail: str = detail
+        self.errors: Optional[JSONContainer] = errors
+
 
 _LOG_SRC = 'control_loop'  # prefix for log messages
 
@@ -270,7 +279,7 @@ def get_control_status() -> JSONDict:
 def get_price_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.power_pricer is None:
-            return {'error': 'power pricer not connected'}
+            return _power_pricer_status
         cur_price: Price = get_cur_price()
         result = cur_price.as_dict(DATE_FORMAT)
         return result
@@ -279,7 +288,7 @@ def get_price_status() -> JSONDict:
 def get_power_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.power_controller is None:
-            return {'error': 'power controller not connected'}
+            return _power_controller_status
         result = _control_state.power_controller.get_status().as_dict()
         return result
 
@@ -313,10 +322,14 @@ def get_parameters() -> JSONDict:
 
 
 def get_registers() -> JSONDict:
+    """
+    Raises:
+        ControlLoopError: if a power controller is not connected
+    """
     with _control_state_lock:
         state = _control_state
         if state.power_controller is None:
-            return {'error': 'power controller not connected'}
+            raise ControlLoopError('power controller not connected')
         else:
             return {
                 register: value
@@ -372,6 +385,9 @@ def set_parameters(
 ) -> JSONDict:
     """
     Set the price threshold for the battery and inverter policies.
+
+    Raises:
+        ControlLoopError: parameters are invalid, collectively or individually.
     """
 
     with _control_state_lock:
@@ -387,9 +403,9 @@ def set_parameters(
             stop_charge_price_threshold = state.stop_charge_price_threshold
 
         if disable_export_price_threshold >= enable_export_price_threshold:
-            return {'error': 'export price threshold: disable must be less than enable'}
+            raise ControlLoopError('export price threshold: disable must be less than enable')
         if start_charge_price_threshold >= stop_charge_price_threshold:
-            return {'error': 'charge price threshold: start must be less than stop'}
+            raise ControlLoopError('charge price threshold: start must be less than stop')
 
         state.disable_export_price_threshold = disable_export_price_threshold
         state.enable_export_price_threshold = enable_export_price_threshold
@@ -423,6 +439,9 @@ def connect_modbus(
 ) -> JSONDict:
     """
     Establish a power controller modbus connection to the inverter.
+
+    Raises:
+        ControlLoopError: a connection cannot be established.
     """
     global _power_controller_status
     with _control_state_lock:
@@ -445,12 +464,7 @@ def connect_modbus(
 
         # Fail if there are any invalid addresses
         if len(invalid_addresses) > 0:
-            _power_controller_status = {
-                'status': 'disconnected',
-                'error': 'invalid address',
-                'addresses': invalid_addresses,
-            }
-            return _power_controller_status
+            raise ControlLoopError('invalid address', errors=invalid_addresses)
 
         # Look up IP addresses for MAC addresses
         all_ip_addresses: List[str] = []  # coindexed with all_addresses
@@ -468,12 +482,7 @@ def connect_modbus(
 
         # Fail if there are any invalid ip addresses
         if len(invalid_addresses) > 0:
-            _power_controller_status = {
-                'status': 'disconnected',
-                'error': 'could not find ip address for mac address',
-                'addresses': invalid_addresses,
-            }
-            return _power_controller_status
+            raise ControlLoopError('could not find ip address for mac address', errors=invalid_addresses)
 
         # get ModbusTcpClient objects
         all_clients: List[ModbusTcpClient] = []  # coindexed with all_addresses
@@ -493,12 +502,7 @@ def connect_modbus(
 
         # Fail if there are any errors
         if len(errors) > 0:
-            _power_controller_status = {
-                'status': 'disconnected',
-                'error': 'could not connect Modbus TCP client',
-                'messages': errors,
-            }
-            return _power_controller_status
+            raise ControlLoopError('could not connect Modbus TCP client', errors=errors)
 
         # Configure power controller
         master_client: ModbusTcpClient = all_clients[0]
@@ -559,6 +563,9 @@ def disconnect_control() -> JSONDict:
 def connect_amber(api_token: str, nmi: str) -> JSONDict:
     """
     Establish a power pricer connection using Amber.
+
+    Raises:
+        ControlLoopError: a connection cannot be established.
     """
     global _power_pricer_status
     with _control_state_lock:
@@ -566,11 +573,7 @@ def connect_amber(api_token: str, nmi: str) -> JSONDict:
             amber_pricer = AmberPowerPricer(api_token, nmi)
         except (IOError, TypeError, ValueError) as err:
             _control_state.reset_pricer(None)
-            _power_pricer_status = {
-                'status': 'disconnected',
-                'error': str(err),
-            }
-            return _power_pricer_status
+            raise ControlLoopError('could not connect Amber', errors=[str(err)])
         _control_state.reset_pricer(amber_pricer)
         _power_pricer_status = {
             'status': 'Amber connection',
