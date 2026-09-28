@@ -2,77 +2,25 @@ import json
 import re
 import threading
 from http import HTTPStatus
-from typing import List, Optional, Mapping
+from typing import List, Optional
 
 import uvicorn
 from fastapi import FastAPI, Request, status, HTTPException
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-from jinja2 import FunctionLoader, select_autoescape, Environment
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
-from starlette.responses import JSONResponse
 
 from solala import control_loop
 from solala.control_loop import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlLoopError
 from solala.log import LOGGER
-from solala.resources import HTML_FILES
-from solala.server_constants import APP_NAME, REFRESH_INTERVAL
-from solala.server_nicegui import ui as nicegui_pages
+from solala.server_constants import APP_NAME
+from solala.server_nicegui import ui
 from solala.settings import Settings
-from solala.utils.dict_extras import dict_merge
-from solala.utils.json import JSONDict, json_dict, JSONValue, filter_json, render_json, follow_json
+from solala.utils.json import JSONDict, JSONValue, filter_json, follow_json
 
 _DEFAULT_SETTINGS = Settings()
 
 _ADDRESS_DELIMITERS_PATTERN = re.compile(r'[,;&\s]+')
-
-# Units for pretty printing status
-_PRICE = ' cents/kWh'
-_WATTS = ' Watts'
-_SECONDS = ' seconds'
-_MINUTES = ' minutes'
-_PCT = '%'
-_PARAMETERS_UNITS: Mapping[str, str] = {
-    'start_charge_price_threshold': _PRICE,
-    'stop_charge_price_threshold': _PRICE,
-    'disable_export_price_threshold': _PRICE,
-    'enable_export_price_threshold': _PRICE,
-}
-_STATUS_UNITS: Mapping[str, str] = dict_merge(
-    {
-        'buy_price': _PRICE,
-        'feed_in_price': _PRICE,
-        'renewables': _PCT,
-        'state_of_charge': _PCT,
-        'power_limit': _PCT,
-        'grid_power': _WATTS,
-        'solar_power': _WATTS,
-        'battery_power': _WATTS,
-        'house_power': _WATTS,
-    },
-    _PARAMETERS_UNITS,
-)
-_CONSTANTS_UNITS: Mapping[str, str] = {
-    "LOOP_SLEEP": _SECONDS,
-    "CONTROL_DURATION": _SECONDS,
-    "PRICE_LOOK_AHEAD": _MINUTES,
-    "DISABLE_FEED_IN_TOLERANCE": _PRICE,
-    "ENABLE_FEED_IN_TOLERANCE": _PRICE,
-    "STOP_BUY_TOLERANCE": _PRICE,
-    "START_BUY_TOLERANCE": _PRICE,
-}
-
-# Support function to load HTML files from the resources directory.
-_JINJA_ENV = Environment(
-    loader=FunctionLoader(
-        lambda name: (
-            (HTML_FILES / name).read_text(encoding='utf-8'),
-            None,
-            lambda: True
-        )
-    ),
-    autoescape=select_autoescape(['html'])
-)
 
 
 def run_server(host: str, port: int, settings: Settings = _DEFAULT_SETTINGS) -> None:
@@ -148,48 +96,6 @@ def _follow_filter_json(data: JSONDict, path: Optional[str], match: Optional[str
     return data
 
 
-def _serve_json(
-        name: str,
-        data: JSONDict,
-        request: Request,
-        match: str | None = None,
-        *,
-        units: Optional[Mapping[str, str]] = None,
-        remove_underscores: bool = True,
-        refresh_interval: int = 0,
-):
-    """
-    Helper for HTTP GET requests that merely serve HTML representation of JSON data.
-
-    Args:
-        name: name of the data.
-        data: JSON data to be served.
-        request: needed for Jinja2Templates.
-        match: optional filter to apply to the JSON dict keys.
-
-    Returns:
-         filled template HTTP response.
-    """
-    json_data: JSONDict = filter_json(data, match)
-
-    templates = Jinja2Templates(env=_JINJA_ENV)
-    return templates.TemplateResponse(
-        request=request,
-        name='json.html',
-        context={
-            'title': APP_NAME,
-            'name': name,
-            'json_data': render_json(
-                json_data,
-                units=units,
-                remove_key_underscores=remove_underscores,
-                remove_value_underscores=remove_underscores,
-            ),
-            'refresh_interval': refresh_interval,
-        }
-    )
-
-
 # ====================================================================
 #  Server API
 # ====================================================================
@@ -243,114 +149,14 @@ async def handle_http_error(request: Request, err: HTTPException):
     )
 
 
-@app.get('/', response_class=HTMLResponse)
-@app.get('/status_page', response_class=HTMLResponse)
-def index_page(request: Request):
-    """
-    Serve the landing web page.
-    """
-    status_json: JSONDict = control_loop.get_status()
-    try:
-        control_json: JSONDict = json_dict(status_json['control'])
-        battery_status: JSONDict = json_dict(control_json['battery'])
-        inverter_status: JSONDict = json_dict(control_json['inverter'])
-
-        battery_mode = battery_status['mode']
-        battery_policy = battery_status['policy']
-        battery_button = (
-            battery_policy
-            if battery_policy != BatteryPolicy.MANUAL.name
-            else battery_mode
-        )
-        inverter_mode = inverter_status['mode']
-        inverter_policy = inverter_status['policy']
-        inverter_button = (
-            inverter_policy
-            if inverter_policy != InverterPolicy.MANUAL.name
-            else inverter_mode
-        )
-
-    except (KeyError, TypeError, IOError, control_loop.ControlLoopError) as err:
-        LOGGER.error(f'Error getting control status: {err}')
-        battery_button = ''
-        inverter_button = ''
-
-    templates = Jinja2Templates(env=_JINJA_ENV)
-    return templates.TemplateResponse(
-        request=request,
-        name='index.html',
-        context={
-            'title': APP_NAME,
-            'status_json': render_json(status_json, units=_STATUS_UNITS),
-            'refresh_interval': REFRESH_INTERVAL,
-            'battery_button': battery_button,
-            'inverter_button': inverter_button,
-        }
+@app.get('/schema', include_in_schema=False)
+def get_schema():
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
     )
-
-
-@app.get('/registers_page', response_class=HTMLResponse)
-def registers_page(request: Request, match: str | None = None):
-    """
-    Show the registers as a formatted web page.
-    Optional query argument `match`: filter to apply to the JSON dict keys.
-    E.g. "/registers_page?match=master/"
-    """
-    return _serve_json(
-        'Registers',
-        control_loop.get_registers(),
-        request,
-        match,
-        remove_underscores=False,
-        refresh_interval=REFRESH_INTERVAL,
-    )
-
-
-@app.get('/parameters_page', response_class=HTMLResponse)
-def parameters_page(request: Request, match: str | None = None):
-    """
-    Show the policy parameters as a formatted web page.
-    Optional query argument `match`: filter to apply to the JSON dict keys.
-    E.g. "/parameters_page?match=export"
-    """
-    return _serve_json(
-        'Parameters',
-        control_loop.get_parameters(),
-        request,
-        match,
-        units=_PARAMETERS_UNITS,
-    )
-
-
-@app.get('/connection_page', response_class=HTMLResponse)
-def connection_page(request: Request, match: str | None = None):
-    """
-    Show the connections as a formatted web page.
-    Optional query argument `match`: filter to apply to the JSON dict keys.
-    E.g. "/connection_page?match=pricer"
-    """
-    return _serve_json(
-        'Connection',
-        control_loop.get_connection_status(),
-        request,
-        match,
-    )
-
-
-@app.get('/constants_page', response_class=HTMLResponse)
-def constants_page(request: Request, match: str | None = None):
-    """
-    Show the constants as a formatted web page.
-    Optional query argument `match`: filter to apply to the JSON dict keys.
-    E.g. "/constants_page?match=BUY"
-    """
-    return _serve_json(
-        'Constants',
-        control_loop.Constants.as_dict(),
-        request,
-        match,
-        units=_CONSTANTS_UNITS,
-    )
+    return openapi_schema
 
 
 @app.get('/status')
@@ -534,4 +340,4 @@ def put_pricer_disconnect():
 
 # Mount NiceGUI onto the FastAPI app (processes all nicegui pages).
 # This must come last.
-nicegui_pages.run_with(app, title=APP_NAME)
+ui.run_with(app, title=APP_NAME, favicon='/images')

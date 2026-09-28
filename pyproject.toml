@@ -14,7 +14,6 @@ pymodbus = "*"
 uvicorn = "*"
 fastapi = "*"
 requests = "*"
-jinja2 = "*"
 nicegui = "*"
 
 [build-system]

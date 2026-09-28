@@ -2,5 +2,5 @@ import importlib.resources as resources
 from importlib.resources.abc import Traversable
 
 # Where to find data files
-ROOT_DIR: Traversable = resources.files('solala.resources')
-HTML_FILES: Traversable = ROOT_DIR / 'html'
+RESOURCES: Traversable = resources.files('solala.resources')
+IMAGE_FILES: Traversable = RESOURCES / 'images'

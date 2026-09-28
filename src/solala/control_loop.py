@@ -1,5 +1,6 @@
 import threading
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, UTC
 from enum import Enum, auto
@@ -134,12 +135,19 @@ class _ControlState:
         self.next_buy_price_check: datetime = _MIN_DATE
 
 
+class ControlLoopListener(ABC):
+    @abstractmethod
+    def update(self) -> None:
+        ...
+
+
 # Global server state variables
 _control_state: _ControlState = _ControlState(None, None)
 _control_state_lock = threading.RLock()
 _control_loop_running: bool = True  # set as False to terminate the control loop
 _power_controller_status: JSONDict = {'status': 'disconnected'}
 _power_pricer_status: JSONDict = {'status': 'disconnected'}
+_control_loop_listeners: List[ControlLoopListener] = []
 
 
 def control_loop() -> None:
@@ -155,13 +163,15 @@ def control_loop() -> None:
     prev_state: _ControlState = _ControlState(None, None)
 
     while _control_loop_running:
-        control_step(_control_state, prev_state)
+        listeners = control_step(_control_state, prev_state)
         # Server state unlocked
+        for listener in listeners:
+            listener.update()
         # Slow the loop down to keep the network and inverters from being overwhelmed
         time.sleep(Constants.LOOP_SLEEP)
 
 
-def control_step(state: _ControlState, prev_state: _ControlState) -> None:
+def control_step(state: _ControlState, prev_state: _ControlState) -> List[ControlLoopListener]:
     """
     Perform one functional step of the control loop.
     This function will grab the control state lock.
@@ -171,12 +181,15 @@ def control_step(state: _ControlState, prev_state: _ControlState) -> None:
     Args:
         state: the current control state
         prev_state: the previous control state
+
+    Returns:
+        a copy of the listeners, copied before the control state lock is released
     """
     with _control_state_lock:
         if state.power_controller is None:
             prev_state.power_controller = None
             time.sleep(Constants.LOOP_SLEEP)
-            return
+            return _control_loop_listeners.copy()
 
         if prev_state.power_controller is not state.power_controller:
             # Assume the same power_controller with unknown state.
@@ -242,10 +255,29 @@ def control_step(state: _ControlState, prev_state: _ControlState) -> None:
         except Exception as e:
             LOGGER.error(f'[{_LOG_SRC}] Error processing command: {prev_state.inverter_mode}. Error: {e}')
 
+        return _control_loop_listeners.copy()
+
 
 # =============================================================================
 #  Control loop interaction
 # =============================================================================
+
+def add_listener(listener: ControlLoopListener):
+    with _control_state_lock:
+        try:
+            _control_loop_listeners.remove(listener)
+        except ValueError:
+            pass
+        _control_loop_listeners.append(listener)
+
+
+def remove_listener(listener: ControlLoopListener):
+    with _control_state_lock:
+        try:
+            _control_loop_listeners.remove(listener)
+        except ValueError:
+            pass
+
 
 def get_control_status() -> JSONDict:
     with _control_state_lock:
