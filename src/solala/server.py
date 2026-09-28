@@ -1,76 +1,26 @@
 import json
 import re
 import threading
-from typing import List, Optional, Mapping
+from http import HTTPStatus
+from typing import List, Optional
 
 import uvicorn
 from fastapi import FastAPI, Request, status, HTTPException
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-from jinja2 import FunctionLoader, select_autoescape, Environment
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
-from starlette.responses import JSONResponse
 
 from solala import control_loop
-from solala.control_loop import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
+from solala.control_loop import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlLoopError
 from solala.log import LOGGER
-from solala.resources import HTML_FILES
+from solala.server_constants import APP_NAME
+from solala.server_nicegui import ui
 from solala.settings import Settings
-from solala.utils.json import JSONDict, json_dict, JSONValue
+from solala.utils.json import JSONDict, JSONValue, filter_json, follow_json
 
-_APP_NAME: str = 'Solala'
-_REFRESH_INTERVAL = control_loop.Constants.LOOP_SLEEP
 _DEFAULT_SETTINGS = Settings()
 
 _ADDRESS_DELIMITERS_PATTERN = re.compile(r'[,;&\s]+')
-_LINE_ENDINGS_PATTERN = re.compile(r'[,{} \t]*\s*(?=\n|$)')
-_BLANK_LINES_PATTERN = re.compile(r'^[ \t]*\r?\n', flags=re.MULTILINE)
-_DICT_ENTRY_SEPARATOR_PATTERN = re.compile(r'(\s*[\w+"]): ')
-
-# Units for pretty printing status
-_PRICE = ' cents/kWh'
-_WATTS = ' Watts'
-_SECONDS = ' seconds'
-_MINUTES = ' minutes'
-_PCT = '%'
-_STATUS_UNITS: Mapping[str, str] = {
-    'buy_price': _PRICE,
-    'feed_in_price': _PRICE,
-    'renewables': _PCT,
-    'state_of_charge': _PCT,
-    'power_limit': _PCT,
-    'grid_power': _WATTS,
-    'solar_power': _WATTS,
-    'battery_power': _WATTS,
-    'house_power': _WATTS,
-}
-_PARAMETERS_UNITS: Mapping[str, str] = {
-    'start_charge_price_threshold': _PRICE,
-    'stop_charge_price_threshold': _PRICE,
-    'disable_export_price_threshold': _PRICE,
-    'enable_export_price_threshold': _PRICE,
-}
-_CONSTANTS_UNITS: Mapping[str, str] = {
-    "LOOP_SLEEP": _SECONDS,
-    "CONTROL_DURATION": _SECONDS,
-    "PRICE_LOOK_AHEAD": _MINUTES,
-    "DISABLE_FEED_IN_TOLERANCE": _PRICE,
-    "ENABLE_FEED_IN_TOLERANCE": _PRICE,
-    "STOP_BUY_TOLERANCE": _PRICE,
-    "START_BUY_TOLERANCE": _PRICE,
-}
-
-# Support function to load HTML files from the resources directory.
-_JINJA_ENV = Environment(
-    loader=FunctionLoader(
-        lambda name: (
-            (HTML_FILES / name).read_text(encoding='utf-8'),
-            None,
-            lambda: True
-        )
-    ),
-    autoescape=select_autoescape(['html'])
-)
 
 
 def run_server(host: str, port: int, settings: Settings = _DEFAULT_SETTINGS) -> None:
@@ -86,6 +36,7 @@ def run_server(host: str, port: int, settings: Settings = _DEFAULT_SETTINGS) -> 
 
     # Cleanly stop the control loop thread
     control_loop.exit_control_loop()
+    LOGGER.info('waiting for the control loop to terminate')
     control_loop_thread.join()
 
 
@@ -132,143 +83,17 @@ def split_addresses(addresses: str) -> List[str]:
     return _ADDRESS_DELIMITERS_PATTERN.split(addresses)
 
 
-def _filter_json(data: JSONDict, match: Optional[str]) -> JSONDict:
+def _follow_filter_json(data: JSONDict, path: Optional[str], match: Optional[str]) -> JSONValue:
     """
-    Filter a JSON dictionary by keys containing a given substring.
+    Apply `follow_json` then `filter_json` to the data.
     """
-    if match is None:
-        return data
-    else:
-        return {
-            key: value
-            for key, value in data.items()
-            if match in key
-        }
-
-
-def _format_json(
-        data: JSONDict,
-        *,
-        units: Optional[Mapping[str, str]] = None,
-        remove_underscores: bool = True,
-        indent: int = 2,
-) -> str:
-    """
-    Render JSON data as a formatted string for a human to read.
-    """
-    if units is None:
-        units = {}
-
-    # Replace floats with formatted strings and add units
-    data = _stringify_values(None, data, units)
-
-    text = json.dumps(data, indent=indent)
-    text = _LINE_ENDINGS_PATTERN.sub('', text)
-    text = _BLANK_LINES_PATTERN.sub('', text)
-    text = _DICT_ENTRY_SEPARATOR_PATTERN.sub(r'\1 = ', text)
-
-    text = text.replace('"', '')
-    if remove_underscores:
-        text = text.replace('_', ' ')
-
-    return text
-
-
-def _stringify_values(key: Optional[str], value: JSONValue, units: Mapping[str, str]) -> JSONValue:
-    """
-    If `value` is a number, return a string rendering of it, including appending units if
-    the key is in the `units` dictionary.
-    If `value` is a container, return a copy with the items recursively stringified.
-
-    Args:
-        key: The key for this value - used to look up units.
-        value: The value to stringify.
-        units: A lookup table of units to append to values.
-
-    Returns:
-
-    """
-    if isinstance(value, float):
-        value_str: str = f'{value:.2f}'.rstrip('0').rstrip('.')
-        if key is not None and key in units:
-            value_str += units[key]
-        return value_str
-    elif isinstance(value, dict):
-        return {k: _stringify_values(k, v, units) for k, v in value.items()}
-    elif isinstance(value, list):
-        return [_stringify_values(None, v, units) for v in value]
-    elif key is not None and key in units:
-        return f'{value}{units[key]}'
-    else:
-        return str(value)
-
-
-def _follow_json(rest_of_path: Optional[str], data: JSONDict) -> JSONValue:
-    """
-    Follow a path through a JSON dictionary.
-
-    Returns:
-         the value (if the path exists).
-    Raises:
-        HTTPException(HTTP_404_NOT_FOUND) if the path does not exist.
-    """
-    if rest_of_path:
-        for part in rest_of_path.split('/'):
-            if part not in data:
-                raise HTTPException(status.HTTP_404_NOT_FOUND)
-            data = data[part]
-    return data
-
-
-def _follow_filter_json(rest_of_path: Optional[str], data: JSONDict, match: Optional[str]) -> JSONValue:
-    """
-    Apply `follow_json` and then `filter_json` to the data.
-    """
-    data: JSONValue = _follow_json(rest_of_path, data)
+    try:
+        data: JSONValue = follow_json(data, path)
+    except KeyError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Invalid path: {err}')
     if isinstance(data, dict) and match is not None:
-        return _filter_json(data, match)
-    else:
-        return data
-
-
-def _serve_json(
-        name: str,
-        data: JSONDict,
-        request: Request,
-        match: str | None = None,
-        *,
-        units: Optional[Mapping[str, str]] = None,
-        remove_underscores: bool = True,
-):
-    """
-    Helper for HTTP GET requests that merely serve HTML representation of JSON data.
-
-    Args:
-        name: name of the data.
-        data: JSON data to be served.
-        request: needed for Jinja2Templates.
-        match: optional filter to apply to the JSON dict keys.
-
-    Returns:
-         filled template HTTP response.
-    """
-    json_data: JSONDict = _filter_json(data, match)
-
-    templates = Jinja2Templates(env=_JINJA_ENV)
-    return templates.TemplateResponse(
-        request=request,
-        name='json.html',
-        context={
-            'title': _APP_NAME,
-            'name': name,
-            'json_data': _format_json(
-                json_data,
-                units=units,
-                remove_underscores=remove_underscores,
-            ),
-            'refresh_interval': _REFRESH_INTERVAL,
-        }
-    )
+        data = filter_json(data, match)
+    return data
 
 
 # ====================================================================
@@ -278,157 +103,111 @@ def _serve_json(
 app = FastAPI()
 
 
-@app.get('/', response_class=HTMLResponse)
-@app.get('/index.html', response_class=HTMLResponse)
-def serve_index(request: Request):
-    """
-    Serve the landing web page.
-    """
-    status_json: JSONDict = control_loop.get_status()
-    try:
-        control_json: JSONDict = json_dict(status_json['control'])
-        battery_status: JSONDict = json_dict(control_json['battery'])
-        inverter_status: JSONDict = json_dict(control_json['inverter'])
+@app.exception_handler(ControlLoopError)
+async def handle_control_loop_error(request: Request, err: ControlLoopError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    status_string = HTTPStatus(status_code).phrase
 
-        battery_mode = battery_status['mode']
-        battery_policy = battery_status['policy']
-        battery_button = (
-            battery_policy
-            if battery_policy != BatteryPolicy.MANUAL.name
-            else battery_mode
-        )
-        inverter_mode = inverter_status['mode']
-        inverter_policy = inverter_status['policy']
-        inverter_button = (
-            inverter_policy
-            if inverter_policy != InverterPolicy.MANUAL.name
-            else inverter_mode
-        )
+    # Construct an RFC 9457 dictionary as the response content
+    content: JSONDict = {
+        'type': 'https://www.rfc-editor.org/rfc/rfc9457',
+        'title': status_string,
+        'status': status_code,
+        'detail': err.detail,
+        'instance': str(request.base_url),
+    }
+    if err.errors is not None:
+        content['errors'] = err.errors
 
-    except (KeyError, TypeError, IOError) as err:
-        LOGGER.error(f'Error getting control status: {err}')
-        battery_button = ''
-        inverter_button = ''
-
-    templates = Jinja2Templates(env=_JINJA_ENV)
-    return templates.TemplateResponse(
-        request=request,
-        name='index.html',
-        context={
-            'title': _APP_NAME,
-            'status_json': _format_json(status_json, units=_STATUS_UNITS),
-            'refresh_interval': _REFRESH_INTERVAL,
-            'battery_button': battery_button,
-            'inverter_button': inverter_button,
-        }
+    # RFC 9457 requires the 'application/problem+json' Media Type
+    return JSONResponse(
+        status_code=status_code,
+        content=content,
+        headers={"Content-Type": "application/problem+json"}
     )
 
 
-@app.get('/registers.html', response_class=HTMLResponse)
-def serve_registers(request: Request, match: str | None = None):
-    """
-    Show the registers as a formatted web page.
-    Optional query argument `match`: filter to apply to the JSON dict keys.
-    E.g. "/registers.html?match=master/"
-    """
-    return _serve_json(
-        'Registers',
-        control_loop.get_registers(),
-        request,
-        match,
-        remove_underscores=False,
+@app.exception_handler(HTTPException)
+async def handle_http_error(request: Request, err: HTTPException):
+    status_code = err.status_code
+    status_string = HTTPStatus(status_code).phrase
+
+    # Construct an RFC 9457 dictionary as the response content
+    content: JSONDict = {
+        'type': 'https://www.rfc-editor.org/rfc/rfc9457',
+        'title': status_string,
+        'status': status_code,
+        'detail': err.detail,
+        'instance': str(request.base_url),
+    }
+
+    # RFC 9457 requires the 'application/problem+json' Media Type
+    return JSONResponse(
+        status_code=status_code,
+        content=content,
+        headers={"Content-Type": "application/problem+json"}
     )
 
 
-@app.get('/parameters.html', response_class=HTMLResponse)
-def serve_parameters(request: Request, match: str | None = None):
-    """
-    Show the policy parameters as a formatted web page.
-    Optional query argument `match`: filter to apply to the JSON dict keys.
-    E.g. "/parameters.html?match=export"
-    """
-    return _serve_json(
-        'Parameters',
-        control_loop.get_parameters(),
-        request,
-        match,
-        units=_PARAMETERS_UNITS,
+@app.get('/schema', include_in_schema=False)
+def get_schema():
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
     )
-
-
-@app.get('/connection.html', response_class=HTMLResponse)
-def serve_connection(request: Request, match: str | None = None):
-    """
-    Show the connections as a formatted web page.
-    Optional query argument `match`: filter to apply to the JSON dict keys.
-    E.g. "/connection.html?match=pricer"
-    """
-    return _serve_json(
-        'Connection',
-        control_loop.get_connection_status(),
-        request,
-        match,
-    )
-
-
-@app.get('/constants.html', response_class=HTMLResponse)
-def serve_constants(request: Request, match: str | None = None):
-    """
-    Show the constants as a formatted web page.
-    Optional query argument `match`: filter to apply to the JSON dict keys.
-    E.g. "/constants.html?match=BUY"
-    """
-    return _serve_json(
-        'Constants',
-        control_loop.Constants.as_dict(),
-        request,
-        match,
-        units=_CONSTANTS_UNITS,
-    )
+    return openapi_schema
 
 
 @app.get('/status')
 def get_status(match: str | None = None):
-    return _filter_json(control_loop.get_status(), match)
+    return filter_json(control_loop.get_status(), match)
 
 
+@app.get('/status/control')
 @app.get('/status/control/{rest_of_path:path}')
-def get_control(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(rest_of_path, control_loop.get_control_status(), match)
+def get_control(rest_of_path: Optional[str] = None, match: str | None = None):
+    return _follow_filter_json(control_loop.get_control_status(), rest_of_path, match)
 
 
+@app.get('/status/price')
 @app.get('/status/price/{rest_of_path:path}')
 def get_price(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(rest_of_path, control_loop.get_price_status(), match)
+    return _follow_filter_json(control_loop.get_price_status(), rest_of_path, match)
 
 
+@app.get('/status/power')
 @app.get('/status/power/{rest_of_path:path}')
 def get_power(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(rest_of_path, control_loop.get_power_status(), match)
+    return _follow_filter_json(control_loop.get_power_status(), rest_of_path, match)
 
 
+@app.get('/registers')
 @app.get('/registers/{rest_of_path:path}')
 def get_registers(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(rest_of_path, control_loop.get_registers(), match)
+    return _follow_filter_json(control_loop.get_registers(), rest_of_path, match)
 
 
+@app.get('/parameters')
 @app.get('/parameters/{rest_of_path:path}')
 def get_parameters(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(rest_of_path, control_loop.get_parameters(), match)
+    return _follow_filter_json(control_loop.get_parameters(), rest_of_path, match)
 
 
+@app.get('/connection')
 @app.get('/connection/{rest_of_path:path}')
 def get_connection(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(rest_of_path, control_loop.get_connection_status(), match)
+    return _follow_filter_json(control_loop.get_connection_status(), rest_of_path, match)
 
 
+@app.get('/constants')
 @app.get('/constants/{rest_of_path:path}')
 def get_constants(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(rest_of_path, control_loop.Constants.as_dict(), match)
+    return _follow_filter_json(control_loop.Constants.as_dict(), rest_of_path, match)
 
 
 @app.put('/battery')
-def set_battery_enable(mode: str):
+def put_battery(mode: str):
     match mode:
         case 'enable':
             return control_loop.set_control(
@@ -458,7 +237,7 @@ def set_battery_enable(mode: str):
 
 
 @app.put('/inverter')
-def set_inverter_enable(mode: str):
+def put_inverter(mode: str):
     match mode:
         case 'enable':
             return control_loop.set_control(
@@ -483,17 +262,12 @@ def set_inverter_enable(mode: str):
 
 
 @app.put('/parameters/{parameter}')
-def set_parameters(parameter: str, value: float):
+def put_parameters(parameter: str, value: float):
     if parameter not in control_loop.get_parameters():
         return JSONResponse({'error': f'Invalid parameter: {parameter!r}'}, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
     kwargs = {parameter: value}
-    result = control_loop.set_parameters(**kwargs)
-    if 'error' in result.keys():
-        status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-    else:
-        status_code = status.HTTP_200_OK
-    return JSONResponse(result, status_code=status_code)
+    return control_loop.set_parameters(**kwargs)
 
 
 class ControllerConnectionUpdate(BaseModel):
@@ -503,7 +277,7 @@ class ControllerConnectionUpdate(BaseModel):
 
 
 @app.put('/connection/controller/connect')
-def controller_connect(payload: ControllerConnectionUpdate):
+def put_controller_connect(payload: ControllerConnectionUpdate):
     """
     Establish a modbus connection to the inverter.
     Each address can be a MAC address or an IP address.
@@ -523,7 +297,7 @@ def controller_connect(payload: ControllerConnectionUpdate):
 
 
 @app.put('/connection/controller/disconnect')
-def disconnect_control():
+def put_controller_disconnect():
     """
     Close the controller connection to the inverter.
     """
@@ -538,7 +312,7 @@ class PricerConnectionUpdate(BaseModel):
 
 
 @app.put('/connection/pricer/connect')
-def pricer_connect(payload: PricerConnectionUpdate):
+def put_pricer_connect(payload: PricerConnectionUpdate):
     """
     Establish a connection to Amber as the power pricer.
     The arguments should be an API token (starts with psk_)
@@ -557,8 +331,13 @@ def pricer_connect(payload: PricerConnectionUpdate):
 
 
 @app.put('/connection/pricer/disconnect')
-def disconnect_price():
+def put_pricer_disconnect():
     """
     Close the power pricer connection.
     """
     return control_loop.disconnect_price()
+
+
+# Mount NiceGUI onto the FastAPI app (processes all nicegui pages).
+# This must come last.
+ui.run_with(app, title=APP_NAME, favicon='/images')
