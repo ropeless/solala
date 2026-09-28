@@ -1,9 +1,9 @@
-from local_config import MASTER_INVERTER_ADDR, SLAVE_INVERTER_ADDR, AMBER_API_TOKEN, NMI, SERVER_IP_ADDRESS
+import local_config as config
 from solala import server
 from solala.log import configure_logger
 from solala.settings import Settings
 
-HOST: str = SERVER_IP_ADDRESS
+HOST: str = config.SERVER_IP_ADDRESS
 PORT: int = 80
 
 
@@ -12,9 +12,10 @@ def main():
 
     # Optional initial control loop parameters.
     settings = Settings(
-        power_controller_addresses=f'{MASTER_INVERTER_ADDR};{SLAVE_INVERTER_ADDR}',
-        power_pricer_api_token=AMBER_API_TOKEN,
-        power_pricer_nmi=NMI,
+        modbus_addresses=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}',
+        amber_api_token=config.AMBER_API_TOKEN,
+        amber_nmi=config.NMI,
+        tesla_wall_connector=config.TESLA_WALL_CONNECTOR_ADDR,
 
         # DEBUG
 

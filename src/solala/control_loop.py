@@ -9,6 +9,8 @@ from typing import Optional, List, Iterable, Dict
 
 from pymodbus.client import ModbusTcpClient
 
+from solala.car_charger.impl_tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
+from solala.car_charger.wall_charger import CarCharger
 from solala.log import LOGGER
 from solala.power_controller.impl_modbus.modbus import Modbus, ModbusDevice
 from solala.power_controller.impl_modbus.modbus_power_controller import PowerController, ModbusPowerController
@@ -100,6 +102,7 @@ class Constants:
 class _ControlState:
     power_controller: Optional[PowerController]
     power_pricer: Optional[PowerPricer]
+    car_charger: Optional[CarCharger]
 
     battery_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_mode: InverterMode = InverterMode.UNKNOWN
@@ -134,6 +137,9 @@ class _ControlState:
         self.next_feed_in_price_check: datetime = _MIN_DATE
         self.next_buy_price_check: datetime = _MIN_DATE
 
+    def reset_car_charger(self, car_charger: Optional[CarCharger]) -> None:
+        self.car_charger = car_charger
+
 
 class ControlLoopListener(ABC):
     @abstractmethod
@@ -142,11 +148,12 @@ class ControlLoopListener(ABC):
 
 
 # Global server state variables
-_control_state: _ControlState = _ControlState(None, None)
+_control_state: _ControlState = _ControlState(None, None, None)
 _control_state_lock = threading.RLock()
 _control_loop_running: bool = True  # set as False to terminate the control loop
 _power_controller_status: JSONDict = {'status': 'disconnected'}
 _power_pricer_status: JSONDict = {'status': 'disconnected'}
+_car_charger_status: JSONDict = {'status': 'disconnected'}
 _control_loop_listeners: List[ControlLoopListener] = []
 
 
@@ -160,7 +167,7 @@ def control_loop() -> None:
 
     Call `exit_control_loop()` to gracefully terminate the control loop.
     """
-    prev_state: _ControlState = _ControlState(None, None)
+    prev_state: _ControlState = _ControlState(None, None, None)
 
     while _control_loop_running:
         listeners = control_step(_control_state, prev_state)
@@ -325,11 +332,20 @@ def get_power_status() -> JSONDict:
         return result
 
 
+def get_car_charger_status() -> JSONDict:
+    with _control_state_lock:
+        if _control_state.car_charger is None:
+            return _car_charger_status
+        result = _control_state.car_charger.get_status().as_dict()
+        return result
+
+
 def get_connection_status() -> JSONDict:
     with _control_state_lock:
         return {
             'controller': _power_controller_status,
             'pricer': _power_pricer_status,
+            'charger': _car_charger_status,
         }
 
 
@@ -339,6 +355,7 @@ def get_status() -> JSONDict:
             'control': get_control_status(),
             'price': get_price_status(),
             'power': get_power_status(),
+            'charger': get_car_charger_status(),
         }
 
 
@@ -472,69 +489,77 @@ def connect_modbus(
     """
     Establish a power controller modbus connection to the inverter.
 
+    Args:
+        master_address: MAC or IP address of the master inverter.
+        slave_addresses: MAC or IP addresses of the slave inverters.
+        master_device_id: Modbus device ID of the master inverter.
+        meter_device_id: Modbus device ID of the meter.
+        slave_device_id: Modbus device ID of the slave inverters.
+
     Raises:
         ControlLoopError: a connection cannot be established.
     """
+    all_addresses: List[str] = [master_address] + list(slave_addresses)
+    invalid_addresses: List[str] = []
+
+    # Work out what addresses are MAC addresses
+    all_mac_addresses: List[Optional[str]] = []  # coindexed with all_addresses
+    found_mac_addresses: List[str] = []
+    for address in all_addresses:
+        is_mac = ':' in address
+        is_ip = '.' in address
+        if is_mac and not is_ip:
+            all_mac_addresses.append(address)
+            found_mac_addresses.append(address)
+        elif is_ip and not is_mac:
+            all_mac_addresses.append(None)
+        else:
+            invalid_addresses.append(address)
+
+    # Fail if there are any invalid addresses
+    if len(invalid_addresses) > 0:
+        raise ControlLoopError('invalid address', errors=invalid_addresses)
+
+    # Look up IP addresses for MAC addresses
+    all_ip_addresses: List[str] = []  # coindexed with all_addresses
+    mac_lookup: Dict[str, str] = find_ip_by_mac(found_mac_addresses)
+    for i in range(len(all_addresses)):
+        mac_address = all_mac_addresses[i]
+        if mac_address is None:
+            all_ip_addresses.append(all_addresses[i])
+        else:
+            ip_address: Optional[str] = mac_lookup.get(mac_address)
+            if ip_address is None:
+                invalid_addresses.append(mac_address)
+            else:
+                all_ip_addresses.append(ip_address)
+
+    # Fail if there are any invalid ip addresses
+    if len(invalid_addresses) > 0:
+        raise ControlLoopError('could not find IP address for MAC address', errors=invalid_addresses)
+
+    # get ModbusTcpClient objects
+    all_clients: List[ModbusTcpClient] = []  # coindexed with all_addresses
+    errors: List[JSONDict] = []  # coindexed with all_addresses
+    ip_address: str
+    for i, ip_address in enumerate(all_ip_addresses):
+        try:
+            client = ModbusTcpClient(ip_address, port=502)
+            client.connect()
+            all_clients.append(client)
+        except (IOError, TypeError, ValueError) as err:
+            errors.append({
+                'host': ip_address,
+                'mac_address': all_mac_addresses[i],
+                'error': str(err),
+            })
+
+    # Fail if there are any errors
+    if len(errors) > 0:
+        raise ControlLoopError('could not connect Modbus TCP client', errors=errors)
+
     global _power_controller_status
     with _control_state_lock:
-        all_addresses: List[str] = [master_address] + list(slave_addresses)
-        invalid_addresses: List[str] = []
-
-        # Work out what addresses are MAC addresses
-        all_mac_addresses: List[Optional[str]] = []  # coindexed with all_addresses
-        found_mac_addresses: List[str] = []
-        for address in all_addresses:
-            is_mac = ':' in address
-            is_ip = '.' in address
-            if is_mac and not is_ip:
-                all_mac_addresses.append(address)
-                found_mac_addresses.append(address)
-            elif is_ip and not is_mac:
-                all_mac_addresses.append(None)
-            else:
-                invalid_addresses.append(address)
-
-        # Fail if there are any invalid addresses
-        if len(invalid_addresses) > 0:
-            raise ControlLoopError('invalid address', errors=invalid_addresses)
-
-        # Look up IP addresses for MAC addresses
-        all_ip_addresses: List[str] = []  # coindexed with all_addresses
-        mac_lookup: Dict[str, str] = find_ip_by_mac(found_mac_addresses)
-        for i in range(len(all_addresses)):
-            mac_address = all_mac_addresses[i]
-            if mac_address is None:
-                all_ip_addresses.append(all_addresses[i])
-            else:
-                ip_address: Optional[str] = mac_lookup.get(mac_address)
-                if ip_address is None:
-                    invalid_addresses.append(mac_address)
-                else:
-                    all_ip_addresses.append(ip_address)
-
-        # Fail if there are any invalid ip addresses
-        if len(invalid_addresses) > 0:
-            raise ControlLoopError('could not find ip address for mac address', errors=invalid_addresses)
-
-        # get ModbusTcpClient objects
-        all_clients: List[ModbusTcpClient] = []  # coindexed with all_addresses
-        errors: List[JSONDict] = []  # coindexed with all_addresses
-        ip_address: str
-        for i, ip_address in enumerate(all_ip_addresses):
-            try:
-                client = ModbusTcpClient(ip_address, port=502)
-                client.connect()
-                all_clients.append(client)
-            except (IOError, TypeError, ValueError) as err:
-                errors.append({
-                    'host': ip_address,
-                    'mac_address': all_mac_addresses[i],
-                    'error': str(err),
-                })
-
-        # Fail if there are any errors
-        if len(errors) > 0:
-            raise ControlLoopError('could not connect Modbus TCP client', errors=errors)
 
         # Configure power controller
         master_client: ModbusTcpClient = all_clients[0]
@@ -616,6 +641,61 @@ def connect_amber(api_token: str, nmi: str) -> JSONDict:
 
 
 def disconnect_price() -> JSONDict:
+    """
+    Close the power pricer connection.
+    """
+    global _power_pricer_status
+    with _control_state_lock:
+        if _control_state.power_pricer is not None:
+            _control_state.power_pricer.close()
+            _control_state.power_pricer = None
+            _power_pricer_status = {'status': 'disconnected'}
+        return _power_pricer_status
+
+
+def connect_tesla_wall_connector(address: str) -> JSONDict:
+    """
+    Establish a car charger connection using Tesla Wall Connector.
+
+    Args:
+        address: MAC or IP address of the Tesla Wall Connector.
+
+    Raises:
+        ControlLoopError: a connection cannot be established.
+    """
+    is_mac = ':' in address
+    is_ip = '.' in address
+    mac_address = ''
+    if is_mac and not is_ip:
+        mac_address = address
+        mac_lookup: Dict[str, str] = find_ip_by_mac([mac_address])
+        if mac_address not in mac_lookup:
+            raise ControlLoopError('could not find IP address for MAC address', errors=[mac_address])
+        ip_address = mac_lookup[mac_address]
+    elif is_ip and not is_mac:
+        ip_address = address
+    else:
+        raise ControlLoopError('invalid address', errors=[address])
+
+    global _car_charger_status
+    with _control_state_lock:
+        try:
+            car_charger = TeslaWallConnector(ip_address)
+        except (IOError, TypeError, ValueError) as err:
+            _control_state.reset_pricer(None)
+            raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
+        _control_state.reset_car_charger(car_charger)
+        _car_charger_status = {
+            'status': 'Tesla Wall Connector connection',
+            'host': ip_address,
+        }
+        if mac_address != '':
+            _car_charger_status['mac_address'] = mac_address
+
+        return _car_charger_status
+
+
+def disconnect_car_charger() -> JSONDict:
     """
     Close the power pricer connection.
     """

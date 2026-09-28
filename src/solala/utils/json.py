@@ -68,7 +68,7 @@ def follow_json(data: JSONDict, path: Optional[str]) -> JSONValue:
         parts = path.split('/')
         for i, part in enumerate(parts):
             if part not in data:
-                raise KeyError('/'.join(parts[:i+1]))
+                raise KeyError('/'.join(parts[:i + 1]))
             data = data[part]
     return data
 

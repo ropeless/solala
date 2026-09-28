@@ -25,6 +25,8 @@ _H2_class = 'text-h6'
 # Units for pretty printing status
 _PRICE = ' cents/kWh'
 _WATTS = ' Watts'
+_VOLTS = ' Volts'
+_AMPS = ' Amps'
 _SECONDS = ' seconds'
 _MINUTES = ' minutes'
 _PCT = '%'
@@ -45,6 +47,9 @@ _STATUS_UNITS: Mapping[str, str] = dict_merge(
         'solar_power': _WATTS,
         'battery_power': _WATTS,
         'house_power': _WATTS,
+        'power': _WATTS,
+        'voltage': _VOLTS,
+        'current': _AMPS,
     },
     _PARAMETERS_UNITS,
 )
@@ -423,6 +428,14 @@ def status_page():
                 inverter_zero_export = ui.button('zero export', on_click=handle_inverter_zero_export)
                 inverter_neg_feed_in_zero_export = \
                     ui.button('neg feed-in ⇒ zero export', on_click=handle_inverter_neg_feed_in_zero_export)
+
+        for button in [
+            battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
+            battery_cheap_force_discharge, inverter_enable, inverter_disable, inverter_zero_export,
+            inverter_neg_feed_in_zero_export
+        ]:
+            button.style('padding-top: 1px; padding-bottom: 1px;')
+            button.classes('py-0 px-2 text-xs')
 
     status_elements = StatusElements(
         status_element=status_element,

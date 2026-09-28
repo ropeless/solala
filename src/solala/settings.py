@@ -13,10 +13,12 @@ class Settings:
     Lists of addresses can be separated by commas, semicolons, ampersands, or whitespace.
     """
 
-    power_controller_addresses: str = ''  # The MAC or IP address of the master then slave controllers
+    modbus_addresses: str = ''  # The MAC or IP address of the master then slave controllers
 
-    power_pricer_api_token: str = ''
-    power_pricer_nmi: str = ''
+    amber_api_token: str = ''
+    amber_nmi: str = ''
+
+    tesla_wall_connector: str = ''  # MAC or IP address
 
     battery_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_mode: InverterMode = InverterMode.UNKNOWN

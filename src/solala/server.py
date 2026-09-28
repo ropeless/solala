@@ -44,17 +44,23 @@ def configure_from_settings(settings: Settings) -> None:
     """
     Initialise connections, control modes, and policy parameters for `settings`.
     """
-    addresses: List[str] = split_addresses(settings.power_controller_addresses)
+    addresses: List[str] = split_addresses(settings.modbus_addresses)
     if len(addresses) > 0:
         result = control_loop.connect_modbus(addresses[0], addresses[1:])
         LOGGER.info(f'initial power controller connection: {json.dumps(result)}')
 
     # Initialise power pricer connection
-    api_token = settings.power_pricer_api_token.strip()
-    nmi = settings.power_pricer_nmi.strip()
+    api_token = settings.amber_api_token.strip()
+    nmi = settings.amber_nmi.strip()
     if api_token != '' and nmi != '':
         result = control_loop.connect_amber(api_token, nmi)
         LOGGER.info(f'initial power pricer connection: {json.dumps(result)}')
+
+    # Initialise car charger connection
+    tesla_wall_connector = settings.tesla_wall_connector.strip()
+    if tesla_wall_connector != '':
+        result = control_loop.connect_tesla_wall_connector(tesla_wall_connector)
+        LOGGER.info(f'initial car charger connection: {json.dumps(result)}')
 
     # Initialise policy parameters
     result = control_loop.set_parameters(
@@ -180,6 +186,12 @@ def get_price(rest_of_path: str | None = None, match: str | None = None):
 @app.get('/status/power/{rest_of_path:path}')
 def get_power(rest_of_path: str | None = None, match: str | None = None):
     return _follow_filter_json(control_loop.get_power_status(), rest_of_path, match)
+
+
+@app.get('/status/charger')
+@app.get('/status/charger/{rest_of_path:path}')
+def get_charger(rest_of_path: str | None = None, match: str | None = None):
+    return _follow_filter_json(control_loop.get_car_charger_status(), rest_of_path, match)
 
 
 @app.get('/registers')
@@ -340,4 +352,4 @@ def put_pricer_disconnect():
 
 # Mount NiceGUI onto the FastAPI app (processes all nicegui pages).
 # This must come last.
-ui.run_with(app, title=APP_NAME, favicon='/images')
+ui.run_with(app, title=APP_NAME, favicon='http://localhost/images/solala-32x32.png')
