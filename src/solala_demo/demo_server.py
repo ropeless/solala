@@ -1,12 +1,10 @@
-from local_config import MASTER_INVERTER_ADDR, SLAVE_INVERTER_ADDR, AMBER_API_TOKEN, NMI
-from solala.control_loop import Constants
+from local_config import MASTER_INVERTER_ADDR, SLAVE_INVERTER_ADDR, AMBER_API_TOKEN, NMI, SERVER_IP_ADDRESS
 from solala import server
 from solala.log import configure_logger
 from solala.settings import Settings
-from solala.utils.network import get_local_ip
 
-HOST = get_local_ip()
-PORT = 80
+HOST: str = SERVER_IP_ADDRESS
+PORT: int = 80
 
 
 def main():

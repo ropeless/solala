@@ -373,9 +373,10 @@ def _title(ext: str = '', link: bool = True) -> None:
     with ui.row().classes('items-center gap-4'):
         if link:
             with ui.link(target='/'):
-                ui.image('/images/solala.svg').classes('w-12 h-12 obj-contain')
+                image = ui.image('/images/solala.svg')
         else:
-            ui.image('/images/solala.svg').classes('w-12 h-12 obj-contain')
+            image = ui.image('/images/solala.svg')
+        image.classes('w-12 h-12 obj-contain')
         ui.label(f'{APP_NAME}{ext}').classes(_H1_class)
 
 
