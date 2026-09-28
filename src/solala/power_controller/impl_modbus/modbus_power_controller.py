@@ -1,6 +1,6 @@
 from typing import Iterable, List, Tuple, Sequence
 
-from solala.log import LOGGER
+from solala.server_constants import LOGGER
 from solala.power_controller.impl_modbus.modbus import Modbus
 from solala.power_controller.power_controller import PowerController, PowerStatus
 

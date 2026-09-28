@@ -1,15 +1,17 @@
 import threading
 import time
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from enum import Enum, auto
 from json import JSONDecodeError
-from typing import Optional, List, Iterable, Dict
+from typing import Optional, List, Iterable, Dict, Tuple
 
 from pymodbus.client import ModbusTcpClient
 
-from solala.log import LOGGER
+from solala.car_charger.impl_tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
+from solala.car_charger.wall_charger import CarCharger
+from solala.control_loop_listeners import RegistersListener, StatusListener
+from solala.server_constants import LOGGER
 from solala.power_controller.impl_modbus.modbus import Modbus, ModbusDevice
 from solala.power_controller.impl_modbus.modbus_power_controller import PowerController, ModbusPowerController
 from solala.power_pricer.impl_amber.amber_power_pricer import Price, AmberPowerPricer
@@ -96,10 +98,15 @@ class Constants:
         }
 
 
+def _disconnected() -> JSONDict:
+    return {'status': 'disconnected'}
+
+
 @dataclass
 class _ControlState:
     power_controller: Optional[PowerController]
     power_pricer: Optional[PowerPricer]
+    car_charger: Optional[CarCharger]
 
     battery_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_mode: InverterMode = InverterMode.UNKNOWN
@@ -118,6 +125,10 @@ class _ControlState:
     start_charge_price_threshold: float = DEFAULT_START_CHARGE_PRICE_THRESHOLD
     stop_charge_price_threshold: float = DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
 
+    power_controller_status: JSONDict = field(default_factory=_disconnected)
+    power_pricer_status: JSONDict = field(default_factory=_disconnected)
+    car_charger_status: JSONDict = field(default_factory=_disconnected)
+
     def reset_controller(self, controller: Optional[PowerController]) -> None:
         self.power_controller = controller
         self.battery_mode = BatteryMode.UNKNOWN
@@ -128,26 +139,31 @@ class _ControlState:
         self.next_feed_in_price_check = _MIN_DATE
         self.next_buy_price_check = _MIN_DATE
 
+        if controller is None:
+            self.power_controller_status = _disconnected()
+
     def reset_pricer(self, pricer: Optional[PowerPricer]) -> None:
         self.power_pricer = pricer
         self.last_price: Price = _NO_PRICE
         self.next_feed_in_price_check: datetime = _MIN_DATE
         self.next_buy_price_check: datetime = _MIN_DATE
 
+        if pricer is None:
+            self.power_pricer_status = _disconnected()
 
-class ControlLoopListener(ABC):
-    @abstractmethod
-    def update(self) -> None:
-        ...
+    def reset_car_charger(self, car_charger: Optional[CarCharger]) -> None:
+        self.car_charger = car_charger
+
+        if car_charger is None:
+            self.car_charger_status = _disconnected()
 
 
 # Global server state variables
-_control_state: _ControlState = _ControlState(None, None)
+_control_state: _ControlState = _ControlState(None, None, None)
 _control_state_lock = threading.RLock()
 _control_loop_running: bool = True  # set as False to terminate the control loop
-_power_controller_status: JSONDict = {'status': 'disconnected'}
-_power_pricer_status: JSONDict = {'status': 'disconnected'}
-_control_loop_listeners: List[ControlLoopListener] = []
+_control_loop_status_listeners: List[StatusListener] = []
+_control_loop_registers_listeners: List[RegistersListener] = []
 
 
 def control_loop() -> None:
@@ -160,18 +176,23 @@ def control_loop() -> None:
 
     Call `exit_control_loop()` to gracefully terminate the control loop.
     """
-    prev_state: _ControlState = _ControlState(None, None)
+    prev_state: _ControlState = _ControlState(None, None, None)
 
     while _control_loop_running:
-        listeners = control_step(_control_state, prev_state)
-        # Server state unlocked
-        for listener in listeners:
-            listener.update()
+        status_listeners, registers_listeners = control_step(_control_state, prev_state)
+        _update_listeners(status_listeners, registers_listeners)
         # Slow the loop down to keep the network and inverters from being overwhelmed
         time.sleep(Constants.LOOP_SLEEP)
 
 
-def control_step(state: _ControlState, prev_state: _ControlState) -> List[ControlLoopListener]:
+def control_step(
+
+        state: _ControlState,
+        prev_state: _ControlState,
+) -> Tuple[
+    List[StatusListener],
+    List[RegistersListener],
+]:
     """
     Perform one functional step of the control loop.
     This function will grab the control state lock.
@@ -189,7 +210,7 @@ def control_step(state: _ControlState, prev_state: _ControlState) -> List[Contro
         if state.power_controller is None:
             prev_state.power_controller = None
             time.sleep(Constants.LOOP_SLEEP)
-            return _control_loop_listeners.copy()
+            return _control_loop_status_listeners.copy(), _control_loop_registers_listeners.copy()
 
         if prev_state.power_controller is not state.power_controller:
             # Assume the same power_controller with unknown state.
@@ -255,28 +276,45 @@ def control_step(state: _ControlState, prev_state: _ControlState) -> List[Contro
         except Exception as e:
             LOGGER.error(f'[{_LOG_SRC}] Error processing command: {prev_state.inverter_mode}. Error: {e}')
 
-        return _control_loop_listeners.copy()
+        return _control_loop_status_listeners.copy(), _control_loop_registers_listeners.copy()
 
 
 # =============================================================================
 #  Control loop interaction
 # =============================================================================
 
-def add_listener(listener: ControlLoopListener):
+def add_listener(listener: StatusListener | RegistersListener):
     with _control_state_lock:
-        try:
-            _control_loop_listeners.remove(listener)
-        except ValueError:
-            pass
-        _control_loop_listeners.append(listener)
+        remove_listener(listener)
+        if isinstance(listener, StatusListener):
+            _control_loop_status_listeners.append(listener)
+        elif isinstance(listener, RegistersListener):
+            _control_loop_registers_listeners.append(listener)
+        else:
+            raise ValueError(f'Invalid listener type: {listener!r}')
 
 
-def remove_listener(listener: ControlLoopListener):
+def remove_listener(listener: StatusListener | RegistersListener):
     with _control_state_lock:
         try:
-            _control_loop_listeners.remove(listener)
+            if isinstance(listener, StatusListener):
+                _control_loop_status_listeners.remove(listener)
+            elif isinstance(listener, RegistersListener):
+                _control_loop_registers_listeners.remove(listener)
+            else:
+                raise ValueError(f'Invalid listener type: {listener!r}')
         except ValueError:
             pass
+
+
+def update_listeners() -> None:
+    """
+    Call `update` on all registered control loop listeners.
+    """
+    with _control_state_lock:
+        status_listeners = _control_loop_status_listeners.copy()
+        registers_listeners = _control_loop_registers_listeners.copy()
+    _update_listeners(status_listeners, registers_listeners)
 
 
 def get_control_status() -> JSONDict:
@@ -311,7 +349,7 @@ def get_control_status() -> JSONDict:
 def get_price_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.power_pricer is None:
-            return _power_pricer_status
+            return _control_state.power_pricer_status
         cur_price: Price = get_cur_price()
         result = cur_price.as_dict(DATE_FORMAT)
         return result
@@ -320,16 +358,25 @@ def get_price_status() -> JSONDict:
 def get_power_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.power_controller is None:
-            return _power_controller_status
+            return _control_state.power_controller_status
         result = _control_state.power_controller.get_status().as_dict()
+        return result
+
+
+def get_car_charger_status() -> JSONDict:
+    with _control_state_lock:
+        if _control_state.car_charger is None:
+            return _control_state.car_charger_status
+        result = _control_state.car_charger.get_status().as_dict()
         return result
 
 
 def get_connection_status() -> JSONDict:
     with _control_state_lock:
         return {
-            'controller': _power_controller_status,
-            'pricer': _power_pricer_status,
+            'controller': _control_state.power_controller_status,
+            'pricer': _control_state.power_pricer_status,
+            'charger': _control_state.car_charger_status,
         }
 
 
@@ -339,6 +386,7 @@ def get_status() -> JSONDict:
             'control': get_control_status(),
             'price': get_price_status(),
             'power': get_power_status(),
+            'charger': get_car_charger_status(),
         }
 
 
@@ -472,73 +520,41 @@ def connect_modbus(
     """
     Establish a power controller modbus connection to the inverter.
 
+    Args:
+        master_address: MAC or IP address of the master inverter.
+        slave_addresses: MAC or IP addresses of the slave inverters.
+        master_device_id: Modbus device ID of the master inverter.
+        meter_device_id: Modbus device ID of the meter.
+        slave_device_id: Modbus device ID of the slave inverters.
+
     Raises:
         ControlLoopError: a connection cannot be established.
     """
-    global _power_controller_status
+    addresses: List[_Address] = _resolve_addresses([master_address] + list(slave_addresses))
+
+    # get ModbusTcpClient objects
+    clients: List[ModbusTcpClient] = []  # coindexed with addresses
+    errors: List[JSONDict] = []
+    for address in addresses:
+        try:
+            client = ModbusTcpClient(address.ip_address, port=502)
+            client.connect()
+            clients.append(client)
+        except (IOError, TypeError, ValueError) as err:
+            errors.append({
+                'host': address.ip_address,
+                'mac_address': address.mac_address,
+                'error': str(err),
+            })
+    # Fail if there are any errors
+    if len(errors) > 0:
+        raise ControlLoopError('could not connect Modbus TCP client', errors=errors)
+
     with _control_state_lock:
-        all_addresses: List[str] = [master_address] + list(slave_addresses)
-        invalid_addresses: List[str] = []
-
-        # Work out what addresses are MAC addresses
-        all_mac_addresses: List[Optional[str]] = []  # coindexed with all_addresses
-        found_mac_addresses: List[str] = []
-        for address in all_addresses:
-            is_mac = ':' in address
-            is_ip = '.' in address
-            if is_mac and not is_ip:
-                all_mac_addresses.append(address)
-                found_mac_addresses.append(address)
-            elif is_ip and not is_mac:
-                all_mac_addresses.append(None)
-            else:
-                invalid_addresses.append(address)
-
-        # Fail if there are any invalid addresses
-        if len(invalid_addresses) > 0:
-            raise ControlLoopError('invalid address', errors=invalid_addresses)
-
-        # Look up IP addresses for MAC addresses
-        all_ip_addresses: List[str] = []  # coindexed with all_addresses
-        mac_lookup: Dict[str, str] = find_ip_by_mac(found_mac_addresses)
-        for i in range(len(all_addresses)):
-            mac_address = all_mac_addresses[i]
-            if mac_address is None:
-                all_ip_addresses.append(all_addresses[i])
-            else:
-                ip_address: Optional[str] = mac_lookup.get(mac_address)
-                if ip_address is None:
-                    invalid_addresses.append(mac_address)
-                else:
-                    all_ip_addresses.append(ip_address)
-
-        # Fail if there are any invalid ip addresses
-        if len(invalid_addresses) > 0:
-            raise ControlLoopError('could not find ip address for mac address', errors=invalid_addresses)
-
-        # get ModbusTcpClient objects
-        all_clients: List[ModbusTcpClient] = []  # coindexed with all_addresses
-        errors: List[JSONDict] = []  # coindexed with all_addresses
-        ip_address: str
-        for i, ip_address in enumerate(all_ip_addresses):
-            try:
-                client = ModbusTcpClient(ip_address, port=502)
-                client.connect()
-                all_clients.append(client)
-            except (IOError, TypeError, ValueError) as err:
-                errors.append({
-                    'host': ip_address,
-                    'mac_address': all_mac_addresses[i],
-                    'error': str(err),
-                })
-
-        # Fail if there are any errors
-        if len(errors) > 0:
-            raise ControlLoopError('could not connect Modbus TCP client', errors=errors)
 
         # Configure power controller
-        master_client: ModbusTcpClient = all_clients[0]
-        slave_clients: List[ModbusTcpClient] = all_clients[1:]
+        master_client: ModbusTcpClient = clients[0]
+        slave_clients: List[ModbusTcpClient] = clients[1:]
         devices: Dict[str, ModbusDevice] = {
             'master': ModbusDevice(master_client, master_device_id),
         }
@@ -563,33 +579,36 @@ def connect_modbus(
         _control_state.reset_controller(controller)
 
         # Update the connection status record
-        _power_controller_status = {
-            'status': 'Modbus connection',
-            'devices': {
-                device_name: {
-                    'host': device.client.comm_params.host,
-                    'device': device.device_id,
-                }
-                for device_name, device in devices.items()
-            },
+        mac_addr_lookup: Dict[str, str] = {
+            address.ip_address: address.mac_address
+            for address in addresses
         }
-        if len(mac_lookup) > 0:
-            # noinspection PyTypeChecker
-            _power_controller_status['mac_addresses'] = mac_lookup
-        return _power_controller_status
+        devices_record: JSONDict = {}
+        for device_name, device in devices.items():
+            host: str = device.client.comm_params.host
+            mac_address: Optional[str] = mac_addr_lookup.get(host)
+            device_record: JSONDict = {'host': host}
+            if master_address is not None:
+                device_record['mac_address'] = mac_address
+            device_record['device'] = device.device_id
+            devices_record[device_name] = device_record
+        _control_state.power_controller_status = {
+            'status': 'Modbus connection',
+            'devices': devices_record,
+        }
+
+        return _control_state.power_controller_status
 
 
-def disconnect_control() -> JSONDict:
+def disconnect_controller() -> JSONDict:
     """
     Close the power controller connection.
     """
-    global _power_controller_status
     with _control_state_lock:
         if _control_state.power_controller is not None:
             _control_state.power_controller.close()
             _control_state.reset_controller(None)
-            _power_controller_status = {'status': 'disconnected'}
-        return _power_controller_status
+        return _control_state.power_controller_status
 
 
 def connect_amber(api_token: str, nmi: str) -> JSONDict:
@@ -599,7 +618,6 @@ def connect_amber(api_token: str, nmi: str) -> JSONDict:
     Raises:
         ControlLoopError: a connection cannot be established.
     """
-    global _power_pricer_status
     with _control_state_lock:
         try:
             amber_pricer = AmberPowerPricer(api_token, nmi)
@@ -607,30 +625,142 @@ def connect_amber(api_token: str, nmi: str) -> JSONDict:
             _control_state.reset_pricer(None)
             raise ControlLoopError('could not connect Amber', errors=[str(err)])
         _control_state.reset_pricer(amber_pricer)
-        _power_pricer_status = {
+        _control_state.power_pricer_status = {
             'status': 'Amber connection',
             'nmi': amber_pricer.nmi,
             'site': amber_pricer.site_id,
         }
-        return _power_pricer_status
+        return _control_state.power_pricer_status
 
 
-def disconnect_price() -> JSONDict:
+def disconnect_pricer() -> JSONDict:
     """
     Close the power pricer connection.
     """
-    global _power_pricer_status
     with _control_state_lock:
         if _control_state.power_pricer is not None:
             _control_state.power_pricer.close()
-            _control_state.power_pricer = None
-            _power_pricer_status = {'status': 'disconnected'}
-        return _power_pricer_status
+            _control_state.reset_pricer(None)
+        return _control_state.power_pricer_status
+
+
+def connect_tesla_wall_connector(address: str) -> JSONDict:
+    """
+    Establish a car charger connection using Tesla Wall Connector.
+
+    Args:
+        address: MAC or IP address of the Tesla Wall Connector.
+
+    Raises:
+        ControlLoopError: a connection cannot be established.
+    """
+    address: _Address = _resolve_addresses([address])[0]
+
+    with _control_state_lock:
+        try:
+            car_charger = TeslaWallConnector(address.ip_address)
+        except (IOError, TypeError, ValueError) as err:
+            _control_state.reset_pricer(None)
+            raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
+        _control_state.reset_car_charger(car_charger)
+        _control_state.car_charger_status = {
+            'status': 'Tesla Wall Connector connection',
+            'host': address.ip_address,
+        }
+        if address.mac_address != '':
+            _control_state.car_charger_status['mac_address'] = address.mac_address
+
+        return _control_state.car_charger_status
+
+
+def disconnect_car_charger() -> JSONDict:
+    """
+    Close the power pricer connection.
+    """
+    with _control_state_lock:
+        if _control_state.car_charger is not None:
+            _control_state.car_charger.close()
+            _control_state.reset_car_charger(None)
+        return _control_state.car_charger_status
 
 
 # =============================================================================
 #  Support functions
 # =============================================================================
+
+@dataclass
+class _Address:
+    raw_address: str
+    mac_address: str = ''
+    ip_address: str = ''
+
+
+def _resolve_addresses(raw_addresses: List[str]) -> List[_Address]:
+    """
+    Resolve a list of MAC or IP addresses.
+
+    Args:
+        raw_addresses: a list of MAC or IP addresses.
+
+    Returns:
+        the resolved addresses
+
+    Raises:
+        ControlLoopError: if any of the addresses are invalid
+    """
+    addresses: List[_Address] = [_Address(address) for address in raw_addresses]
+    invalid_addresses: List[str] = []
+    # Work out what addresses are MAC addresses
+    found_mac_addresses: List[str] = []
+    for address in addresses:
+        raw_address = address.raw_address
+        is_mac = ':' in raw_address
+        is_ip = '.' in raw_address
+        if is_mac and not is_ip:
+            address.mac_address = raw_address
+            found_mac_addresses.append(raw_address)
+        elif is_ip and not is_mac:
+            address.ip_address = raw_address
+        else:
+            invalid_addresses.append(raw_address)
+
+    # Fail if there are any invalid addresses
+    if len(invalid_addresses) > 0:
+        raise ControlLoopError('invalid address', errors=invalid_addresses)
+
+    # Look up IP addresses for MAC addresses
+    mac_lookup: Dict[str, str] = find_ip_by_mac(found_mac_addresses)
+    for address in addresses:
+        if address.ip_address == '':
+            mac_address = address.mac_address
+            ip_address: Optional[str] = mac_lookup.get(mac_address)
+            if ip_address is None:
+                invalid_addresses.append(mac_address)
+            else:
+                address.ip_address = ip_address
+
+    # Fail if there are any invalid ip addresses
+    if len(invalid_addresses) > 0:
+        raise ControlLoopError('could not find IP address for MAC address', errors=invalid_addresses)
+
+    return addresses
+
+
+def _update_listeners(
+        status_listeners: List[StatusListener],
+        registers_listeners: List[RegistersListener],
+) -> None:
+    """
+    Call update on the listeners. No locking, no list copying.
+    """
+    if len(status_listeners) > 0:
+        status = get_status()
+        for status_listener in status_listeners:
+            status_listener.update(status)
+    if len(registers_listeners) > 0:
+        registers = get_registers()
+        for registers_listener in registers_listeners:
+            registers_listener.update(registers)
 
 
 def _force_price_check() -> None:

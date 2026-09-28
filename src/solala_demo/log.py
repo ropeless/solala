@@ -1,9 +1,7 @@
 import logging
 import sys
 
-SOLALA_LOG_NAME = 'solala'
-LOGGER = logging.getLogger(SOLALA_LOG_NAME)
-SOLALA_LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+from solala.server_constants import SOLALA_LOG_FORMAT, LOGGER
 
 
 def configure_logger():

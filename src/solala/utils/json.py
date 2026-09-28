@@ -68,7 +68,7 @@ def follow_json(data: JSONDict, path: Optional[str]) -> JSONValue:
         parts = path.split('/')
         for i, part in enumerate(parts):
             if part not in data:
-                raise KeyError('/'.join(parts[:i+1]))
+                raise KeyError('/'.join(parts[:i + 1]))
             data = data[part]
     return data
 
@@ -124,7 +124,7 @@ def render_json(
 
     text = json.dumps(data, indent=indent)
     text = _LINE_ENDINGS_PATTERN.sub('', text)
-    text = _BLANK_LINES_PATTERN.sub('', text)
+    text = _BLANK_LINES_PATTERN.sub('', text).rstrip()
     text = _DICT_ENTRY_SEPARATOR_PATTERN.sub(r'\1 = ', text)
 
     text = text.replace('"', '')
