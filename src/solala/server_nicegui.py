@@ -4,7 +4,7 @@ from abc import abstractmethod
 from asyncio import AbstractEventLoop
 from dataclasses import dataclass
 from functools import partial
-from typing import List, Mapping, final
+from typing import List, Mapping, final, Optional
 
 from nicegui import ui, app
 from nicegui.elements.button import Button
@@ -17,7 +17,7 @@ from solala.resources import IMAGE_FILES
 from solala.server_constants import APP_NAME
 from solala.server_constants import SOLALA_LOG_FORMAT, LOGGER
 from solala.utils.dict_extras import dict_merge
-from solala.utils.json import JSONDict, json_dict, render_json
+from solala.utils.json import JSONDict, json_dict, render_json, filter_json
 
 _H1_class = 'text-h5'
 _H2_class = 'text-h6'
@@ -133,6 +133,12 @@ class RegistersListener(control_loop_listeners.RegistersListener):
 
     def _update(self, registers_json: JSONDict) -> None:
         ...
+
+
+def _register_listener(listener: StatusListener | RegistersListener) -> None:
+    listener.update_now()
+    ui.context.client.on_disconnect(partial(control_loop.remove_listener, listener))
+    control_loop.add_listener(listener)
 
 
 def handle_battery_enable():
@@ -265,8 +271,11 @@ class StatusElements(StatusListener):
 @dataclass
 class RegistersElement(RegistersListener):
     registers_element: ContentElement
+    match: Optional[str]
 
     def _update(self, registers_json: JSONDict) -> None:
+        if self.match is not None:
+            registers_json = filter_json(registers_json, self.match)
         json_str = render_json(
             registers_json,
             float_format='.2f',
@@ -296,6 +305,41 @@ def _title(ext: str = '', link: bool = True) -> None:
         ui.label(f'{APP_NAME}{ext}').classes(_H1_class)
 
 
+# def create_svg_element() -> str:
+#     radius = 50
+#
+#     # Create the root <svg> element
+#     svg = ElementTree.Element('svg', {
+#         'viewBox': '0 0 200 200',
+#         'width': '200',
+#         'height': '200',
+#         'xmlns': 'http://www.w3.org/2000/svg'
+#     })
+#
+#     # Add a background rectangle methodically
+#     ElementTree .SubElement(svg, 'rect', {
+#         'width': '100%',
+#         'height': '100%',
+#         'fill': '#f3f4f6',
+#         'rx': '10'
+#     })
+#
+#     # Add a dynamic circle element
+#     ElementTree .SubElement(svg, 'circle', {
+#         'cx': '100',
+#         'cy': '100',
+#         'r': str(radius),
+#         'fill': 'black'
+#     })
+#
+#     # Convert the XML tree back into a UTF-8 string for NiceGUI
+#     return ElementTree.tostring(svg, encoding='utf-8').decode('utf-8')
+#
+#
+# def _status_picture() -> None:
+#     picture = ui.html(create_svg_element(), sanitize=False)
+
+
 # ====================================================================
 #  Pages
 # ====================================================================
@@ -316,9 +360,9 @@ def status_page():
             ui.label('Status').classes(_H2_class)
             status_element = ui.code(language='nothing').classes('text-sm w-full grow')
             with ui.row():
-                ui.link('Registers', '/registers_page')
                 ui.link('Parameters', '/parameters_page')
                 ui.link('Connection', '/connection_page')
+                ui.link('Registers', '/registers_page')
                 ui.link('Constants', '/constants_page')
                 ui.link('Log', '/log_page')
         with ui.card():
@@ -359,9 +403,7 @@ def status_page():
         inverter_zero_export=inverter_zero_export,
         inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
     )
-    status_elements.update_now()
-    ui.context.client.on_disconnect(partial(control_loop.remove_listener, status_elements))
-    control_loop.add_listener(status_elements)
+    _register_listener(status_elements)
 
 
 @ui.page('/log_page')
@@ -379,54 +421,52 @@ def log_page():
 
 
 @ui.page('/registers_page')
-def registers_page():
+def registers_page(match: Optional[str] = None):
     """
     Show the inverter registers.
     """
     json_element = _json_page('Registers')
-    registers_elements = RegistersElement(registers_element=json_element)
-    registers_elements.update_now()
-    ui.context.client.on_disconnect(partial(control_loop.remove_listener, registers_elements))
-    control_loop.add_listener(registers_elements)
+    registers_elements = RegistersElement(registers_element=json_element, match=match)
+    _register_listener(registers_elements)
 
 
 @ui.page('/parameters_page')
-def parameters_page():
+def parameters_page(match: Optional[str] = None):
     """
     Show the policy parameters.
     """
-    json_element = _json_page('Parameters')
-    json_element.set_content(
-        render_json(
-            control_loop.get_parameters(),
-            units=_PARAMETERS_UNITS,
-        )
+    parameters_json = control_loop.get_parameters()
+    if match is not None:
+        parameters_json = filter_json(parameters_json, match)
+
+    _json_page('Parameters').set_content(
+        render_json(parameters_json, units=_PARAMETERS_UNITS)
     )
 
 
 @ui.page('/constants_page')
-def constants_page():
+def constants_page(match: Optional[str] = None):
     """
     Show the control loop constants.
     """
-    json_element = _json_page('Constants')
-    json_element.set_content(
-        render_json(
-            control_loop.Constants.as_dict(),
-            units=_CONSTANTS_UNITS,
-        )
+    constants_json = control_loop.Constants.as_dict()
+    if match is not None:
+        constants_json = filter_json(constants_json, match)
+
+    _json_page('Constants').set_content(
+        render_json(constants_json, remove_key_underscores=False, units=_CONSTANTS_UNITS)
     )
 
 
 @ui.page('/connection_page')
-def connection_page():
+def connection_page(match: Optional[str] = None):
     """
     Show the connection status.
     """
-    json_element = _json_page('Connection')
-    json_element.set_content(
-        render_json(
-            control_loop.get_connection_status(),
-            units=_CONSTANTS_UNITS,
-        )
+    connection_json = control_loop.get_connection_status()
+    if match is not None:
+        connection_json = filter_json(connection_json, match)
+
+    _json_page('Connection').set_content(
+        render_json(connection_json)
     )

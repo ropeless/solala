@@ -588,7 +588,7 @@ def connect_modbus(
             host: str = device.client.comm_params.host
             mac_address: Optional[str] = mac_addr_lookup.get(host)
             device_record: JSONDict = {'host': host}
-            if master_address is not None:
+            if master_address is not None and mac_address != '':
                 device_record['mac_address'] = mac_address
             device_record['device'] = device.device_id
             devices_record[device_name] = device_record
