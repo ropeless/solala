@@ -31,7 +31,7 @@ class PowerStatus:
 
 class PowerController(ABC):
     """
-    High-level power power_controller to send commands and read status from the power system.
+    High-level power controller to send commands and read status from the power system.
     """
 
     @abstractmethod

@@ -1,23 +1,23 @@
 import asyncio
 import logging
-import threading
-from abc import abstractmethod, ABC
+from abc import abstractmethod
 from asyncio import AbstractEventLoop
 from dataclasses import dataclass
 from functools import partial
-from typing import List, Mapping
+from typing import List, Mapping, final, Optional
 
 from nicegui import ui, app
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
 from solala import control_loop
+from solala import control_loop_listeners
 from solala.control_loop import BatteryPolicy, InverterPolicy, BatteryMode, InverterMode
-from solala.log import SOLALA_LOG_FORMAT, LOGGER
 from solala.resources import IMAGE_FILES
 from solala.server_constants import APP_NAME
+from solala.server_constants import SOLALA_LOG_FORMAT, LOGGER
 from solala.utils.dict_extras import dict_merge
-from solala.utils.json import JSONDict, json_dict, render_json
+from solala.utils.json import JSONDict, json_dict, render_json, filter_json
 
 _H1_class = 'text-h5'
 _H2_class = 'text-h6'
@@ -25,6 +25,8 @@ _H2_class = 'text-h6'
 # Units for pretty printing status
 _PRICE = ' cents/kWh'
 _WATTS = ' Watts'
+_VOLTS = ' Volts'
+_AMPS = ' Amps'
 _SECONDS = ' seconds'
 _MINUTES = ' minutes'
 _PCT = '%'
@@ -45,6 +47,9 @@ _STATUS_UNITS: Mapping[str, str] = dict_merge(
         'solar_power': _WATTS,
         'battery_power': _WATTS,
         'house_power': _WATTS,
+        'power': _WATTS,
+        'voltage': _VOLTS,
+        'current': _AMPS,
     },
     _PARAMETERS_UNITS,
 )
@@ -96,120 +101,44 @@ _LOG_HANDLER = NiceGuiLogHandler()
 
 
 @dataclass
-class StatusListener(ABC):
+class StatusListener(control_loop_listeners.StatusListener):
 
     def __post_init__(self):
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
 
+    @final
     def update(self, status_json: JSONDict) -> None:
         """
         Thread safe update.
         """
         self._main_loop.call_soon_threadsafe(partial(self._update, status_json))
 
-    def update_now(self) -> None:
-        """
-        Thread _unsafe_ update.
-        """
-        status_json: JSONDict = control_loop.get_status()
-        self._update(status_json)
-
     @abstractmethod
     def _update(self, status_json: JSONDict) -> None:
         ...
 
 
-class StatusHandler(control_loop.ControlLoopListener):
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._handlers: list[StatusListener] = []
-        control_loop.add_listener(self)
-
-    def __del__(self):
-        control_loop.remove_listener(self)
-
-    def update(self) -> None:
-        with self._lock:
-            if len(self._handlers) > 0:
-                status_json: JSONDict = control_loop.get_status()
-                for listener in self._handlers:
-                    listener.update(status_json)
-
-    def add(self, handler: StatusListener) -> None:
-        with self._lock:
-            try:
-                self._handlers.remove(handler)
-            except ValueError:
-                pass
-        self._handlers.append(handler)
-
-    def remove(self, handler: StatusListener) -> None:
-        with self._lock:
-            try:
-                self._handlers.remove(handler)
-            except ValueError:
-                pass
-
-
-_STATUS_HANDLER = StatusHandler()
-
-
 @dataclass
-class RegistersListener:
+class RegistersListener(control_loop_listeners.RegistersListener):
 
     def __post_init__(self):
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
 
+    @final
     def update(self, registers_json: JSONDict) -> None:
         """
         Thread safe update.
         """
         self._main_loop.call_soon_threadsafe(partial(self._update, registers_json))
 
-    def update_now(self) -> None:
-        """
-        Thread _unsafe_ update.
-        """
-        registers_json: JSONDict = control_loop.get_registers()
-        self._update(registers_json)
-
     def _update(self, registers_json: JSONDict) -> None:
         ...
 
 
-class RegistersHandler(control_loop.ControlLoopListener):
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._handlers: list[RegistersListener] = []
-        control_loop.add_listener(self)
-
-    def __del__(self):
-        control_loop.remove_listener(self)
-
-    def update(self) -> None:
-        with self._lock:
-            if len(self._handlers) > 0:
-                registers_json: JSONDict = control_loop.get_registers()
-                for listener in self._handlers:
-                    listener.update(registers_json)
-
-    def add(self, handler: RegistersListener) -> None:
-        with self._lock:
-            try:
-                self._handlers.remove(handler)
-            except ValueError:
-                pass
-        self._handlers.append(handler)
-
-    def remove(self, handler: RegistersListener) -> None:
-        with self._lock:
-            try:
-                self._handlers.remove(handler)
-            except ValueError:
-                pass
-
-
-_REGISTERS_HANDLER = RegistersHandler()
+def _register_listener(listener: StatusListener | RegistersListener) -> None:
+    listener.update_now()
+    ui.context.client.on_disconnect(partial(control_loop.remove_listener, listener))
+    control_loop.add_listener(listener)
 
 
 def handle_battery_enable():
@@ -217,7 +146,7 @@ def handle_battery_enable():
         battery_mode=BatteryMode.ENABLE,
         battery_policy=BatteryPolicy.MANUAL,
     )
-    _STATUS_HANDLER.update()
+    control_loop.update_listeners()
 
 
 def handle_battery_disable():
@@ -225,7 +154,7 @@ def handle_battery_disable():
         battery_mode=BatteryMode.DISABLE,
         battery_policy=BatteryPolicy.MANUAL,
     )
-    _STATUS_HANDLER.update()
+    control_loop.update_listeners()
 
 
 def handle_battery_force_charge():
@@ -233,7 +162,7 @@ def handle_battery_force_charge():
         battery_mode=BatteryMode.FORCE_CHARGE,
         battery_policy=BatteryPolicy.MANUAL,
     )
-    _STATUS_HANDLER.update()
+    control_loop.update_listeners()
 
 
 def handle_battery_force_discharge():
@@ -241,14 +170,14 @@ def handle_battery_force_discharge():
         battery_mode=BatteryMode.FORCE_DISCHARGE,
         battery_policy=BatteryPolicy.MANUAL,
     )
-    _STATUS_HANDLER.update()
+    control_loop.update_listeners()
 
 
 def handle_battery_cheap_force_discharge():
     control_loop.set_control(
         battery_policy=BatteryPolicy.CHEAP_CHARGE,
     )
-    _STATUS_HANDLER.update()
+    control_loop.update_listeners()
 
 
 def handle_inverter_enable():
@@ -256,7 +185,7 @@ def handle_inverter_enable():
         inverter_mode=InverterMode.ENABLE,
         inverter_policy=InverterPolicy.MANUAL,
     )
-    _STATUS_HANDLER.update()
+    control_loop.update_listeners()
 
 
 def handle_inverter_disable():
@@ -264,7 +193,7 @@ def handle_inverter_disable():
         inverter_mode=InverterMode.DISABLE,
         inverter_policy=InverterPolicy.MANUAL,
     )
-    _STATUS_HANDLER.update()
+    control_loop.update_listeners()
 
 
 def handle_inverter_zero_export():
@@ -272,14 +201,14 @@ def handle_inverter_zero_export():
         inverter_mode=InverterMode.ZERO_EXPORT,
         inverter_policy=InverterPolicy.MANUAL,
     )
-    _STATUS_HANDLER.update()
+    control_loop.update_listeners()
 
 
 def handle_inverter_neg_feed_in_zero_export():
     control_loop.set_control(
         inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT,
     )
-    _STATUS_HANDLER.update()
+    control_loop.update_listeners()
 
 
 @dataclass
@@ -342,8 +271,11 @@ class StatusElements(StatusListener):
 @dataclass
 class RegistersElement(RegistersListener):
     registers_element: ContentElement
+    match: Optional[str]
 
     def _update(self, registers_json: JSONDict) -> None:
+        if self.match is not None:
+            registers_json = filter_json(registers_json, self.match)
         json_str = render_json(
             registers_json,
             float_format='.2f',
@@ -362,21 +294,50 @@ def _json_page(name: str) -> ContentElement:
     return registers_element
 
 
-def _favicon() -> None:
-    ui.add_head_html('''
-        <link rel="icon" type="image/png" sizes="16x16" href="/images/solala-16x16.png">
-        <link rel="icon" type="image/png" sizes="32x32" href="/images/solala-32x32.png">
-    ''')
-
-
 def _title(ext: str = '', link: bool = True) -> None:
     with ui.row().classes('items-center gap-4'):
         if link:
             with ui.link(target='/'):
-                ui.image('/images/solala.svg').classes('w-12 h-12 obj-contain')
+                image = ui.image('/images/solala.svg')
         else:
-            ui.image('/images/solala.svg').classes('w-12 h-12 obj-contain')
+            image = ui.image('/images/solala.svg')
+        image.classes('w-12 h-12 bg-transparent')
         ui.label(f'{APP_NAME}{ext}').classes(_H1_class)
+
+
+# def create_svg_element() -> str:
+#     radius = 50
+#
+#     # Create the root <svg> element
+#     svg = ElementTree.Element('svg', {
+#         'viewBox': '0 0 200 200',
+#         'width': '200',
+#         'height': '200',
+#         'xmlns': 'http://www.w3.org/2000/svg'
+#     })
+#
+#     # Add a background rectangle methodically
+#     ElementTree .SubElement(svg, 'rect', {
+#         'width': '100%',
+#         'height': '100%',
+#         'fill': '#f3f4f6',
+#         'rx': '10'
+#     })
+#
+#     # Add a dynamic circle element
+#     ElementTree .SubElement(svg, 'circle', {
+#         'cx': '100',
+#         'cy': '100',
+#         'r': str(radius),
+#         'fill': 'black'
+#     })
+#
+#     # Convert the XML tree back into a UTF-8 string for NiceGUI
+#     return ElementTree.tostring(svg, encoding='utf-8').decode('utf-8')
+#
+#
+# def _status_picture() -> None:
+#     picture = ui.html(create_svg_element(), sanitize=False)
 
 
 # ====================================================================
@@ -393,16 +354,15 @@ def status_page():
     """
     The main status page.
     """
-    _favicon()
     with ui.column().style('width: 100vw; height: 100vh'):
         _title(link=False)
         with ui.card():
             ui.label('Status').classes(_H2_class)
             status_element = ui.code(language='nothing').classes('text-sm w-full grow')
             with ui.row():
-                ui.link('Registers', '/registers_page')
                 ui.link('Parameters', '/parameters_page')
                 ui.link('Connection', '/connection_page')
+                ui.link('Registers', '/registers_page')
                 ui.link('Constants', '/constants_page')
                 ui.link('Log', '/log_page')
         with ui.card():
@@ -423,6 +383,14 @@ def status_page():
                 inverter_neg_feed_in_zero_export = \
                     ui.button('neg feed-in ⇒ zero export', on_click=handle_inverter_neg_feed_in_zero_export)
 
+        for button in [
+            battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
+            battery_cheap_force_discharge, inverter_enable, inverter_disable, inverter_zero_export,
+            inverter_neg_feed_in_zero_export
+        ]:
+            button.style('padding-top: 1px; padding-bottom: 1px;')
+            button.classes('py-0 px-2 text-xs')
+
     status_elements = StatusElements(
         status_element=status_element,
         battery_enable=battery_enable,
@@ -435,9 +403,7 @@ def status_page():
         inverter_zero_export=inverter_zero_export,
         inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
     )
-    status_elements.update_now()
-    ui.context.client.on_disconnect(lambda: _STATUS_HANDLER.remove(status_elements))
-    _STATUS_HANDLER.add(status_elements)
+    _register_listener(status_elements)
 
 
 @ui.page('/log_page')
@@ -445,69 +411,62 @@ def log_page():
     """
     Listen to the Solala logger and display log messages.
     """
-    _favicon()
     with ui.column().style('width: 100vw; height: 100vh'):
         _title(' log console')
         log_ui = ui.log(max_lines=None).classes(
             'w-full grow min-h-0 text-mono text-body2 p-2 overflow-auto'
         )
-        ui.context.client.on_disconnect(lambda: _LOG_HANDLER.remove(log_ui))
-        _LOG_HANDLER.add(log_ui)
+    ui.context.client.on_disconnect(partial(_LOG_HANDLER.remove, log_ui))
+    _LOG_HANDLER.add(log_ui)
 
 
 @ui.page('/registers_page')
-def registers_page():
+def registers_page(match: Optional[str] = None):
     """
     Show the inverter registers.
     """
-    _favicon()
     json_element = _json_page('Registers')
-    registers_elements = RegistersElement(registers_element=json_element)
-    registers_elements.update_now()
-    ui.context.client.on_disconnect(lambda: _REGISTERS_HANDLER.remove(registers_elements))
-    _REGISTERS_HANDLER.add(registers_elements)
+    registers_elements = RegistersElement(registers_element=json_element, match=match)
+    _register_listener(registers_elements)
 
 
 @ui.page('/parameters_page')
-def parameters_page():
+def parameters_page(match: Optional[str] = None):
     """
     Show the policy parameters.
     """
-    _favicon()
-    json_element = _json_page('Parameters')
-    json_element.set_content(
-        render_json(
-            control_loop.get_parameters(),
-            units=_PARAMETERS_UNITS,
-        )
+    parameters_json = control_loop.get_parameters()
+    if match is not None:
+        parameters_json = filter_json(parameters_json, match)
+
+    _json_page('Parameters').set_content(
+        render_json(parameters_json, units=_PARAMETERS_UNITS)
     )
 
 
 @ui.page('/constants_page')
-def constants_page():
+def constants_page(match: Optional[str] = None):
     """
     Show the control loop constants.
     """
-    _favicon()
-    json_element = _json_page('Constants')
-    json_element.set_content(
-        render_json(
-            control_loop.Constants.as_dict(),
-            units=_CONSTANTS_UNITS,
-        )
+    constants_json = control_loop.Constants.as_dict()
+    if match is not None:
+        constants_json = filter_json(constants_json, match)
+
+    _json_page('Constants').set_content(
+        render_json(constants_json, remove_key_underscores=False, units=_CONSTANTS_UNITS)
     )
 
 
 @ui.page('/connection_page')
-def connection_page():
+def connection_page(match: Optional[str] = None):
     """
     Show the connection status.
     """
-    _favicon()
-    json_element = _json_page('Connection')
-    json_element.set_content(
-        render_json(
-            control_loop.get_connection_status(),
-            units=_CONSTANTS_UNITS,
-        )
+    connection_json = control_loop.get_connection_status()
+    if match is not None:
+        connection_json = filter_json(connection_json, match)
+
+    _json_page('Connection').set_content(
+        render_json(connection_json)
     )
