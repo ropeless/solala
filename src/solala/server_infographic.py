@@ -1,5 +1,6 @@
 from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text
 
+from Units import WATTS_SHORT, KILOWATTS_SHORT, PERCENT, PRICE_SHORT
 from solala.utils.json import JSONDict, json_dict, json_num
 
 GRAPHIC_SIZE: int = 300
@@ -70,7 +71,7 @@ class Infographic:
         grid_scale = max(min(grid_power / power_scale, 1), -1)
         house_scale = max(min(house_power / power_scale, 1), -1)
 
-        prices: str = f'{_to_price(buy_price)} / {_to_price(feed_in_price)}'
+        prices: str = f'{_to_price(buy_price)} / {_to_price(feed_in_price)}{PRICE_SHORT}'
 
         canvas.clear()
         canvas.append(self.icons)
@@ -120,13 +121,13 @@ def _to_price(price: float) -> str:
 def _to_watts(power: float) -> str:
     power = abs(power)
     if power < 1000:
-        return f'{int(round(power))} W'
+        return f'{int(round(power))}{WATTS_SHORT}'
     else:
-        return f"{power / 1000:.2f} kW"
+        return f"{power / 1000:.2f}{KILOWATTS_SHORT}"
 
 
 def _to_pct(state_of_charge: float) -> str:
-    return f'{int(round(state_of_charge))}%'
+    return f'{int(round(state_of_charge))}{PERCENT}'
 
 
 class Canvas(Drawing):

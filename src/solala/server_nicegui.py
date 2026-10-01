@@ -10,6 +10,7 @@ from nicegui import ui, app
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
+from Units import PRICE, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
 from solala import control_loop
 from solala import control_loop_listeners
 from solala.control_loop import BatteryPolicy, InverterPolicy, BatteryMode, InverterMode
@@ -24,45 +25,38 @@ _H1_class = 'text-h5'
 _H2_class = 'text-h6'
 
 # Units for pretty printing status
-_PRICE = ' cents/kWh'
-_WATTS = ' Watts'
-_VOLTS = ' Volts'
-_AMPS = ' Amps'
-_SECONDS = ' seconds'
-_MINUTES = ' minutes'
-_PCT = '%'
 _PARAMETERS_UNITS: Mapping[str, str] = {
-    'start_charge_price_threshold': _PRICE,
-    'stop_charge_price_threshold': _PRICE,
-    'disable_export_price_threshold': _PRICE,
-    'enable_export_price_threshold': _PRICE,
+    'start_charge_price_threshold': PRICE,
+    'stop_charge_price_threshold': PRICE,
+    'disable_export_price_threshold': PRICE,
+    'enable_export_price_threshold': PRICE,
 }
 _STATUS_UNITS: Mapping[str, str] = dict_merge(
     {
-        'buy_price': _PRICE,
-        'feed_in_price': _PRICE,
-        'renewables': _PCT,
-        'state_of_charge': _PCT,
-        'power_limit': _PCT,
-        'grid_power': _WATTS,
-        'solar_power': _WATTS,
-        'battery_power': _WATTS,
-        'house_power': _WATTS,
-        'power': _WATTS,
-        'voltage': _VOLTS,
-        'current': _AMPS,
+        'buy_price': PRICE,
+        'feed_in_price': PRICE,
+        'renewables': PERCENT,
+        'state_of_charge': PERCENT,
+        'power_limit': PERCENT,
+        'grid_power': WATTS,
+        'solar_power': WATTS,
+        'battery_power': WATTS,
+        'house_power': WATTS,
+        'power': WATTS,
+        'voltage': VOLTS,
+        'current': AMPS,
     },
     _PARAMETERS_UNITS,
 )
 _CONSTANTS_UNITS: Mapping[str, str] = {
-    "LOOP_TIME": _SECONDS,
-    "MIN_SLEEP_TIME": _SECONDS,
-    "CONTROL_DURATION": _SECONDS,
-    "PRICE_LOOK_AHEAD": _MINUTES,
-    "DISABLE_FEED_IN_TOLERANCE": _PRICE,
-    "ENABLE_FEED_IN_TOLERANCE": _PRICE,
-    "STOP_BUY_TOLERANCE": _PRICE,
-    "START_BUY_TOLERANCE": _PRICE,
+    "LOOP_TIME": SECONDS,
+    "MIN_SLEEP_TIME": SECONDS,
+    "CONTROL_DURATION": SECONDS,
+    "PRICE_LOOK_AHEAD": MINUTES,
+    "DISABLE_FEED_IN_TOLERANCE": PRICE,
+    "ENABLE_FEED_IN_TOLERANCE": PRICE,
+    "STOP_BUY_TOLERANCE": PRICE,
+    "START_BUY_TOLERANCE": PRICE,
 }
 
 
