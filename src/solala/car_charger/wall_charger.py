@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Iterable, Tuple, Dict
 
 
-@dataclass
+@dataclass(frozen=True)
 class ChargerStatus:
     voltage: float
     current: float
