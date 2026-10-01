@@ -8,9 +8,9 @@ GRAPHIC_SIZE: int = 300
 
 class Infographic:
     def __init__(self) -> None:
-        width = 300
+        width = 320
         height = 320
-        icon_margin_x = 40
+        icon_margin_x = 50
         icon_margin_y = 50
 
         self.canvas = Canvas(width=width, height=height)
@@ -71,14 +71,15 @@ class Infographic:
         grid_scale = max(min(grid_power / power_scale, 1), -1)
         house_scale = max(min(house_power / power_scale, 1), -1)
 
-        prices: str = f'{_to_price(buy_price)} / {_to_price(feed_in_price)}{PRICE_SHORT}'
+        prices: str = f'{_to_price(buy_price)},  {_to_price(feed_in_price)}{PRICE_SHORT}'
 
         canvas.clear()
         canvas.append(self.icons)
-        canvas.append(Chevron(x=cx - 34, y=cy - 34, rotate=45, width=20 * solar_scale))
-        canvas.append(Chevron(x=cx + 34, y=cy + 34, rotate=45, width=20 * battery_scale))
-        canvas.append(Chevron(x=cx - 34, y=cy + 34, rotate=-45, width=20 * grid_scale))
-        canvas.append(Chevron(x=cx + 34, y=cy - 34, rotate=-45, width=20 * house_scale))
+        max_chevron_width = 30
+        canvas.append(Chevron(x=cx - 34, y=cy - 34, rotate=45, width=max_chevron_width * solar_scale))
+        canvas.append(Chevron(x=cx + 34, y=cy + 34, rotate=45, width=max_chevron_width * battery_scale))
+        canvas.append(Chevron(x=cx - 34, y=cy + 34, rotate=-45, width=max_chevron_width * grid_scale))
+        canvas.append(Chevron(x=cx + 34, y=cy - 34, rotate=-45, width=max_chevron_width * house_scale))
 
         font_size = 16
         small_font_size = 12
@@ -406,8 +407,8 @@ class Chevron(Shape):
     def __init__(
             self,
             *,
-            size: float = 44,
-            width: float = 20,
+            length: float = 44,
+            width: float = 40,
             x: float = 0,
             y: float = 0,
             rotate: float = 0,
@@ -415,44 +416,54 @@ class Chevron(Shape):
             color: str = 'gray',
     ):
         super().__init__(x=x, y=y, rotate=rotate)
-        s = size / 64
+
+        min_width = 4
+
+        if abs(width) < 0.2:
+            width = 0
+        elif 0 < width < min_width:
+            width = min_width
+        elif -min_width < width < 0:
+            width = -min_width
+
+        l = length / 64
         w = width / 2
 
         if width > 0:
-            start = (w - 32) * s
+            start = (w - 32) * l
             mid = w / 2
-            end = 32 * s
+            end = 32 * l
         else:
-            start = -32 * s
+            start = -32 * l
             mid = w / 2
-            end = (32 + w) * s
+            end = (32 + w) * l
 
-        self.append(Line(start, 0, end, 0, stroke_width=stroke_width * s, stroke=color))
-        if abs(w) > 0.1:
+        self.append(Line(start, 0, end, 0, stroke_width=stroke_width * l, stroke=color))
+        if abs(w) > 0:
             self.append(Path(
-                d=f"M {start - w * s},{-w * s} "
+                d=f"M {start - w * l},{-w * l} "
                   f"L {start},0 "
-                  f"L {start - w * s},{w * s}",
+                  f"L {start - w * l},{w * l}",
                 fill="none",
                 stroke=color,
-                stroke_width=stroke_width * s,
+                stroke_width=stroke_width * l,
                 stroke_linecap="round"
             ))
             self.append(Path(
-                d=f"M {mid - w * s},{-w * s} "
+                d=f"M {mid - w * l},{-w * l} "
                   f"L {mid},0 "
-                  f"L {mid - w * s},{w * s}",
+                  f"L {mid - w * l},{w * l}",
                 fill="none",
                 stroke=color,
-                stroke_width=stroke_width * s,
+                stroke_width=stroke_width * l,
                 stroke_linecap="round"
             ))
             self.append(Path(
-                d=f"M {end - w * s},{-w * s} "
+                d=f"M {end - w * l},{-w * l} "
                   f"L {end},0 "
-                  f"L {end - w * s},{w * s}",
+                  f"L {end - w * l},{w * l}",
                 fill="none",
                 stroke=color,
-                stroke_width=stroke_width * s,
+                stroke_width=stroke_width * l,
                 stroke_linecap="round"
             ))
