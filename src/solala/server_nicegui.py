@@ -56,6 +56,7 @@ _STATUS_UNITS: Mapping[str, str] = dict_merge(
 )
 _CONSTANTS_UNITS: Mapping[str, str] = {
     "LOOP_TIME": _SECONDS,
+    "MIN_SLEEP_TIME": _SECONDS,
     "CONTROL_DURATION": _SECONDS,
     "PRICE_LOOK_AHEAD": _MINUTES,
     "DISABLE_FEED_IN_TOLERANCE": _PRICE,
@@ -213,10 +214,7 @@ def handle_inverter_neg_feed_in_zero_export():
 
 
 @dataclass
-class StatusElements(StatusListener):
-    infographic_element: ContentElement
-    infographic: Infographic
-    status_element: ContentElement
+class ButtonUpdater(StatusListener):
     battery_enable: Button
     battery_disable: Button
     battery_force_charge: Button
@@ -252,12 +250,6 @@ class StatusElements(StatusListener):
             battery_button = ''
             inverter_button = ''
 
-        # Set the content of the status and infographic elements
-        json_str = render_json(status_json, float_format='.2f', units=_STATUS_UNITS)
-        self.status_element.set_content(json_str)
-        self.infographic.make_from_status(status_json)
-        self.infographic_element.set_content(self.infographic.as_svg())
-
         # Set the button states
         def on_props(_on: bool) -> str:
             return 'color=blue dense' if _on else 'color=grey dense'
@@ -271,6 +263,26 @@ class StatusElements(StatusListener):
         self.inverter_disable.props(on_props(inverter_button == 'DISABLE'))
         self.inverter_zero_export.props(on_props(inverter_button == 'ZERO_EXPORT'))
         self.inverter_neg_feed_in_zero_export.props(on_props(inverter_button == 'NEG_FEED_IN_ZERO_EXPORT'))
+
+
+@dataclass
+class StatusElements(StatusListener):
+    status_element: ContentElement
+
+    def _update(self, status_json: JSONDict) -> None:
+        # Set the content of the status and infographic elements
+        json_str = render_json(status_json, float_format='.2f', units=_STATUS_UNITS)
+        self.status_element.set_content(json_str)
+
+
+@dataclass
+class InfographicUpdates(StatusListener):
+    infographic_element: ContentElement
+    infographic: Infographic
+
+    def _update(self, status_json: JSONDict) -> None:
+        self.infographic.make_from_status(status_json)
+        self.infographic_element.set_content(self.infographic.as_svg())
 
 
 @dataclass
@@ -354,24 +366,77 @@ app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
 
 
 @ui.page('/')
+def root_page():
+    with ui.column().style('width: 100vw; height: 100vh'):
+        infographic_element = ui.html()
+        with ui.card():
+            ui.label('Battery').classes(_H2_class)
+            with ui.row():
+                battery_enable = ui.button('enable', on_click=handle_battery_enable)
+                battery_disable = ui.button('disable', on_click=handle_battery_disable)
+                battery_force_charge = ui.button('force charge', on_click=handle_battery_force_charge)
+                battery_force_discharge = ui.button('force discharge', on_click=handle_battery_force_discharge)
+                battery_cheap_force_discharge = \
+                    ui.button('cheap ⇒ force charge', on_click=handle_battery_cheap_force_discharge)
+        with ui.card():
+            ui.label('Inverter').classes(_H2_class)
+            with ui.row():
+                inverter_enable = ui.button('enable', on_click=handle_inverter_enable)
+                inverter_disable = ui.button('disable', on_click=handle_inverter_disable)
+                inverter_zero_export = ui.button('zero export', on_click=handle_inverter_zero_export)
+                inverter_neg_feed_in_zero_export = \
+                    ui.button('neg feed-in ⇒ zero export', on_click=handle_inverter_neg_feed_in_zero_export)
+        with ui.card():
+            ui.label('Links').classes(_H2_class)
+            with ui.row():
+                ui.link('Status', '/status_page')
+                ui.link('Parameters', '/parameters_page')
+                ui.link('Connection', '/connection_page')
+                ui.link('Registers', '/registers_page')
+                ui.link('Constants', '/constants_page')
+                ui.link('Log', '/log_page')
+                ui.link('API Schema', '/schema')
+
+        for button in [
+            battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
+            battery_cheap_force_discharge, inverter_enable, inverter_disable, inverter_zero_export,
+            inverter_neg_feed_in_zero_export
+        ]:
+            button.style('padding-top: 1px; padding-bottom: 1px;')
+            button.classes('py-0 px-2 text-xs')
+
+    _register_listener(
+        ButtonUpdater(
+            battery_enable=battery_enable,
+            battery_disable=battery_disable,
+            battery_force_charge=battery_force_charge,
+            battery_force_discharge=battery_force_discharge,
+            battery_cheap_force_discharge=battery_cheap_force_discharge,
+            inverter_enable=inverter_enable,
+            inverter_disable=inverter_disable,
+            inverter_zero_export=inverter_zero_export,
+            inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
+        )
+    )
+
+    _register_listener(
+        InfographicUpdates(
+            infographic_element=infographic_element,
+            infographic=Infographic(),
+        )
+    )
+
+
 @ui.page('/status_page')
 def status_page():
     """
     The main status page.
     """
     with ui.column().style('width: 100vw; height: 100vh'):
-        # _title(link=False)
-        infographic_element = ui.html()
+        _title()
         with ui.card():
             ui.label('Status').classes(_H2_class)
             status_element = ui.code(language='nothing').classes('text-sm w-full grow')
-            with ui.row():
-                ui.link('Parameters', '/parameters_page')
-                ui.link('Connection', '/connection_page')
-                ui.link('Registers', '/registers_page')
-                ui.link('Constants', '/constants_page')
-                ui.link('Log', '/log_page')
-                ui.link('Schema', '/schema')
         with ui.card():
             ui.label('Battery').classes(_H2_class)
             with ui.row():
@@ -398,21 +463,25 @@ def status_page():
             button.style('padding-top: 1px; padding-bottom: 1px;')
             button.classes('py-0 px-2 text-xs')
 
-    status_elements = StatusElements(
-        infographic_element=infographic_element,
-        infographic=Infographic(),
-        status_element=status_element,
-        battery_enable=battery_enable,
-        battery_disable=battery_disable,
-        battery_force_charge=battery_force_charge,
-        battery_force_discharge=battery_force_discharge,
-        battery_cheap_force_discharge=battery_cheap_force_discharge,
-        inverter_enable=inverter_enable,
-        inverter_disable=inverter_disable,
-        inverter_zero_export=inverter_zero_export,
-        inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
+    _register_listener(
+        ButtonUpdater(
+            battery_enable=battery_enable,
+            battery_disable=battery_disable,
+            battery_force_charge=battery_force_charge,
+            battery_force_discharge=battery_force_discharge,
+            battery_cheap_force_discharge=battery_cheap_force_discharge,
+            inverter_enable=inverter_enable,
+            inverter_disable=inverter_disable,
+            inverter_zero_export=inverter_zero_export,
+            inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
+        )
     )
-    _register_listener(status_elements)
+
+    _register_listener(
+        StatusElements(
+            status_element=status_element,
+        )
+    )
 
 
 @ui.page('/log_page')

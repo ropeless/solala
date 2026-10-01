@@ -23,7 +23,16 @@ class Infographic:
         self.icons.append(Diamond(size=15, x=width / 2, y=height / 2))
 
         # Add chevrons and text
-        self.make(100, 0, 0, 0, 0, power_scale=1, buy_price=0, feed_in_price=0)
+        self.make(
+            state_of_charge=100,
+            solar_power=0,
+            grid_power=0,
+            house_power=0,
+            battery_power=0,
+            power_scale=1,
+            buy_price=0,
+            feed_in_price=0,
+        )
 
     def make_from_status(self, status: JSONDict, power_scale=2000) -> None:
         power_dict: JSONDict = json_dict(status['power'])
@@ -41,6 +50,7 @@ class Infographic:
 
     def make(
             self,
+            *,
             state_of_charge: float,
             solar_power: float,
             grid_power: float,
@@ -65,7 +75,7 @@ class Infographic:
         canvas.clear()
         canvas.append(self.icons)
         canvas.append(Chevron(x=cx - 34, y=cy - 34, rotate=45, width=20 * solar_scale))
-        canvas.append(Chevron(x=cx + 34, y=cy + 34, rotate=45, width=-20 * battery_scale))
+        canvas.append(Chevron(x=cx + 34, y=cy + 34, rotate=45, width=20 * battery_scale))
         canvas.append(Chevron(x=cx - 34, y=cy + 34, rotate=-45, width=20 * grid_scale))
         canvas.append(Chevron(x=cx + 34, y=cy - 34, rotate=-45, width=20 * house_scale))
 
@@ -94,7 +104,8 @@ class Infographic:
             Text(prices, text_anchor='middle', font_size=small_font_size, font_family=font_family, x=left,
                  y=bot2))
         canvas.append(
-            Text(_to_pct(state_of_charge), text_anchor='middle', font_size=small_font_size, font_family=font_family, x=right,
+            Text(_to_pct(state_of_charge), text_anchor='middle', font_size=small_font_size, font_family=font_family,
+                 x=right,
                  y=bot2))
 
     def as_svg(self) -> str:
