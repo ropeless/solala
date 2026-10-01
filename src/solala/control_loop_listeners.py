@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import final
+from typing import final, Dict
 
 from solala import control_loop
 from solala.utils.json import JSONDict
@@ -16,14 +16,13 @@ class StatusListener(ABC):
         """
         Manual update.
         """
-        status_json: JSONDict = control_loop.get_status()
-        self.update(status_json)
+        self.update(control_loop.get_status())
 
 
 class RegistersListener(ABC):
 
     @abstractmethod
-    def update(self, registers_json: JSONDict) -> None:
+    def update(self, register_values: Dict[str, int | float | str | bool]) -> None:
         ...
 
     @final
@@ -31,5 +30,4 @@ class RegistersListener(ABC):
         """
         Manual update.
         """
-        registers_json: JSONDict = control_loop.get_registers()
-        self.update(registers_json)
+        self.update(control_loop.get_registers())

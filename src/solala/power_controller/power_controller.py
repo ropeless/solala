@@ -41,6 +41,17 @@ class PowerController(ABC):
         """
         ...
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return exc_type is None
+
+    # =================================================
+    #  Power controller status
+    # =================================================
+
     @abstractmethod
     def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
         """

@@ -1,7 +1,8 @@
 import local_config as config
 from solala import server
-from solala_demo.log import configure_logger
+from solala.history_file import HistoryFile
 from solala.settings import Settings
+from solala_demo.log import configure_logger
 
 HOST: str = config.SERVER_IP_ADDRESS
 PORT: int = 80
@@ -33,6 +34,8 @@ def main():
 
     # DEBUG: Change control loop constants for testing and debugging.
     # Constants.PRICE_LOOK_AHEAD = 0
+
+    history_file = HistoryFile(config.HISTORY_FILE)
 
     server.run_server(host=HOST, port=PORT, settings=settings)
 

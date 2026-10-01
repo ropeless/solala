@@ -9,13 +9,13 @@ from typing import Optional, List, Iterable, Dict, Tuple
 from pymodbus.client import ModbusTcpClient
 
 from solala.car_charger.impl_tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
-from solala.car_charger.wall_charger import CarCharger
+from solala.car_charger.wall_charger import CarCharger, ChargerStatus
 from solala.control_loop_listeners import RegistersListener, StatusListener
-from solala.server_constants import LOGGER
 from solala.power_controller.impl_modbus.modbus import Modbus, ModbusDevice
 from solala.power_controller.impl_modbus.modbus_power_controller import PowerController, ModbusPowerController
 from solala.power_pricer.impl_amber.amber_power_pricer import Price, AmberPowerPricer
 from solala.power_pricer.power_pricer import PowerPricer
+from solala.server_constants import LOGGER
 from solala.utils.json import JSONDict, JSONContainer
 from solala.utils.network import find_ip_by_mac
 
@@ -45,6 +45,7 @@ _NO_PRICE = Price(
     buy_price=0,
     feed_in_price=0,
 )
+_NO_CHARGER = ChargerStatus(0, 0)
 
 
 class BatteryMode(Enum):
@@ -77,7 +78,8 @@ class Constants:
     These constants control the behaviour of the control loop.
     They should only be modified by developers for testing and debugging.
     """
-    LOOP_SLEEP: int = 5  # number of seconds to sleep between loop iterations
+    LOOP_TIME: int = 5  # number of seconds for each loop iteration
+    MIN_SLEEP_TIME: int = 2  # number of seconds to sleep for each loop iteration
     CONTROL_DURATION: int = 11  # number of seconds a control remains active
     PRICE_LOOK_AHEAD: int = 60  # number of minutes to look ahead (should be a multiple of 5)
     DISABLE_FEED_IN_TOLERANCE: float = 2.0  # cents, a feed-in power price tolerance for price lookahead
@@ -88,7 +90,8 @@ class Constants:
     @staticmethod
     def as_dict() -> JSONDict:
         return {
-            'LOOP_SLEEP': Constants.LOOP_SLEEP,
+            'LOOP_TIME': Constants.LOOP_TIME,
+            'MIN_SLEEP_TIME': Constants.MIN_SLEEP_TIME,
             'CONTROL_DURATION': Constants.CONTROL_DURATION,
             'PRICE_LOOK_AHEAD': Constants.PRICE_LOOK_AHEAD,
             'DISABLE_FEED_IN_TOLERANCE': Constants.DISABLE_FEED_IN_TOLERANCE,
@@ -179,14 +182,19 @@ def control_loop() -> None:
     prev_state: _ControlState = _ControlState(None, None, None)
 
     while _control_loop_running:
+        epoch_seconds: float = datetime.now().timestamp()
+
         status_listeners, registers_listeners = control_step(_control_state, prev_state)
         _update_listeners(status_listeners, registers_listeners)
-        # Slow the loop down to keep the network and inverters from being overwhelmed
-        time.sleep(Constants.LOOP_SLEEP)
+
+        sleeptime: int = int(epoch_seconds + Constants.LOOP_TIME - datetime.now().timestamp())
+        if sleeptime < Constants.MIN_SLEEP_TIME:
+            LOGGER.warn(f'[{_LOG_SRC}] Low sleep time: {sleeptime} < {Constants.MIN_SLEEP_TIME}')
+            sleeptime = Constants.MIN_SLEEP_TIME
+        time.sleep(sleeptime)
 
 
 def control_step(
-
         state: _ControlState,
         prev_state: _ControlState,
 ) -> Tuple[
@@ -209,7 +217,7 @@ def control_step(
     with _control_state_lock:
         if state.power_controller is None:
             prev_state.power_controller = None
-            time.sleep(Constants.LOOP_SLEEP)
+            time.sleep(Constants.LOOP_TIME)
             return _control_loop_status_listeners.copy(), _control_loop_registers_listeners.copy()
 
         if prev_state.power_controller is not state.power_controller:
@@ -401,7 +409,7 @@ def get_parameters() -> JSONDict:
         }
 
 
-def get_registers() -> JSONDict:
+def get_registers() -> Dict[str, int | float | str | bool]:
     """
     Raises:
         ControlLoopError: if a power controller is not connected
@@ -429,6 +437,16 @@ def get_cur_price() -> Price:
             except (JSONDecodeError, IOError) as err:
                 LOGGER.error(f'price update not available. Error: {err}')
     return price
+
+
+def get_cur_car_charger() -> ChargerStatus:
+    with _control_state_lock:
+        car_charger = _control_state.car_charger
+        if car_charger is None:
+            LOGGER.error(f'car charger status not available. Error: car charger not connected')
+            return _NO_CHARGER
+        else:
+            return car_charger.get_status()
 
 
 def set_control(

@@ -15,6 +15,7 @@ uvicorn = "*"
 fastapi = "*"
 requests = "*"
 nicegui = "*"
+drawsvg = "*"
 
 [build-system]
 requires = ["setuptools"]
