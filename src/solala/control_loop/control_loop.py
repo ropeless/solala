@@ -2,7 +2,7 @@ import json
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Optional, List, Iterable, Dict, Tuple
@@ -37,6 +37,7 @@ _NO_PRICE = Price(
     renewables=0,
     buy_price=0,
     feed_in_price=0,
+    estimate=True,
 )
 _NO_CHARGER = ChargerStatus(0, 0)
 
@@ -69,6 +70,7 @@ class _ControlState:
     inverter_policy: InverterPolicy = InverterPolicy.MANUAL
 
     last_price: Price = _NO_PRICE
+    next_price_settle_check: datetime = _MIN_DATE
     next_feed_in_price_check: datetime = _MIN_DATE
     next_buy_price_check: datetime = _MIN_DATE
 
@@ -90,8 +92,9 @@ class _ControlState:
         self.battery_mode = BatteryMode.UNKNOWN
         self.inverter_mode = InverterMode.UNKNOWN
         self.inverter_policy = InverterPolicy.MANUAL
-        self.last_price: Price = _NO_PRICE
 
+        self.last_price: Price = _NO_PRICE
+        self.next_price_settle_check = _MIN_DATE
         self.next_feed_in_price_check = _MIN_DATE
         self.next_buy_price_check = _MIN_DATE
 
@@ -101,6 +104,7 @@ class _ControlState:
     def reset_pricer(self, pricer: Optional[PowerPricer]) -> None:
         self.pricer = pricer
         self.last_price: Price = _NO_PRICE
+        self.next_price_settle_check = _MIN_DATE
         self.next_feed_in_price_check: datetime = _MIN_DATE
         self.next_buy_price_check: datetime = _MIN_DATE
 
@@ -411,7 +415,7 @@ def get_price_status() -> JSONDict:
         if _control_state.pricer is None:
             return _control_state.power_pricer_status
         cur_price: Price = get_cur_price()
-        result = cur_price.as_dict(DATE_FORMAT)
+        result = cur_price.as_dict(DATE_FORMAT, include_time=False)
         return result
 
 
@@ -479,13 +483,27 @@ def get_registers() -> Dict[str, int | float | str | bool]:
 
 def get_cur_price() -> Price:
     with _control_state_lock:
-        price = _control_state.last_price
-        if _control_state.pricer is None:
-            LOGGER.error(f'price update not available. Error: power_price not connected')
-        elif price.end_time <= datetime.now(UTC):
+        state = _control_state
+        price: Price = state.last_price
+        pricer = state.pricer
+        if pricer is None:
+            LOGGER.error('price update not available. Error: power pricer not connected')
+            return price
+
+        now = datetime.now(UTC)
+        if state.next_price_settle_check <= now:
             try:
-                price: Price = _control_state.pricer.get_price(0)[0]
-                _control_state.last_price = price
+                price: Price = pricer.get_price(0)[0]
+                state.last_price = price
+
+                if price.estimate:
+                    # price is unstable - recheck is needed
+                    delay = Constants.PRICE_SETTLE_CHECK
+                    state.next_price_settle_check = min(now + timedelta(seconds=delay), price.end_time)
+                else:
+                    # price is stable - no need to recheck for this period
+                    state.next_price_settle_check = price.end_time
+
             except (JSONDecodeError, IOError) as err:
                 LOGGER.error(f'price update not available. Error: {err}')
     return price

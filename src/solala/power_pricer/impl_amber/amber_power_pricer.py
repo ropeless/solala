@@ -115,6 +115,7 @@ def _make_price(start_time: datetime, channel_pair: ChannelPair) -> Price:
         renewables=json_num(general['renewables']),
         buy_price=json_num(general['perKwh']),
         feed_in_price=-json_num(feed_in['perKwh']),
+        estimate=json_bool(general['estimate']),
         tariff_period=json_str(tariff_info['period']),
         tariff_season=json_str(tariff_info['season']),
         tariff_demand_window=json_bool(tariff_info['demandWindow']),
