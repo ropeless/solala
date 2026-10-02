@@ -1,6 +1,6 @@
 from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text
 
-from Units import WATTS_SHORT, KILOWATTS_SHORT, PERCENT, PRICE_SHORT
+from solala.units import WATTS_SHORT, KILOWATTS_SHORT, PERCENT, PRICE_SHORT
 from solala.utils.json import JSONDict, json_dict, json_num
 
 GRAPHIC_SIZE: int = 300
@@ -116,7 +116,7 @@ class Infographic:
 
 def _to_price(price: float) -> str:
     price = abs(price)
-    return f'{price:0.2f}'
+    return f'{price:0.1f}'
 
 
 def _to_watts(power: float) -> str:

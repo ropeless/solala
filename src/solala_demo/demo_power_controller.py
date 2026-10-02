@@ -36,17 +36,17 @@ def main():
         print(json.dumps(status, indent=4))
 
         # print()
-        # power_controller.enable_battery()
-        # power_controller.disable_battery()
-        # power_controller.force_charge()
-        # power_controller.force_discharge()
+        # controller.enable_battery()
+        # controller.disable_battery()
+        # controller.force_charge()
+        # controller.force_discharge()
 
         # print()
         # while True:
         #     print()
-        #     power_controller.disable_export(change_duration=10)
+        #     controller.disable_export(change_duration=10)
         #     time.sleep(5)
-        # power_controller.enable_export()
+        # controller.enable_export()
 
         print()
 

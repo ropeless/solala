@@ -5,6 +5,9 @@ TESLA_WALL_CONNECTOR_ADDR = '192.168.0.202'
 AMBER_API_TOKEN = 'psk_k56238932vmg9804tdafg90alm5t0adf0f'
 NMI = '4109999999'
 
-SERVER_IP_ADDRESS = '0.0.0.0'
+SERVER_IP_ADDRESS = 'localhost'
+SERVER_PORT = 80
 
-OUT = '/users/pete/output/history.csv'
+OUT = '/users/barry/output'
+HISTORY_FILE = OUT + '/history.csv'
+SETTINGS_PATH = OUT + '/settings.json'

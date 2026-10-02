@@ -13,23 +13,26 @@ class Price:
     renewables: float  # percentage
     start_time: datetime  # date + time + timezone
     end_time: datetime  # date + time + timezone
+    estimate: bool  # whether the price is an estimate or not
 
     # Optional tariff information.
     tariff_period: str = ''
     tariff_season: str = ''
     tariff_demand_window: bool = False
 
-    def as_dict(self, datetime_format: str) -> JSONDict:
-        return {
+    def as_dict(self, datetime_format: str, include_time: bool) -> JSONDict:
+        result = {
             'buy_price': self.buy_price,
             'feed_in_price': self.feed_in_price,
             'renewables': self.renewables,
-            'start_time': self.start_time.strftime(datetime_format),
-            'end_time': self.end_time.strftime(datetime_format),
             'tariff_period': self.tariff_period,
             'tariff_season': self.tariff_season,
             'tariff_demand_window': self.tariff_demand_window,
         }
+        if include_time:
+            result['start_time'] = self.start_time.strftime(datetime_format)
+            result['end_time'] = self.end_time.strftime(datetime_format)
+        return result
 
 
 class PowerPricer(ABC):

@@ -194,7 +194,7 @@ def _find_model_offsets(client: ModbusTcpClient, device_id: int) -> Dict[MODBUS_
         if model_id in result:
             LOGGER.warning(f'Duplicate Modbus Model {model_id} for device {device_id}')
         else:
-            result[model_id] = current_address - 1  # subtract 1 as relative addresses start from 1.
+            result[model_id] = current_address - 1  # subtract 1 as relative address start from 1.
 
         # Move to the next block identifier
         current_address += 2 + block_length

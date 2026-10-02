@@ -24,7 +24,7 @@ _W_SF = 23  # Model 201
 
 MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
 
-    # The special zero model, where registers addresses are in Modicon (40xxx) format.
+    # The special zero model, where registers address are in Modicon (40xxx) format.
     0: {
       'SID': str2(40001),  # expect 'SunS'
     },

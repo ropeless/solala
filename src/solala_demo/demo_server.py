@@ -1,24 +1,25 @@
 import local_config as config
 from solala import server
-from solala.history_file import HistoryFile
-from solala.settings import Settings
+from solala.control_loop.history_file import HistoryFile
+from solala.control_loop.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
+    TeslaChargerConnection
 from solala_demo.log import configure_logger
 
 HOST: str = config.SERVER_IP_ADDRESS
-PORT: int = 80
+PORT: int = config.SERVER_PORT
 
 
 def main():
     configure_logger()
 
     # Optional initial control loop parameters.
+    # These will be used if the settings file cannot be loaded or force_settings is True.
+    force_settings: bool = False
     settings = Settings(
-        modbus_addresses=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}',
-        amber_api_token=config.AMBER_API_TOKEN,
-        amber_nmi=config.NMI,
-        tesla_wall_connector=config.TESLA_WALL_CONNECTOR_ADDR,
 
-        # DEBUG
+        controller=ModbusControllerConnection(address=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}'),
+        pricer=AmberPricerConnection(api_token=config.AMBER_API_TOKEN, nmi=config.NMI),
+        charger=TeslaChargerConnection(address=config.TESLA_WALL_CONNECTOR_ADDR),
 
         # inverter_mode=InverterMode.ENABLE,
         # inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT,
@@ -35,9 +36,16 @@ def main():
     # DEBUG: Change control loop constants for testing and debugging.
     # Constants.PRICE_LOOK_AHEAD = 0
 
-    history_file = HistoryFile(config.HISTORY_FILE)
+    # Create and register a history file
+    HistoryFile(config.HISTORY_FILE)
 
-    server.run_server(host=HOST, port=PORT, settings=settings)
+    server.run_server(
+        host=HOST,
+        port=PORT,
+        settings_path=config.SETTINGS_PATH,
+        settings=settings,
+        force_settings=force_settings,
+    )
 
 
 if __name__ == '__main__':
