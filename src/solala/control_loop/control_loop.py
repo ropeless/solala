@@ -414,25 +414,34 @@ def get_price_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.pricer is None:
             return _control_state.power_pricer_status
-        cur_price: Price = get_cur_price()
-        result = cur_price.as_dict(DATE_FORMAT, include_time=False)
-        return result
+        try:
+            cur_price: Price = get_cur_price()
+            result = cur_price.as_dict(DATE_FORMAT, include_time=False)
+            return result
+        except Exception as e:
+            raise ControlLoopError('failed to get price', errors={'error': str(e)})
 
 
 def get_power_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.controller is None:
             return _control_state.power_controller_status
-        result = _control_state.controller.get_status().as_dict()
-        return result
+        try:
+            result = _control_state.controller.get_status().as_dict()
+            return result
+        except Exception as e:
+            raise ControlLoopError('failed to get power status', errors={'error': str(e)})
 
 
 def get_car_charger_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.charger is None:
             return _control_state.car_charger_status
-        result = _control_state.charger.get_status().as_dict()
-        return result
+        try:
+            result = _control_state.charger.get_status().as_dict()
+            return result
+        except Exception as e:
+            raise ControlLoopError('failed to get car charger status', errors={'error': str(e)})
 
 
 def get_connection_status() -> JSONDict:

@@ -2,7 +2,6 @@ import asyncio
 import logging
 from abc import abstractmethod
 from asyncio import AbstractEventLoop
-from dataclasses import dataclass
 from functools import partial
 from typing import List, Mapping, final, Optional, Dict
 
@@ -10,7 +9,6 @@ from nicegui import ui, app
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
-from solala.units import PRICE, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
 from solala import control_loop
 from solala.control_loop import listeners as control_loop_listeners, BatteryMode, BatteryPolicy, InverterMode, \
     InverterPolicy
@@ -18,8 +16,9 @@ from solala.resources import IMAGE_FILES
 from solala.server_constants import APP_NAME
 from solala.server_constants import SOLALA_LOG_FORMAT, LOGGER
 from solala.server_infographic import Infographic
+from solala.units import PRICE, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
 from solala.utils.dict_extras import dict_merge
-from solala.utils.json import JSONDict, json_dict, render_json, filter_json
+from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
 _H1_class = 'text-h5'
 _H2_class = 'text-h6'
@@ -97,10 +96,10 @@ class NiceGuiLogHandler(logging.Handler):
 _LOG_HANDLER = NiceGuiLogHandler()
 
 
-@dataclass
 class StatusListener(control_loop_listeners.StatusListener):
 
-    def __post_init__(self):
+    def __init__(self):
+        super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
 
     @final
@@ -115,10 +114,10 @@ class StatusListener(control_loop_listeners.StatusListener):
         ...
 
 
-@dataclass
 class RegistersListener(control_loop_listeners.RegistersListener):
 
-    def __post_init__(self):
+    def __init__(self):
+        super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
 
     @final
@@ -138,163 +137,194 @@ def _register_listener(listener: StatusListener | RegistersListener) -> None:
     control_loop.add_listener(listener)
 
 
-def handle_battery_enable():
-    control_loop.set_control(
-        battery_mode=BatteryMode.ENABLE,
-        battery_policy=BatteryPolicy.MANUAL,
-    )
-    control_loop.update_listeners()
+class InverterButtonUpdater(StatusListener):
+
+    def __init__(
+            self,
+            inverter_enable: Button,
+            inverter_disable: Button,
+            inverter_zero_export: Button,
+            inverter_neg_feed_in_zero_export: Button,
+    ):
+        super().__init__()
+        self.inverter_enable = inverter_enable.on_click(partial(
+            self._click, InverterMode.ENABLE, InverterPolicy.MANUAL
+        ))
+        self.inverter_disable = inverter_disable.on_click(partial(
+            self._click, InverterMode.DISABLE, InverterPolicy.MANUAL
+        ))
+        self.inverter_zero_export = inverter_zero_export.on_click(partial(
+            self._click, InverterMode.ZERO_EXPORT, InverterPolicy.MANUAL
+        ))
+        self.inverter_neg_feed_in_zero_export = inverter_neg_feed_in_zero_export.on_click(partial(
+            self._click, None, InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
+        ))
+
+        for button in [
+            inverter_enable, inverter_disable, inverter_zero_export,
+            inverter_neg_feed_in_zero_export
+        ]:
+            button.style('padding-top: 1px; padding-bottom: 1px;')
+            button.classes('py-0 px-2 text-xs')
+
+    def _click(self, mode: Optional[InverterMode], policy: InverterPolicy) -> None:
+        control_loop.set_control(
+            inverter_mode=mode,
+            inverter_policy=policy,
+        )
+        self._visual_update('' if mode is None else mode.name, policy.name)
+
+    def _update(self, status_json: JSONDict) -> None:
+        # Infer button states from status_json
+        try:
+            control_json: JSONDict = json_dict(status_json['control'])
+            inverter_status: JSONDict = json_dict(control_json['inverter'])
+            inverter_mode = json_str(inverter_status['mode'])
+            inverter_policy = json_str(inverter_status['policy'])
+        except (KeyError, TypeError, IOError, control_loop.ControlLoopError) as err:
+            LOGGER.error(f'Error getting control status: {err}')
+            inverter_mode = ''
+            inverter_policy = ''
+        self._visual_update(inverter_mode, inverter_policy)
+
+    def _visual_update(self, inverter_mode: str, inverter_policy: str):
+        inverter_button = (
+            inverter_policy
+            if inverter_policy != InverterPolicy.MANUAL.name
+            else inverter_mode
+        )
+
+        # Set the button states
+        def on_props(_on: str) -> str:
+            return 'color=blue dense' if inverter_button == _on else 'color=grey dense'
+
+        self.inverter_enable.props(on_props('ENABLE'))
+        self.inverter_disable.props(on_props('DISABLE'))
+        self.inverter_zero_export.props(on_props('ZERO_EXPORT'))
+        self.inverter_neg_feed_in_zero_export.props(on_props('NEG_FEED_IN_ZERO_EXPORT'))
 
 
-def handle_battery_disable():
-    control_loop.set_control(
-        battery_mode=BatteryMode.DISABLE,
-        battery_policy=BatteryPolicy.MANUAL,
-    )
-    control_loop.update_listeners()
+class BatteryButtonUpdater(StatusListener):
 
+    def __init__(
+            self,
+            battery_enable: Button,
+            battery_disable: Button,
+            battery_force_charge: Button,
+            battery_force_discharge: Button,
+            battery_cheap_force_discharge: Button,
+    ):
+        super().__init__()
+        self.battery_enable = battery_enable.on_click(partial(
+            self._click, BatteryMode.ENABLE, BatteryPolicy.MANUAL
+        ))
+        self.battery_disable = battery_disable.on_click(partial(
+            self._click, BatteryMode.DISABLE, BatteryPolicy.MANUAL
+        ))
+        self.battery_force_charge = battery_force_charge.on_click(partial(
+            self._click, BatteryMode.FORCE_CHARGE, BatteryPolicy.MANUAL
+        ))
+        self.battery_force_discharge = battery_force_discharge.on_click(partial(
+            self._click, BatteryMode.FORCE_DISCHARGE, BatteryPolicy.MANUAL
+        ))
+        self.battery_cheap_force_discharge = battery_cheap_force_discharge.on_click(partial(
+            self._click, None, BatteryPolicy.CHEAP_CHARGE
+        ))
 
-def handle_battery_force_charge():
-    control_loop.set_control(
-        battery_mode=BatteryMode.FORCE_CHARGE,
-        battery_policy=BatteryPolicy.MANUAL,
-    )
-    control_loop.update_listeners()
+        for button in [
+            battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
+            battery_cheap_force_discharge
+        ]:
+            button.style('padding-top: 1px; padding-bottom: 1px;')
+            button.classes('py-0 px-2 text-xs')
 
-
-def handle_battery_force_discharge():
-    control_loop.set_control(
-        battery_mode=BatteryMode.FORCE_DISCHARGE,
-        battery_policy=BatteryPolicy.MANUAL,
-    )
-    control_loop.update_listeners()
-
-
-def handle_battery_cheap_force_discharge():
-    control_loop.set_control(
-        battery_policy=BatteryPolicy.CHEAP_CHARGE,
-    )
-    control_loop.update_listeners()
-
-
-def handle_inverter_enable():
-    control_loop.set_control(
-        inverter_mode=InverterMode.ENABLE,
-        inverter_policy=InverterPolicy.MANUAL,
-    )
-    control_loop.update_listeners()
-
-
-def handle_inverter_disable():
-    control_loop.set_control(
-        inverter_mode=InverterMode.DISABLE,
-        inverter_policy=InverterPolicy.MANUAL,
-    )
-    control_loop.update_listeners()
-
-
-def handle_inverter_zero_export():
-    control_loop.set_control(
-        inverter_mode=InverterMode.ZERO_EXPORT,
-        inverter_policy=InverterPolicy.MANUAL,
-    )
-    control_loop.update_listeners()
-
-
-def handle_inverter_neg_feed_in_zero_export():
-    control_loop.set_control(
-        inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT,
-    )
-    control_loop.update_listeners()
-
-
-@dataclass
-class ButtonUpdater(StatusListener):
-    battery_enable: Button
-    battery_disable: Button
-    battery_force_charge: Button
-    battery_force_discharge: Button
-    battery_cheap_force_discharge: Button
-    inverter_enable: Button
-    inverter_disable: Button
-    inverter_zero_export: Button
-    inverter_neg_feed_in_zero_export: Button
+    def _click(self, mode: Optional[BatteryMode], policy: BatteryPolicy) -> None:
+        control_loop.set_control(
+            battery_mode=mode,
+            battery_policy=policy,
+        )
+        self._visual_update('' if mode is None else mode.name, policy.name)
 
     def _update(self, status_json: JSONDict) -> None:
         # Infer button states from status_json
         try:
             control_json: JSONDict = json_dict(status_json['control'])
             battery_status: JSONDict = json_dict(control_json['battery'])
-            inverter_status: JSONDict = json_dict(control_json['inverter'])
-            battery_mode = battery_status['mode']
-            battery_policy = battery_status['policy']
-            battery_button = (
-                battery_policy
-                if battery_policy != BatteryPolicy.MANUAL.name
-                else battery_mode
-            )
-            inverter_mode = inverter_status['mode']
-            inverter_policy = inverter_status['policy']
-            inverter_button = (
-                inverter_policy
-                if inverter_policy != InverterPolicy.MANUAL.name
-                else inverter_mode
-            )
+            battery_mode = json_str(battery_status['mode'])
+            battery_policy = json_str(battery_status['policy'])
         except (KeyError, TypeError, IOError, control_loop.ControlLoopError) as err:
             LOGGER.error(f'Error getting control status: {err}')
-            battery_button = ''
-            inverter_button = ''
+            battery_mode = ''
+            battery_policy = ''
+        self._visual_update(battery_mode, battery_policy)
 
-        # Set the button states
-        def on_props(_on: bool) -> str:
-            return 'color=blue dense' if _on else 'color=grey dense'
+    def _visual_update(self, battery_mode: str, battery_policy: str):
+        battery_button = (
+            battery_policy
+            if battery_policy != BatteryPolicy.MANUAL.name
+            else battery_mode
+        )
 
-        self.battery_enable.props(on_props(battery_button == 'ENABLE'))
-        self.battery_disable.props(on_props(battery_button == 'DISABLE'))
-        self.battery_force_charge.props(on_props(battery_button == 'FORCE_CHARGE'))
-        self.battery_force_discharge.props(on_props(battery_button == 'FORCE_DISCHARGE'))
-        self.battery_cheap_force_discharge.props(on_props(battery_button == 'CHEAP_FORCE_DISCHARGE'))
-        self.inverter_enable.props(on_props(inverter_button == 'ENABLE'))
-        self.inverter_disable.props(on_props(inverter_button == 'DISABLE'))
-        self.inverter_zero_export.props(on_props(inverter_button == 'ZERO_EXPORT'))
-        self.inverter_neg_feed_in_zero_export.props(on_props(inverter_button == 'NEG_FEED_IN_ZERO_EXPORT'))
+        def on_props(_on: str) -> str:
+            return 'color=blue dense' if battery_button == _on else 'color=grey dense'
+
+        self.battery_enable.props(on_props('ENABLE'))
+        self.battery_disable.props(on_props('DISABLE'))
+        self.battery_force_charge.props(on_props('FORCE_CHARGE'))
+        self.battery_force_discharge.props(on_props('FORCE_DISCHARGE'))
+        self.battery_cheap_force_discharge.props(on_props('CHEAP_FORCE_DISCHARGE'))
 
 
-@dataclass
 class StatusUpdater(StatusListener):
-    status_element: ContentElement
+
+    def __init__(
+            self,
+            status_element: ContentElement,
+    ):
+        super().__init__()
+        self.status_element = status_element
 
     def _update(self, status_json: JSONDict) -> None:
         # Set the content of the status and infographic elements
-        json_str = render_json(status_json, float_format='.2f', units=_STATUS_UNITS)
-        self.status_element.set_content(json_str)
+        json_as_str = render_json(status_json, float_format='.2f', units=_STATUS_UNITS)
+        self.status_element.set_content(json_as_str)
 
 
-@dataclass
 class InfographicUpdater(StatusListener):
-    infographic_element: ContentElement
-    infographic: Infographic
+    def __init__(
+            self,
+            infographic_element: ContentElement,
+    ):
+        super().__init__()
+        self.infographic_element = infographic_element
+        self.infographic = Infographic()
 
     def _update(self, status_json: JSONDict) -> None:
         self.infographic.make_from_status(status_json)
         self.infographic_element.set_content(self.infographic.as_svg())
 
 
-@dataclass
 class RegistersUpdater(RegistersListener):
-    registers_element: ContentElement
-    match: Optional[str]
+
+    def __init__(
+            self,
+            registers_element: ContentElement,
+            match: Optional[str],
+    ):
+        super().__init__()
+        self.registers_element = registers_element
+        self.match = match
 
     def _update(self, registers_json: JSONDict) -> None:
         if self.match is not None:
             registers_json = filter_json(registers_json, self.match)
-        json_str = render_json(
+        json_as_str = render_json(
             registers_json,
             float_format='.2f',
             remove_key_underscores=False,
             remove_value_underscores=False,
         )
-        self.registers_element.set_content(json_str)
+        self.registers_element.set_content(json_as_str)
 
 
 def _json_page(name: str) -> ContentElement:
@@ -343,24 +373,30 @@ app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
 @ui.page('/')
 def root_page():
     with ui.column().style('width: 100vw; height: 100vh'):
-        infographic_element = ui.html()
+        _register_listener(
+            InfographicUpdater(
+                infographic_element=ui.html(),
+            )
+        )
         with ui.card():
             ui.label('Battery').classes(_H2_class)
             with ui.row():
-                battery_enable = ui.button('enable', on_click=handle_battery_enable)
-                battery_disable = ui.button('disable', on_click=handle_battery_disable)
-                battery_force_charge = ui.button('force charge', on_click=handle_battery_force_charge)
-                battery_force_discharge = ui.button('force discharge', on_click=handle_battery_force_discharge)
-                battery_cheap_force_discharge = \
-                    ui.button('cheap ⇒ force charge', on_click=handle_battery_cheap_force_discharge)
+                _register_listener(BatteryButtonUpdater(
+                    battery_enable=ui.button('enable'),
+                    battery_disable=ui.button('disable'),
+                    battery_force_charge=ui.button('force charge'),
+                    battery_force_discharge=ui.button('force discharge'),
+                    battery_cheap_force_discharge=ui.button('cheap ⇒ force charge'),
+                ))
         with ui.card():
             ui.label('Inverter').classes(_H2_class)
             with ui.row():
-                inverter_enable = ui.button('enable', on_click=handle_inverter_enable)
-                inverter_disable = ui.button('disable', on_click=handle_inverter_disable)
-                inverter_zero_export = ui.button('zero export', on_click=handle_inverter_zero_export)
-                inverter_neg_feed_in_zero_export = \
-                    ui.button('neg feed-in ⇒ zero export', on_click=handle_inverter_neg_feed_in_zero_export)
+                _register_listener(InverterButtonUpdater(
+                    inverter_enable=ui.button('enable'),
+                    inverter_disable=ui.button('disable'),
+                    inverter_zero_export=ui.button('zero export'),
+                    inverter_neg_feed_in_zero_export=ui.button('neg feed-in ⇒ zero export'),
+                ))
         with ui.card():
             ui.label('Links').classes(_H2_class)
             with ui.row():
@@ -372,35 +408,6 @@ def root_page():
                 ui.link('Log', '/log_page')
                 ui.link('API Schema', '/schema')
 
-        for button in [
-            battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
-            battery_cheap_force_discharge, inverter_enable, inverter_disable, inverter_zero_export,
-            inverter_neg_feed_in_zero_export
-        ]:
-            button.style('padding-top: 1px; padding-bottom: 1px;')
-            button.classes('py-0 px-2 text-xs')
-
-    _register_listener(
-        ButtonUpdater(
-            battery_enable=battery_enable,
-            battery_disable=battery_disable,
-            battery_force_charge=battery_force_charge,
-            battery_force_discharge=battery_force_discharge,
-            battery_cheap_force_discharge=battery_cheap_force_discharge,
-            inverter_enable=inverter_enable,
-            inverter_disable=inverter_disable,
-            inverter_zero_export=inverter_zero_export,
-            inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
-        )
-    )
-
-    _register_listener(
-        InfographicUpdater(
-            infographic_element=infographic_element,
-            infographic=Infographic(),
-        )
-    )
-
 
 @ui.page('/status_page')
 def status_page():
@@ -411,52 +418,28 @@ def status_page():
         _title()
         with ui.card():
             ui.label('Status').classes(_H2_class)
-            status_element = ui.code(language='nothing').classes('text-sm w-full grow')
+            _register_listener(StatusUpdater(
+                status_element=ui.code(language='nothing').classes('text-sm w-full grow')
+            ))
         with ui.card():
             ui.label('Battery').classes(_H2_class)
             with ui.row():
-                battery_enable = ui.button('enable', on_click=handle_battery_enable)
-                battery_disable = ui.button('disable', on_click=handle_battery_disable)
-                battery_force_charge = ui.button('force charge', on_click=handle_battery_force_charge)
-                battery_force_discharge = ui.button('force discharge', on_click=handle_battery_force_discharge)
-                battery_cheap_force_discharge = \
-                    ui.button('cheap ⇒ force charge', on_click=handle_battery_cheap_force_discharge)
+                _register_listener(BatteryButtonUpdater(
+                    battery_enable=ui.button('enable'),
+                    battery_disable=ui.button('disable'),
+                    battery_force_charge=ui.button('force charge'),
+                    battery_force_discharge=ui.button('force discharge'),
+                    battery_cheap_force_discharge=ui.button('cheap ⇒ force charge'),
+                ))
         with ui.card():
             ui.label('Inverter').classes(_H2_class)
             with ui.row():
-                inverter_enable = ui.button('enable', on_click=handle_inverter_enable)
-                inverter_disable = ui.button('disable', on_click=handle_inverter_disable)
-                inverter_zero_export = ui.button('zero export', on_click=handle_inverter_zero_export)
-                inverter_neg_feed_in_zero_export = \
-                    ui.button('neg feed-in ⇒ zero export', on_click=handle_inverter_neg_feed_in_zero_export)
-
-        for button in [
-            battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
-            battery_cheap_force_discharge, inverter_enable, inverter_disable, inverter_zero_export,
-            inverter_neg_feed_in_zero_export
-        ]:
-            button.style('padding-top: 1px; padding-bottom: 1px;')
-            button.classes('py-0 px-2 text-xs')
-
-    _register_listener(
-        ButtonUpdater(
-            battery_enable=battery_enable,
-            battery_disable=battery_disable,
-            battery_force_charge=battery_force_charge,
-            battery_force_discharge=battery_force_discharge,
-            battery_cheap_force_discharge=battery_cheap_force_discharge,
-            inverter_enable=inverter_enable,
-            inverter_disable=inverter_disable,
-            inverter_zero_export=inverter_zero_export,
-            inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
-        )
-    )
-
-    _register_listener(
-        StatusUpdater(
-            status_element=status_element,
-        )
-    )
+                _register_listener(InverterButtonUpdater(
+                    inverter_enable=ui.button('enable'),
+                    inverter_disable=ui.button('disable'),
+                    inverter_zero_export=ui.button('zero export'),
+                    inverter_neg_feed_in_zero_export=ui.button('neg feed-in ⇒ zero export'),
+                ))
 
 
 @ui.page('/log_page')
