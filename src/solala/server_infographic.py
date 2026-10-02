@@ -116,7 +116,7 @@ class Infographic:
 
 def _to_price(price: float) -> str:
     price = abs(price)
-    return f'{price:0.2f}'
+    return f'{price:0.1f}'
 
 
 def _to_watts(power: float) -> str:
