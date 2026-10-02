@@ -7,11 +7,11 @@ from scapy.sendrecv import srp
 
 def find_ip_by_mac(mac_addresses: Iterable[str], timeout=3) -> Dict[str, str]:
     """
-    Scans the local network for specific MAC addresses and returns a mapping to their IP addresses.
+    Scans the local network for specific MAC address and returns a mapping to their IP address.
     """
     mac_addresses: List[str] = list(mac_addresses)
     if len(mac_addresses) == 0:
-        # Don't do any work if there are no MAC addresses to look up
+        # Don't do any work if there are no MAC address to look up
         return {}
 
     my_ip = get_local_ip()

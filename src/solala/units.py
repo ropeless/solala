@@ -7,6 +7,6 @@ SECONDS = ' seconds'
 MINUTES = ' minutes'
 PERCENT = '%'
 
-PRICE_SHORT = ' c/kWh'
+PRICE_SHORT = ' ¢/kWh'
 WATTS_SHORT = ' W'
 KILOWATTS_SHORT = ' kW'

@@ -18,10 +18,10 @@ class HistoryFile:
     * charger
     """
 
-    def __init__(self, file_path: Path | str, sep: str = ','):
+    def __init__(self, file_path: Path | str, sep: str = ',', datetime_format: str = '%Y-%m-%d %H:%M:%S'):
         file_path = Path(file_path)
         self._file = open(file_path, 'a')
-        self._recorder = _Recorder(self._file, sep)
+        self._recorder = _Recorder(self._file, sep, datetime_format)
         control_loop.add_listener(self._recorder)
 
     def close(self) -> None:
@@ -43,14 +43,15 @@ class HistoryFile:
 
 class _Recorder(control_loop.RegistersListener):
 
-    def __init__(self, file, sep: str):
+    def __init__(self, file, sep: str, datetime_format: str):
         self._print = partial(print, file=file, sep=sep)
+        self._datetime_format = datetime_format
         self._flush = file.flush
         self._first_update = True
         self._registers: Sequence[str] = ()
 
     def update(self, register_values: Dict[str, int | float | str | bool]) -> None:
-        now: str = datetime.now().strftime(control_loop.DATE_FORMAT)
+        now: str = datetime.now().strftime(self._datetime_format)
         control_status: JSONDict = control_loop.get_control_status()
         price: Price = control_loop.get_cur_price()
         charger: ChargerStatus = control_loop.get_cur_car_charger()

@@ -1,6 +1,6 @@
 from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text
 
-from Units import WATTS_SHORT, KILOWATTS_SHORT, PERCENT, PRICE_SHORT
+from solala.units import WATTS_SHORT, KILOWATTS_SHORT, PERCENT, PRICE_SHORT
 from solala.utils.json import JSONDict, json_dict, json_num
 
 GRAPHIC_SIZE: int = 300

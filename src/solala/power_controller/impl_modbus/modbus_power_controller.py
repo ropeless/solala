@@ -31,8 +31,8 @@ _SMALL_CHANGE_TOLERANCE = 2000  # Watts
 
 class ModbusPowerController(PowerController):
     """
-    High-level power power_controller to send commands and read status from the power system.
-    This power power_controller uses Modbus.
+    High-level power controller to send commands and read status from the power system.
+    This power controller uses Modbus.
     """
 
     def __init__(
@@ -44,7 +44,7 @@ class ModbusPowerController(PowerController):
             slaves: Iterable[str] = (),
     ):
         """
-        Make a power power_controller from a Modbus connection.
+        Make a power controller from a Modbus connection.
         """
         self._modbus: Modbus = modbus
         self._master = master

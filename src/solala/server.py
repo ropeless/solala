@@ -1,7 +1,7 @@
-import json
-import re
 import threading
+from functools import partial
 from http import HTTPStatus
+from pathlib import Path
 from typing import List, Optional
 
 import uvicorn
@@ -12,83 +12,47 @@ from pydantic import BaseModel, ConfigDict
 
 from solala import control_loop
 from solala.control_loop import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlLoopError
-from solala.server_constants import LOGGER
 from solala.server_constants import APP_NAME
+from solala.server_constants import LOGGER
 from solala.server_nicegui import ui
-from solala.settings import Settings
+from solala.control_loop.settings import Settings
 from solala.utils.json import JSONDict, JSONValue, filter_json, follow_json
-
-_DEFAULT_SETTINGS = Settings()
-
-_ADDRESS_DELIMITERS_PATTERN = re.compile(r'[,;&\s]+')
+from solala.utils.string_extras import split_addresses
 
 
-def run_server(host: str, port: int, settings: Settings = _DEFAULT_SETTINGS) -> None:
+def run_server(
+        host: str,
+        port: int,
+        settings_path: Optional[Path|str] = None,
+        settings: Optional[Settings] = None,
+        force_settings: bool = False,
+) -> None:
     """
     Run the server in the current thread.
     Spawns a thread for the control loop.
+    Args:
+        host: Host address to bind the server to.
+        port: Port to bind the server to.
+
+        settings_path: Path to the settings file, if settings are to be persisted. If provided, the control
+            loop will attempt to load settings from the file.
+
+        settings: Settings object to use if the settings file cannot be loaded.
+
+        force_settings: If True, the given settings object will always override any settings loaded from the file.
+            Note that if settings are provided, they will override any settings loaded from the file. This includes
+            modes and policies if the power controller is reloaded.
     """
-    control_loop_thread = threading.Thread(target=control_loop.control_loop, daemon=True)
+    target = partial(control_loop.run_control_loop, settings_path, settings, force_settings)
+    control_loop_thread = threading.Thread(target=target, daemon=True)
     control_loop_thread.start()
 
-    configure_from_settings(settings)
     uvicorn.run(app, host=host, port=port, workers=1, log_level='info')
 
     # Cleanly stop the control loop thread
     control_loop.exit_control_loop()
     LOGGER.info('waiting for the control loop to terminate')
     control_loop_thread.join()
-
-
-def configure_from_settings(settings: Settings) -> None:
-    """
-    Initialise connections, control modes, and policy parameters for `settings`.
-    """
-
-    # Initialise power controller connection
-    addresses: List[str] = split_addresses(settings.modbus_addresses)
-    if len(addresses) > 0:
-        result = control_loop.connect_modbus(addresses[0], addresses[1:])
-        LOGGER.info(f'initial power controller connection: {json.dumps(result)}')
-
-    # Initialise power pricer connection
-    api_token = settings.amber_api_token.strip()
-    nmi = settings.amber_nmi.strip()
-    if api_token != '' and nmi != '':
-        result = control_loop.connect_amber(api_token, nmi)
-        LOGGER.info(f'initial power pricer connection: {json.dumps(result)}')
-
-    # Initialise car charger connection
-    tesla_wall_connector = settings.tesla_wall_connector.strip()
-    if tesla_wall_connector != '':
-        result = control_loop.connect_tesla_wall_connector(tesla_wall_connector)
-        LOGGER.info(f'initial car charger connection: {json.dumps(result)}')
-
-    # Initialise policy parameters
-    result = control_loop.set_parameters(
-        disable_export_price_threshold=settings.disable_export_price_threshold,
-        enable_export_price_threshold=settings.enable_export_price_threshold,
-        start_charge_price_threshold=settings.start_charge_price_threshold,
-        stop_charge_price_threshold=settings.stop_charge_price_threshold,
-    )
-    LOGGER.info(f'initial parameters: {json.dumps(result)}')
-
-    # Initialise control modes
-    result = control_loop.set_control(
-        battery_mode=settings.battery_mode,
-        inverter_mode=settings.inverter_mode,
-        battery_policy=settings.battery_policy,
-        inverter_policy=settings.inverter_policy,
-    )
-    LOGGER.info(f'initial modes: {json.dumps(result)}')
-
-
-def split_addresses(addresses: str) -> List[str]:
-    """
-    Split addresses separated by commas, semicolons, ampersands, or whitespace.
-    Helper for connecting to devices.
-    """
-    return _ADDRESS_DELIMITERS_PATTERN.split(addresses)
 
 
 def _follow_filter_json(data: JSONDict, path: Optional[str], match: Optional[str]) -> JSONValue:
@@ -295,13 +259,13 @@ def put_controller_connect(payload: ControllerConnectionUpdate):
     """
     Establish a modbus connection to the inverter.
     Each address can be a MAC address or an IP address.
-    Slave addresses are appended, separated by commas, semicolons, ampersands, or whitespace.
+    Slave address are appended, separated by commas, semicolons, ampersands, or whitespace.
     """
     if payload.type != 'modbus':
         return JSONResponse({'error': 'only modbus is supported'}, status_code=status.HTTP_400_BAD_REQUEST)
 
     addresses: List[str] = split_addresses(payload.addresses)
-    result = control_loop.connect_modbus(addresses[0], addresses[1:])
+    result = control_loop._connect_modbus(addresses[0], addresses[1:])
 
     if 'error' in result:
         status_code = status.HTTP_503_SERVICE_UNAVAILABLE
@@ -335,7 +299,7 @@ def put_pricer_connect(payload: PricerConnectionUpdate):
     if payload.type != 'amber':
         return JSONResponse({'error': 'only amber is supported'}, status_code=status.HTTP_400_BAD_REQUEST)
 
-    result = control_loop.connect_amber(payload.api_token, payload.nmi)
+    result = control_loop._connect_amber(payload.api_token, payload.nmi)
 
     if 'error' in result:
         status_code = status.HTTP_503_SERVICE_UNAVAILABLE

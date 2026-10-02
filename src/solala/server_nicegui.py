@@ -10,10 +10,10 @@ from nicegui import ui, app
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
-from Units import PRICE, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
+from solala.units import PRICE, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
 from solala import control_loop
-from solala import control_loop_listeners
-from solala.control_loop import BatteryPolicy, InverterPolicy, BatteryMode, InverterMode
+from solala.control_loop import listeners as control_loop_listeners, BatteryMode, BatteryPolicy, InverterMode, \
+    InverterPolicy
 from solala.resources import IMAGE_FILES
 from solala.server_constants import APP_NAME
 from solala.server_constants import SOLALA_LOG_FORMAT, LOGGER
@@ -260,7 +260,7 @@ class ButtonUpdater(StatusListener):
 
 
 @dataclass
-class StatusElements(StatusListener):
+class StatusUpdater(StatusListener):
     status_element: ContentElement
 
     def _update(self, status_json: JSONDict) -> None:
@@ -270,7 +270,7 @@ class StatusElements(StatusListener):
 
 
 @dataclass
-class InfographicUpdates(StatusListener):
+class InfographicUpdater(StatusListener):
     infographic_element: ContentElement
     infographic: Infographic
 
@@ -280,7 +280,7 @@ class InfographicUpdates(StatusListener):
 
 
 @dataclass
-class RegistersElement(RegistersListener):
+class RegistersUpdater(RegistersListener):
     registers_element: ContentElement
     match: Optional[str]
 
@@ -297,6 +297,15 @@ class RegistersElement(RegistersListener):
 
 
 def _json_page(name: str) -> ContentElement:
+    """
+    Prepare a page to show JSON data.
+
+    Args:
+        name: name of the page
+
+    Returns:
+        The content element to use for adding the rendered JSON data.
+    """
     with ui.column().style('width: 100vw; height: 100vh'):
         _title()
         with ui.card():
@@ -306,6 +315,12 @@ def _json_page(name: str) -> ContentElement:
 
 
 def _title(ext: str = '', link: bool = True) -> None:
+    """
+    NiceGui snippet to add the Solala title to a page.
+    Args:
+        ext: A string to append to the title.
+        link: Whether to create a link to the home page or not
+    """
     with ui.row().classes('items-center gap-4'):
         if link:
             with ui.link(target='/'):
@@ -314,41 +329,6 @@ def _title(ext: str = '', link: bool = True) -> None:
             image = ui.image('/images/solala.svg')
         image.classes('w-12 h-12 bg-transparent')
         ui.label(f'{APP_NAME}{ext}').classes(_H1_class)
-
-
-# def create_svg_element() -> str:
-#     radius = 50
-#
-#     # Create the root <svg> element
-#     svg = ElementTree.Element('svg', {
-#         'viewBox': '0 0 200 200',
-#         'width': '200',
-#         'height': '200',
-#         'xmlns': 'http://www.w3.org/2000/svg'
-#     })
-#
-#     # Add a background rectangle methodically
-#     ElementTree .SubElement(svg, 'rect', {
-#         'width': '100%',
-#         'height': '100%',
-#         'fill': '#f3f4f6',
-#         'rx': '10'
-#     })
-#
-#     # Add a dynamic circle element
-#     ElementTree .SubElement(svg, 'circle', {
-#         'cx': '100',
-#         'cy': '100',
-#         'r': str(radius),
-#         'fill': 'black'
-#     })
-#
-#     # Convert the XML tree back into a UTF-8 string for NiceGUI
-#     return ElementTree.tostring(svg, encoding='utf-8').decode('utf-8')
-#
-#
-# def _status_picture() -> None:
-#     picture = ui.html(create_svg_element(), sanitize=False)
 
 
 # ====================================================================
@@ -414,7 +394,7 @@ def root_page():
     )
 
     _register_listener(
-        InfographicUpdates(
+        InfographicUpdater(
             infographic_element=infographic_element,
             infographic=Infographic(),
         )
@@ -472,7 +452,7 @@ def status_page():
     )
 
     _register_listener(
-        StatusElements(
+        StatusUpdater(
             status_element=status_element,
         )
     )
@@ -498,7 +478,7 @@ def registers_page(match: Optional[str] = None):
     Show the inverter registers.
     """
     json_element = _json_page('Registers')
-    registers_elements = RegistersElement(registers_element=json_element, match=match)
+    registers_elements = RegistersUpdater(registers_element=json_element, match=match)
     _register_listener(registers_elements)
 
 
