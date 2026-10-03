@@ -372,6 +372,8 @@ app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
 
 @ui.page('/')
 def root_page():
+    ui.add_head_html('<link rel="apple-touch-icon" href="/images/apple-touch-icon.png">')
+
     with ui.column().style('width: 100vw; height: 100vh'):
         _register_listener(
             InfographicUpdater(

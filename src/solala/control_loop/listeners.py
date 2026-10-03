@@ -6,6 +6,10 @@ from solala.utils.json import JSONDict
 
 
 class StatusListener(ABC):
+    """
+    Abstract base class for status listeners.
+    System status is provided to the listeners once per iteration through the control loop.
+    """
 
     @abstractmethod
     def update(self, status_json: JSONDict) -> None:
@@ -20,6 +24,10 @@ class StatusListener(ABC):
 
 
 class RegistersListener(ABC):
+    """
+    Abstract base class for status listeners.
+    Registers are provided to the listeners once per iteration through the control loop.
+    """
 
     @abstractmethod
     def update(self, register_values: Dict[str, int | float | str | bool]) -> None:

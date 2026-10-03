@@ -8,9 +8,9 @@ GRAPHIC_SIZE: int = 300
 
 class Infographic:
     def __init__(self) -> None:
-        width = 320
+        width = 360
         height = 320
-        icon_margin_x = 50
+        icon_margin_x = 70
         icon_margin_y = 50
 
         self.canvas = Canvas(width=width, height=height)
@@ -74,7 +74,18 @@ class Infographic:
         prices: str = f'{_to_price(buy_price)},  {_to_price(feed_in_price)}{PRICE_SHORT}'
 
         canvas.clear()
+
+        # Battery charge visual
+        height = state_of_charge/100 * 36
+        canvas.append(Rectangle(
+            x=245,
+            y=262 - height,
+            width=30,
+            height=height,
+            fill='#00A000',
+        ))
         canvas.append(self.icons)
+
         max_chevron_width = 30
         canvas.append(Chevron(x=cx - 34, y=cy - 34, rotate=45, width=max_chevron_width * solar_scale))
         canvas.append(Chevron(x=cx + 34, y=cy + 34, rotate=45, width=max_chevron_width * battery_scale))
@@ -101,7 +112,6 @@ class Infographic:
         canvas.append(
             Text(_to_watts(battery_power), text_anchor='middle', font_size=font_size, font_family=font_family, x=right,
                  y=bot))
-
         canvas.append(
             Text(prices, text_anchor='middle', font_size=small_font_size, font_family=font_family, x=left,
                  y=bot2))
@@ -252,7 +262,8 @@ class Diamond(Shape):
             size: int,
             x: float = 0,
             y: float = 0,
-            color: str = 'black',
+            stroke_width=5,
+            color: str = 'gray',
     ) -> None:
         super().__init__(x=x, y=y)
 
@@ -262,7 +273,10 @@ class Diamond(Shape):
             0, -size,  # Bottom point
             -size, 0,  # Left point
             close=True,  # Connect the last point back to the first point
-            fill=color  # Fill the shape with colour
+            fill="none",
+            stroke=color,  # Stroke the shape with colour
+            stroke_width=stroke_width,
+            stroke_linejoin="round",
         )
         self.append(diamond)
 
@@ -299,7 +313,7 @@ class Battery(Shape):
               f"L {27 * s},{7 * s} "
               f"L {37 * s},{7 * s} "
               f"L {37 * s},{12 * s}",
-            fill="none",
+            fill=color,
             stroke=color,
             stroke_width=stroke_width * s,
             stroke_linejoin="round"
