@@ -8,22 +8,27 @@ GRAPHIC_SIZE: int = 300
 
 class Infographic:
     def __init__(self) -> None:
-        width = 360
+        width = 300
         height = 320
-        icon_margin_x = 70
-        icon_margin_y = 50
+        icon_offset = 50
 
-        self.canvas = Canvas(width=width, height=height)
+        self.canvas = Drawing(width=width, height=height, origin=(-width / 2, -height / 2))
+        self.icon_offset = icon_offset
 
-        # Make the icon group, relative to the canvas
-        self.icons = Group()
-        self.icons.append(Sun(x=26 + icon_margin_x, y=29 + icon_margin_y))
-        self.icons.append(Grid(x=-5 + icon_margin_x, y=height - 64 - icon_margin_y))
-        self.icons.append(House(x=width - 62 - icon_margin_x, y=-5 + icon_margin_y))
-        self.icons.append(Battery(x=width - 62 - icon_margin_x, y=height - 58 - icon_margin_y))
-        self.icons.append(Diamond(size=15, x=width / 2, y=height / 2))
+        # Make the static parts (background)
+        self.static_background = Group()
+        # bg_stroke = 1.2
+        # self.static_background.append(Rectangle(
+        #     bg_stroke / 2 - width / 2, bg_stroke / 2 - height / 2, width - bg_stroke, height - bg_stroke,
+        #     fill='#f2f5f8', stroke="#e1e9ef", stroke_width=bg_stroke,
+        #     rx=4,
+        # ))
+        self.static_background.append(Sun(x=-33 - icon_offset, y=-33 - icon_offset))
+        self.static_background.append(Grid(x=-63 - icon_offset, y=0 + icon_offset))
+        self.static_background.append(House(x=-4 + icon_offset, y=-65 - icon_offset))
+        self.static_background.append(Inverter(x=0, y=0))
 
-        # Add chevrons and text
+        # Make the default drawing
         self.make(
             state_of_charge=100,
             solar_power=0,
@@ -62,8 +67,7 @@ class Infographic:
             feed_in_price: float,
     ) -> None:
         canvas = self.canvas
-        cx = canvas.width / 2
-        cy = canvas.height / 2
+        icon_offset = self.icon_offset
 
         power_scale = max(power_scale, abs(solar_power), abs(grid_power), abs(house_power), abs(battery_power))
         solar_scale = max(min(solar_power / power_scale, 1), -1)
@@ -75,31 +79,23 @@ class Infographic:
 
         canvas.clear()
 
-        # Battery charge visual
-        height = state_of_charge/100 * 36
-        canvas.append(Rectangle(
-            x=245,
-            y=262 - height,
-            width=30,
-            height=height,
-            fill='#00A000',
-        ))
-        canvas.append(self.icons)
+        canvas.append(self.static_background)
+        canvas.append(Battery(x=-3 + icon_offset, y=+5 + icon_offset, state_of_charge=state_of_charge))
 
         max_chevron_width = 30
-        canvas.append(Chevron(x=cx - 34, y=cy - 34, rotate=45, width=max_chevron_width * solar_scale))
-        canvas.append(Chevron(x=cx + 34, y=cy + 34, rotate=45, width=max_chevron_width * battery_scale))
-        canvas.append(Chevron(x=cx - 34, y=cy + 34, rotate=-45, width=max_chevron_width * grid_scale))
-        canvas.append(Chevron(x=cx + 34, y=cy - 34, rotate=-45, width=max_chevron_width * house_scale))
+        canvas.append(Chevron(x=- 34, y=- 34, rotate=45, width=max_chevron_width * solar_scale))
+        canvas.append(Chevron(x=+ 34, y=+ 34, rotate=45, width=max_chevron_width * battery_scale))
+        canvas.append(Chevron(x=- 34, y=+ 34, rotate=-45, width=max_chevron_width * grid_scale))
+        canvas.append(Chevron(x=+ 34, y=- 34, rotate=-45, width=max_chevron_width * house_scale))
 
         font_size = 16
         small_font_size = 12
         font_family = 'Verdana'
-        top = cy - 125
-        bot = cy + 130
+        top = -125
+        bot = +130
         bot2 = bot + 20
-        left = cx - 85
-        right = cx + 80
+        left = -83
+        right = +80
         canvas.append(
             Text(_to_watts(solar_power), text_anchor='middle', font_size=font_size, font_family=font_family, x=left,
                  y=top))
@@ -125,8 +121,10 @@ class Infographic:
 
 
 def _to_price(price: float) -> str:
-    price = abs(price)
-    return f'{price:0.1f}'
+    price_str = f'{price:0.1f}'
+    if price_str == '-0.0':
+        price_str = '0.0'
+    return price_str
 
 
 def _to_watts(power: float) -> str:
@@ -141,25 +139,6 @@ def _to_pct(state_of_charge: float) -> str:
     return f'{int(round(state_of_charge))}{PERCENT}'
 
 
-class Canvas(Drawing):
-    def __init__(self, *, width: float, height: float):
-        super().__init__(width, height, origin=(0, 0))
-
-        stroke = 1.2
-        radius = 4  # corner radius
-        half_stroke = stroke / 2
-        self.background = Rectangle(
-            half_stroke, half_stroke, self.width - stroke, self.height - stroke,
-            fill='#f2f5f8', stroke="#e1e9ef", stroke_width=stroke,
-            rx=radius,
-        )
-        self.clear()
-
-    def clear(self) -> None:
-        self.elements.clear()
-        self.append(self.background)
-
-
 class Shape(Group):
     def __init__(
             self,
@@ -172,16 +151,6 @@ class Shape(Group):
         super().__init__(transform=f'translate({x},{y}) scale({scale}) rotate({rotate})')
         self._x = x
         self._y = y
-
-    def move_to(self, x: float, y: float) -> None:
-        self._x = x
-        self._y = y
-        self._transform = f'translate({x}, {y})'
-
-    def move(self, dx: float, dy: float) -> None:
-        self._x += dx
-        self._y += dy
-        self._transform = f'translate({self._x}, {self._y})'
 
     @property
     def _transform(self) -> str:
@@ -254,15 +223,15 @@ class House(Shape):
         ))
 
 
-class Diamond(Shape):
+class Inverter(Shape):
 
     def __init__(
             self,
             *,
-            size: int,
+            size: int = 15,
             x: float = 0,
             y: float = 0,
-            stroke_width=5,
+            stroke_width=3,
             color: str = 'gray',
     ) -> None:
         super().__init__(x=x, y=y)
@@ -278,7 +247,29 @@ class Diamond(Shape):
             stroke_width=stroke_width,
             stroke_linejoin="round",
         )
+
+        # 2. Corrected Sine Wave
+        size -= stroke_width * 2
+        wave = Path(
+            fill="none",
+            stroke=color,
+            stroke_width=stroke_width,
+            stroke_linejoin="round",
+            stroke_linecap="round",
+        )
+        amp = size * 0.35
+        wave.M(-size, 0)
+        wave.L(-size * 0.75, -amp * 0.7)
+        wave.L(-size * 0.5,  -amp)
+        wave.L(-size * 0.25, -amp * 0.7)
+        wave.L(0, 0)
+        wave.L(size * 0.25,  amp * 0.7)
+        wave.L(size * 0.5,   amp)
+        wave.L(size * 0.75,  amp * 0.7)
+        wave.L(size, 0)
+
         self.append(diamond)
+        self.append(wave)
 
 
 class Battery(Shape):
@@ -290,10 +281,22 @@ class Battery(Shape):
             x: float = 0,
             y: float = 0,
             stroke_width=5,
+            state_of_charge: float = 100,
             color: str = 'darkgreen',
+            start_of_charge_color: str = '#00A000',
     ) -> None:
         super().__init__(x=x, y=y)
         s = size / 64
+
+        # Battery charge visual
+        height = state_of_charge / 100 * 30 + stroke_width + 0.3
+        self.append(Rectangle(
+            x=18 * s,
+            y=(52 - stroke_width / 2 - height) * s,
+            width=28 * s,
+            height=height * s,
+            fill=start_of_charge_color,
+        ))
 
         # Battery body
         self.append(Path(

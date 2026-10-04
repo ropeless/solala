@@ -109,13 +109,15 @@ def _make_price(start_time: datetime, channel_pair: ChannelPair) -> Price:
         raise IOError(f'no feed-in channel found: {start_time}')
     tariff_info: JSONDict = json_dict(general['tariffInformation'])
 
+    estimate: bool = True if 'estimate' not in general else json_bool(general['estimate'])
+
     return Price(
         start_time=start_time,
         end_time=_get_datetime(json_str(general['endTime'])),
         renewables=json_num(general['renewables']),
         buy_price=json_num(general['perKwh']),
         feed_in_price=-json_num(feed_in['perKwh']),
-        estimate=json_bool(general['estimate']),
+        estimate=estimate,
         tariff_period=json_str(tariff_info['period']),
         tariff_season=json_str(tariff_info['season']),
         tariff_demand_window=json_bool(tariff_info['demandWindow']),

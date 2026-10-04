@@ -995,7 +995,7 @@ def _update_next_feed_in_price_check(prices: List[Price], zero_export: bool) -> 
     while last_safe_feed_in < end and safe():
         last_safe_feed_in += 1
 
-    state.next_feed_in_price_check = prices[last_safe_feed_in].end_time
+    state.next_feed_in_price_check = _next_price_check(prices[last_safe_feed_in])
     LOGGER.info(f'[{_LOG_SRC}] next feed-in price check: {state.next_feed_in_price_check}')
 
 
@@ -1023,9 +1023,17 @@ def _update_next_buy_price_check(prices: List[Price], force_charging: bool) -> N
     while last_safe_buy < end and safe():
         last_safe_buy += 1
 
-    state.next_buy_price_check = prices[last_safe_buy].end_time
+    state.next_buy_price_check = _next_price_check(prices[last_safe_buy])
 
     LOGGER.info(f'[{_LOG_SRC}] next buy price check: {state.next_buy_price_check}')
+
+
+def _next_price_check(price: Price) -> datetime:
+    if price.estimate:
+        delay = Constants.PRICE_SETTLE_CHECK
+        return min(datetime.now(UTC) + timedelta(seconds=delay), price.end_time)
+    else:
+        return price.end_time
 
 
 def _save_settings() -> None:
