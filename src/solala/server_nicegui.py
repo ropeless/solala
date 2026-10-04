@@ -1,22 +1,20 @@
 import asyncio
 import json
-import logging
 from abc import abstractmethod
 from asyncio import AbstractEventLoop
 from functools import partial
-from typing import List, Mapping, final, Optional, Dict
+from typing import Mapping, final, Optional, Dict, List
 
-import httpx
 from nicegui import ui, app
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
-from solala import control_loop
+from solala import control_loop, server_log
 from solala.control_loop import listeners as control_loop_listeners, BatteryMode, BatteryPolicy, InverterMode, \
     InverterPolicy
 from solala.resources import IMAGE_FILES
-from solala.server_constants import APP_NAME
-from solala.server_constants import SOLALA_LOG_FORMAT, LOGGER
+from solala.server_constants import APP_NAME, MAX_LOG_HISTORY
+from solala.server_constants import LOGGER
 from solala.server_infographic import Infographic
 from solala.units import PRICE, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
 from solala.utils.dict_extras import dict_merge
@@ -252,7 +250,7 @@ _HEAD_HTML = r'''
             padding: 7px;
         }
         .infographic-title {
-            font-size: 16px;
+            font-size: 18px;
             padding: 3px 5px 6px;
         }
         .control-column {
@@ -322,42 +320,6 @@ _CONSTANTS_UNITS: Mapping[str, str] = {
     'STOP_BUY_TOLERANCE': PRICE,
     'START_BUY_TOLERANCE': PRICE,
 }
-
-
-class NiceGuiLogHandler(logging.Handler):
-    """
-    A custom logging Handler that writes the Solala logger
-    to NiceGUI ui.log components.
-    """
-
-    def __init__(self):
-        super().__init__()
-        self._log_elements: List[ui.log] = []
-        self.setFormatter(logging.Formatter(SOLALA_LOG_FORMAT))
-        LOGGER.addHandler(self)
-
-    def emit(self, record):
-        try:
-            # Format the log message using the handler's formatter
-            msg = self.format(record)
-            # Push the message to the NiceGUI UI element
-            for ui_log in self._log_elements:
-                ui_log.push(msg)
-        except (IOError, ValueError, RuntimeError):
-            self.handleError(record)
-
-    def add(self, element: ui.log) -> None:
-        self.remove(element)
-        self._log_elements.append(element)
-
-    def remove(self, element: ui.log) -> None:
-        try:
-            self._log_elements.remove(element)
-        except ValueError:
-            pass
-
-
-_LOG_HANDLER = NiceGuiLogHandler()
 
 
 class StatusListener(control_loop_listeners.StatusListener):
@@ -612,6 +574,25 @@ def _json_page(name: str) -> ContentElement:
     return registers_element
 
 
+def _json_multi_page(*names: str) -> List[ContentElement]:
+    """
+    Prepare a page to show multiple JSON data.
+    """
+    result: List[ContentElement] = []
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page'):
+        _page_header()
+
+        with ui.column():
+            for name in names:
+                with ui.card():
+                    ui.label(name).classes(_H2_class)
+                    registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
+                    result.append(registers_element)
+
+    return result
+
+
 def _page_header(ext: str = '', link: bool = True) -> None:
     """
     NiceGui snippet to add the Solala title to a page.
@@ -690,7 +671,7 @@ def root_page():
             ):
 
                 ui.label(
-                    'Live Power Flow'
+                    'Power'
                 ).classes('infographic-title')
 
                 with ui.element('div').classes(
@@ -820,27 +801,18 @@ def root_page():
                 _diagnostic_link(
                     '▥', 'Status', '/status_page'
                 )
-
                 _diagnostic_link(
                     '⚙', 'Parameters', '/parameters_page'
                 )
-
                 _diagnostic_link(
                     '↔', 'Connection', '/connection_page'
                 )
-
                 _diagnostic_link(
                     '▤', 'Registers', '/registers_page'
                 )
-
-                _diagnostic_link(
-                    '☷', 'Constants', '/constants_page'
-                )
-
                 _diagnostic_link(
                     '▣', 'Log', '/log_page'
                 )
-
                 _diagnostic_link(
                     '</>', 'API Schema', '/schema_page'
                 )
@@ -888,11 +860,11 @@ def log_page():
     ui.add_head_html(_HEAD_HTML)
     with ui.column().style('width: 100vw; height: 100vh'):
         _page_header(' log console')
-        log_ui = ui.log(max_lines=None).classes(
+        log_ui = ui.log(max_lines=MAX_LOG_HISTORY).classes(
             'w-full grow min-h-0 text-mono text-body2 p-2 overflow-auto'
         )
-    ui.context.client.on_disconnect(partial(_LOG_HANDLER.remove, log_ui))
-    _LOG_HANDLER.add(log_ui)
+    ui.context.client.on_disconnect(partial(server_log.remove, log_ui))
+    server_log.add(log_ui)
 
 
 @ui.page('/registers_page')
@@ -906,29 +878,20 @@ def registers_page(match: Optional[str] = None):
 
 
 @ui.page('/parameters_page')
-def parameters_page(match: Optional[str] = None):
+def parameters_page():
     """
     Show the policy parameters.
     """
     parameters_json = control_loop.get_parameters()
-    if match is not None:
-        parameters_json = filter_json(parameters_json, match)
+    constants_json = control_loop.Constants.as_dict()
 
-    _json_page('Parameters').set_content(
+    params, consts = _json_multi_page('Parameters', 'Constants')
+
+    params.set_content(
         render_json(parameters_json, units=_PARAMETERS_UNITS)
     )
 
-
-@ui.page('/constants_page')
-def constants_page(match: Optional[str] = None):
-    """
-    Show the control loop constants.
-    """
-    constants_json = control_loop.Constants.as_dict()
-    if match is not None:
-        constants_json = filter_json(constants_json, match)
-
-    _json_page('Constants').set_content(
+    consts.set_content(
         render_json(constants_json, remove_key_underscores=False, units=_CONSTANTS_UNITS)
     )
 
