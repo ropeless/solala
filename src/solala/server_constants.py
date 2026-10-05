@@ -1,6 +1,7 @@
 import logging
 
 APP_NAME: str = 'Solala'
+APP_SUBTITLE: str = 'Home Power Management'
 
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timestamps
 

@@ -175,7 +175,10 @@ def _stringify_values(
     # Stringify values
     value_str: str
     if isinstance(value, float):
-        value_str = f'{value:{float_format}}'.rstrip('0').rstrip('.')
+        value_str = f'{value:{float_format}}'
+        if '.' in value_str:
+            # Clean up trailing zeros and decimal point for rendered float
+            value_str = value_str.rstrip('0').rstrip('.')
     elif isinstance(value, bool):
         # Always show booleans in lower case
         value_str = str(value).lower()

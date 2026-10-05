@@ -24,7 +24,7 @@ _W_SF = 23  # Model 201
 
 MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
 
-    # The special zero model, where registers address are in Modicon (40xxx) format.
+    # The special zero model, where registers addresses are in Modicon (40xxx) format.
     0: {
       'SID': str2(40001),  # expect 'SunS'
     },
@@ -35,6 +35,7 @@ MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
         'name': str16(19),
         'software_version': str8(43),
         'serial_number': str16(51),
+        'device_id': uint16(67),
     },
 
     # Inverter
@@ -104,9 +105,9 @@ def mppt_modules(number_of_modules: int) -> Iterator[Tuple[str, RegisterAccess]]
     """
     Additional registers for MPPT modules.
     """
-    for module_number in range(number_of_modules):
-        module_id = module_number + 1
-        module_offset = module_number * 20
+    for i in range(number_of_modules):
+        module_id = i + 1
+        module_offset = i * 20
         yield f'module/{module_id}/ID', uint16(11 + module_offset)
         yield f'module/{module_id}/IDStr', str8(12 + module_offset),
         yield f'module/{module_id}/DCW', scaled_uint(22 + module_offset, _DCW_SF)

@@ -12,22 +12,23 @@ from nicegui.elements.mixins.content_element import ContentElement
 from solala import control_loop, server_log
 from solala.control_loop import listeners as control_loop_listeners, BatteryMode, BatteryPolicy, InverterMode, \
     InverterPolicy
-from solala.resources import IMAGE_FILES
-from solala.server_constants import APP_NAME, MAX_LOG_HISTORY
+from solala.resources import IMAGE_FILES, RESOURCES
+from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE
 from solala.server_constants import LOGGER
 from solala.server_infographic import Infographic
 from solala.units import PRICE, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
+# --------------------------------------------------------------------
+# Main styling
+# --------------------------------------------------------------------
+
 _H1_class = 'text-h5'
 _H2_class = 'text-h6'
 
-# --------------------------------------------------------------------
-# Main dashboard styling
-# --------------------------------------------------------------------
-
 _HEAD_HTML = r'''
+<link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
 <style>
     /* ---------- Page ---------- */
@@ -611,7 +612,7 @@ def _page_header(ext: str = '', link: bool = True) -> None:
 
             with ui.element('div'):
                 ui.label(f'{APP_NAME}{ext}').classes('solala-brand-name')
-                ui.label('Home Solar System').classes('solala-brand-subtitle')
+                ui.label(APP_SUBTITLE).classes('solala-brand-subtitle')
 
 
 def _control_header(title: str):
@@ -648,6 +649,7 @@ def _diagnostic_link(icon: str, name: str, target: str):
 
 # Mount static directories
 app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
+app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manifest.json'))
 
 
 @ui.page('/')

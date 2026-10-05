@@ -2,7 +2,7 @@ import threading
 from functools import partial
 from http import HTTPStatus
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI, Request, status, HTTPException
@@ -12,18 +12,17 @@ from pydantic import BaseModel, ConfigDict
 
 from solala import control_loop
 from solala.control_loop import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlLoopError
+from solala.control_loop.settings import Settings, ModbusControllerConnection, PricerConnection
 from solala.server_constants import APP_NAME
 from solala.server_constants import LOGGER
 from solala.server_nicegui import ui
-from solala.control_loop.settings import Settings
 from solala.utils.json import JSONDict, JSONValue, filter_json, follow_json
-from solala.utils.string_extras import split_addresses
 
 
 def run_server(
         host: str,
         port: int,
-        settings_path: Optional[Path|str] = None,
+        settings_path: Optional[Path | str] = None,
         settings: Optional[Settings] = None,
         force_settings: bool = False,
 ) -> None:
@@ -66,6 +65,19 @@ def _follow_filter_json(data: JSONDict, path: Optional[str], match: Optional[str
     if isinstance(data, dict) and match is not None:
         data = filter_json(data, match)
     return data
+
+
+class ControllerConnectionUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    type: str = 'modbus'
+    address: str
+
+
+class PricerConnectionUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    type: str = 'amber'
+    api_token: str
+    nmi: str
 
 
 # ====================================================================
@@ -121,7 +133,7 @@ async def handle_http_error(request: Request, err: HTTPException):
     )
 
 
-@app.get('/schema', include_in_schema=False)
+@app.get('/schema')
 def get_schema():
     openapi_schema = get_openapi(
         title=app.title,
@@ -132,32 +144,9 @@ def get_schema():
 
 
 @app.get('/status')
-def get_status(match: str | None = None):
-    return filter_json(control_loop.get_status(), match)
-
-
-@app.get('/status/control')
-@app.get('/status/control/{rest_of_path:path}')
-def get_control(rest_of_path: Optional[str] = None, match: str | None = None):
-    return _follow_filter_json(control_loop.get_control_status(), rest_of_path, match)
-
-
-@app.get('/status/price')
-@app.get('/status/price/{rest_of_path:path}')
-def get_price(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(control_loop.get_price_status(), rest_of_path, match)
-
-
-@app.get('/status/power')
-@app.get('/status/power/{rest_of_path:path}')
-def get_power(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(control_loop.get_power_status(), rest_of_path, match)
-
-
-@app.get('/status/charger')
-@app.get('/status/charger/{rest_of_path:path}')
-def get_charger(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(control_loop.get_car_charger_status(), rest_of_path, match)
+@app.get('/status/{rest_of_path:path}')
+def get_status(rest_of_path: Optional[str] = None, match: str | None = None):
+    return _follow_filter_json(control_loop.get_status(), rest_of_path, match)
 
 
 @app.get('/registers')
@@ -166,16 +155,16 @@ def get_registers(rest_of_path: str | None = None, match: str | None = None):
     return _follow_filter_json(control_loop.get_registers(), rest_of_path, match)
 
 
-@app.get('/parameters')
-@app.get('/parameters/{rest_of_path:path}')
-def get_parameters(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(control_loop.get_parameters(), rest_of_path, match)
-
-
 @app.get('/connection')
 @app.get('/connection/{rest_of_path:path}')
 def get_connection(rest_of_path: str | None = None, match: str | None = None):
     return _follow_filter_json(control_loop.get_connection_status(), rest_of_path, match)
+
+
+@app.get('/parameters')
+@app.get('/parameters/{rest_of_path:path}')
+def get_parameters(rest_of_path: str | None = None, match: str | None = None):
+    return _follow_filter_json(control_loop.get_parameters(), rest_of_path, match)
 
 
 @app.get('/constants')
@@ -248,30 +237,20 @@ def put_parameters(parameter: str, value: float):
     return control_loop.set_parameters(**kwargs)
 
 
-class ControllerConnectionUpdate(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    type: str = 'modbus'
-    addresses: str
-
-
 @app.put('/connection/controller/connect')
 def put_controller_connect(payload: ControllerConnectionUpdate):
     """
     Establish a modbus connection to the inverter.
     Each address can be a MAC address or an IP address.
-    Slave address are appended, separated by commas, semicolons, ampersands, or whitespace.
+    Slave addresses are appended, separated by commas, semicolons, ampersands, or whitespace.
     """
     if payload.type != 'modbus':
         return JSONResponse({'error': 'only modbus is supported'}, status_code=status.HTTP_400_BAD_REQUEST)
+    controller_connection = ModbusControllerConnection(
+        address=payload.address,
+    )
 
-    addresses: List[str] = split_addresses(payload.addresses)
-    result = control_loop._connect_modbus(addresses[0], addresses[1:])
-
-    if 'error' in result:
-        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    else:
-        status_code = status.HTTP_200_OK
-    return JSONResponse(result, status_code=status_code)
+    return control_loop.connect_controller(controller_connection)
 
 
 @app.put('/connection/controller/disconnect')
@@ -280,13 +259,6 @@ def put_controller_disconnect():
     Close the controller connection to the inverter.
     """
     return control_loop.disconnect_controller()
-
-
-class PricerConnectionUpdate(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    type: str = 'amber'
-    api_token: str
-    nmi: str
 
 
 @app.put('/connection/pricer/connect')
@@ -298,14 +270,12 @@ def put_pricer_connect(payload: PricerConnectionUpdate):
     """
     if payload.type != 'amber':
         return JSONResponse({'error': 'only amber is supported'}, status_code=status.HTTP_400_BAD_REQUEST)
+    pricer_connection = PricerConnection(
+        api_token=payload.api_token,
+        nmi=payload.nmi,
+    )
 
-    result = control_loop._connect_amber(payload.api_token, payload.nmi)
-
-    if 'error' in result:
-        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    else:
-        status_code = status.HTTP_200_OK
-    return JSONResponse(result, status_code=status_code)
+    return control_loop.connect_pricer(pricer_connection)
 
 
 @app.put('/connection/pricer/disconnect')
