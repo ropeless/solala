@@ -1,0 +1,28 @@
+## Here are some useful commands to help set up Solala
+## on Ubuntu
+
+
+## Enable Tailscale services
+sudo tailscale serve --bg --http=80 http://127.0.0.1:8080
+sudo tailscale serve --bg --https=443 http://127.0.0.1:8080
+
+## Define a service (see scripts/solala.service.example.txt)
+sudo nano /etc/systemd/system/solala.service
+
+## Reload systemd to detect the new service file
+sudo systemctl daemon-reload
+
+## Enable it to launch on system boot
+sudo systemctl enable solala.service
+
+## Management commands
+
+## Start the service
+sudo systemctl status solala.service
+
+## View the log
+sudo journalctl -u solala.service -f
+
+## Restart the service
+sudo systemctl stop solala.service
+sudo systemctl restart solala.service

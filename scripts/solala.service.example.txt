@@ -1,0 +1,16 @@
+[Unit]
+Description=Solala Demo Server Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=barry
+WorkingDirectory=/home/barry/Development/solala
+ExecStart=/home/barry/Development/solala/private/run_solala.sh
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
