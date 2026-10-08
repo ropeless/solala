@@ -3,8 +3,8 @@
   "short_name": "Solala",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#111827",
-  "theme_color": "#111827",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
   "scope": "/",
   "icons": [
     {
