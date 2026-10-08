@@ -719,7 +719,7 @@ def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> JSON
         state.consumers_settings[name] = consumer_connection
         state.consumers_status[name] = consumer_status
         _save_settings()
-        LOGGER.info(f'{_LOG_SRC}Power consumer connection: {json.dumps(consumer_status)}')
+        LOGGER.info(f'{_LOG_SRC}Power consumer connection {name!r}: {json.dumps(consumer_status)}')
         return consumer_status
 
 

@@ -615,7 +615,7 @@ def _page_header(ext: str = '', link: bool = True) -> None:
                 ui.label(APP_SUBTITLE).classes('solala-brand-subtitle')
 
 
-def _control_header(title: str):
+def _control_header(title: str) -> None:
     with ui.element('div').classes('control-header'):
         with ui.element('div').classes('control-title'):
             # ui.label(icon).classes('control-title-icon')
@@ -625,7 +625,7 @@ def _control_header(title: str):
         #     ui.label(state)
 
 
-def _button_classes(button, primary=False, wide=False):
+def _button_classes(button, primary=False, wide=False) -> None:
     classes = 'solala-button'
     if wide:
         classes += ' wide'
@@ -637,10 +637,65 @@ def _button_classes(button, primary=False, wide=False):
     return button
 
 
-def _diagnostic_link(icon: str, name: str, target: str):
+def _diagnostic_link(icon: str, name: str, target: str) -> None:
     with ui.link(target=target).classes('diagnostic-link'):
         ui.label(icon).classes('diagnostic-icon')
         ui.label(name)
+
+
+def _ui_control_buttons() -> None:
+    with ui.element('div').classes('control-column'):
+        # ======================================================
+        # BATTERY
+        # ======================================================
+
+        with ui.element('div').classes('dashboard-card control-card'):
+            _control_header('Battery')
+            with ui.element('div').classes('control-buttons'):
+                battery_enable = ui.button('ENABLE').classes('solala-button')
+                battery_disable = ui.button('DISABLE').classes('solala-button')
+                battery_force_charge = ui.button('FORCE CHARGE').classes('solala-button')
+                battery_force_discharge = ui.button('FORCE DISCHARGE').classes('solala-button')
+                battery_cheap_force_discharge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
+
+                battery_force_charge.classes('wide')
+                battery_force_discharge.classes('wide')
+                battery_cheap_force_discharge.classes('wide')
+
+            _register_listener(
+                BatteryButtonUpdater(
+                    battery_enable=battery_enable,
+                    battery_disable=battery_disable,
+                    battery_force_charge=battery_force_charge,
+                    battery_force_discharge=battery_force_discharge,
+                    battery_cheap_force_discharge=battery_cheap_force_discharge,
+                )
+            )
+
+        # ======================================================
+        # INVERTER
+        # ======================================================
+
+        with ui.element('div').classes('dashboard-card control-card'):
+            _control_header('Inverter')
+            with ui.element('div').classes('control-buttons'):
+                inverter_enable = ui.button('ENABLE').classes('solala-button')
+                inverter_disable = ui.button('DISABLE').classes('solala-button')
+                inverter_zero_export = ui.button('ZERO EXPORT').classes('solala-button')
+                inverter_neg_feed_in_zero_export = ui.button('NEG FEED-IN ⇒ ZERO EXPORT').classes(
+                    'solala-button')
+
+                inverter_zero_export.classes('wide')
+                inverter_neg_feed_in_zero_export.classes('wide')
+
+            _register_listener(
+                InverterButtonUpdater(
+                    inverter_enable=inverter_enable,
+                    inverter_disable=inverter_disable,
+                    inverter_zero_export=inverter_zero_export,
+                    inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
+                )
+            )
 
 
 # ====================================================================
@@ -658,29 +713,15 @@ def root_page():
     with ui.element('div').classes('solala-page'):
         _page_header(link=False)
 
-        # ==============================================================
-        # MAIN DASHBOARD
-        # ==============================================================
-
         with ui.element('div').classes('dashboard-grid'):
-
             # ----------------------------------------------------------
-            # LIVE POWER FLOW
+            # LIVE POWER INFOGRAPHIC
             # ----------------------------------------------------------
+            with ui.element('div').classes('dashboard-card infographic-card'):
+                ui.label('Power').classes('infographic-title')
 
-            with ui.element('div').classes(
-                    'dashboard-card infographic-card'
-            ):
-
-                ui.label(
-                    'Power'
-                ).classes('infographic-title')
-
-                with ui.element('div').classes(
-                        'infographic-container'
-                ):
+                with ui.element('div').classes('infographic-container'):
                     infographic = ui.html()
-
                     _register_listener(
                         InfographicUpdater(
                             infographic_element=infographic
@@ -688,136 +729,23 @@ def root_page():
                     )
 
             # ----------------------------------------------------------
-            # BATTERY + INVERTER
+            # BATTERY + INVERTER control buttons
             # ----------------------------------------------------------
-
-            with ui.element('div').classes('control-column'):
-
-                # ======================================================
-                # BATTERY
-                # ======================================================
-
-                with ui.element('div').classes(
-                        'dashboard-card control-card'
-                ):
-
-                    _control_header('Battery')
-
-                    with ui.element('div').classes(
-                            'control-buttons'
-                    ):
-                        battery_enable = ui.button('ENABLE')
-
-                        battery_disable = ui.button('DISABLE')
-
-                        battery_force_charge = ui.button(
-                            'FORCE CHARGE'
-                        )
-
-                        battery_force_discharge = ui.button(
-                            'FORCE DISCHARGE'
-                        )
-
-                        battery_cheap_force_discharge = ui.button(
-                            'CHEAP ⇒ FORCE CHARGE'
-                        )
-
-                        for button in [
-                            battery_enable,
-                            battery_disable,
-                            battery_force_charge,
-                            battery_force_discharge,
-                            battery_cheap_force_discharge,
-                        ]:
-                            button.classes('solala-button')
-
-                        battery_force_charge.classes('wide')
-                        battery_force_discharge.classes('wide')
-                        battery_cheap_force_discharge.classes('wide')
-
-                    _register_listener(
-                        BatteryButtonUpdater(
-                            battery_enable=battery_enable,
-                            battery_disable=battery_disable,
-                            battery_force_charge=battery_force_charge,
-                            battery_force_discharge=battery_force_discharge,
-                            battery_cheap_force_discharge=battery_cheap_force_discharge,
-                        )
-                    )
-
-                # ======================================================
-                # INVERTER
-                # ======================================================
-
-                with ui.element('div').classes(
-                        'dashboard-card control-card'
-                ):
-
-                    _control_header('Inverter')
-
-                    with ui.element('div').classes(
-                            'control-buttons'
-                    ):
-                        inverter_enable = ui.button('ENABLE')
-
-                        inverter_disable = ui.button('DISABLE')
-
-                        inverter_zero_export = ui.button(
-                            'ZERO EXPORT'
-                        )
-
-                        inverter_neg_feed_in_zero_export = ui.button(
-                            'NEG FEED-IN ⇒ ZERO EXPORT'
-                        )
-
-                        for button in [
-                            inverter_enable,
-                            inverter_disable,
-                            inverter_zero_export,
-                            inverter_neg_feed_in_zero_export,
-                        ]:
-                            button.classes('solala-button')
-
-                        inverter_zero_export.classes('wide')
-                        inverter_neg_feed_in_zero_export.classes('wide')
-
-                    _register_listener(
-                        InverterButtonUpdater(
-                            inverter_enable=inverter_enable,
-                            inverter_disable=inverter_disable,
-                            inverter_zero_export=inverter_zero_export,
-                            inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
-                        )
-                    )
+            _ui_control_buttons()
 
         # ==============================================================
         # DIAGNOSTICS
         # ==============================================================
-
         with ui.element('div').classes('dashboard-card diagnostics-card'):
-
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
-
-            with ui.element('div').classes('diagnostic-grid'):
-                _diagnostic_link(
-                    '▥', 'Status', '/status_page'
-                )
-                _diagnostic_link(
-                    '⚙', 'Parameters', '/parameters_page'
-                )
-                _diagnostic_link(
-                    '↔', 'Connection', '/connection_page'
-                )
-                _diagnostic_link(
-                    '▤', 'Registers', '/registers_page'
-                )
-                _diagnostic_link(
-                    '▣', 'Log', '/log_page'
-                )
-                _diagnostic_link(
-                    '</>', 'API Schema', '/schema_page'
-                )
+            with ui.grid(columns=3):
+                _diagnostic_link('🛈', 'Status', '/status_page')
+                _diagnostic_link('⚙', 'Parameters', '/parameters_page')
+                _diagnostic_link('↔', 'Connection', '/connection_page')
+                _diagnostic_link('▤', 'Registers', '/registers_page')
+                _diagnostic_link('▣', 'Log', '/log_page')
+                _diagnostic_link('⬡', 'API Schema', '/schema_page')
 
 
 @ui.page('/status_page')
@@ -826,32 +754,21 @@ def status_page():
     The main status page.
     """
     ui.add_head_html(_HEAD_HTML)
-    with ui.column().style('width: 100vw; height: 100vh'):
+    with ui.element('div').classes('solala-page'):
         _page_header()
-        with ui.card():
-            ui.label('Status').classes(_H2_class)
-            _register_listener(StatusUpdater(
-                status_element=ui.code(language='nothing').classes('text-sm w-full grow')
-            ))
-        with ui.card():
-            ui.label('Battery').classes(_H2_class)
-            with ui.row():
-                _register_listener(BatteryButtonUpdater(
-                    battery_enable=ui.button('enable'),
-                    battery_disable=ui.button('disable'),
-                    battery_force_charge=ui.button('force charge'),
-                    battery_force_discharge=ui.button('force discharge'),
-                    battery_cheap_force_discharge=ui.button('cheap ⇒ force charge'),
+        with ui.element('div').classes('dashboard-grid'):
+            # ----------------------------------------------------------
+            # Status card
+            # ----------------------------------------------------------
+            with ui.card():
+                ui.label('Status').classes(_H2_class)
+                _register_listener(StatusUpdater(
+                    status_element=ui.code(language='nothing').classes('text-sm w-full grow')
                 ))
-        with ui.card():
-            ui.label('Inverter').classes(_H2_class)
-            with ui.row():
-                _register_listener(InverterButtonUpdater(
-                    inverter_enable=ui.button('enable'),
-                    inverter_disable=ui.button('disable'),
-                    inverter_zero_export=ui.button('zero export'),
-                    inverter_neg_feed_in_zero_export=ui.button('neg feed-in ⇒ zero export'),
-                ))
+            # ----------------------------------------------------------
+            # BATTERY + INVERTER control buttons
+            # ----------------------------------------------------------
+            _ui_control_buttons()
 
 
 @ui.page('/log_page')
@@ -860,11 +777,9 @@ def log_page():
     Listen to the Solala logger and display log messages.
     """
     ui.add_head_html(_HEAD_HTML)
-    with ui.column().style('width: 100vw; height: 100vh'):
+    with ui.element('div').classes('solala-page'):
         _page_header(' log console')
-        log_ui = ui.log(max_lines=MAX_LOG_HISTORY).classes(
-            'w-full grow min-h-0 text-mono text-body2 p-2 overflow-auto'
-        )
+        log_ui = ui.log(max_lines=MAX_LOG_HISTORY).style('height: 100vh')
     ui.context.client.on_disconnect(partial(server_log.remove, log_ui))
     server_log.add(log_ui)
 
@@ -882,7 +797,7 @@ def registers_page(match: Optional[str] = None):
 @ui.page('/parameters_page')
 def parameters_page():
     """
-    Show the policy parameters.
+    Show the policy parameters and control constants.
     """
     parameters_json = control_loop.get_parameters()
     constants_json = control_loop.Constants.as_dict()
@@ -914,11 +829,17 @@ def connection_page(match: Optional[str] = None):
 
 @ui.page('/schema_page')
 async def schema_page():
+    """
+    Show the web API schema.
+    """
+    # Use Fast API to get the schema
+    schema_json: JSONDict
     try:
         await ui.context.client.connected()
         schema_json = await ui.run_javascript('fetch("/schema").then(res => res.json())')
     except Exception as e:
         schema_json = {'error': str(e)}
+
     _json_page('API Schema').set_content(
         json.dumps(schema_json, indent=4)
     )

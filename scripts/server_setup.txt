@@ -1,6 +1,4 @@
-## Here are some useful commands to help set up Solala
-## on Ubuntu
-
+## Here are some useful commands to help set up Solala on Ubuntu
 
 ## Enable Tailscale services
 sudo tailscale serve --bg --http=80 http://127.0.0.1:8080
@@ -17,12 +15,13 @@ sudo systemctl enable solala.service
 
 ## Management commands
 
-## Start the service
+## Start/stop/restart the service
+sudo systemctl start solala.service
+sudo systemctl stop solala.service
+sudo systemctl restart solala.service
+
+## Check the service
 sudo systemctl status solala.service
 
 ## View the log
 sudo journalctl -u solala.service -f
-
-## Restart the service
-sudo systemctl stop solala.service
-sudo systemctl restart solala.service
