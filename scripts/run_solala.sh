@@ -7,6 +7,6 @@ export PYTHONPATH="$project/src:$project/private/config:${PYTHONPATH:+:$PYTHONPA
 
 # Try to automatically upgrade (is this okay?)
 cd "$project"
-git pull origin main
+git pull origin master
 
 exec "$python" -m solala_demo.demo_server
