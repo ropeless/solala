@@ -29,7 +29,7 @@ _H2_class = 'text-h6'
 
 _HEAD_HTML = r'''
 <link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+<link rel="apple-touch-icon" href="/images/apple-touch-icon.png?v=4">
 <style>
     /* ---------- Page ---------- */
     .solala-page {
