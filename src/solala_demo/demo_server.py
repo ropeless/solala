@@ -41,7 +41,7 @@ def main():
     history = HistoryFile(config.HISTORY_FILE)
     LOGGER.info(f'registered history file: {history}')
 
-    LOGGER.info('This is an upgrade test !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+    LOGGER.info('DEBUG This is an upgrade test !!!')
 
     server.run_server(
         host=HOST,
