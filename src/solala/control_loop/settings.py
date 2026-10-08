@@ -1,4 +1,4 @@
-from typing import Literal, TypeAlias, Optional, Annotated, Union, ClassVar
+from typing import Literal, TypeAlias, Optional, Annotated, Union, ClassVar, Dict
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,7 @@ class AmberPricerConnection(BaseModel):
     nmi: str
 
 
-class TeslaChargerConnection(BaseModel):
+class TeslaWallConnectorConnection(BaseModel):
     TYPE: ClassVar[Literal['tesla']] = 'tesla'
     type: Literal['tesla'] = 'tesla'
 
@@ -51,9 +51,9 @@ PricerConnection: TypeAlias = Annotated[
     Field(discriminator='type')
 ]
 
-ChargerConnection: TypeAlias = Annotated[
+ConsumerConnection: TypeAlias = Annotated[
     Union[
-        TeslaChargerConnection,
+        TeslaWallConnectorConnection,
         # Add others as needed
     ],
     Field(discriminator='type')
@@ -67,7 +67,7 @@ class Settings(BaseModel):
 
     controller: Optional[ControllerConnection] = None
     pricer: Optional[PricerConnection] = None
-    charger: Optional[ChargerConnection] = None
+    consumers: Optional[Dict[str, ConsumerConnection]] = None
 
     battery_mode: Optional[BatteryMode] = None
     inverter_mode: Optional[InverterMode] = None

@@ -4,7 +4,7 @@ from typing import Iterable, Tuple, Dict
 
 
 @dataclass(frozen=True)
-class ChargerStatus:
+class ConsumerStatus:
     voltage: float
     current: float
 
@@ -20,13 +20,13 @@ class ChargerStatus:
         }
 
 
-class CarCharger(ABC):
+class PowerConsumer(ABC):
     """
-    High-level car charger to send commands and read status from the car charger.
+    High-level interface to query instrumented power consumption devices.
     """
 
     @abstractmethod
-    def get_status(self) -> ChargerStatus:
+    def get_status(self) -> ConsumerStatus:
         """
         Get the status of the charger.
         """

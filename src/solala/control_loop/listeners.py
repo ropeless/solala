@@ -23,6 +23,7 @@ class StatusListener(ABC):
         self.update(control_loop.get_status())
 
 
+
 class RegistersListener(ABC):
     """
     Abstract base class for status listeners.
@@ -39,3 +40,4 @@ class RegistersListener(ABC):
         Manual update.
         """
         self.update(control_loop.get_registers())
+

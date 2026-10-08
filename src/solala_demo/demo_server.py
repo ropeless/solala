@@ -2,7 +2,8 @@ import local_config as config
 from solala import server
 from solala.control_loop.history_file import HistoryFile
 from solala.control_loop.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
-    TeslaChargerConnection
+    TeslaWallConnectorConnection
+from solala.server_constants import LOGGER
 from solala_demo.log import configure_logger
 
 HOST: str = config.SERVER_IP_ADDRESS
@@ -19,7 +20,7 @@ def main():
 
         controller=ModbusControllerConnection(address=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}'),
         pricer=AmberPricerConnection(api_token=config.AMBER_API_TOKEN, nmi=config.NMI),
-        charger=TeslaChargerConnection(address=config.TESLA_WALL_CONNECTOR_ADDR),
+        consumers={'car_charger': TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR)},
 
         # inverter_mode=InverterMode.ENABLE,
         # inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT,
@@ -37,7 +38,8 @@ def main():
     # Constants.PRICE_LOOK_AHEAD = 0
 
     # Create and register a history file
-    HistoryFile(config.HISTORY_FILE)
+    history = HistoryFile(config.HISTORY_FILE)
+    LOGGER.info(f'registered history file: {history}')
 
     server.run_server(
         host=HOST,

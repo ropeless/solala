@@ -1,7 +1,7 @@
 import json
 
 from local_config import TESLA_WALL_CONNECTOR_ADDR
-from solala.car_charger.impl_tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
+from solala.power_consumer.impl_tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 
 
 def main() -> None:
