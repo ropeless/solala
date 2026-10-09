@@ -1,27 +1,289 @@
 import asyncio
-import logging
+import json
 from abc import abstractmethod
 from asyncio import AbstractEventLoop
 from functools import partial
-from typing import List, Mapping, final, Optional, Dict
+from typing import Mapping, final, Optional, Dict, List
 
 from nicegui import ui, app
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
-from solala import control_loop
+from solala import control_loop, server_log
 from solala.control_loop import listeners as control_loop_listeners, BatteryMode, BatteryPolicy, InverterMode, \
     InverterPolicy
-from solala.resources import IMAGE_FILES
-from solala.server_constants import APP_NAME
-from solala.server_constants import SOLALA_LOG_FORMAT, LOGGER
+from solala.resources import IMAGE_FILES, RESOURCES
+from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE
+from solala.server_constants import LOGGER
 from solala.server_infographic import Infographic
 from solala.units import PRICE, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
+# --------------------------------------------------------------------
+# Main styling
+# --------------------------------------------------------------------
+
 _H1_class = 'text-h5'
 _H2_class = 'text-h6'
+
+_HEAD_HTML = r'''
+<link rel="manifest" href="/manifest.json">
+<style>
+    /* ---------- Page ---------- */
+    .solala-page {
+        width: 100%;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 16px;
+        background: #f5f7f9;
+    }
+    /* ---------- Header ---------- */
+    .solala-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+    }
+    .solala-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .solala-brand img {
+        width: 42px;
+        height: 42px;
+    }
+    .solala-brand-name {
+        font-size: 24px;
+        font-weight: 650;
+        line-height: 1.1;
+    }
+    .solala-brand-subtitle {
+        font-size: 12px;
+        color: #687078;
+    }
+    .system-status {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .system-status-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #16a34a;
+    }
+    /* ---------- Main grid ---------- */
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(330px, 0.85fr);
+        gap: 16px;
+        align-items: start;
+    }
+    /* ---------- Cards ---------- */
+    .dashboard-card {
+        background: white;
+        border: 1px solid #e1e6ea;
+        border-radius: 14px;
+        box-shadow: 0 2px 7px rgba(0,0,0,.06);
+    }
+    /* ---------- Infographic ---------- */
+    .infographic-card {
+        padding: 12px;
+    }
+    .infographic-title {
+        font-size: 18px;
+        font-weight: 650;
+        padding: 4px 8px 10px;
+    }
+    .infographic-container {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .infographic-container svg {
+        width: 100%;
+        height: auto;
+        max-width: 760px;
+    }
+    /* ---------- Controls ---------- */
+    .control-column {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+    .control-card {
+        padding: 16px;
+    }
+    .control-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 13px;
+    }
+    .control-title {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 20px;
+        font-weight: 650;
+    }
+    .control-title-icon {
+        font-size: 24px;
+    }
+    .control-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 9px;
+        border-radius: 14px;
+        background: #e8f6eb;
+        color: #087a0b;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .control-state-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #16a34a;
+    }
+    .control-buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+    .control-buttons .wide {
+        grid-column: 1 / -1;
+    }
+    /* ---------- NiceGUI buttons ---------- */
+    .solala-button {
+        min-height: 42px;
+        border-radius: 7px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    /* ---------- Diagnostics ---------- */
+    .diagnostics-card {
+        margin-top: 16px;
+        padding: 16px;
+    }
+    .diagnostics-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 18px;
+        font-weight: 650;
+        margin-bottom: 12px;
+    }
+    .diagnostic-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+    }
+    .diagnostic-link {
+        min-height: 60px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+
+        border: 1px solid #e0e6eb;
+        border-radius: 8px;
+        background: #f5f7f9;
+
+        color: #1976d2;
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .diagnostic-link:hover {
+        background: #eaf3fb;
+        border-color: #90caf9;
+    }
+    .diagnostic-icon {
+        font-size: 18px;
+    }
+    /* ---------- Tablet ---------- */
+    @media (max-width: 900px) {
+        .dashboard-grid {
+            grid-template-columns: 1fr;
+        }
+        .control-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+        }
+        .diagnostics-card {
+            margin-top: 16px;
+        }
+    }
+    /* ---------- Phone ---------- */
+    @media (max-width: 600px) {
+        .solala-page {
+            padding: 8px;
+        }
+        .solala-header {
+            margin-bottom: 9px;
+        }
+        .solala-brand img {
+            width: 35px;
+            height: 35px;
+        }
+        .solala-brand-name {
+            font-size: 20px;
+        }
+        .solala-brand-subtitle {
+            display: none;
+        }
+        .system-status {
+            font-size: 11px;
+        }
+        .dashboard-grid {
+            gap: 9px;
+        }
+        .infographic-card {
+            padding: 7px;
+        }
+        .infographic-title {
+            font-size: 18px;
+            padding: 3px 5px 6px;
+        }
+        .control-column {
+            display: flex;
+            gap: 9px;
+        }
+        .control-card {
+            padding: 12px;
+        }
+        .control-title {
+            font-size: 18px;
+        }
+        .control-buttons {
+            gap: 7px;
+        }
+        .solala-button {
+            min-height: 43px;
+            font-size: 12px;
+        }
+        .diagnostics-card {
+            margin-top: 9px;
+            padding: 12px;
+        }
+        .diagnostic-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        .diagnostic-link {
+            min-height: 55px;
+            font-size: 11px;
+        }
+    }
+</style>
+'''
 
 # Units for pretty printing status
 _PARAMETERS_UNITS: Mapping[str, str] = {
@@ -58,42 +320,6 @@ _CONSTANTS_UNITS: Mapping[str, str] = {
     'STOP_BUY_TOLERANCE': PRICE,
     'START_BUY_TOLERANCE': PRICE,
 }
-
-
-class NiceGuiLogHandler(logging.Handler):
-    """
-    A custom logging Handler that writes the Solala logger
-    to NiceGUI ui.log components.
-    """
-
-    def __init__(self):
-        super().__init__()
-        self._log_elements: List[ui.log] = []
-        self.setFormatter(logging.Formatter(SOLALA_LOG_FORMAT))
-        LOGGER.addHandler(self)
-
-    def emit(self, record):
-        try:
-            # Format the log message using the handler's formatter
-            msg = self.format(record)
-            # Push the message to the NiceGUI UI element
-            for ui_log in self._log_elements:
-                ui_log.push(msg)
-        except (IOError, ValueError, RuntimeError):
-            self.handleError(record)
-
-    def add(self, element: ui.log) -> None:
-        self.remove(element)
-        self._log_elements.append(element)
-
-    def remove(self, element: ui.log) -> None:
-        try:
-            self._log_elements.remove(element)
-        except ValueError:
-            pass
-
-
-_LOG_HANDLER = NiceGuiLogHandler()
 
 
 class StatusListener(control_loop_listeners.StatusListener):
@@ -337,29 +563,138 @@ def _json_page(name: str) -> ContentElement:
     Returns:
         The content element to use for adding the rendered JSON data.
     """
-    with ui.column().style('width: 100vw; height: 100vh'):
-        _title()
-        with ui.card():
-            ui.label(name).classes(_H2_class)
-            registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page'):
+        _page_header()
+
+        with ui.element('div').classes('dashboard-grid'):
+            with ui.card():
+                ui.label(name).classes(_H2_class)
+                registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
     return registers_element
 
 
-def _title(ext: str = '', link: bool = True) -> None:
+def _json_multi_page(*names: str) -> List[ContentElement]:
+    """
+    Prepare a page to show multiple JSON data.
+    """
+    result: List[ContentElement] = []
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page'):
+        _page_header()
+
+        with ui.column():
+            for name in names:
+                with ui.card():
+                    ui.label(name).classes(_H2_class)
+                    registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
+                    result.append(registers_element)
+
+    return result
+
+
+def _page_header(ext: str = '', link: bool = True) -> None:
     """
     NiceGui snippet to add the Solala title to a page.
     Args:
         ext: A string to append to the title.
         link: Whether to create a link to the home page or not
     """
-    with ui.row().classes('items-center gap-4'):
-        if link:
-            with ui.link(target='/'):
-                image = ui.image('/images/solala.svg')
-        else:
-            image = ui.image('/images/solala.svg')
-        image.classes('w-12 h-12 bg-transparent')
-        ui.label(f'{APP_NAME}{ext}').classes(_H1_class)
+    with ui.element('div').classes('solala-header'):
+
+        with ui.element('div').classes('solala-brand'):
+            if link:
+                with ui.link(target='/'):
+                    ui.image('/images/solala.svg').classes('w-12 h-12 bg-transparent')
+            else:
+                ui.image('/images/solala.svg').classes('w-12 h-12 bg-transparent')
+
+            with ui.element('div'):
+                ui.label(f'{APP_NAME}{ext}').classes('solala-brand-name')
+                ui.label(APP_SUBTITLE).classes('solala-brand-subtitle')
+
+
+def _control_header(title: str) -> None:
+    with ui.element('div').classes('control-header'):
+        with ui.element('div').classes('control-title'):
+            # ui.label(icon).classes('control-title-icon')
+            ui.label(title)
+        # with ui.element('div').classes('control-state'):
+        #     ui.element('div').classes('control-state-dot')
+        #     ui.label(state)
+
+
+def _button_classes(button, primary=False, wide=False) -> None:
+    classes = 'solala-button'
+    if wide:
+        classes += ' wide'
+    button.classes(classes)
+    if primary:
+        button.props('color=primary')
+    else:
+        button.props('color=grey')
+    return button
+
+
+def _diagnostic_link(icon: str, name: str, target: str) -> None:
+    with ui.link(target=target).classes('diagnostic-link'):
+        ui.label(icon).classes('diagnostic-icon')
+        ui.label(name)
+
+
+def _ui_control_buttons() -> None:
+    with ui.element('div').classes('control-column'):
+        # ======================================================
+        # BATTERY
+        # ======================================================
+
+        with ui.element('div').classes('dashboard-card control-card'):
+            _control_header('Battery')
+            with ui.element('div').classes('control-buttons'):
+                battery_enable = ui.button('ENABLE').classes('solala-button')
+                battery_disable = ui.button('DISABLE').classes('solala-button')
+                battery_force_charge = ui.button('FORCE CHARGE').classes('solala-button')
+                battery_force_discharge = ui.button('FORCE DISCHARGE').classes('solala-button')
+                battery_cheap_force_discharge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
+
+                battery_force_charge.classes('wide')
+                battery_force_discharge.classes('wide')
+                battery_cheap_force_discharge.classes('wide')
+
+            _register_listener(
+                BatteryButtonUpdater(
+                    battery_enable=battery_enable,
+                    battery_disable=battery_disable,
+                    battery_force_charge=battery_force_charge,
+                    battery_force_discharge=battery_force_discharge,
+                    battery_cheap_force_discharge=battery_cheap_force_discharge,
+                )
+            )
+
+        # ======================================================
+        # INVERTER
+        # ======================================================
+
+        with ui.element('div').classes('dashboard-card control-card'):
+            _control_header('Inverter')
+            with ui.element('div').classes('control-buttons'):
+                inverter_enable = ui.button('ENABLE').classes('solala-button')
+                inverter_disable = ui.button('DISABLE').classes('solala-button')
+                inverter_zero_export = ui.button('ZERO EXPORT').classes('solala-button')
+                inverter_neg_feed_in_zero_export = ui.button('NEG FEED-IN ⇒ ZERO EXPORT').classes(
+                    'solala-button')
+
+                inverter_zero_export.classes('wide')
+                inverter_neg_feed_in_zero_export.classes('wide')
+
+            _register_listener(
+                InverterButtonUpdater(
+                    inverter_enable=inverter_enable,
+                    inverter_disable=inverter_disable,
+                    inverter_zero_export=inverter_zero_export,
+                    inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
+                )
+            )
 
 
 # ====================================================================
@@ -368,45 +703,48 @@ def _title(ext: str = '', link: bool = True) -> None:
 
 # Mount static directories
 app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
+app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manifest.json'))
 
 
 @ui.page('/')
 def root_page():
-    with ui.column().style('width: 100vw; height: 100vh'):
-        _register_listener(
-            InfographicUpdater(
-                infographic_element=ui.html(),
-            )
-        )
-        with ui.card():
-            ui.label('Battery').classes(_H2_class)
-            with ui.row():
-                _register_listener(BatteryButtonUpdater(
-                    battery_enable=ui.button('enable'),
-                    battery_disable=ui.button('disable'),
-                    battery_force_charge=ui.button('force charge'),
-                    battery_force_discharge=ui.button('force discharge'),
-                    battery_cheap_force_discharge=ui.button('cheap ⇒ force charge'),
-                ))
-        with ui.card():
-            ui.label('Inverter').classes(_H2_class)
-            with ui.row():
-                _register_listener(InverterButtonUpdater(
-                    inverter_enable=ui.button('enable'),
-                    inverter_disable=ui.button('disable'),
-                    inverter_zero_export=ui.button('zero export'),
-                    inverter_neg_feed_in_zero_export=ui.button('neg feed-in ⇒ zero export'),
-                ))
-        with ui.card():
-            ui.label('Links').classes(_H2_class)
-            with ui.row():
-                ui.link('Status', '/status_page')
-                ui.link('Parameters', '/parameters_page')
-                ui.link('Connection', '/connection_page')
-                ui.link('Registers', '/registers_page')
-                ui.link('Constants', '/constants_page')
-                ui.link('Log', '/log_page')
-                ui.link('API Schema', '/schema')
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page'):
+        _page_header(link=False)
+
+        with ui.element('div').classes('dashboard-grid'):
+            # ----------------------------------------------------------
+            # LIVE POWER INFOGRAPHIC
+            # ----------------------------------------------------------
+            with ui.element('div').classes('dashboard-card infographic-card'):
+                ui.label('Power').classes('infographic-title')
+
+                with ui.element('div').classes('infographic-container'):
+                    infographic = ui.html()
+                    _register_listener(
+                        InfographicUpdater(
+                            infographic_element=infographic
+                        )
+                    )
+
+            # ----------------------------------------------------------
+            # BATTERY + INVERTER control buttons
+            # ----------------------------------------------------------
+            _ui_control_buttons()
+
+        # ==============================================================
+        # DIAGNOSTICS
+        # ==============================================================
+        with ui.element('div').classes('dashboard-card diagnostics-card'):
+            with ui.element('div').classes('diagnostics-title'):
+                ui.label('Diagnostics')
+            with ui.grid(columns=3):
+                _diagnostic_link('🛈', 'Status', '/status_page')
+                _diagnostic_link('⚙', 'Parameters', '/parameters_page')
+                _diagnostic_link('↔', 'Connection', '/connection_page')
+                _diagnostic_link('▤', 'Registers', '/registers_page')
+                _diagnostic_link('▣', 'Log', '/log_page')
+                _diagnostic_link('⬡', 'API Schema', '/schema_page')
 
 
 @ui.page('/status_page')
@@ -414,32 +752,22 @@ def status_page():
     """
     The main status page.
     """
-    with ui.column().style('width: 100vw; height: 100vh'):
-        _title()
-        with ui.card():
-            ui.label('Status').classes(_H2_class)
-            _register_listener(StatusUpdater(
-                status_element=ui.code(language='nothing').classes('text-sm w-full grow')
-            ))
-        with ui.card():
-            ui.label('Battery').classes(_H2_class)
-            with ui.row():
-                _register_listener(BatteryButtonUpdater(
-                    battery_enable=ui.button('enable'),
-                    battery_disable=ui.button('disable'),
-                    battery_force_charge=ui.button('force charge'),
-                    battery_force_discharge=ui.button('force discharge'),
-                    battery_cheap_force_discharge=ui.button('cheap ⇒ force charge'),
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page'):
+        _page_header()
+        with ui.element('div').classes('dashboard-grid'):
+            # ----------------------------------------------------------
+            # Status card
+            # ----------------------------------------------------------
+            with ui.card():
+                ui.label('Status').classes(_H2_class)
+                _register_listener(StatusUpdater(
+                    status_element=ui.code(language='nothing').classes('text-sm w-full grow')
                 ))
-        with ui.card():
-            ui.label('Inverter').classes(_H2_class)
-            with ui.row():
-                _register_listener(InverterButtonUpdater(
-                    inverter_enable=ui.button('enable'),
-                    inverter_disable=ui.button('disable'),
-                    inverter_zero_export=ui.button('zero export'),
-                    inverter_neg_feed_in_zero_export=ui.button('neg feed-in ⇒ zero export'),
-                ))
+            # ----------------------------------------------------------
+            # BATTERY + INVERTER control buttons
+            # ----------------------------------------------------------
+            _ui_control_buttons()
 
 
 @ui.page('/log_page')
@@ -447,13 +775,12 @@ def log_page():
     """
     Listen to the Solala logger and display log messages.
     """
-    with ui.column().style('width: 100vw; height: 100vh'):
-        _title(' log console')
-        log_ui = ui.log(max_lines=None).classes(
-            'w-full grow min-h-0 text-mono text-body2 p-2 overflow-auto'
-        )
-    ui.context.client.on_disconnect(partial(_LOG_HANDLER.remove, log_ui))
-    _LOG_HANDLER.add(log_ui)
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page'):
+        _page_header(' log console')
+        log_ui = ui.log(max_lines=MAX_LOG_HISTORY).style('height: 100vh')
+    ui.context.client.on_disconnect(partial(server_log.remove, log_ui))
+    server_log.add(log_ui)
 
 
 @ui.page('/registers_page')
@@ -467,29 +794,20 @@ def registers_page(match: Optional[str] = None):
 
 
 @ui.page('/parameters_page')
-def parameters_page(match: Optional[str] = None):
+def parameters_page():
     """
-    Show the policy parameters.
+    Show the policy parameters and control constants.
     """
     parameters_json = control_loop.get_parameters()
-    if match is not None:
-        parameters_json = filter_json(parameters_json, match)
+    constants_json = control_loop.Constants.as_dict()
 
-    _json_page('Parameters').set_content(
+    params, consts = _json_multi_page('Parameters', 'Constants')
+
+    params.set_content(
         render_json(parameters_json, units=_PARAMETERS_UNITS)
     )
 
-
-@ui.page('/constants_page')
-def constants_page(match: Optional[str] = None):
-    """
-    Show the control loop constants.
-    """
-    constants_json = control_loop.Constants.as_dict()
-    if match is not None:
-        constants_json = filter_json(constants_json, match)
-
-    _json_page('Constants').set_content(
+    consts.set_content(
         render_json(constants_json, remove_key_underscores=False, units=_CONSTANTS_UNITS)
     )
 
@@ -505,4 +823,22 @@ def connection_page(match: Optional[str] = None):
 
     _json_page('Connection').set_content(
         render_json(connection_json)
+    )
+
+
+@ui.page('/schema_page')
+async def schema_page():
+    """
+    Show the web API schema.
+    """
+    # Use Fast API to get the schema
+    schema_json: JSONDict
+    try:
+        await ui.context.client.connected()
+        schema_json = await ui.run_javascript('fetch("/schema").then(res => res.json())')
+    except Exception as e:
+        schema_json = {'error': str(e)}
+
+    _json_page('API Schema').set_content(
+        json.dumps(schema_json, indent=4)
     )

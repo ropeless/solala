@@ -4,8 +4,8 @@ from pymodbus.client import ModbusTcpClient
 
 from local_config import MASTER_INVERTER_ADDR, SLAVE_INVERTER_ADDR
 from solala_demo.log import configure_logger
-from solala.power_controller.impl_modbus.modbus import Modbus, ModbusDevice
-from solala.power_controller.impl_modbus.modbus_power_controller import ModbusPowerController
+from solala.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
+from solala.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
 
 MASTER_INVERTER_DEVICE_ID = 1
 SLAVE_INVERTER_DEVICE_ID = 1

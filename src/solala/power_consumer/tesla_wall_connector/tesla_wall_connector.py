@@ -2,14 +2,14 @@ from typing import Iterable, Tuple
 
 import requests
 
-from solala.car_charger.wall_charger import CarCharger, ChargerStatus
+from solala.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.utils.json import JSONDict, json_dict, json_num
 from solala.server_constants import LOGGER
 
 NAME: str = 'Tesla Wall Charger'
 
 
-class TeslaWallConnector(CarCharger):
+class TeslaWallConnector(PowerConsumer):
     """
     Implementation of the CarCharger interface for Tesla Wall Connector.
     """
@@ -28,9 +28,9 @@ class TeslaWallConnector(CarCharger):
                 continue
             yield key, value
 
-    def get_status(self) -> ChargerStatus:
+    def get_status(self) -> ConsumerStatus:
         data: JSONDict = self.get_vitals()
-        return ChargerStatus(
+        return ConsumerStatus(
             voltage=json_num(data['voltageA_v']),
             current=json_num(data['currentA_a']),
         )

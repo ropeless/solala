@@ -4,7 +4,7 @@ from typing import Iterable, Tuple, Dict
 
 
 @dataclass(frozen=True)
-class ChargerStatus:
+class ConsumerStatus:
     voltage: float
     current: float
 
@@ -20,15 +20,15 @@ class ChargerStatus:
         }
 
 
-class CarCharger(ABC):
+class PowerConsumer(ABC):
     """
-    High-level car charger to send commands and read status from the car charger.
+    High-level interface to query an instrumented power consumption device.
     """
 
     @abstractmethod
-    def get_status(self) -> ChargerStatus:
+    def get_status(self) -> ConsumerStatus:
         """
-        Get the status of the charger.
+        Get the status of the consumer.
         """
         ...
 
@@ -42,7 +42,7 @@ class CarCharger(ABC):
     @abstractmethod
     def close(self) -> None:
         """
-        Close any connections to the car charger.
+        Close any connections to the consumer.
         """
         ...
 

@@ -50,7 +50,7 @@ class PowerPricer(ABC):
             forecasts: number of forecasts to return, >= 0.
 
         Returns:
-            one or more prices, in ascending order.
+            `forecasts + 1` prices, in ascending time order.
         """
         ...
 

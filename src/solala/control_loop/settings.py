@@ -1,4 +1,4 @@
-from typing import Literal, TypeAlias, Optional, Annotated, Union, ClassVar
+from typing import Literal, TypeAlias, Optional, Annotated, Union, ClassVar, Dict
 
 from pydantic import BaseModel, Field
 
@@ -8,6 +8,21 @@ DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.1  # disable export below th
 DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD: float = 0.1  # re-enable export above this price
 DEFAULT_START_CHARGE_PRICE_THRESHOLD: float = 10  # start force charging below this price
 DEFAULT_STOP_CHARGE_PRICE_THRESHOLD: float = 11  # stop force charging above this price
+
+
+class DummyControllerConnection(BaseModel):
+    TYPE: ClassVar[Literal['dummy']] = 'dummy'
+    type: Literal['dummy'] = 'dummy'
+
+
+class DummyPricerConnection(BaseModel):
+    TYPE: ClassVar[Literal['dummy']] = 'dummy'
+    type: Literal['dummy'] = 'dummy'
+
+
+class DummyConsumerConnection(BaseModel):
+    TYPE: ClassVar[Literal['dummy']] = 'dummy'
+    type: Literal['dummy'] = 'dummy'
 
 
 class ModbusControllerConnection(BaseModel):
@@ -28,7 +43,7 @@ class AmberPricerConnection(BaseModel):
     nmi: str
 
 
-class TeslaChargerConnection(BaseModel):
+class TeslaWallConnectorConnection(BaseModel):
     TYPE: ClassVar[Literal['tesla']] = 'tesla'
     type: Literal['tesla'] = 'tesla'
 
@@ -37,6 +52,7 @@ class TeslaChargerConnection(BaseModel):
 
 ControllerConnection: TypeAlias = Annotated[
     Union[
+        DummyControllerConnection,
         ModbusControllerConnection,
         # Add others as needed
     ],
@@ -45,15 +61,17 @@ ControllerConnection: TypeAlias = Annotated[
 
 PricerConnection: TypeAlias = Annotated[
     Union[
+        DummyPricerConnection,
         AmberPricerConnection,
         # Add others as needed
     ],
     Field(discriminator='type')
 ]
 
-ChargerConnection: TypeAlias = Annotated[
+ConsumerConnection: TypeAlias = Annotated[
     Union[
-        TeslaChargerConnection,
+        DummyConsumerConnection,
+        TeslaWallConnectorConnection,
         # Add others as needed
     ],
     Field(discriminator='type')
@@ -62,12 +80,12 @@ ChargerConnection: TypeAlias = Annotated[
 
 class Settings(BaseModel):
     """
-    A class to hold user settings for the application.
+    A class to hold user settings for the control loop.
     """
 
     controller: Optional[ControllerConnection] = None
     pricer: Optional[PricerConnection] = None
-    charger: Optional[ChargerConnection] = None
+    consumers: Optional[Dict[str, ConsumerConnection]] = None
 
     battery_mode: Optional[BatteryMode] = None
     inverter_mode: Optional[InverterMode] = None

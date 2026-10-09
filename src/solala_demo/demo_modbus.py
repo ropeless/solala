@@ -1,7 +1,7 @@
 from pymodbus.client import ModbusTcpClient
 
 from local_config import MASTER_INVERTER_ADDR, SLAVE_INVERTER_ADDR
-from solala.power_controller.impl_modbus.modbus import Modbus, ModbusDevice
+from solala.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 
 
 def main() -> None:

@@ -1,8 +1,8 @@
 from typing import Iterable, List, Tuple, Sequence
 
-from solala.server_constants import LOGGER
-from solala.power_controller.impl_modbus.modbus import Modbus
+from solala.power_controller.modbus_power_controller.modbus import Modbus
 from solala.power_controller.power_controller import PowerController, PowerStatus
+from solala.server_constants import LOGGER
 
 
 class _DEFAULT:
@@ -104,8 +104,6 @@ class ModbusPowerController(PowerController):
         battery_power = charge_power - discharge_power
         house_power = grid_power + solar_power - battery_power
 
-        battery_status = _status(battery_power, 'discharging', 'charging')
-        grid_status = _status(grid_power, 'exporting', 'importing')
         power_limit_enabled: bool = (self._get(self._WMaxLim_Ena) != 0)
         power_limit: float = self._get(self._WMaxLimPct) if power_limit_enabled else 100.0
 
@@ -113,8 +111,6 @@ class ModbusPowerController(PowerController):
 
         return PowerStatus(
             state_of_charge=state_of_charge,
-            battery_status=battery_status,
-            grid_status=grid_status,
             power_limit=power_limit,
             grid_power=grid_power,
             solar_power=solar_power,
@@ -307,25 +303,3 @@ class ModbusPowerController(PowerController):
         result = sum(abs(self._get(name)) for name in names)
         LOGGER.info(f'SUM-ABS = {result}')
         return result
-
-
-def _status(power: float, negative_status: str, positive_status: str, idle_status: str = 'idle') -> str:
-    """
-    Select a 'status' string, depending on the value of 'power'.
-    Status is considered 'idle' if `- _STATUS_TOLERANCE <= power <= _STATUS_TOLERANCE`.
-
-    Args:
-        power: value to test
-        negative_status: string to return if power is negative
-        positive_status: string to return if power is positive
-        idle_status: string to return if power is zero
-
-    Returns:
-        the selected status string.
-    """
-    if power > _STATUS_TOLERANCE:
-        return positive_status
-    elif power < -_STATUS_TOLERANCE:
-        return negative_status
-    else:
-        return idle_status

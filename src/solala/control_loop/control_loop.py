@@ -3,32 +3,36 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, UTC, timedelta
-from json import JSONDecodeError
 from pathlib import Path
-from typing import Optional, List, Iterable, Dict, Tuple
+from typing import Optional, List, Dict, Tuple
 
 from pymodbus.client import ModbusTcpClient
 
-from solala.car_charger.impl_tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
-from solala.car_charger.wall_charger import CarCharger, ChargerStatus
 from solala.control_loop.constants import Constants
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.listeners import RegistersListener, StatusListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
 from solala.control_loop.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
-    TeslaChargerConnection, ControllerConnection, PricerConnection, ChargerConnection, \
+    TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
     DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD, DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD, \
-    DEFAULT_START_CHARGE_PRICE_THRESHOLD, DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
-from solala.power_controller.impl_modbus.modbus import Modbus, ModbusDevice
-from solala.power_controller.impl_modbus.modbus_power_controller import PowerController, ModbusPowerController
-from solala.power_pricer.impl_amber.amber_power_pricer import Price, AmberPowerPricer
+    DEFAULT_START_CHARGE_PRICE_THRESHOLD, DEFAULT_STOP_CHARGE_PRICE_THRESHOLD, DummyControllerConnection, \
+    DummyPricerConnection, DummyConsumerConnection
+from solala.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
+from solala.power_consumer.power_consumer import PowerConsumer
+from solala.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
+from solala.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
+from solala.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
+from solala.power_controller.modbus_power_controller.modbus_power_controller import PowerController, \
+    ModbusPowerController
+from solala.power_pricer.amber_power_pricer.amber_power_pricer import Price, AmberPowerPricer
+from solala.power_pricer.dummy_power_pricer.dummy_power_pricer import DummyPowerPricer
 from solala.power_pricer.power_pricer import PowerPricer
 from solala.server_constants import LOGGER, DATE_FORMAT
 from solala.utils.json import JSONDict
 from solala.utils.network import find_ip_by_mac
 from solala.utils.string_extras import split_addresses
 
-_LOG_SRC = ''  # prefix for log messages
+_LOG_SRC = '[control loop] '  # prefix for log messages
 
 _MIN_DATE = datetime.min.replace(tzinfo=UTC)
 _NO_PRICE = Price(
@@ -39,7 +43,6 @@ _NO_PRICE = Price(
     feed_in_price=0,
     estimate=True,
 )
-_NO_CHARGER = ChargerStatus(0, 0)
 
 
 def _disconnected() -> JSONDict:
@@ -54,15 +57,15 @@ def _disconnected() -> JSONDict:
 class _ControlState:
     controller: Optional[PowerController] = None
     pricer: Optional[PowerPricer] = None
-    charger: Optional[CarCharger] = None
+    consumers: Dict[str, PowerConsumer] = field(default_factory=dict)
 
-    settings_controller: Optional[ControllerConnection] = None
-    settings_pricer: Optional[PricerConnection] = None
-    settings_charger: Optional[ChargerConnection] = None
+    controller_settings: Optional[ControllerConnection] = None
+    pricer_settings: Optional[PricerConnection] = None
+    consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
 
-    power_controller_status: JSONDict = field(default_factory=_disconnected)
-    power_pricer_status: JSONDict = field(default_factory=_disconnected)
-    car_charger_status: JSONDict = field(default_factory=_disconnected)
+    controller_status: JSONDict = field(default_factory=_disconnected)
+    pricer_status: JSONDict = field(default_factory=_disconnected)
+    consumers_status: Dict[str, JSONDict] = field(default_factory=dict)
 
     battery_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_mode: InverterMode = InverterMode.UNKNOWN
@@ -86,6 +89,7 @@ class _ControlState:
     control_loop_registers_listeners: List[RegistersListener] = field(default_factory=list)
 
     settings_path: Optional[Path] = None  # for using persisted settings.
+    loop_start: datetime = datetime.now(UTC)  # confirms the control loop is running
 
     def reset_controller(self, controller: Optional[PowerController]) -> None:
         self.controller = controller
@@ -99,7 +103,7 @@ class _ControlState:
         self.next_buy_price_check = _MIN_DATE
 
         if controller is None:
-            self.power_controller_status = _disconnected()
+            self.controller_status = _disconnected()
 
     def reset_pricer(self, pricer: Optional[PowerPricer]) -> None:
         self.pricer = pricer
@@ -109,13 +113,7 @@ class _ControlState:
         self.next_buy_price_check: datetime = _MIN_DATE
 
         if pricer is None:
-            self.power_pricer_status = _disconnected()
-
-    def reset_car_charger(self, car_charger: Optional[CarCharger]) -> None:
-        self.charger = car_charger
-
-        if car_charger is None:
-            self.car_charger_status = _disconnected()
+            self.pricer_status = _disconnected()
 
     def copy_listeners(self) -> Tuple[List[StatusListener], List[RegistersListener]]:
         status_listeners = self.control_loop_status_listeners.copy()
@@ -169,6 +167,8 @@ def run_control_loop(
             Note that if settings are provided, they will override any settings loaded from the file. This includes
             modes and policies if the power controller is reloaded.
     """
+    LOGGER.info(f'{_LOG_SRC}Running')
+
     # Prepare to run the control loop.
     global _control_loop_running
     _control_loop_running = True
@@ -181,18 +181,18 @@ def run_control_loop(
         configure_from_settings(settings)
 
     while _control_loop_running:
-        epoch_seconds: float = datetime.now().timestamp()  # to calculate loop sleep time
 
         with _control_state_lock:
             state = _control_state
+            state.loop_start = datetime.now(UTC)  # to calculate loop sleep time
             status_listeners, registers_listeners = _control_step(state, prev_state)
 
         _update_listeners(status_listeners, registers_listeners)
 
         # Sleep for the remaining time until the next loop iteration
-        sleeptime: int = int(epoch_seconds + Constants.LOOP_TIME - datetime.now().timestamp())
+        sleeptime: int = int(state.loop_start.timestamp() + Constants.LOOP_TIME - datetime.now().timestamp())
         if sleeptime < Constants.MIN_SLEEP_TIME:
-            LOGGER.warn(f'[{_LOG_SRC}] Low sleep time: {sleeptime} < {Constants.MIN_SLEEP_TIME}')
+            LOGGER.warn(f'{_LOG_SRC}Low sleep time: {sleeptime} < {Constants.MIN_SLEEP_TIME}')
             sleeptime = Constants.MIN_SLEEP_TIME
         time.sleep(sleeptime)
 
@@ -279,7 +279,7 @@ def _control_step(
             case InverterMode.ZERO_EXPORT:
                 power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
     except Exception as e:
-        LOGGER.error(f'[{_LOG_SRC}] Error processing command: {state.inverter_mode}. Error: {e}')
+        LOGGER.error(f'{_LOG_SRC}Error processing command: {state.inverter_mode}. Error: {e}')
 
     return state.copy_listeners()
 
@@ -289,9 +289,22 @@ def _control_step(
 # =============================================================================
 
 
+def loop_stale() -> bool:
+    """
+    The control loop is expected to iterate each `Constants.LOOP_TIME` seconds.
+    If it has been more than twice that time, then the loop is likely stale.
+
+    Returns:
+        True if the control loop appears to be stale, False otherwise.
+    """
+    # We are not concerned with race conditions, so we do not need to get the control loop lock.
+    seconds_since_last_loop: float = datetime.now(UTC).timestamp() - _control_state.loop_start.timestamp()
+    return seconds_since_last_loop > 2 * Constants.LOOP_TIME
+
+
 def configure_from_settings(settings: Settings) -> None:
     """
-    Initialise connections, control modes, and policy parameters for `settings`.
+    Configure connections, control modes, policies, etc. as per `settings`.
     """
 
     # Configure power controller connection
@@ -302,9 +315,12 @@ def configure_from_settings(settings: Settings) -> None:
     if settings.pricer is not None:
         connect_pricer(settings.pricer)
 
-    # Configure car charger connection
-    if settings.charger is not None:
-        connect_car_charger(settings.charger)
+    # Configure named power consumer connections
+    if settings.consumers is not None:
+        name: str
+        consumer_connection: ConsumerConnection
+        for name, consumer_connection in settings.consumers.items():
+            connect_consumer(name, consumer_connection)
 
     # Configure policy parameters
     result = set_parameters(
@@ -313,7 +329,7 @@ def configure_from_settings(settings: Settings) -> None:
         start_charge_price_threshold=settings.start_charge_price_threshold,
         stop_charge_price_threshold=settings.stop_charge_price_threshold,
     )
-    LOGGER.info(f'policy parameters: {json.dumps(result)}')
+    LOGGER.info(f'{_LOG_SRC}Policy parameters: {json.dumps(result)}')
 
     # Initialise control modes
     result = set_control(
@@ -322,15 +338,15 @@ def configure_from_settings(settings: Settings) -> None:
         battery_policy=settings.battery_policy,
         inverter_policy=settings.inverter_policy,
     )
-    LOGGER.info(f'initial modes: {json.dumps(result)}')
+    LOGGER.info(f'{_LOG_SRC}Modes: {json.dumps(result)}')
 
 
 def get_settings() -> Settings:
     with _control_state_lock:
         return Settings(
-            controller=_control_state.settings_controller,
-            pricer=_control_state.settings_pricer,
-            charger=_control_state.settings_charger,
+            controller=_control_state.controller_settings,
+            pricer=_control_state.pricer_settings,
+            consumers=_control_state.consumers_settings,
 
             battery_mode=_control_state.battery_mode,
             inverter_mode=_control_state.inverter_mode,
@@ -354,7 +370,7 @@ def add_listener(listener: StatusListener | RegistersListener):
         elif isinstance(listener, RegistersListener):
             state.control_loop_registers_listeners.append(listener)
         else:
-            raise ValueError(f'Invalid listener type: {listener!r}')
+            raise ValueError(f'Invalid listener type: {type(listener)}')
 
 
 def remove_listener(listener: StatusListener | RegistersListener):
@@ -366,7 +382,7 @@ def remove_listener(listener: StatusListener | RegistersListener):
             elif isinstance(listener, RegistersListener):
                 state.control_loop_registers_listeners.remove(listener)
             else:
-                raise ValueError(f'Invalid listener type: {listener!r}')
+                raise ValueError(f'Invalid listener type: {type(listener)}')
         except ValueError:
             pass
 
@@ -413,54 +429,63 @@ def get_control_status() -> JSONDict:
 def get_price_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.pricer is None:
-            return _control_state.power_pricer_status
+            return _control_state.pricer_status
         try:
             cur_price: Price = get_cur_price()
             result = cur_price.as_dict(DATE_FORMAT, include_time=False)
             return result
-        except Exception as e:
-            raise ControlLoopError('failed to get price', errors={'error': str(e)})
+        except Exception as err:
+            return {'error': str(err)}
 
 
 def get_power_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.controller is None:
-            return _control_state.power_controller_status
+            return _control_state.controller_status
         try:
             result = _control_state.controller.get_status().as_dict()
             return result
-        except Exception as e:
-            raise ControlLoopError('failed to get power status', errors={'error': str(e)})
+        except Exception as err:
+            return {'error': str(err)}
 
 
-def get_car_charger_status() -> JSONDict:
+def get_consumers_status() -> JSONDict:
     with _control_state_lock:
-        if _control_state.charger is None:
-            return _control_state.car_charger_status
-        try:
-            result = _control_state.charger.get_status().as_dict()
-            return result
-        except Exception as e:
-            raise ControlLoopError('failed to get car charger status', errors={'error': str(e)})
+        state = _control_state
+        result: Dict[str, JSONDict] = {}
+        name: str
+        power_consumer: PowerConsumer
+        for name, power_consumer in state.consumers.items():
+            try:
+                result[name] = power_consumer.get_status().as_dict()
+            except Exception as err:
+                result[name] = {'error': str(err)}
+    return result
 
 
 def get_connection_status() -> JSONDict:
     with _control_state_lock:
-        return {
-            'controller': _control_state.power_controller_status,
-            'pricer': _control_state.power_pricer_status,
-            'charger': _control_state.car_charger_status,
+        state = _control_state
+        result = {
+            'controller': state.controller_status,
+            'pricer': state.pricer_status,
         }
+        if len(state.consumers_status) > 0:
+            result['consumers'] = state.consumers_status
+        return result
 
 
 def get_status() -> JSONDict:
     with _control_state_lock:
-        return {
+        result = {
             'control': get_control_status(),
             'price': get_price_status(),
             'power': get_power_status(),
-            'charger': get_car_charger_status(),
         }
+        consumers_status: JSONDict = get_consumers_status()
+        if len(consumers_status) > 0:
+            result['consumers'] = consumers_status
+    return result
 
 
 def get_parameters() -> JSONDict:
@@ -476,6 +501,8 @@ def get_parameters() -> JSONDict:
 
 def get_registers() -> Dict[str, int | float | str | bool]:
     """
+    Get the values of all registers of the power controller.
+
     Raises:
         ControlLoopError: if a power controller is not connected
     """
@@ -491,12 +518,15 @@ def get_registers() -> Dict[str, int | float | str | bool]:
 
 
 def get_cur_price() -> Price:
+    """
+    Get the current price from the power pricer.
+    """
     with _control_state_lock:
         state = _control_state
         price: Price = state.last_price
         pricer = state.pricer
         if pricer is None:
-            LOGGER.error('price update not available. Error: power pricer not connected')
+            LOGGER.error(f'{_LOG_SRC}Price update not available. Error: power pricer not connected')
             return price
 
         now = datetime.now(UTC)
@@ -513,19 +543,9 @@ def get_cur_price() -> Price:
                     # price is stable - no need to recheck for this period
                     state.next_price_settle_check = price.end_time
 
-            except (JSONDecodeError, IOError) as err:
-                LOGGER.error(f'price update not available. Error: {err}')
+            except Exception as err:
+                LOGGER.error(f'{_LOG_SRC}Price update not available. Error: {err}')
     return price
-
-
-def get_cur_car_charger() -> ChargerStatus:
-    with _control_state_lock:
-        car_charger = _control_state.charger
-        if car_charger is None:
-            LOGGER.error(f'car charger status not available. Error: car charger not connected')
-            return _NO_CHARGER
-        else:
-            return car_charger.get_status()
 
 
 def set_control(
@@ -535,6 +555,9 @@ def set_control(
         battery_policy: Optional[BatteryPolicy] = None,
         inverter_policy: Optional[InverterPolicy] = None
 ) -> JSONDict:
+    """
+    Set the control loop modes and policies.
+    """
     with _control_state_lock:
         state = _control_state
 
@@ -607,28 +630,31 @@ def exit_control_loop() -> None:
 #  Connection management for power control and price
 # =============================================================================
 
-def connect_controller(controller: ControllerConnection) -> JSONDict:
+def connect_controller(controller_connection: ControllerConnection) -> JSONDict:
     with _control_state_lock:
-        if controller.type == ModbusControllerConnection.TYPE:
-            assert isinstance(controller, ModbusControllerConnection)
-            addresses: List[str] = split_addresses(controller.address)
-            if len(addresses) > 0:
-                result = _connect_modbus(
-                    master_address=addresses[0],
-                    slave_addresses=addresses[1:],
-                    master_device_id=controller.master_device_id,
-                    meter_device_id=controller.meter_device_id,
-                    slave_device_id=controller.slave_device_id,
-                )
-                _control_state.settings_controller = controller
-                _save_settings()
-                LOGGER.info(f'power controller connection: {json.dumps(result)}')
-                return result
-            else:
-                LOGGER.warning(f'no addresses provided for modbus controller')
-                raise ControlLoopError('no addresses provided for modbus controller')
+        state = _control_state
+        controller: PowerController
+        controller_status: JSONDict
+
+        if controller_connection.type == DummyControllerConnection.TYPE:
+            assert isinstance(controller_connection, DummyControllerConnection)
+            controller, controller_status = _connect_dummy_controller(controller_connection)
+        elif controller_connection.type == ModbusControllerConnection.TYPE:
+            assert isinstance(controller_connection, ModbusControllerConnection)
+            controller, controller_status = _connect_modbus(controller_connection)
         else:
-            raise ControlLoopError('unknown controller type', errors={'type': controller.type})
+            raise ControlLoopError(
+                'unknown controller connection type',
+                errors={'type': controller_connection.type}
+            )
+
+        disconnect_controller()
+        state.reset_controller(controller)
+        state.controller_settings = controller_connection
+        state.controller_status = controller_status
+        _save_settings()
+        LOGGER.info(f'{_LOG_SRC}Power controller connection: {json.dumps(controller_status)}')
+        return controller_status
 
 
 def disconnect_controller() -> JSONDict:
@@ -636,33 +662,41 @@ def disconnect_controller() -> JSONDict:
     Close the power controller connection.
     """
     with _control_state_lock:
-        if _control_state.controller is not None:
-            _control_state.controller.close()
-            _control_state.reset_controller(None)
-        _control_state.settings_controller = None
-        return _control_state.power_controller_status
+        state = _control_state
+        if state.controller is not None:
+            state.controller.close()
+            state.reset_controller(None)
+        state.controller_settings = None
+        _save_settings()
+        return state.controller_status
 
 
-def connect_pricer(pricer: PricerConnection) -> JSONDict:
+def connect_pricer(pricer_connection: PricerConnection) -> JSONDict:
     with _control_state_lock:
-        if pricer.type == AmberPricerConnection.TYPE:
-            assert isinstance(pricer, AmberPricerConnection)
-            api_token = pricer.api_token.strip()
-            nmi = pricer.nmi.strip()
-            if api_token != '' and nmi != '':
-                result = _connect_amber(
-                    api_token=api_token,
-                    nmi=nmi,
-                )
-                _control_state.settings_pricer = pricer
-                _save_settings()
-                LOGGER.info(f'power pricer connection: {json.dumps(result)}')
-                return result
-            else:
-                LOGGER.warning(f'no api token or nmi provided for amber pricer')
-                raise ControlLoopError('no api token or nmi provided for amber pricer')
+        state = _control_state
+        pricer: PowerPricer
+        pricer_status: JSONDict
+
+        if pricer_connection.type == DummyPricerConnection.TYPE:
+            assert isinstance(pricer_connection, DummyPricerConnection)
+            pricer, pricer_status = _connect_dummy_pricer(pricer_connection)
+        elif pricer_connection.type == AmberPricerConnection.TYPE:
+            assert isinstance(pricer_connection, AmberPricerConnection)
+            pricer, pricer_status = _connect_amber(pricer_connection)
+
         else:
-            raise ControlLoopError('unknown pricer type', errors={'type': pricer.type})
+            raise ControlLoopError(
+                'unknown pricer connection type',
+                errors={'type': pricer_connection.type}
+            )
+
+        disconnect_pricer()
+        state.reset_pricer(pricer)
+        state.pricer_settings = pricer_connection
+        state.pricer_status = pricer_status
+        _save_settings()
+        LOGGER.info(f'{_LOG_SRC}Power pricer connection: {json.dumps(pricer_status)}')
+        return pricer_status
 
 
 def disconnect_pricer() -> JSONDict:
@@ -673,61 +707,82 @@ def disconnect_pricer() -> JSONDict:
         if _control_state.pricer is not None:
             _control_state.pricer.close()
             _control_state.reset_pricer(None)
-        _control_state.settings_pricer = None
-        return _control_state.power_pricer_status
+        _control_state.pricer_settings = None
+        _save_settings()
+        return _control_state.pricer_status
 
 
-def connect_car_charger(charger: ChargerConnection) -> JSONDict:
+def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> JSONDict:
     with _control_state_lock:
-        if charger.type == TeslaChargerConnection.TYPE:
-            assert isinstance(charger, TeslaChargerConnection)
-            result = _connect_tesla_wall_connector(address=charger.address)
-            _control_state.settings_charger = charger
-            _save_settings()
-            LOGGER.info(f'car charger connection: {json.dumps(result)}')
-            return result
+        state = _control_state
+        consumer: PowerConsumer
+        consumer_status: JSONDict
+
+        if consumer_connection.type == DummyConsumerConnection.TYPE:
+            assert isinstance(consumer_connection, DummyConsumerConnection)
+            consumer, consumer_status = _connect_dummy_consumer(consumer_connection)
+        elif consumer_connection.type == TeslaWallConnectorConnection.TYPE:
+            assert isinstance(consumer_connection, TeslaWallConnectorConnection)
+            consumer, consumer_status = _connect_tesla_wall_connector(consumer_connection)
         else:
-            raise ControlLoopError('unknown charger type', errors={'type': charger.type})
+            raise ControlLoopError(
+                'unknown consumer connection type',
+                errors={'name': name, 'type': consumer_connection.type}
+            )
+
+        disconnect_consumer(name)
+        state.consumers[name] = consumer
+        state.consumers_settings[name] = consumer_connection
+        state.consumers_status[name] = consumer_status
+        _save_settings()
+        LOGGER.info(f'{_LOG_SRC}Power consumer connection {name!r}: {json.dumps(consumer_status)}')
+        return consumer_status
 
 
-def disconnect_car_charger() -> JSONDict:
+def disconnect_consumer(name: str) -> JSONDict:
     """
-    Close the power pricer connection.
+    Close a power consumer connection.
     """
     with _control_state_lock:
-        if _control_state.charger is not None:
-            _control_state.charger.close()
-            _control_state.reset_car_charger(None)
-        _control_state.settings_charger = None
-        return _control_state.car_charger_status
+        state = _control_state
+        consumer: Optional[PowerConsumer] = state.consumers.get(name)
+        if consumer is not None:
+            consumer.close()
+        state.consumers.pop(name, None)
+        state.consumers_settings.pop(name, None)
+        state.consumers_status.pop(name, None)
+        _save_settings()
+        return {name: 'disconnected'}
 
 
 # =============================================================================
 #  Support functions
 # =============================================================================
 
-def _connect_modbus(
-        *,
-        master_address: str,
-        slave_addresses: Iterable[str] = (),
-        master_device_id: int,
-        meter_device_id: int,
-        slave_device_id: int,
-) -> JSONDict:
+def _connect_dummy_controller(_: DummyControllerConnection) -> Tuple[PowerController, JSONDict]:
+    return DummyPowerController(), {'status': 'dummy_controller'}
+
+
+def _connect_dummy_pricer(_: DummyPricerConnection) -> Tuple[PowerPricer, JSONDict]:
+    return DummyPowerPricer(), {'status': 'dummy_pricer'}
+
+
+def _connect_dummy_consumer(_: DummyConsumerConnection) -> Tuple[PowerConsumer, JSONDict]:
+    return DummyPowerConsumer(), {'status': 'dummy_consumer'}
+
+
+def _connect_modbus(controller_connection: ModbusControllerConnection) -> Tuple[PowerController, JSONDict]:
     """
     Establish a power controller modbus connection to the inverter.
 
-    Args:
-        master_address: MAC or IP address of the master inverter.
-        slave_addresses: MAC or IP address of the slave inverters.
-        master_device_id: Modbus device ID of the master inverter.
-        meter_device_id: Modbus device ID of the meter.
-        slave_device_id: Modbus device ID of the slave inverters.
+    Does not change the control state in any way.
 
     Raises:
         ControlLoopError: a connection cannot be established.
     """
-    addresses: List[_Address] = _resolve_addresses([master_address] + list(slave_addresses))
+    addresses: List[_Address] = _resolve_addresses(split_addresses(controller_connection.address))
+    if len(addresses) == 0:
+        raise ControlLoopError('no controller address provided')
 
     # get ModbusTcpClient objects
     clients: List[ModbusTcpClient] = []  # coindexed with address
@@ -737,7 +792,7 @@ def _connect_modbus(
             client = ModbusTcpClient(address.ip_address, port=502)
             client.connect()
             clients.append(client)
-        except (IOError, TypeError, ValueError) as err:
+        except Exception as err:
             errors.append({
                 'host': address.ip_address,
                 'mac_address': address.mac_address,
@@ -751,19 +806,19 @@ def _connect_modbus(
     master_client: ModbusTcpClient = clients[0]
     slave_clients: List[ModbusTcpClient] = clients[1:]
     devices: Dict[str, ModbusDevice] = {
-        'master': ModbusDevice(master_client, master_device_id),
+        'master': ModbusDevice(master_client, controller_connection.master_device_id),
     }
     slave_names: List[str]
     if len(slave_clients) == 1:
         slave_names = ['slave']
-        devices['slave'] = ModbusDevice(slave_clients[0], slave_device_id)
+        devices['slave'] = ModbusDevice(slave_clients[0], controller_connection.slave_device_id)
     else:
         slave_names = []
         for slave_id, slave_client in enumerate(slave_clients, start=1):
             name = f'slave_{slave_id}'
             slave_names.append(name)
-            devices[name] = ModbusDevice(slave_client, slave_device_id)
-    devices['meter'] = ModbusDevice(master_client, meter_device_id)
+            devices[name] = ModbusDevice(slave_client, controller_connection.slave_device_id)
+    devices['meter'] = ModbusDevice(master_client, controller_connection.meter_device_id)
 
     controller = ModbusPowerController(
         Modbus(devices),
@@ -771,9 +826,6 @@ def _connect_modbus(
         meter='meter',
         slaves=slave_names,
     )
-
-    disconnect_controller()
-    _control_state.reset_controller(controller)
 
     # Update the connection status record
     mac_addr_lookup: Dict[str, str] = {
@@ -785,70 +837,68 @@ def _connect_modbus(
         host: str = device.client.comm_params.host
         mac_address: Optional[str] = mac_addr_lookup.get(host)
         device_record: JSONDict = {'host': host}
-        if master_address is not None and mac_address != '':
+        if mac_address is not None and mac_address != '':
             device_record['mac_address'] = mac_address
         device_record['device'] = device.device_id
         devices_record[device_name] = device_record
-    _control_state.power_controller_status = {
+    controller_status = {
         'status': 'Modbus connection',
         'devices': devices_record,
     }
 
-    return _control_state.power_controller_status
+    return controller, controller_status
 
 
-def _connect_amber(*, api_token: str, nmi: str) -> JSONDict:
+def _connect_amber(pricer_connection: AmberPricerConnection) -> Tuple[PowerPricer, JSONDict]:
     """
     Establish a power pricer connection using Amber.
+
+    Does not change the control state in any way.
 
     Raises:
         ControlLoopError: a connection cannot be established.
     """
+    api_token = pricer_connection.api_token.strip()
+    nmi = pricer_connection.nmi.strip()
+    if api_token == '' or nmi == '':
+        LOGGER.warning(f'{_LOG_SRC}No API token or NMI provided for Amber pricer')
+        raise ControlLoopError('no API token or NMI provided for Amber pricer')
     try:
         amber_pricer = AmberPowerPricer(api_token, nmi)
-    except (IOError, TypeError, ValueError) as err:
-        _control_state.reset_pricer(None)
+    except Exception as err:
         raise ControlLoopError('could not connect Amber', errors=[str(err)])
 
-    disconnect_pricer()
-    _control_state.reset_pricer(amber_pricer)
-
-    _control_state.power_pricer_status = {
+    pricer_status = {
         'status': 'Amber connection',
         'nmi': amber_pricer.nmi,
         'site': amber_pricer.site_id,
     }
-    return _control_state.power_pricer_status
+    return amber_pricer, pricer_status
 
 
-def _connect_tesla_wall_connector(*, address: str) -> JSONDict:
+def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnection) -> Tuple[PowerConsumer, JSONDict]:
     """
     Establish a car charger connection using Tesla Wall Connector.
 
-    Args:
-        address: MAC or IP address of the Tesla Wall Connector.
+    Does not change the control state in any way.
 
     Raises:
         ControlLoopError: a connection cannot be established.
     """
-    address: _Address = _resolve_addresses([address])[0]
+    address: _Address = _resolve_addresses([consumer_connection.address])[0]
     try:
-        car_charger = TeslaWallConnector(address.ip_address)
-    except (IOError, TypeError, ValueError) as err:
-        _control_state.reset_pricer(None)
+        consumer = TeslaWallConnector(address.ip_address)
+    except Exception as err:
         raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
 
-    disconnect_car_charger()
-    _control_state.reset_car_charger(car_charger)
-
-    _control_state.car_charger_status = {
+    status_dict = {
         'status': 'Tesla Wall Connector connection',
         'host': address.ip_address,
     }
     if address.mac_address != '':
-        _control_state.car_charger_status['mac_address'] = address.mac_address
+        status_dict['mac_address'] = address.mac_address
 
-    return _control_state.car_charger_status
+    return consumer, status_dict
 
 
 @dataclass
@@ -917,19 +967,31 @@ def _update_listeners(
     Call update on the listeners. No locking, no list copying.
 
     WARNING:
-    This should be called while not holding the control state lock
+    This should be called while _not_ holding the control state lock
     so that any listeners can be updated without blocking on the control loop.
     This means `_update_listeners` should be called on copies of the listener lists
     so incase there is an attempt to modify the control state while updating listeners.
     """
     if len(status_listeners) > 0:
-        status = get_status()
-        for status_listener in status_listeners:
-            status_listener.update(status)
+        try:
+            status = get_status()
+            for status_listener in status_listeners:
+                try:
+                    status_listener.update(status)
+                except Exception as e:
+                    LOGGER.error(f'{_LOG_SRC}Error updating status listener: {e}')
+        except Exception as e:
+            LOGGER.error(f'{_LOG_SRC}Error getting status for listeners: {e}')
     if len(registers_listeners) > 0:
-        registers = get_registers()
-        for registers_listener in registers_listeners:
-            registers_listener.update(registers)
+        try:
+            registers = get_registers()
+            for registers_listener in registers_listeners:
+                try:
+                    registers_listener.update(registers)
+                except Exception as e:
+                    LOGGER.error(f'{_LOG_SRC}Error updating register listener: {e}')
+        except Exception as e:
+            LOGGER.error(f'{_LOG_SRC}Error getting registers for listeners: {e}')
 
 
 def _force_price_check() -> None:
@@ -951,14 +1013,14 @@ def _update_price() -> List[Price]:
 
     power_pricer = state.pricer
     if power_pricer is None:
-        LOGGER.error(f'[{_LOG_SRC}] price update not available. Power pricer not connected')
+        LOGGER.error(f'{_LOG_SRC}Price update not available. Power pricer not connected')
         return [state.last_price]
 
     prices = power_pricer.get_price(Constants.PRICE_LOOK_AHEAD // 5)
     price = prices[0]
     state.last_price = price
-    LOGGER.info(f'[{_LOG_SRC}] buy price update: {price.buy_price}')
-    LOGGER.info(f'[{_LOG_SRC}] feed-in price update: {price.feed_in_price}')
+    LOGGER.info(f'{_LOG_SRC}Buy price update: {price.buy_price}')
+    LOGGER.info(f'{_LOG_SRC}Feed-in price update: {price.feed_in_price}')
     return prices
 
 
@@ -995,8 +1057,8 @@ def _update_next_feed_in_price_check(prices: List[Price], zero_export: bool) -> 
     while last_safe_feed_in < end and safe():
         last_safe_feed_in += 1
 
-    state.next_feed_in_price_check = prices[last_safe_feed_in].end_time
-    LOGGER.info(f'[{_LOG_SRC}] next feed-in price check: {state.next_feed_in_price_check}')
+    state.next_feed_in_price_check = _next_price_check(prices[last_safe_feed_in])
+    LOGGER.info(f'{_LOG_SRC}Next feed-in price check: {state.next_feed_in_price_check}')
 
 
 def _update_next_buy_price_check(prices: List[Price], force_charging: bool) -> None:
@@ -1023,9 +1085,21 @@ def _update_next_buy_price_check(prices: List[Price], force_charging: bool) -> N
     while last_safe_buy < end and safe():
         last_safe_buy += 1
 
-    state.next_buy_price_check = prices[last_safe_buy].end_time
+    state.next_buy_price_check = _next_price_check(prices[last_safe_buy])
 
-    LOGGER.info(f'[{_LOG_SRC}] next buy price check: {state.next_buy_price_check}')
+    LOGGER.info(f'{_LOG_SRC}Next buy price check: {state.next_buy_price_check}')
+
+
+def _next_price_check(price: Price) -> datetime:
+    """
+    The given price record is selected as the actual or forecast record when a policy-driven price check.
+    Based on that record, when should the next price check be performed for the policy?
+    """
+    if price.estimate:
+        delay = timedelta(seconds=Constants.PRICE_SETTLE_CHECK)
+        return min(datetime.now(UTC) + delay, price.end_time)
+    else:
+        return price.end_time
 
 
 def _save_settings() -> None:
@@ -1040,8 +1114,8 @@ def _save_settings() -> None:
                 with open(settings_path, 'w') as file:
                     settings: Settings = get_settings()
                     print(settings.model_dump_json(), file=file)
-            except (IOError, ValueError, TypeError, RuntimeError) as e:
-                LOGGER.error(f'[{_LOG_SRC}] Error saving settings: {e}')
+            except Exception as e:
+                LOGGER.error(f'{_LOG_SRC}Error saving settings: {e}')
 
 
 def _load_settings() -> bool:
@@ -1060,6 +1134,6 @@ def _load_settings() -> bool:
                 settings = Settings.model_validate_json(json_string)
                 configure_from_settings(settings)
                 return True
-            except (IOError, ValueError, TypeError, RuntimeError) as e:
-                LOGGER.error(f'[{_LOG_SRC}] Error loading settings: {e}')
+            except Exception as e:
+                LOGGER.error(f'{_LOG_SRC}Error loading settings: {e}')
         return False
