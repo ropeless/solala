@@ -12,6 +12,8 @@ class DummyPowerPricer(PowerPricer):
     """
 
     def __init__(self):
+        self.buy_price_max: float = 20
+        self.cur_price_is_estate: bool = True
         self.prices: List[Price] = []
 
     def get_price(self, forecasts: int) -> List[Price]:
@@ -30,7 +32,7 @@ class DummyPowerPricer(PowerPricer):
         # configure current price
         end_time: datetime = start_time + five_minutes
         if len(self.prices) == 0:
-            buy_price = 20 * random.random()
+            buy_price = self.buy_price_max * random.random()
             feed_in_price = buy_price - 2 - random.random()
             renewables = 59.1
             self.prices.append(
@@ -40,7 +42,7 @@ class DummyPowerPricer(PowerPricer):
                     renewables=renewables,
                     start_time=start_time,
                     end_time=end_time,
-                    estimate=False,
+                    estimate=self.cur_price_is_estate,
                 )
             )
         else:
@@ -51,13 +53,13 @@ class DummyPowerPricer(PowerPricer):
                 renewables=cur_price.renewables,
                 start_time=start_time,
                 end_time=end_time,
-                estimate=False,
+                estimate=self.cur_price_is_estate,
             )
 
         # append any required forecasts
         while len(self.prices) <= forecasts:
             prev_price = self.prices[-1]
-            buy_price = (prev_price.buy_price + 20 * random.random()) / 2
+            buy_price = (prev_price.buy_price + self.buy_price_max * random.random()) / 2
             feed_in_price = buy_price - 2 - random.random()
             renewables = (prev_price.renewables + 100 * random.random()) / 2
             self.prices.append(

@@ -25,6 +25,7 @@ class Price:
             'buy_price': self.buy_price,
             'feed_in_price': self.feed_in_price,
             'renewables': self.renewables,
+            'estimate': self.estimate,
             'tariff_period': self.tariff_period,
             'tariff_season': self.tariff_season,
             'tariff_demand_window': self.tariff_demand_window,
