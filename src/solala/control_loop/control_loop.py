@@ -8,8 +8,6 @@ from typing import Optional, List, Dict, Tuple
 
 from pymodbus.client import ModbusTcpClient
 
-from solala.power_consumer.impl_tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
-from solala.power_consumer.power_consumer import PowerConsumer
 from solala.control_loop.constants import Constants
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.listeners import RegistersListener, StatusListener
@@ -17,10 +15,17 @@ from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, Ba
 from solala.control_loop.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
     TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
     DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD, DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD, \
-    DEFAULT_START_CHARGE_PRICE_THRESHOLD, DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
-from solala.power_controller.impl_modbus.modbus import Modbus, ModbusDevice
-from solala.power_controller.impl_modbus.modbus_power_controller import PowerController, ModbusPowerController
-from solala.power_pricer.impl_amber.amber_power_pricer import Price, AmberPowerPricer
+    DEFAULT_START_CHARGE_PRICE_THRESHOLD, DEFAULT_STOP_CHARGE_PRICE_THRESHOLD, DummyControllerConnection, \
+    DummyPricerConnection, DummyConsumerConnection
+from solala.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
+from solala.power_consumer.power_consumer import PowerConsumer
+from solala.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
+from solala.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
+from solala.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
+from solala.power_controller.modbus_power_controller.modbus_power_controller import PowerController, \
+    ModbusPowerController
+from solala.power_pricer.amber_power_pricer.amber_power_pricer import Price, AmberPowerPricer
+from solala.power_pricer.dummy_power_pricer.dummy_power_pricer import DummyPowerPricer
 from solala.power_pricer.power_pricer import PowerPricer
 from solala.server_constants import LOGGER, DATE_FORMAT
 from solala.utils.json import JSONDict
@@ -461,11 +466,13 @@ def get_consumers_status() -> JSONDict:
 def get_connection_status() -> JSONDict:
     with _control_state_lock:
         state = _control_state
-        return {
+        result = {
             'controller': state.controller_status,
             'pricer': state.pricer_status,
-            'consumers': state.consumers_status,
         }
+        if len(state.consumers_status) > 0:
+            result['consumers'] = state.consumers_status
+        return result
 
 
 def get_status() -> JSONDict:
@@ -629,7 +636,10 @@ def connect_controller(controller_connection: ControllerConnection) -> JSONDict:
         controller: PowerController
         controller_status: JSONDict
 
-        if controller_connection.type == ModbusControllerConnection.TYPE:
+        if controller_connection.type == DummyControllerConnection.TYPE:
+            assert isinstance(controller_connection, DummyControllerConnection)
+            controller, controller_status = _connect_dummy_controller(controller_connection)
+        elif controller_connection.type == ModbusControllerConnection.TYPE:
             assert isinstance(controller_connection, ModbusControllerConnection)
             controller, controller_status = _connect_modbus(controller_connection)
         else:
@@ -667,7 +677,10 @@ def connect_pricer(pricer_connection: PricerConnection) -> JSONDict:
         pricer: PowerPricer
         pricer_status: JSONDict
 
-        if pricer_connection.type == AmberPricerConnection.TYPE:
+        if pricer_connection.type == DummyPricerConnection.TYPE:
+            assert isinstance(pricer_connection, DummyPricerConnection)
+            pricer, pricer_status = _connect_dummy_pricer(pricer_connection)
+        elif pricer_connection.type == AmberPricerConnection.TYPE:
             assert isinstance(pricer_connection, AmberPricerConnection)
             pricer, pricer_status = _connect_amber(pricer_connection)
 
@@ -705,7 +718,10 @@ def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> JSON
         consumer: PowerConsumer
         consumer_status: JSONDict
 
-        if consumer_connection.type == TeslaWallConnectorConnection.TYPE:
+        if consumer_connection.type == DummyConsumerConnection.TYPE:
+            assert isinstance(consumer_connection, DummyConsumerConnection)
+            consumer, consumer_status = _connect_dummy_consumer(consumer_connection)
+        elif consumer_connection.type == TeslaWallConnectorConnection.TYPE:
             assert isinstance(consumer_connection, TeslaWallConnectorConnection)
             consumer, consumer_status = _connect_tesla_wall_connector(consumer_connection)
         else:
@@ -742,6 +758,18 @@ def disconnect_consumer(name: str) -> JSONDict:
 # =============================================================================
 #  Support functions
 # =============================================================================
+
+def _connect_dummy_controller(_: DummyControllerConnection) -> Tuple[PowerController, JSONDict]:
+    return DummyPowerController(), {'status': 'dummy_controller'}
+
+
+def _connect_dummy_pricer(_: DummyPricerConnection) -> Tuple[PowerPricer, JSONDict]:
+    return DummyPowerPricer(), {'status': 'dummy_pricer'}
+
+
+def _connect_dummy_consumer(_: DummyConsumerConnection) -> Tuple[PowerConsumer, JSONDict]:
+    return DummyPowerConsumer(), {'status': 'dummy_consumer'}
+
 
 def _connect_modbus(controller_connection: ModbusControllerConnection) -> Tuple[PowerController, JSONDict]:
     """

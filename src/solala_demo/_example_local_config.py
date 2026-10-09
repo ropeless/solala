@@ -6,8 +6,9 @@ AMBER_API_TOKEN = 'psk_k56238932vmg9804tdafg90alm5t0adf0f'
 NMI = '4109999999'
 
 SERVER_IP_ADDRESS = 'localhost'
-SERVER_PORT = 80
+SERVER_PORT = 8080
 
-OUT = '/users/barry/output'
+OUT = '/users/demo_user/output'
 HISTORY_FILE = OUT + '/history.csv'
 SETTINGS_PATH = OUT + '/settings.json'
+DUMMY_SETTINGS_PATH = OUT + '/settings_dummy.json'

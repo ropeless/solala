@@ -22,13 +22,13 @@ class ConsumerStatus:
 
 class PowerConsumer(ABC):
     """
-    High-level interface to query instrumented power consumption devices.
+    High-level interface to query an instrumented power consumption device.
     """
 
     @abstractmethod
     def get_status(self) -> ConsumerStatus:
         """
-        Get the status of the charger.
+        Get the status of the consumer.
         """
         ...
 
@@ -42,7 +42,7 @@ class PowerConsumer(ABC):
     @abstractmethod
     def close(self) -> None:
         """
-        Close any connections to the car charger.
+        Close any connections to the consumer.
         """
         ...
 

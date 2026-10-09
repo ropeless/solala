@@ -8,8 +8,6 @@ from solala.utils.json import JSONDict
 @dataclass
 class PowerStatus:
     state_of_charge: float
-    battery_status: str
-    grid_status: str
     power_limit: float
     grid_power: float
     solar_power: float
@@ -19,8 +17,6 @@ class PowerStatus:
     def as_dict(self) -> JSONDict:
         return {
             'state_of_charge': self.state_of_charge,
-            'battery_status': self.battery_status,
-            'grid_status': self.grid_status,
             'power_limit': self.power_limit,
             'grid_power': self.grid_power,
             'solar_power': self.solar_power,
@@ -118,6 +114,12 @@ class PowerController(ABC):
     def disable_inverter(self, *, change_duration: int) -> None:
         """
         Stop the inverter providing output power.
+
+        This inverter mode may be auto-reverting, but the control loop is requesting
+        that it not revert for at least `change_duration` seconds.
+
+        Args:
+            change_duration: the expected minimum auto-revert duration in seconds.
         """
         ...
 
@@ -126,10 +128,14 @@ class PowerController(ABC):
         """
         Limit inverter output power to balance consumption, so there is no export.
         Will still allow drawing from the grid if insufficient solar supply for demand.
-        This may need to be repeatedly called as the consumption may change,
+
+        This inverter mode may be auto-reverting, but the control loop is requesting
+        that it not revert for at least `change_duration` seconds.
+
+        This may also need to be repeatedly called as the consumption may change,
         or the change duration expires.
 
         Args:
-            change_duration: The duration in seconds to disable the export.
+            change_duration: the expected minimum auto-revert duration in seconds.
         """
         ...

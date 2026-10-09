@@ -10,6 +10,21 @@ DEFAULT_START_CHARGE_PRICE_THRESHOLD: float = 10  # start force charging below t
 DEFAULT_STOP_CHARGE_PRICE_THRESHOLD: float = 11  # stop force charging above this price
 
 
+class DummyControllerConnection(BaseModel):
+    TYPE: ClassVar[Literal['dummy']] = 'dummy'
+    type: Literal['dummy'] = 'dummy'
+
+
+class DummyPricerConnection(BaseModel):
+    TYPE: ClassVar[Literal['dummy']] = 'dummy'
+    type: Literal['dummy'] = 'dummy'
+
+
+class DummyConsumerConnection(BaseModel):
+    TYPE: ClassVar[Literal['dummy']] = 'dummy'
+    type: Literal['dummy'] = 'dummy'
+
+
 class ModbusControllerConnection(BaseModel):
     TYPE: ClassVar[Literal['modbus']] = 'modbus'
     type: Literal['modbus'] = 'modbus'
@@ -37,6 +52,7 @@ class TeslaWallConnectorConnection(BaseModel):
 
 ControllerConnection: TypeAlias = Annotated[
     Union[
+        DummyControllerConnection,
         ModbusControllerConnection,
         # Add others as needed
     ],
@@ -45,6 +61,7 @@ ControllerConnection: TypeAlias = Annotated[
 
 PricerConnection: TypeAlias = Annotated[
     Union[
+        DummyPricerConnection,
         AmberPricerConnection,
         # Add others as needed
     ],
@@ -53,6 +70,7 @@ PricerConnection: TypeAlias = Annotated[
 
 ConsumerConnection: TypeAlias = Annotated[
     Union[
+        DummyConsumerConnection,
         TeslaWallConnectorConnection,
         # Add others as needed
     ],
@@ -62,7 +80,7 @@ ConsumerConnection: TypeAlias = Annotated[
 
 class Settings(BaseModel):
     """
-    A class to hold user settings for the application.
+    A class to hold user settings for the control loop.
     """
 
     controller: Optional[ControllerConnection] = None

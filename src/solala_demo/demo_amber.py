@@ -1,7 +1,7 @@
 from pprint import pprint
 
 from local_config import AMBER_API_TOKEN, NMI
-from solala.power_pricer.impl_amber.amber_power_pricer import AmberPowerPricer
+from solala.power_pricer.amber_power_pricer.amber_power_pricer import AmberPowerPricer
 
 
 def main() -> None:

@@ -1,7 +1,7 @@
 from typing import Dict, Tuple, Iterator, Mapping
 
-from solala.power_controller.impl_modbus.register_access import NEXT_SF as _NEXT_SF, uint32, MODBUS_MODEL, str2
-from solala.power_controller.impl_modbus.register_access import RegisterAccess, str16, str8, uint16, scaled_uint, \
+from solala.power_controller.modbus_power_controller.register_access import NEXT_SF as _NEXT_SF, uint32, MODBUS_MODEL, str2
+from solala.power_controller.modbus_power_controller.register_access import RegisterAccess, str16, str8, uint16, scaled_uint, \
     scaled_int
 
 MPPT_MODEL: MODBUS_MODEL = 160  # special model with variable number of registers
