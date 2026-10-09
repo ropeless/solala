@@ -739,12 +739,12 @@ def root_page():
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
             with ui.grid(columns=3):
-                _diagnostic_link('🛈', 'Status', '/status_page')
+                _diagnostic_link('�', 'Status', '/status_page')
                 _diagnostic_link('⚙', 'Parameters', '/parameters_page')
                 _diagnostic_link('↔', 'Connection', '/connection_page')
                 _diagnostic_link('▤', 'Registers', '/registers_page')
-                _diagnostic_link('▣', 'Log', '/log_page')
-                _diagnostic_link('⬡', 'API Schema', '/schema_page')
+                _diagnostic_link('🗎', 'Log', '/log_page')
+                _diagnostic_link('</>', 'API Schema', '/schema_page')
 
 
 @ui.page('/status_page')
