@@ -343,6 +343,7 @@ class PriceForecastUpdater(PriceForecastListener):
                         ui.label('Time')
                         ui.label('Buy price').classes('text-right')
                         ui.label('Feed-in price').classes('text-right')
+                        ui.label('Renewables').classes('text-right')
 
                     for i, price in enumerate(price_forecasts):
                         row_classes = 'price-row'
@@ -357,6 +358,8 @@ class PriceForecastUpdater(PriceForecastListener):
 
                             feed_class = _feed_in_price_class(price.feed_in_price)
                             ui.label(f'{price.feed_in_price:.1f}').classes(f'price-number {feed_class}')
+
+                            ui.label(f'{price.renewables:.1f}{PERCENT}').classes('price-number')
 
 
 def _json_page(name: str) -> ContentElement:

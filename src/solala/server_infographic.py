@@ -28,7 +28,7 @@ class Infographic:
         height = 340
         icon_offset = 50
 
-        self.canvas = Drawing(width=width, height=height, origin=(-width / 2, -height / 2))
+        self.canvas = Drawing(width=width, height=height, origin=(-width / 2, -height / 2 + 20))
         self.icon_offset = icon_offset
 
         # Make the static parts (background)
@@ -62,6 +62,7 @@ class Infographic:
             power_scale=1,
             buy_price=0,
             feed_in_price=0,
+            renewables=0,
             estimate=True,
         )
 
@@ -77,6 +78,7 @@ class Infographic:
             power_scale=power_scale,
             buy_price=json_num(price_dict['buy_price']),
             feed_in_price=json_num(price_dict['feed_in_price']),
+            renewables=json_num(price_dict['renewables']),
             estimate=json_bool(price_dict['estimate']),
         )
 
@@ -91,6 +93,7 @@ class Infographic:
             power_scale: float,
             buy_price: float,
             feed_in_price: float,
+            renewables: float,
             estimate: bool,
     ) -> None:
         canvas = self.canvas
@@ -113,12 +116,13 @@ class Infographic:
         canvas.append(Chevron(x=- 34, y=+ 34, rotate=-45, width=max_chevron_width * grid_scale))
         canvas.append(Chevron(x=+ 34, y=- 34, rotate=-45, width=max_chevron_width * house_scale))
 
-        font_size = 16
-        small_font_size = 12
+        font_norm = 16
+        font_sm = 12
         top = -125
         bot = 130
         bot2 = bot + 20
         bot3 = bot2 + 20
+        bot4 = bot3 + 20
         left = -83
         right = 80
         class_text = 'solala-svg-text'
@@ -126,12 +130,11 @@ class Infographic:
         class_text_danger = 'solala-svg-text-danger'
         kwargs = {'text_anchor': 'middle'}
 
-        canvas.append(Text(_to_watts(solar_power), x=left, y=top, font_size=font_size, class_=class_text, **kwargs))
-        canvas.append(Text(_to_watts(grid_power), x=left, y=bot, font_size=font_size, class_=class_text, **kwargs))
-        canvas.append(Text(_to_watts(house_power), x=right, y=top, font_size=font_size, class_=class_text, **kwargs))
-        canvas.append(Text(_to_watts(battery_power), x=right, y=bot, font_size=font_size, class_=class_text, **kwargs))
-        canvas.append(
-            Text(_to_pct(state_of_charge), x=right, y=bot2, font_size=small_font_size, class_=class_text, **kwargs))
+        canvas.append(Text(_to_watts(solar_power), x=left, y=top, font_size=font_norm, class_=class_text, **kwargs))
+        canvas.append(Text(_to_watts(grid_power), x=left, y=bot, font_size=font_norm, class_=class_text, **kwargs))
+        canvas.append(Text(_to_watts(house_power), x=right, y=top, font_size=font_norm, class_=class_text, **kwargs))
+        canvas.append(Text(_to_watts(battery_power), x=right, y=bot, font_size=font_norm, class_=class_text, **kwargs))
+        canvas.append(Text(_to_pct(state_of_charge), x=right, y=bot2, font_size=font_sm, class_=class_text, **kwargs))
 
         # price
         prefix: str = '~ ' if estimate else ''
@@ -154,16 +157,16 @@ class Infographic:
         else:
             feed_in_colour = class_text
 
-        buy_text = Text(
-            prefix + 'buy: ', x=left, y=bot2, font_size=small_font_size, class_=class_text, **kwargs
-        )
+        buy_text = Text(prefix + 'buy: ', x=left, y=bot2, font_size=font_sm, class_=class_text, **kwargs)
         buy_text.append(TSpan(buy_str + units, class_=buy_colour))
         canvas.append(buy_text)
 
-        feed_in_text = Text(
-            prefix + 'feed in: ', x=left, y=bot3, font_size=small_font_size, class_=class_text, **kwargs
-        )
+        feed_in_text = Text(prefix + 'feed in: ', x=left, y=bot3, font_size=font_sm, class_=class_text, **kwargs)
         feed_in_text.append(TSpan(feed_in_str + units, class_=feed_in_colour))
+        canvas.append(feed_in_text)
+
+        renewables_str = prefix + f'renewables: {int(renewables + 0.5)}{PERCENT}'
+        feed_in_text = Text(renewables_str, x=left, y=bot4, font_size=font_sm, class_=class_text, **kwargs)
         canvas.append(feed_in_text)
 
     def as_svg(self) -> str:
