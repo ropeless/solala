@@ -40,17 +40,17 @@ class Infographic:
         #     rx=4,
         # ))
 
+        self.static_background.append(Sun(x=-33 - icon_offset, y=-33 - icon_offset))
+        self.static_background.append(Grid(x=-63 - icon_offset, y=0 + icon_offset))
+        self.static_background.append(House(x=-4 + icon_offset, y=-65 - icon_offset))
+        self.static_background.append(Inverter(x=0, y=0))
+
         # Clickable areas
         self.static_background.append(_click_area(CLICK_ID_SUN, x=-83 - icon_offset, y=-83 - icon_offset))
         self.static_background.append(_click_area(CLICK_ID_GRID, x=-83 - icon_offset, y=0 + icon_offset))
         self.static_background.append(_click_area(CLICK_ID_HOME, x=-5 + icon_offset, y=-85 - icon_offset))
         self.static_background.append(_click_area(CLICK_ID_BATTERY, x=0 + icon_offset, y=+5 + icon_offset))
         self.static_background.append(_click_area(CLICK_ID_INVERTER, x=-45, y=-45))
-
-        self.static_background.append(Sun(x=-33 - icon_offset, y=-33 - icon_offset))
-        self.static_background.append(Grid(x=-63 - icon_offset, y=0 + icon_offset))
-        self.static_background.append(House(x=-4 + icon_offset, y=-65 - icon_offset))
-        self.static_background.append(Inverter(x=0, y=0))
 
         # Make the default drawing
         self.make(
