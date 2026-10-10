@@ -17,8 +17,8 @@ def main():
     settings = Settings(
         controller=DummyControllerConnection(),
         pricer=DummyPricerConnection(
-            buy_price_min=1,
-            buy_price_max=5,
+            # buy_price_min=0,
+            # buy_price_max=60,
             # feed_in_price_discount_min=2,
             # feed_in_price_discount_max=5,
             # cur_price_is_estimate=False,
