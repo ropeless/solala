@@ -16,7 +16,8 @@ from solala.power_pricer.power_pricer import Price
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE, BUY_PRICE_RED, BUY_PRICE_AMBER
 from solala.server_constants import LOGGER
-from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY
+from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
+    CLICK_ID_INVERTER
 from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
@@ -433,14 +434,17 @@ def _ui_control_buttons() -> None:
 
 def _infographic_click(element):
     click_id: Optional[str] = element.args
-    if click_id == CLICK_ID_HOME:
+    if click_id == CLICK_ID_GRID:
+        ui.navigate.to('/price_forecast_page')
+    elif click_id == CLICK_ID_INVERTER:
+        pass
+        # ui.notify('clicked inverter')
+    elif click_id == CLICK_ID_HOME:
         pass
         # ui.notify('clicked home')
     elif click_id == CLICK_ID_SUN:
         pass
         # ui.notify('clicked the sun')
-    elif click_id == CLICK_ID_GRID:
-        ui.navigate.to('/price_forecast_page')
     elif click_id == CLICK_ID_BATTERY:
         pass
         # ui.notify('clicked the battery')

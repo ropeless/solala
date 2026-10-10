@@ -10,18 +10,13 @@ CLICK_ID_SUN = 'click_sun'
 CLICK_ID_GRID = 'click_grid'
 CLICK_ID_HOME = 'click_home'
 CLICK_ID_BATTERY = 'click_battery'
-
-# These match recources/css/solala.css
-solala_font_family = 'Arial, Helvetica, sans-serif'
-solala_text: str = '#25313b'
-solala_danger: str = '#dc2626'
-solala_amber: str = '#ff8c00'
+CLICK_ID_INVERTER = 'click_battery'
 
 
 def _click_area(name: str, x: float, y: float) -> Rectangle:
     return Rectangle(
         id=name,
-        x=x, y=y, width=60, height=60,
+        x=x, y=y, width=90, height=110,
         fill='transparent', stroke='transparent',
         # fill='gray',
     )
@@ -44,16 +39,18 @@ class Infographic:
         #     fill='#f2f5f8', stroke="#e1e9ef", stroke_width=bg_stroke,
         #     rx=4,
         # ))
+
+        # Clickable areas
+        self.static_background.append(_click_area(CLICK_ID_SUN, x=-83 - icon_offset, y=-83 - icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_GRID, x=-83 - icon_offset, y=0 + icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_HOME, x=-5 + icon_offset, y=-85 - icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_BATTERY, x=0 + icon_offset, y=+5 + icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_INVERTER, x=-45, y=-45))
+
         self.static_background.append(Sun(x=-33 - icon_offset, y=-33 - icon_offset))
         self.static_background.append(Grid(x=-63 - icon_offset, y=0 + icon_offset))
         self.static_background.append(House(x=-4 + icon_offset, y=-65 - icon_offset))
         self.static_background.append(Inverter(x=0, y=0))
-
-        # Clickable areas
-        self.static_background.append(_click_area(CLICK_ID_SUN, x=-63 - icon_offset, y=-63 - icon_offset))
-        self.static_background.append(_click_area(CLICK_ID_GRID, x=-63 - icon_offset, y=0 + icon_offset))
-        self.static_background.append(_click_area(CLICK_ID_HOME, x=0 + icon_offset, y=-65 - icon_offset))
-        self.static_background.append(_click_area(CLICK_ID_BATTERY, x=0 + icon_offset, y=+5 + icon_offset))
 
         # Make the default drawing
         self.make(
@@ -124,13 +121,17 @@ class Infographic:
         bot3 = bot2 + 20
         left = -83
         right = 80
-        kwargs = {'text_anchor': 'middle', 'font_family': solala_font_family, 'fill': solala_text}
+        class_text = 'solala-svg-text'
+        class_text_amber = 'solala-svg-text-amber'
+        class_text_danger = 'solala-svg-text-danger'
+        kwargs = {'text_anchor': 'middle'}
 
-        canvas.append(Text(_to_watts(solar_power), x=left, y=top, font_size=font_size, **kwargs))
-        canvas.append(Text(_to_watts(grid_power), x=left, y=bot, font_size=font_size, **kwargs))
-        canvas.append(Text(_to_watts(house_power), x=right, y=top, font_size=font_size, **kwargs))
-        canvas.append(Text(_to_watts(battery_power), x=right, y=bot, font_size=font_size, **kwargs))
-        canvas.append(Text(_to_pct(state_of_charge), x=right, y=bot2, font_size=small_font_size, **kwargs))
+        canvas.append(Text(_to_watts(solar_power), x=left, y=top, font_size=font_size, class_=class_text, **kwargs))
+        canvas.append(Text(_to_watts(grid_power), x=left, y=bot, font_size=font_size, class_=class_text, **kwargs))
+        canvas.append(Text(_to_watts(house_power), x=right, y=top, font_size=font_size, class_=class_text, **kwargs))
+        canvas.append(Text(_to_watts(battery_power), x=right, y=bot, font_size=font_size, class_=class_text, **kwargs))
+        canvas.append(
+            Text(_to_pct(state_of_charge), x=right, y=bot2, font_size=small_font_size, class_=class_text, **kwargs))
 
         # price
         prefix: str = '~ ' if estimate else ''
@@ -143,22 +144,26 @@ class Infographic:
             feed_in_str = _to_cents(feed_in_price)
             units = PRICE_CENTS
         if buy_price >= BUY_PRICE_RED:
-            buy_colour = solala_danger
+            buy_colour = class_text_danger
         elif buy_price >= BUY_PRICE_AMBER:
-            buy_colour = solala_amber
+            buy_colour = class_text_amber
         else:
-            buy_colour = solala_text
+            buy_colour = class_text
         if feed_in_price < 0:
-            feed_in_colour = solala_danger
+            feed_in_colour = class_text_danger
         else:
-            feed_in_colour = solala_text
+            feed_in_colour = class_text
 
-        buy_text = Text(prefix + 'buy: ', x=left, y=bot2, font_size=small_font_size, **kwargs)
-        buy_text.append(TSpan(buy_str + units, fill=buy_colour))
+        buy_text = Text(
+            prefix + 'buy: ', x=left, y=bot2, font_size=small_font_size, class_=class_text, **kwargs
+        )
+        buy_text.append(TSpan(buy_str + units, class_=buy_colour))
         canvas.append(buy_text)
 
-        feed_in_text = Text(prefix + 'feed in: ', x=left, y=bot3, font_size=small_font_size, **kwargs)
-        feed_in_text.append(TSpan(feed_in_str + units, fill=feed_in_colour))
+        feed_in_text = Text(
+            prefix + 'feed in: ', x=left, y=bot3, font_size=small_font_size, class_=class_text, **kwargs
+        )
+        feed_in_text.append(TSpan(feed_in_str + units, class_=feed_in_colour))
         canvas.append(feed_in_text)
 
     def as_svg(self) -> str:
