@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import final, Dict
+from typing import final, Dict, List
 
 from solala import control_loop
+from solala.power_pricer.power_pricer import Price
 from solala.utils.json import JSONDict
 
 
@@ -23,10 +24,9 @@ class StatusListener(ABC):
         self.update(control_loop.get_status())
 
 
-
 class RegistersListener(ABC):
     """
-    Abstract base class for status listeners.
+    Abstract base class for register listeners.
     Registers are provided to the listeners once per iteration through the control loop.
     """
 
@@ -41,3 +41,20 @@ class RegistersListener(ABC):
         """
         self.update(control_loop.get_registers())
 
+
+class PriceForecastListener(ABC):
+    """
+    Abstract base class for price-forecast listeners.
+    Prices are provided to the listeners once per iteration through the control loop.
+    """
+
+    @abstractmethod
+    def update(self, price_forecasts: List[Price]) -> None:
+        ...
+
+    @final
+    def update_now(self) -> None:
+        """
+        Manual update.
+        """
+        self.update(control_loop.get_forecast_prices())

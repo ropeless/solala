@@ -4,13 +4,13 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, UTC, timedelta
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict
 
 from pymodbus.client import ModbusTcpClient
 
 from solala.control_loop.constants import Constants
 from solala.control_loop.errors import ControlLoopError
-from solala.control_loop.listeners import RegistersListener, StatusListener
+from solala.control_loop.listeners import RegistersListener, StatusListener, PriceForecastListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
 from solala.control_loop.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
     TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
@@ -54,6 +54,13 @@ def _disconnected() -> JSONDict:
 
 
 @dataclass
+class _Listeners:
+    control_loop_status_listeners: List[StatusListener]
+    control_loop_registers_listeners: List[RegistersListener]
+    control_loop_price_forecast_listeners: List[PriceForecastListener]
+
+
+@dataclass
 class _ControlState:
     controller: Optional[PowerController] = None
     pricer: Optional[PowerPricer] = None
@@ -88,6 +95,7 @@ class _ControlState:
 
     control_loop_status_listeners: List[StatusListener] = field(default_factory=list)
     control_loop_registers_listeners: List[RegistersListener] = field(default_factory=list)
+    control_loop_price_forecast_listeners: List[PriceForecastListener] = field(default_factory=list)
 
     settings_path: Optional[Path] = None  # for using persisted settings.
     loop_start: datetime = datetime.now(UTC)  # confirms the control loop is running
@@ -121,10 +129,12 @@ class _ControlState:
         self.next_price_check = _MIN_DATE
         self.next_price_forecast_check = _MIN_DATE
 
-    def copy_listeners(self) -> Tuple[List[StatusListener], List[RegistersListener]]:
-        status_listeners = self.control_loop_status_listeners.copy()
-        registers_listeners = self.control_loop_registers_listeners.copy()
-        return status_listeners, registers_listeners
+    def copy_listeners(self) -> _Listeners:
+        return _Listeners(
+            control_loop_status_listeners=self.control_loop_status_listeners.copy(),
+            control_loop_registers_listeners=self.control_loop_registers_listeners.copy(),
+            control_loop_price_forecast_listeners=self.control_loop_price_forecast_listeners.copy(),
+        )
 
 
 @dataclass
@@ -194,9 +204,9 @@ def run_control_loop(
         with _control_state_lock:
             state = _control_state
             state.loop_start = datetime.now(UTC)  # to calculate loop sleep time
-            status_listeners, registers_listeners = _control_step(state, prev_state)
+            listeners = _control_step(state, prev_state)
 
-        _update_listeners(status_listeners, registers_listeners)
+        _update_listeners(listeners)
 
         # Sleep for the remaining time until the next loop iteration
         sleeptime: int = int(state.loop_start.timestamp() + Constants.LOOP_TIME - datetime.now().timestamp())
@@ -209,10 +219,7 @@ def run_control_loop(
 def _control_step(
         state: _ControlState,
         prev_state: _PrevControlState,
-) -> Tuple[
-    List[StatusListener],
-    List[RegistersListener],
-]:
+) -> _Listeners:
     """
     Perform one functional step of the control loop.
     This function will grab the control state lock.
@@ -362,7 +369,7 @@ def get_settings() -> Settings:
         )
 
 
-def add_listener(listener: StatusListener | RegistersListener):
+def add_listener(listener: StatusListener | RegistersListener | PriceForecastListener):
     with _control_state_lock:
         state = _control_state
         remove_listener(listener)
@@ -370,11 +377,13 @@ def add_listener(listener: StatusListener | RegistersListener):
             state.control_loop_status_listeners.append(listener)
         elif isinstance(listener, RegistersListener):
             state.control_loop_registers_listeners.append(listener)
+        elif isinstance(listener, PriceForecastListener):
+            state.control_loop_price_forecast_listeners.append(listener)
         else:
             raise ValueError(f'Invalid listener type: {type(listener)}')
 
 
-def remove_listener(listener: StatusListener | RegistersListener):
+def remove_listener(listener: StatusListener | RegistersListener | PriceForecastListener):
     with _control_state_lock:
         state = _control_state
         try:
@@ -382,6 +391,8 @@ def remove_listener(listener: StatusListener | RegistersListener):
                 state.control_loop_status_listeners.remove(listener)
             elif isinstance(listener, RegistersListener):
                 state.control_loop_registers_listeners.remove(listener)
+            elif isinstance(listener, PriceForecastListener):
+                state.control_loop_price_forecast_listeners.remove(listener)
             else:
                 raise ValueError(f'Invalid listener type: {type(listener)}')
         except ValueError:
@@ -394,8 +405,8 @@ def update_listeners() -> None:
     """
     with _control_state_lock:
         state = _control_state
-        status_listeners, registers_listeners = state.copy_listeners()
-    _update_listeners(status_listeners, registers_listeners)
+        listeners = state.copy_listeners()
+    _update_listeners(listeners)
 
 
 def get_control_status() -> JSONDict:
@@ -963,10 +974,7 @@ def _resolve_addresses(raw_addresses: List[str]) -> List[_Address]:
     return addresses
 
 
-def _update_listeners(
-        status_listeners: List[StatusListener],
-        registers_listeners: List[RegistersListener],
-) -> None:
+def _update_listeners(listeners: _Listeners) -> None:
     """
     Call update on the listeners. No locking, no list copying.
 
@@ -976,6 +984,10 @@ def _update_listeners(
     This means `_update_listeners` should be called on copies of the listener lists
     so incase there is an attempt to modify the control state while updating listeners.
     """
+    status_listeners = listeners.control_loop_status_listeners
+    registers_listeners = listeners.control_loop_registers_listeners
+    price_forecast_listeners = listeners.control_loop_price_forecast_listeners
+
     if len(status_listeners) > 0:
         try:
             status = get_status()
@@ -996,6 +1008,16 @@ def _update_listeners(
                     LOGGER.error(f'{_LOG_SRC}Error updating register listener: {e}')
         except Exception as e:
             LOGGER.error(f'{_LOG_SRC}Error getting registers for listeners: {e}')
+    if len(price_forecast_listeners) > 0:
+        try:
+            price_forecast = get_forecast_prices()
+            for price_forecast_listener in price_forecast_listeners:
+                try:
+                    price_forecast_listener.update(price_forecast)
+                except Exception as e:
+                    LOGGER.error(f'{_LOG_SRC}Error updating price forecast listener: {e}')
+        except Exception as e:
+            LOGGER.error(f'{_LOG_SRC}Error getting price forecast for listeners: {e}')
 
 
 def _save_settings() -> None:

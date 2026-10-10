@@ -100,7 +100,24 @@ class RegistersListener(control_loop_listeners.RegistersListener):
         ...
 
 
-def _register_listener(listener: StatusListener | RegistersListener) -> None:
+class PriceForecastListener(control_loop_listeners.PriceForecastListener):
+
+    def __init__(self):
+        super().__init__()
+        self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
+
+    @final
+    def update(self, price_forecasts: List[Price]) -> None:
+        """
+        Thread safe update.
+        """
+        self._main_loop.call_soon_threadsafe(partial(self._update, price_forecasts))
+
+    def _update(self, price_forecasts: List[Price]) -> None:
+        ...
+
+
+def _register_listener(listener: StatusListener | RegistersListener | PriceForecastListener) -> None:
     listener.update_now()
     ui.context.client.on_disconnect(partial(control_loop.remove_listener, listener))
     control_loop.add_listener(listener)
@@ -294,6 +311,52 @@ class RegistersUpdater(RegistersListener):
             remove_value_underscores=False,
         )
         self.registers_element.set_content(json_as_str)
+
+
+class PriceForecastUpdater(PriceForecastListener):
+    def __init__(self, element: ui.element):
+        super().__init__()
+        self._element = element
+
+    def _update(self, price_forecasts: List[Price]) -> None:
+        # Recreate the price forecast table
+        self._element.clear()
+        with self._element:
+
+            if len(price_forecasts) == 0:
+                with ui.card().classes('w-full bg-white rounded-xl border border-[#e1e6ea] p-6'):
+                    ui.icon('query_stats').classes('text-3xl text-[#a1a9ae]')
+                    ui.label('No price forecast available').classes('text-lg font-semibold')
+                    ui.label('There are currently no forecast prices to display.').classes('text-sm text-gray-500')
+                return
+
+            forecast_date = price_forecasts[0].start_time.date()
+
+            with ui.row().classes('items-center gap-2 mb-5'):
+                ui.icon('calendar_today').classes('text-lg text-gray-500')
+                ui.label(forecast_date.strftime('%A, %d %B %Y')).classes('text-sm text-gray-500')
+
+            # Forecast table
+            with ui.column().classes('w-full gap-3'):
+                with ui.element('div').classes('price-table'):
+                    with ui.element('div').classes('price-row price-header'):
+                        ui.label('Time')
+                        ui.label('Buy price').classes('text-right')
+                        ui.label('Feed-in').classes('text-right')
+
+                    for i, price in enumerate(price_forecasts):
+                        row_classes = 'price-row'
+                        if i % 2 == 1:
+                            row_classes += ' price-row-alt'
+
+                        with ui.element('div').classes(row_classes):
+                            ui.label(price.start_time.strftime('%H:%M')).classes('price-time')
+
+                            buy_class = _buy_price_class(price.buy_price)
+                            ui.label(f'{price.buy_price:.1f}').classes(f'price-number {buy_class}')
+
+                            feed_class = _feed_in_price_class(price.feed_in_price)
+                            ui.label(f'{price.feed_in_price:.1f}').classes(f'price-number {feed_class}')
 
 
 def _json_page(name: str) -> ContentElement:
@@ -524,46 +587,15 @@ def root_page():
 
 @ui.page('/price_forecast_page')
 def price_forecast_page():
-    prices: List[Price] = control_loop.get_forecast_prices()
-
     ui.add_head_html(_HEAD_HTML)
     with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
         _page_header(' price forecast')
-
-        if len(prices) == 0:
-            with ui.card().classes('w-full bg-white rounded-xl border border-[#e1e6ea] p-6'):
-                ui.icon('query_stats').classes('text-3xl text-[#a1a9ae]')
-                ui.label('No price forecast available').classes('text-lg font-semibold')
-                ui.label('There are currently no forecast prices to display.').classes('text-sm text-gray-500')
-            return
-
-        forecast_date = prices[0].start_time.date()
-
-        with ui.row().classes('items-center gap-2 mb-5'):
-            ui.icon('calendar_today').classes('text-lg text-gray-500')
-            ui.label(forecast_date.strftime('%A, %d %B %Y')).classes('text-sm text-gray-500')
-
-        # Forecast table
-        with ui.column().classes('w-full gap-3'):
-            with ui.element('div').classes('price-table'):
-                with ui.element('div').classes('price-row price-header'):
-                    ui.label('Time')
-                    ui.label('Buy price').classes('text-right')
-                    ui.label('Feed-in').classes('text-right')
-
-                for i, price in enumerate(prices):
-                    row_classes = 'price-row'
-                    if i % 2 == 1:
-                        row_classes += ' price-row-alt'
-
-                    with ui.element('div').classes(row_classes):
-                        ui.label(price.start_time.strftime('%H:%M')).classes('price-time')
-
-                        buy_class = _buy_price_class(price.buy_price)
-                        ui.label(f'{price.buy_price:.1f}').classes(f'price-number {buy_class}')
-
-                        feed_class = _feed_in_price_class(price.feed_in_price)
-                        ui.label(f'{price.feed_in_price:.1f}').classes(f'price-number {feed_class}')
+        element = ui.element('div')
+        _register_listener(
+            PriceForecastUpdater(
+                element=element
+            )
+        )
 
 
 @ui.page('/status_page')
