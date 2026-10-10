@@ -19,10 +19,19 @@ class DummyPricerConnection(BaseModel):
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
 
+    buy_price_min: float = 1
+    buy_price_max: float = 20
+    feed_in_price_discount_min: float = 2
+    feed_in_price_discount_max: float = 5
+    cur_price_is_estimate: bool = False
+
 
 class DummyConsumerConnection(BaseModel):
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
+
+    voltage: float = 240
+    current: float = 0
 
 
 class ModbusControllerConnection(BaseModel):

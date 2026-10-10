@@ -58,7 +58,14 @@ class PowerController(ABC):
     @abstractmethod
     def get_status(self) -> PowerStatus:
         """
-        Get a high-level status of the system.
+        Get the high-level status of the system.
+        """
+        ...
+
+    @abstractmethod
+    def get_connection_status(self) -> JSONDict:
+        """
+        Get the status of the connection.
         """
         ...
 

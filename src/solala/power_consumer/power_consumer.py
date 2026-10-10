@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Iterable, Tuple, Dict
 
+from solala.utils.json import JSONDict
+
 
 @dataclass(frozen=True)
 class ConsumerStatus:
@@ -29,6 +31,13 @@ class PowerConsumer(ABC):
     def get_status(self) -> ConsumerStatus:
         """
         Get the status of the consumer.
+        """
+        ...
+
+    @abstractmethod
+    def get_connection_status(self) -> JSONDict:
+        """
+        Get the status of the connection.
         """
         ...
 

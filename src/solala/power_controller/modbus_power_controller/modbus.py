@@ -3,9 +3,10 @@ from typing import Mapping, KeysView, Iterator, Set, Dict, Iterable, Sequence
 
 from pymodbus.client import ModbusTcpClient
 
-from solala.server_constants import LOGGER
-from solala.power_controller.modbus_power_controller.register_access import RegisterContext, RegisterAccess, MODBUS_MODEL
+from solala.power_controller.modbus_power_controller.register_access import RegisterContext, RegisterAccess, \
+    MODBUS_MODEL
 from solala.power_controller.modbus_power_controller.registers import MODELS, mppt_modules, MPPT_MODEL
+from solala.server_constants import LOGGER
 
 
 @dataclass
@@ -42,6 +43,7 @@ class Modbus(Mapping[str, str | int | float]):
                 str(device_id): ModbusDevice(client, device_id)
                 for device_id in _find_devices(devices)
             }
+        self._devices: Mapping[str | None, ModbusDevice] = devices
 
         # Get unique clients
         # `clients_by_client_id` is client_id => ModbusTcpClient
@@ -116,6 +118,12 @@ class Modbus(Mapping[str, str | int | float]):
         """
         for client in self._clients:
             client.connect()
+
+    def devices(self) -> Mapping[str | None, ModbusDevice]:
+        """
+        Return the Modbus devices.
+        """
+        return self._devices
 
     def close(self) -> None:
         """

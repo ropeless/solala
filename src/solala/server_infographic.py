@@ -1,15 +1,30 @@
-from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text
+from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text, TSpan
 
-from solala.units import WATTS_SHORT, KILOWATTS_SHORT, PERCENT, PRICE_SHORT
-from solala.utils.json import JSONDict, json_dict, json_num
+from solala.server_constants import BUY_PRICE_RED, BUY_PRICE_AMBER
+from solala.units import WATTS, KILOWATTS, PERCENT, PRICE_DOLLARS, PRICE_CENTS
+from solala.utils.json import JSONDict, json_dict, json_num, json_bool
 
 GRAPHIC_SIZE: int = 300
+
+CLICK_ID_SUN = 'click_sun'
+CLICK_ID_GRID = 'click_grid'
+CLICK_ID_HOME = 'click_home'
+CLICK_ID_BATTERY = 'click_battery'
+
+
+def _click_area(name: str, x: float, y: float) -> Rectangle:
+    return Rectangle(
+        id=name,
+        x=x, y=y, width=60, height=60,
+        fill='transparent', stroke='transparent',
+        # fill='gray',
+    )
 
 
 class Infographic:
     def __init__(self) -> None:
         width = 300
-        height = 320
+        height = 340
         icon_offset = 50
 
         self.canvas = Drawing(width=width, height=height, origin=(-width / 2, -height / 2))
@@ -28,9 +43,15 @@ class Infographic:
         self.static_background.append(House(x=-4 + icon_offset, y=-65 - icon_offset))
         self.static_background.append(Inverter(x=0, y=0))
 
+        # Clickable areas
+        self.static_background.append(_click_area(CLICK_ID_SUN, x=-63 - icon_offset, y=-63 - icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_GRID, x=-63 - icon_offset, y=0 + icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_HOME, x=0 + icon_offset, y=-65 - icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_BATTERY, x=0 + icon_offset, y=+5 + icon_offset))
+
         # Make the default drawing
         self.make(
-            state_of_charge=100,
+            state_of_charge=0,
             solar_power=0,
             grid_power=0,
             house_power=0,
@@ -38,6 +59,7 @@ class Infographic:
             power_scale=1,
             buy_price=0,
             feed_in_price=0,
+            estimate=True,
         )
 
     def make_from_status(self, status: JSONDict, power_scale=2000) -> None:
@@ -52,6 +74,7 @@ class Infographic:
             power_scale=power_scale,
             buy_price=json_num(price_dict['buy_price']),
             feed_in_price=json_num(price_dict['feed_in_price']),
+            estimate=json_bool(price_dict['estimate']),
         )
 
     def make(
@@ -65,6 +88,7 @@ class Infographic:
             power_scale: float,
             buy_price: float,
             feed_in_price: float,
+            estimate: bool,
     ) -> None:
         canvas = self.canvas
         icon_offset = self.icon_offset
@@ -74,8 +98,6 @@ class Infographic:
         battery_scale = max(min(battery_power / power_scale, 1), -1)
         grid_scale = max(min(grid_power / power_scale, 1), -1)
         house_scale = max(min(house_power / power_scale, 1), -1)
-
-        prices: str = f'{_to_price(buy_price)},  {_to_price(feed_in_price)}{PRICE_SHORT}'
 
         canvas.clear()
 
@@ -92,35 +114,61 @@ class Infographic:
         small_font_size = 12
         font_family = 'Verdana'
         top = -125
-        bot = +130
+        bot = 130
         bot2 = bot + 20
+        bot3 = bot2 + 20
         left = -83
-        right = +80
-        canvas.append(
-            Text(_to_watts(solar_power), text_anchor='middle', font_size=font_size, font_family=font_family, x=left,
-                 y=top))
-        canvas.append(
-            Text(_to_watts(grid_power), text_anchor='middle', font_size=font_size, font_family=font_family, x=left,
-                 y=bot))
-        canvas.append(
-            Text(_to_watts(house_power), text_anchor='middle', font_size=font_size, font_family=font_family, x=right,
-                 y=top))
-        canvas.append(
-            Text(_to_watts(battery_power), text_anchor='middle', font_size=font_size, font_family=font_family, x=right,
-                 y=bot))
-        canvas.append(
-            Text(prices, text_anchor='middle', font_size=small_font_size, font_family=font_family, x=left,
-                 y=bot2))
-        canvas.append(
-            Text(_to_pct(state_of_charge), text_anchor='middle', font_size=small_font_size, font_family=font_family,
-                 x=right,
-                 y=bot2))
+        right = 80
+        kwargs = {'text_anchor': 'middle', 'font_family': font_family}
+
+        canvas.append(Text(_to_watts(solar_power), x=left, y=top, font_size=font_size, **kwargs))
+        canvas.append(Text(_to_watts(grid_power), x=left, y=bot, font_size=font_size, **kwargs))
+        canvas.append(Text(_to_watts(house_power), x=right, y=top, font_size=font_size, **kwargs))
+        canvas.append(Text(_to_watts(battery_power), x=right, y=bot, font_size=font_size, **kwargs))
+        canvas.append(Text(_to_pct(state_of_charge), x=right, y=bot2, font_size=small_font_size, **kwargs))
+
+        # price
+        prefix: str = '~ ' if estimate else ''
+        if buy_price >= 100:
+            buy_str = _to_dollars(buy_price)
+            feed_in_str = _to_dollars(feed_in_price)
+            units = PRICE_DOLLARS
+        else:
+            buy_str = _to_cents(buy_price)
+            feed_in_str = _to_cents(feed_in_price)
+            units = PRICE_CENTS
+        if buy_price >= BUY_PRICE_RED:
+            buy_colour = 'red'
+        elif buy_price >= BUY_PRICE_AMBER:
+            buy_colour = 'darkorange'
+        else:
+            buy_colour = 'black'
+        if feed_in_price < 0:
+            feed_in_colour = 'red'
+        else:
+            feed_in_colour = 'black'
+
+        buy_text = Text(prefix + 'buy: ', x=left, y=bot2, font_size=small_font_size, **kwargs)
+        buy_text.append(TSpan(buy_str + units, fill=buy_colour))
+        canvas.append(buy_text)
+
+        feed_in_text = Text(prefix + 'feed in: ', x=left, y=bot3, font_size=small_font_size, **kwargs)
+        feed_in_text.append(TSpan(feed_in_str + units, fill=feed_in_colour))
+        canvas.append(feed_in_text)
 
     def as_svg(self) -> str:
         return self.canvas.as_svg()
 
 
-def _to_price(price: float) -> str:
+def _to_dollars(price: float) -> str:
+    price /= 100
+    price_str = f'{price:0.2f}'
+    if price_str == '-0.00':
+        price_str = '0.00'
+    return price_str
+
+
+def _to_cents(price: float) -> str:
     price_str = f'{price:0.1f}'
     if price_str == '-0.0':
         price_str = '0.0'
@@ -130,9 +178,9 @@ def _to_price(price: float) -> str:
 def _to_watts(power: float) -> str:
     power = abs(power)
     if power < 1000:
-        return f'{int(round(power))}{WATTS_SHORT}'
+        return f'{int(round(power))}{WATTS}'
     else:
-        return f"{power / 1000:.2f}{KILOWATTS_SHORT}"
+        return f"{power / 1000:.2f}{KILOWATTS}"
 
 
 def _to_pct(state_of_charge: float) -> str:
@@ -260,12 +308,12 @@ class Inverter(Shape):
         amp = size * 0.35
         wave.M(-size, 0)
         wave.L(-size * 0.75, -amp * 0.7)
-        wave.L(-size * 0.5,  -amp)
+        wave.L(-size * 0.5, -amp)
         wave.L(-size * 0.25, -amp * 0.7)
         wave.L(0, 0)
-        wave.L(size * 0.25,  amp * 0.7)
-        wave.L(size * 0.5,   amp)
-        wave.L(size * 0.75,  amp * 0.7)
+        wave.L(size * 0.25, amp * 0.7)
+        wave.L(size * 0.5, amp)
+        wave.L(size * 0.75, amp * 0.7)
         wave.L(size, 0)
 
         self.append(diamond)
@@ -296,6 +344,7 @@ class Battery(Shape):
             width=28 * s,
             height=height * s,
             fill=start_of_charge_color,
+            id=CLICK_ID_BATTERY,
         ))
 
         # Battery body
@@ -334,14 +383,14 @@ class Sun(Shape):
     ):
         super().__init__(x=x, y=y, scale=size / 512)
         rays = Group(transform='rotate(45, 0, 0) translate(-256, -256)', fill=color)
-        rays.append(Rectangle(x=204, y=52, width=38, height=92, rx=19))
-        rays.append(Rectangle(x=270, y=52, width=38, height=92, rx=19))
-        rays.append(Rectangle(x=204, y=368, width=38, height=92, rx=19))
-        rays.append(Rectangle(x=270, y=368, width=38, height=92, rx=19))
-        rays.append(Rectangle(x=52, y=204, width=92, height=38, rx=19))
-        rays.append(Rectangle(x=52, y=270, width=92, height=38, rx=19))
-        rays.append(Rectangle(x=368, y=204, width=92, height=38, rx=19))
-        rays.append(Rectangle(x=368, y=270, width=92, height=38, rx=19))
+        rays.append(Rectangle(x=204, y=52, width=38, height=92, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=270, y=52, width=38, height=92, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=204, y=368, width=38, height=92, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=270, y=368, width=38, height=92, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=52, y=204, width=92, height=38, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=52, y=270, width=92, height=38, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=368, y=204, width=92, height=38, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=368, y=270, width=92, height=38, rx=19, id=CLICK_ID_SUN))
         self.append(rays)
         self.append(Circle(cx=0, cy=0, r=116, fill=color))
 

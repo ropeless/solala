@@ -95,6 +95,7 @@ def render_json(
         units: Optional[Mapping[str, str]] = None,
         remove_key_underscores: bool = True,
         remove_value_underscores: bool = True,
+        ensure_ascii=False,
 ) -> str:
     """
     Custom function to render JSON data as a formatted string for a human to read.
@@ -122,7 +123,7 @@ def render_json(
         remove_value_underscores=remove_value_underscores,
     )
 
-    text = json.dumps(data, indent=indent)
+    text = json.dumps(data, indent=indent, ensure_ascii=ensure_ascii)
     text = _LINE_ENDINGS_PATTERN.sub('', text)
     text = _BLANK_LINES_PATTERN.sub('', text).rstrip()
     text = _DICT_ENTRY_SEPARATOR_PATTERN.sub(r'\1 = ', text)

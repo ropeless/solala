@@ -15,8 +15,8 @@ from solala.control_loop import listeners as control_loop_listeners, BatteryMode
 from solala.resources import IMAGE_FILES, RESOURCES
 from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE
 from solala.server_constants import LOGGER
-from solala.server_infographic import Infographic
-from solala.units import PRICE, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
+from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY
+from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
@@ -287,15 +287,15 @@ _HEAD_HTML = r'''
 
 # Units for pretty printing status
 _PARAMETERS_UNITS: Mapping[str, str] = {
-    'start_charge_price_threshold': PRICE,
-    'stop_charge_price_threshold': PRICE,
-    'disable_export_price_threshold': PRICE,
-    'enable_export_price_threshold': PRICE,
+    'start_charge_price_threshold': PRICE_CENTS,
+    'stop_charge_price_threshold': PRICE_CENTS,
+    'disable_export_price_threshold': PRICE_CENTS,
+    'enable_export_price_threshold': PRICE_CENTS,
 }
 _STATUS_UNITS: Mapping[str, str] = dict_merge(
     {
-        'buy_price': PRICE,
-        'feed_in_price': PRICE,
+        'buy_price': PRICE_CENTS,
+        'feed_in_price': PRICE_CENTS,
         'renewables': PERCENT,
         'state_of_charge': PERCENT,
         'power_limit': PERCENT,
@@ -315,10 +315,10 @@ _CONSTANTS_UNITS: Mapping[str, str] = {
     'CONTROL_DURATION': SECONDS,
     'PRICE_LOOK_AHEAD': MINUTES,
     'PRICE_SETTLE_CHECK': SECONDS,
-    'DISABLE_FEED_IN_TOLERANCE': PRICE,
-    'ENABLE_FEED_IN_TOLERANCE': PRICE,
-    'STOP_BUY_TOLERANCE': PRICE,
-    'START_BUY_TOLERANCE': PRICE,
+    'DISABLE_FEED_IN_TOLERANCE': PRICE_CENTS,
+    'ENABLE_FEED_IN_TOLERANCE': PRICE_CENTS,
+    'STOP_BUY_TOLERANCE': PRICE_CENTS,
+    'START_BUY_TOLERANCE': PRICE_CENTS,
 }
 
 
@@ -563,15 +563,7 @@ def _json_page(name: str) -> ContentElement:
     Returns:
         The content element to use for adding the rendered JSON data.
     """
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page'):
-        _page_header()
-
-        with ui.element('div').classes('dashboard-grid'):
-            with ui.card():
-                ui.label(name).classes(_H2_class)
-                registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
-    return registers_element
+    return _json_multi_page(name)[0]
 
 
 def _json_multi_page(*names: str) -> List[ContentElement]:
@@ -697,6 +689,22 @@ def _ui_control_buttons() -> None:
             )
 
 
+def _infographic_click(element):
+    click_id: Optional[str] = element.args
+    if click_id == CLICK_ID_HOME:
+        pass
+        # ui.notify('clicked home')
+    elif click_id == CLICK_ID_SUN:
+        pass
+        # ui.notify('clicked the sun')
+    elif click_id == CLICK_ID_GRID:
+        pass
+        # ui.notify('clicked the grid')
+    elif click_id == CLICK_ID_BATTERY:
+        pass
+        # ui.notify('clicked the battery')
+
+
 # ====================================================================
 #  Pages
 # ====================================================================
@@ -721,6 +729,11 @@ def root_page():
 
                 with ui.element('div').classes('infographic-container'):
                     infographic = ui.html()
+                    infographic.on(
+                        'click',
+                        handler=_infographic_click,
+                        js_handler="(e) => emit(e.target.closest('rect')?.id)",
+                    )
                     _register_listener(
                         InfographicUpdater(
                             infographic_element=infographic
@@ -739,12 +752,12 @@ def root_page():
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
             with ui.grid(columns=3):
-                _diagnostic_link('🛈', 'Status', '/status_page')
+                _diagnostic_link('�', 'Status', '/status_page')
                 _diagnostic_link('⚙', 'Parameters', '/parameters_page')
                 _diagnostic_link('↔', 'Connection', '/connection_page')
                 _diagnostic_link('▤', 'Registers', '/registers_page')
-                _diagnostic_link('▣', 'Log', '/log_page')
-                _diagnostic_link('⬡', 'API Schema', '/schema_page')
+                _diagnostic_link('🗎', 'Log', '/log_page')
+                _diagnostic_link('</>', 'API Schema', '/schema_page')
 
 
 @ui.page('/status_page')
