@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Literal
 
 import requests
 
@@ -43,51 +43,15 @@ class AmberPowerPricer(PowerPricer):
         # nothing to do
         pass
 
-    def get_price(self, forecasts: int) -> List[Price]:
-        if forecasts < 0:
-            raise ValueError('Forecasts must be non-negative')
+    def get_price(self) -> Price:
+        response = self._get(5, 0)
+        return _parse_response(response)[0]
 
-        url = f'{API}/sites/{self._site_id}/prices/current'
-        headers = {
-            'accept': 'application/json',
-            'Authorization': f'Bearer {self._api_token}'
-        }
-        params = {
-            'previous': 0,
-            'next': forecasts,
-            'resolution': 5,
-        }
-        response = requests.get(url, headers=headers, params=params)
-        if response.status_code != requests.codes.ok:
-            raise IOError(f'error accessing Amber prices: {response}')
-
-        # Parse the response
-        parsed: Dict[datetime, ChannelPair] = {}
-        response_json = response.json()
-        for channel in response_json:
-            start_time = _get_datetime(channel['startTime'])
-            pair = parsed.get(start_time)
-            if pair is None:
-                pair = ChannelPair({}, {})
-                parsed[start_time] = pair
-
-            channel_type = channel['channelType']
-            if channel_type == 'general':
-                if len(pair.general) == 0:
-                    pair.general = channel
-                else:
-                    raise IOError(f'duplicate general channel: {start_time}')
-            elif channel_type == 'feedIn':
-                if len(pair.feed_in) == 0:
-                    pair.feed_in = channel
-                else:
-                    raise IOError(f'duplicate feed-in channel: {start_time}')
-
-        result: List[Price] = [
-            _make_price(start_time, pair)
-            for start_time, pair in sorted(parsed.items())
-        ]
-        return result
+    def get_price_forecast(self, count: int) -> List[Price]:
+        if count < 1:
+            raise ValueError('Count must be positive')
+        response = self._get(30, count - 1)
+        return _parse_response(response)
 
     def _get_site(self) -> JSONDict:
         url = f'{API}/sites'
@@ -105,6 +69,51 @@ class AmberPowerPricer(PowerPricer):
                 return site
 
         raise ValueError(f'NMI not found in sites')
+
+    def _get(self, resolution: Literal[5, 30], forecasts: int) -> JSONDict:
+        url = f'{API}/sites/{self._site_id}/prices/current'
+        headers = {
+            'accept': 'application/json',
+            'Authorization': f'Bearer {self._api_token}'
+        }
+        params = {
+            'previous': 0,
+            'next': forecasts,
+            'resolution': resolution,
+        }
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code != requests.codes.ok:
+            raise IOError(f'error accessing Amber prices: {response}')
+        return response.json()
+
+
+def _parse_response(response_json) -> List[Price]:
+    # Parse the response
+    parsed: Dict[datetime, ChannelPair] = {}
+    for channel in response_json:
+        start_time = _get_datetime(channel['startTime'])
+        pair = parsed.get(start_time)
+        if pair is None:
+            pair = ChannelPair({}, {})
+            parsed[start_time] = pair
+
+        channel_type = channel['channelType']
+        if channel_type == 'general':
+            if len(pair.general) == 0:
+                pair.general = channel
+            else:
+                raise IOError(f'duplicate general channel: {start_time}')
+        elif channel_type == 'feedIn':
+            if len(pair.feed_in) == 0:
+                pair.feed_in = channel
+            else:
+                raise IOError(f'duplicate feed-in channel: {start_time}')
+
+    result: List[Price] = [
+        _make_price(start_time, pair)
+        for start_time, pair in sorted(parsed.items())
+    ]
+    return result
 
 
 def _make_price(start_time: datetime, channel_pair: ChannelPair) -> Price:

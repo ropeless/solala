@@ -12,11 +12,12 @@ from nicegui.elements.mixins.content_element import ContentElement
 from solala import control_loop, server_log
 from solala.control_loop import listeners as control_loop_listeners, BatteryMode, BatteryPolicy, InverterMode, \
     InverterPolicy
+from solala.power_pricer.power_pricer import Price
 from solala.resources import IMAGE_FILES, RESOURCES
-from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE
+from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE, BUY_PRICE_RED, BUY_PRICE_AMBER
 from solala.server_constants import LOGGER
 from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY
-from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
+from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
@@ -209,6 +210,145 @@ _HEAD_HTML = r'''
     .diagnostic-icon {
         font-size: 18px;
     }
+    
+    
+    
+    /* ---------- Price Forecast ---------- */
+ 
+    .price-forecast {
+        color: #25313b;
+    }
+
+    .price-summary-card {
+        background: #ffffff;
+        border: 1px solid #e1e6ea;
+        border-radius: 14px;
+        padding: 18px 20px;
+        box-shadow: 0 2px 6px rgba(30, 45, 55, 0.035);
+        flex: 1;
+        min-width: 0;
+    }
+
+    .price-summary-label {
+        font-size: 0.82rem;
+        color: #6b7782;
+        margin-bottom: 8px;
+    }
+
+    .price-summary-value {
+        font-size: 1.65rem;
+        line-height: 1.3;
+        font-weight: 650;
+        letter-spacing: -0.035em;
+    }
+
+    .price-summary-caption {
+        font-size: 0.78rem;
+        color: #87919a;
+        margin-top: 5px;
+    }
+
+    .price-table {
+        background: white;
+        border: 1px solid #e1e6ea;
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 2px 6px rgba(30, 45, 55, 0.035);
+    }
+
+    .price-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        align-items: center;
+        min-height: 22px;
+        padding: 0 10px;
+        border-bottom: 1px solid #edf0f2;
+        gap: 12px;
+    }
+
+    .price-row:last-child {
+        border-bottom: none;
+    }
+
+    .price-row-alt {
+        background: #f8f9f8;
+    }
+
+    .price-header {
+        min-height: 24px;
+        padding: 0 10px;
+        background: #f0f2ef;
+        color: #68747d;
+        font-size: 0.76rem;
+        font-weight: 650;
+        text-transform: uppercase;
+        letter-spacing: 0.055em;
+    }
+
+    .price-time {
+        font-weight: 550;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .price-number {
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        font-weight: 550;
+    }
+
+    .price-buy-high {
+        color: red;
+    }
+
+    .price-buy-okay {
+        color: darkorange;
+    }
+
+    .price-buy-good {
+        color: black;
+    }
+
+    .price-feed-in-okay {
+        color: black;
+    }
+
+    .price-feed-in-bad {
+        color: red;
+    }
+
+    .price-section-title {
+        font-size: 1.05rem;
+        font-weight: 650;
+        color: #25313b;
+    }
+
+    @media (max-width: 480px) {
+        .price-row {
+            min-height: 22px;
+            padding: 0 10px;
+            gap: 8px;
+            grid-template-columns: 0.8fr 1fr 1fr;
+            font-size: 0.88rem;
+        }
+
+        .price-header {
+            min-height: 24px;
+            padding: 0 10px;
+            font-size: 0.65rem;
+            letter-spacing: 0.015em;
+        }
+
+        .price-summary-card {
+            padding: 14px 12px;
+        }
+
+        .price-summary-value {
+            font-size: 1.3rem;
+        }
+    }
+
+
+
     /* ---------- Tablet ---------- */
     @media (max-width: 900px) {
         .dashboard-grid {
@@ -315,10 +455,7 @@ _CONSTANTS_UNITS: Mapping[str, str] = {
     'CONTROL_DURATION': SECONDS,
     'PRICE_LOOK_AHEAD': MINUTES,
     'PRICE_SETTLE_CHECK': SECONDS,
-    'DISABLE_FEED_IN_TOLERANCE': PRICE_CENTS,
-    'ENABLE_FEED_IN_TOLERANCE': PRICE_CENTS,
-    'STOP_BUY_TOLERANCE': PRICE_CENTS,
-    'START_BUY_TOLERANCE': PRICE_CENTS,
+    'PRICE_FORECAST_DURATION': HOURS,
 }
 
 
@@ -698,11 +835,26 @@ def _infographic_click(element):
         pass
         # ui.notify('clicked the sun')
     elif click_id == CLICK_ID_GRID:
-        pass
-        # ui.notify('clicked the grid')
+        ui.navigate.to('/price_forecast_page')
     elif click_id == CLICK_ID_BATTERY:
         pass
         # ui.notify('clicked the battery')
+
+
+def _buy_price_class(price: float) -> str:
+    if price >= BUY_PRICE_RED:
+        return 'price-buy-high'
+    elif price >= BUY_PRICE_AMBER:
+        return 'price-buy-okay'
+    else:
+        return 'price-buy-good'
+
+
+def _feed_in_price_class(price: float) -> str:
+    if price >= 0:
+        return 'price-feed-in-okay'
+    else:
+        return 'price-feed-in-bad'
 
 
 # ====================================================================
@@ -760,10 +912,54 @@ def root_page():
                 _diagnostic_link('</>', 'API Schema', '/schema_page')
 
 
+@ui.page('/price_forecast_page')
+def price_forecast_page():
+    prices: List[Price] = control_loop.get_forecast_prices()
+
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+        _page_header(' price forecast')
+
+        if len(prices) == 0:
+            with ui.card().classes('w-full bg-white rounded-xl border border-[#e1e6ea] p-6'):
+                ui.icon('query_stats').classes('text-3xl text-[#a1a9ae]')
+                ui.label('No price forecast available').classes('text-lg font-semibold')
+                ui.label('There are currently no forecast prices to display.').classes('text-sm text-gray-500')
+            return
+
+        forecast_date = prices[0].start_time.date()
+
+        with ui.row().classes('items-center gap-2 mb-5'):
+            ui.icon('calendar_today').classes('text-lg text-gray-500')
+            ui.label(forecast_date.strftime('%A, %d %B %Y')).classes('text-sm text-gray-500')
+
+        # Forecast table
+        with ui.column().classes('w-full gap-3'):
+            with ui.element('div').classes('price-table'):
+                with ui.element('div').classes('price-row price-header'):
+                    ui.label('Time')
+                    ui.label('Buy price').classes('text-right')
+                    ui.label('Feed-in').classes('text-right')
+
+                for i, price in enumerate(prices):
+                    row_classes = 'price-row'
+                    if i % 2 == 1:
+                        row_classes += ' price-row-alt'
+
+                    with ui.element('div').classes(row_classes):
+                        ui.label(price.start_time.strftime('%H:%M')).classes('price-time')
+
+                        buy_class = _buy_price_class(price.buy_price)
+                        ui.label(f'{price.buy_price:.1f}').classes(f'price-number {buy_class}')
+
+                        feed_class = _feed_in_price_class(price.feed_in_price)
+                        ui.label(f'{price.feed_in_price:.1f}').classes(f'price-number {feed_class}')
+
+
 @ui.page('/status_page')
 def status_page():
     """
-    The main status page.
+    The old status page.
     """
     ui.add_head_html(_HEAD_HTML)
     with ui.element('div').classes('solala-page'):

@@ -11,5 +11,5 @@ SOLALA_LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 MAX_LOG_HISTORY: int = 1000
 
-BUY_PRICE_AMBER = 15
-BUY_PRICE_RED = 30
+BUY_PRICE_AMBER = 20
+BUY_PRICE_RED = 40

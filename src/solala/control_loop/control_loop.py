@@ -75,6 +75,9 @@ class _ControlState:
     last_price: Price = _NO_PRICE
     next_price_check: datetime = _MIN_DATE
 
+    last_price_forecast: List[Price] = field(default_factory=list)
+    next_price_forecast_check: datetime = _MIN_DATE
+
     # NEG_FEED_IN_ZERO_EXPORT parameters
     disable_export_price_threshold: float = DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD
     enable_export_price_threshold: float = DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD
@@ -97,20 +100,26 @@ class _ControlState:
 
         self.last_price: Price = _NO_PRICE
         self.next_price_check = _MIN_DATE
+        self.last_price_forecast: List[Price] = []
+        self.next_price_forecast_check = _MIN_DATE
 
         if controller is None:
             self.controller_connection_status = _disconnected()
 
     def reset_pricer(self, pricer: Optional[PowerPricer]) -> None:
         self.pricer = pricer
+
         self.last_price: Price = _NO_PRICE
         self.next_price_check = _MIN_DATE
+        self.last_price_forecast: List[Price] = []
+        self.next_price_forecast_check = _MIN_DATE
 
         if pricer is None:
             self.pricer_connection_status = _disconnected()
 
     def force_price_check(self) -> None:
         self.next_price_check = _MIN_DATE
+        self.next_price_forecast_check = _MIN_DATE
 
     def copy_listeners(self) -> Tuple[List[StatusListener], List[RegistersListener]]:
         status_listeners = self.control_loop_status_listeners.copy()
@@ -522,9 +531,8 @@ def get_cur_price() -> Price:
         now = datetime.now(UTC)
         if state.next_price_check <= now:
             try:
-                price: Price = pricer.get_price(0)[0]
+                price: Price = pricer.get_price()
                 state.last_price = price
-
                 if price.estimate:
                     # price is unstable - recheck is needed
                     delay = Constants.PRICE_SETTLE_CHECK
@@ -532,10 +540,32 @@ def get_cur_price() -> Price:
                 else:
                     # price is stable - no need to recheck for this period
                     state.next_price_check = price.end_time
-
             except Exception as err:
                 LOGGER.error(f'{_LOG_SRC}Price update not available. Error: {err}')
     return price
+
+
+def get_forecast_prices() -> List[Price]:
+    """
+    Get the forecast prices from the power pricer.
+    """
+    with _control_state_lock:
+        state = _control_state
+        prices: List[Price] = state.last_price_forecast
+        pricer = state.pricer
+        if pricer is None:
+            LOGGER.error(f'{_LOG_SRC}Price update not available. Error: power pricer not connected')
+            return []
+
+        now = datetime.now(UTC)
+        if state.next_price_forecast_check <= now:
+            try:
+                prices: List[Price] = pricer.get_price_forecast(Constants.PRICE_FORECAST_DURATION * 2)
+                state.last_price_forecast = prices
+                state.next_price_forecast_check = now + timedelta(minutes=5)
+            except Exception as err:
+                LOGGER.error(f'{_LOG_SRC}Price update not available. Error: {err}')
+    return prices
 
 
 def set_control(
