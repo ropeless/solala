@@ -579,7 +579,7 @@ def _json_multi_page(*names: str) -> List[ContentElement]:
             for name in names:
                 with ui.card():
                     ui.label(name).classes(_H2_class)
-                    registers_element = ui.code(language='json').classes('text-sm w-full grow')
+                    registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
                     result.append(registers_element)
 
     return result
