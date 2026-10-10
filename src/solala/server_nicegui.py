@@ -563,15 +563,7 @@ def _json_page(name: str) -> ContentElement:
     Returns:
         The content element to use for adding the rendered JSON data.
     """
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page'):
-        _page_header()
-
-        with ui.element('div').classes('dashboard-grid'):
-            with ui.card():
-                ui.label(name).classes(_H2_class)
-                registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
-    return registers_element
+    return _json_multi_page(name)[0]
 
 
 def _json_multi_page(*names: str) -> List[ContentElement]:
@@ -587,7 +579,7 @@ def _json_multi_page(*names: str) -> List[ContentElement]:
             for name in names:
                 with ui.card():
                     ui.label(name).classes(_H2_class)
-                    registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
+                    registers_element = ui.code(language='json').classes('text-sm w-full grow')
                     result.append(registers_element)
 
     return result
@@ -700,13 +692,17 @@ def _ui_control_buttons() -> None:
 def _infographic_click(element):
     click_id: Optional[str] = element.args
     if click_id == CLICK_ID_HOME:
-        ui.notify('clicked home')
+        pass
+        # ui.notify('clicked home')
     elif click_id == CLICK_ID_SUN:
-        ui.notify('clicked the sun')
+        pass
+        # ui.notify('clicked the sun')
     elif click_id == CLICK_ID_GRID:
-        ui.notify('clicked the grid')
+        pass
+        # ui.notify('clicked the grid')
     elif click_id == CLICK_ID_BATTERY:
-        ui.notify('clicked the battery')
+        pass
+        # ui.notify('clicked the battery')
 
 
 # ====================================================================
