@@ -73,9 +73,7 @@ class _ControlState:
     inverter_policy: InverterPolicy = InverterPolicy.MANUAL
 
     last_price: Price = _NO_PRICE
-    next_price_settle_check: datetime = _MIN_DATE
-    next_feed_in_price_check: datetime = _MIN_DATE
-    next_buy_price_check: datetime = _MIN_DATE
+    next_price_check: datetime = _MIN_DATE
 
     # NEG_FEED_IN_ZERO_EXPORT parameters
     disable_export_price_threshold: float = DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD
@@ -98,9 +96,7 @@ class _ControlState:
         self.inverter_policy = InverterPolicy.MANUAL
 
         self.last_price: Price = _NO_PRICE
-        self.next_price_settle_check = _MIN_DATE
-        self.next_feed_in_price_check = _MIN_DATE
-        self.next_buy_price_check = _MIN_DATE
+        self.next_price_check = _MIN_DATE
 
         if controller is None:
             self.controller_status = _disconnected()
@@ -108,12 +104,13 @@ class _ControlState:
     def reset_pricer(self, pricer: Optional[PowerPricer]) -> None:
         self.pricer = pricer
         self.last_price: Price = _NO_PRICE
-        self.next_price_settle_check = _MIN_DATE
-        self.next_feed_in_price_check: datetime = _MIN_DATE
-        self.next_buy_price_check: datetime = _MIN_DATE
+        self.next_price_check = _MIN_DATE
 
         if pricer is None:
             self.pricer_status = _disconnected()
+
+    def force_price_check(self) -> None:
+        self.next_price_check = _MIN_DATE
 
     def copy_listeners(self) -> Tuple[List[StatusListener], List[RegistersListener]]:
         status_listeners = self.control_loop_status_listeners.copy()
@@ -175,8 +172,11 @@ def run_control_loop(
     prev_state: _PrevControlState = _PrevControlState()
 
     # Configure and user settings
-    _control_state.settings_path = Path(settings_path) if settings_path is not None else None
-    loaded: bool = _load_settings()
+    loaded: bool = False
+    if settings_path is not None:
+        _control_state.settings_path = Path(settings_path)
+        if not force_settings or settings is None:
+            loaded = _load_settings()
     if (not loaded or force_settings) and settings is not None:
         configure_from_settings(settings)
 
@@ -227,16 +227,12 @@ def _control_step(
     # Battery Policy - may change Battery Mode
     if state.pricer is not None:
         if state.battery_policy == BatteryPolicy.CHEAP_CHARGE:
-            if state.next_buy_price_check <= datetime.now(UTC):
-                # time to check the price again
-                prices = _update_price()
-                price = state.last_price
-                buy_price = price.buy_price
-                if buy_price < state.start_charge_price_threshold:
-                    state.battery_mode = BatteryMode.FORCE_CHARGE
-                elif buy_price > state.enable_export_price_threshold:
-                    state.battery_mode = BatteryMode.ENABLE
-                _update_price_check(prices)
+            price = get_cur_price()
+            buy_price = price.buy_price
+            if buy_price < state.start_charge_price_threshold:
+                state.battery_mode = BatteryMode.FORCE_CHARGE
+            elif buy_price > state.enable_export_price_threshold:
+                state.battery_mode = BatteryMode.ENABLE
 
     # Battery Mode
     if state.battery_mode != prev_state.battery_mode:
@@ -254,16 +250,12 @@ def _control_step(
     # Inverter Policy - may change Inverter Mode
     if state.pricer is not None:
         if state.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
-            if state.next_feed_in_price_check <= datetime.now(UTC):
-                # time to check the price again
-                prices = _update_price()
-                price = state.last_price
-                feed_in_price = price.feed_in_price
-                if feed_in_price < state.disable_export_price_threshold:
-                    state.inverter_mode = InverterMode.ZERO_EXPORT
-                elif feed_in_price > state.disable_export_price_threshold:
-                    state.inverter_mode = InverterMode.ENABLE
-                _update_price_check(prices)
+            price = get_cur_price()
+            feed_in_price = price.feed_in_price
+            if feed_in_price < state.disable_export_price_threshold:
+                state.inverter_mode = InverterMode.ZERO_EXPORT
+            elif feed_in_price > state.disable_export_price_threshold:
+                state.inverter_mode = InverterMode.ENABLE
 
     # Inverter Mode
     if state.inverter_mode != prev_state.inverter_mode:
@@ -409,13 +401,11 @@ def get_control_status() -> JSONDict:
         }
         if _control_state.battery_policy == BatteryPolicy.CHEAP_CHARGE:
             battery.update({
-                'next_buy_price_check': _control_state.next_buy_price_check.strftime(DATE_FORMAT),
                 'start_charge_price_threshold': _control_state.start_charge_price_threshold,
                 'stop_charge_price_threshold': _control_state.stop_charge_price_threshold,
             })
         if _control_state.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
             inverter.update({
-                'next_feed_in_price_check': _control_state.next_feed_in_price_check.strftime(DATE_FORMAT),
                 'disable_export_price_threshold': _control_state.disable_export_price_threshold,
                 'enable_export_price_threshold': _control_state.enable_export_price_threshold,
             })
@@ -530,7 +520,7 @@ def get_cur_price() -> Price:
             return price
 
         now = datetime.now(UTC)
-        if state.next_price_settle_check <= now:
+        if state.next_price_check <= now:
             try:
                 price: Price = pricer.get_price(0)[0]
                 state.last_price = price
@@ -538,10 +528,10 @@ def get_cur_price() -> Price:
                 if price.estimate:
                     # price is unstable - recheck is needed
                     delay = Constants.PRICE_SETTLE_CHECK
-                    state.next_price_settle_check = min(now + timedelta(seconds=delay), price.end_time)
+                    state.next_price_check = min(now + timedelta(seconds=delay), price.end_time)
                 else:
                     # price is stable - no need to recheck for this period
-                    state.next_price_settle_check = price.end_time
+                    state.next_price_check = price.end_time
 
             except Exception as err:
                 LOGGER.error(f'{_LOG_SRC}Price update not available. Error: {err}')
@@ -571,7 +561,7 @@ def set_control(
             state.inverter_policy = inverter_policy
 
         _save_settings()
-        _force_price_check()
+        state.force_price_check()
         return get_control_status()
 
 
@@ -613,7 +603,7 @@ def set_parameters(
         state.stop_charge_price_threshold = stop_charge_price_threshold
 
         _save_settings()
-        _force_price_check()
+        state.force_price_check()
         return get_parameters()
 
 
@@ -760,15 +750,27 @@ def disconnect_consumer(name: str) -> JSONDict:
 # =============================================================================
 
 def _connect_dummy_controller(_: DummyControllerConnection) -> Tuple[PowerController, JSONDict]:
-    return DummyPowerController(), {'status': 'dummy_controller'}
+    controller = DummyPowerController()
+    return controller, controller.dummy_state()
 
 
-def _connect_dummy_pricer(_: DummyPricerConnection) -> Tuple[PowerPricer, JSONDict]:
-    return DummyPowerPricer(), {'status': 'dummy_pricer'}
+def _connect_dummy_pricer(pricer_connection: DummyPricerConnection) -> Tuple[PowerPricer, JSONDict]:
+    pricer = DummyPowerPricer(
+        buy_price_min=pricer_connection.buy_price_min,
+        buy_price_max=pricer_connection.buy_price_max,
+        feed_in_price_discount_min=pricer_connection.feed_in_price_discount_min,
+        feed_in_price_discount_max=pricer_connection.feed_in_price_discount_max,
+        cur_price_is_estimate=pricer_connection.cur_price_is_estimate,
+    )
+    return pricer, pricer.dummy_state()
 
 
-def _connect_dummy_consumer(_: DummyConsumerConnection) -> Tuple[PowerConsumer, JSONDict]:
-    return DummyPowerConsumer(), {'status': 'dummy_consumer'}
+def _connect_dummy_consumer(consumer_connection: DummyConsumerConnection) -> Tuple[PowerConsumer, JSONDict]:
+    consumer = DummyPowerConsumer(
+        voltage=consumer_connection.voltage,
+        current=consumer_connection.current,
+    )
+    return consumer, consumer.dummy_state()
 
 
 def _connect_modbus(controller_connection: ModbusControllerConnection) -> Tuple[PowerController, JSONDict]:
@@ -992,114 +994,6 @@ def _update_listeners(
                     LOGGER.error(f'{_LOG_SRC}Error updating register listener: {e}')
         except Exception as e:
             LOGGER.error(f'{_LOG_SRC}Error getting registers for listeners: {e}')
-
-
-def _force_price_check() -> None:
-    """
-    Force the control loop to perform a price check
-    for price-based policies.
-    """
-    with _control_state_lock:
-        state = _control_state
-        state.next_buy_price_check = _MIN_DATE
-        state.next_feed_in_price_check = _MIN_DATE
-
-
-def _update_price() -> List[Price]:
-    """
-    Updates server state last_price and returns lookahead prices, in time order.
-    """
-    state = _control_state
-
-    power_pricer = state.pricer
-    if power_pricer is None:
-        LOGGER.error(f'{_LOG_SRC}Price update not available. Power pricer not connected')
-        return [state.last_price]
-
-    prices = power_pricer.get_price(Constants.PRICE_LOOK_AHEAD // 5)
-    price = prices[0]
-    state.last_price = price
-    LOGGER.info(f'{_LOG_SRC}Buy price update: {price.buy_price}')
-    LOGGER.info(f'{_LOG_SRC}Feed-in price update: {price.feed_in_price}')
-    return prices
-
-
-def _update_price_check(prices: List[Price]) -> None:
-    """
-    Update next_feed_in_price_check and next_buy_price_check based on the lookahead prices.
-    """
-    state = _control_state
-    _update_next_buy_price_check(prices, force_charging=(state.battery_mode == BatteryMode.FORCE_CHARGE))
-    _update_next_feed_in_price_check(prices, zero_export=(state.inverter_mode == InverterMode.ZERO_EXPORT))
-
-
-def _update_next_feed_in_price_check(prices: List[Price], zero_export: bool) -> None:
-    """
-    Update next_feed_in_price_check based on the lookahead prices.
-    """
-    state = _control_state
-    end: int = len(prices) - 1
-
-    # If zero export, no need to check the feed-in price if:
-    #     feed-in price > enable_export_price_threshold - _ENABLE_FEED_IN_TOLERANCE
-    # If not zero export, no need to check the feed-in price if:
-    #     feed-in price < disable_export_price_threshold + _DISABLE_FEED_IN_TOLERANCE
-    last_safe_feed_in: int = 0
-    enable_export_threshold: float = state.enable_export_price_threshold - Constants.ENABLE_FEED_IN_TOLERANCE
-    disable_export_threshold: float = state.disable_export_price_threshold + Constants.DISABLE_FEED_IN_TOLERANCE
-
-    def safe() -> bool:
-        if zero_export:
-            return prices[last_safe_feed_in].feed_in_price < enable_export_threshold
-        else:
-            return prices[last_safe_feed_in].feed_in_price > disable_export_threshold
-
-    while last_safe_feed_in < end and safe():
-        last_safe_feed_in += 1
-
-    state.next_feed_in_price_check = _next_price_check(prices[last_safe_feed_in])
-    LOGGER.info(f'{_LOG_SRC}Next feed-in price check: {state.next_feed_in_price_check}')
-
-
-def _update_next_buy_price_check(prices: List[Price], force_charging: bool) -> None:
-    """
-    Update next_buy_price_check based on the lookahead prices.
-    """
-    state = _control_state
-    end: int = len(prices) - 1
-
-    # If force charging, no need to check the feed-in price if:
-    #     buy price < stop_charge_price_threshold - _STOP_BUY_TOLERANCE
-    # If not force charging, no need to check the feed-in price if:
-    #     buy price > start_charge_price_threshold + _START_BUY_TOLERANCE
-    last_safe_buy: int = 0
-    stop_charge_threshold: float = state.stop_charge_price_threshold - Constants.START_BUY_TOLERANCE
-    start_charge_threshold: float = state.start_charge_price_threshold + Constants.STOP_BUY_TOLERANCE
-
-    def safe() -> bool:
-        if force_charging:
-            return prices[last_safe_buy].buy_price < stop_charge_threshold
-        else:
-            return prices[last_safe_buy].buy_price > start_charge_threshold
-
-    while last_safe_buy < end and safe():
-        last_safe_buy += 1
-
-    state.next_buy_price_check = _next_price_check(prices[last_safe_buy])
-
-    LOGGER.info(f'{_LOG_SRC}Next buy price check: {state.next_buy_price_check}')
-
-
-def _next_price_check(price: Price) -> datetime:
-    """
-    The given price record is selected as the actual or forecast record when a policy-driven price check.
-    Based on that record, when should the next price check be performed for the policy?
-    """
-    if price.estimate:
-        delay = timedelta(seconds=Constants.PRICE_SETTLE_CHECK)
-        return min(datetime.now(UTC) + delay, price.end_time)
-    else:
-        return price.end_time
 
 
 def _save_settings() -> None:

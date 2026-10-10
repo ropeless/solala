@@ -1,5 +1,6 @@
 from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text, TSpan
 
+from solala.server_constants import BUY_PRICE_RED, BUY_PRICE_AMBER
 from solala.units import WATTS, KILOWATTS, PERCENT, PRICE_DOLLARS, PRICE_CENTS
 from solala.utils.json import JSONDict, json_dict, json_num, json_bool
 
@@ -116,9 +117,9 @@ class Infographic:
             buy_str = _to_cents(buy_price)
             feed_in_str = _to_cents(feed_in_price)
             units = PRICE_CENTS
-        if buy_price > 30:
+        if buy_price >= BUY_PRICE_RED:
             buy_colour = 'red'
-        elif buy_price > 15:
+        elif buy_price >= BUY_PRICE_AMBER:
             buy_colour = 'darkorange'
         else:
             buy_colour = 'black'

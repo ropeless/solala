@@ -1,22 +1,32 @@
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Dict
 
 from solala.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 
 
 class DummyPowerConsumer(PowerConsumer):
 
-    def __init__(self):
+    def __init__(
+            self,
+            voltage: float = 240,
+            current: float = 0,
+    ):
         self.status = ConsumerStatus(
-            voltage=240,
-            current=0
+            voltage=voltage,
+            current=current
         )
 
     def get_status(self) -> ConsumerStatus:
         return self.status
 
+    def dummy_state(self) -> Dict[str, int | float | str]:
+        return {
+            'status': f'{DummyPowerConsumer.__name__} connection',
+            'voltage': self.status.voltage,
+            'current': self.status.current,
+        }
+
     def get_registers(self) -> Iterable[Tuple[str, int | float | str | bool]]:
         return (
-            ('consumer', 'dummy'),
             ('voltage', self.status.voltage),
             ('current', self.status.current),
         )

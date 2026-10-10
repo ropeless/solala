@@ -13,10 +13,16 @@ def main():
 
     # Optional initial control loop parameters.
     # These will be used if the settings file cannot be loaded or force_settings is True.
-    force_settings: bool = False
+    force_settings: bool = True
     settings = Settings(
         controller=DummyControllerConnection(),
-        pricer=DummyPricerConnection(),
+        pricer=DummyPricerConnection(
+            # buy_price_min = 1,
+            # buy_price_max = 20,
+            # feed_in_price_discount_min=2,
+            # feed_in_price_discount_max=5,
+            # cur_price_is_estimate=False,
+        ),
     )
 
     # DEBUG: Change control loop constants for testing and debugging.

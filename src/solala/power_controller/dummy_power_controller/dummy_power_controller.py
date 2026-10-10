@@ -1,4 +1,4 @@
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Dict
 
 from solala.power_controller.power_controller import PowerController, PowerStatus
 
@@ -24,18 +24,21 @@ class DummyPowerController(PowerController):
         self.enable_battery()
         self.enable_inverter()
 
+    def dummy_state(self) -> Dict[str, int | float | str]:
+        return {
+            'status': f'{DummyPowerController.__name__} connection',
+            'battery_mode': self.battery_mode,
+            'inverter_mode': self.inverter_mode,
+            'state_of_charge': self.state_of_charge,
+            'power_limit': self.power_limit,
+            'battery_power': self.battery_power,
+            'grid_power': self.grid_power,
+            'solar_power': self.solar_power,
+            'house_power': self.house_power,
+        }
+
     def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
-        return (
-            ('controller', 'dummy'),
-            ('battery_mode', self.battery_mode),
-            ('inverter_mode', self.inverter_mode),
-            ('state_of_charge', self.state_of_charge),
-            ('power_limit', self.power_limit),
-            ('battery_power', self.battery_power),
-            ('grid_power', self.grid_power),
-            ('solar_power', self.solar_power),
-            ('house_power', self.house_power),
-        )
+        return self.dummy_state().items()
 
     def get_status(self) -> PowerStatus:
         return PowerStatus(
