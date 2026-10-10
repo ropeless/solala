@@ -10,6 +10,7 @@ class Constants:
     MIN_SLEEP_TIME: int = 2  # number of seconds to sleep for each loop iteration
     CONTROL_DURATION: int = 11  # number of seconds a control remains active
     PRICE_SETTLE_CHECK: int = 10  # check delay to see if the power price has settled
+    PRICE_FORECAST_DURATION = 24  # in hours
 
     @staticmethod
     def as_dict() -> JSONDict:

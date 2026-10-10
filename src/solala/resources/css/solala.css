@@ -1,0 +1,415 @@
+
+/* =========================================================
+   Solala stylesheet
+   ========================================================= */
+
+/* ---------------------------------------------------------
+   Design tokens
+   --------------------------------------------------------- */
+
+:root {
+    --solala-font-family: Arial, Helvetica, sans-serif;
+
+    --solala-text: #25313b;
+    --solala-danger: #dc2626;
+    --solala-amber: #ff8c00;
+
+    --solala-page-bg: #f5f7f9;
+    --solala-card-bg: #ffffff;
+    --solala-muted: #687078;
+    --solala-border: #e1e6ea;
+    --solala-accent: #c58b28;
+    --solala-success: #16805b;
+
+    --solala-radius: 14px;
+    --solala-control-radius: 7px;
+    --solala-page-padding: 16px;
+    --solala-gap: 16px;
+
+    --solala-shadow: 0 2px 7px rgb(0 0 0 / 6%);
+}
+
+
+/* ---------------------------------------------------------
+   Page layout
+   --------------------------------------------------------- */
+
+.solala-page {
+    font-family: var(--solala-font-family);
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: var(--solala-page-padding);
+    background: var(--solala-page-bg);
+    color: var(--solala-text);
+}
+
+/* ---------------------------------------------------------
+   Page header and branding
+   --------------------------------------------------------- */
+
+.solala-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--solala-gap);
+}
+
+.solala-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.solala-brand img {
+    width: 42px;
+    height: 42px;
+}
+
+.solala-brand-name {
+    font-size: 24px;
+    font-weight: 650;
+    line-height: 1.1;
+}
+
+.solala-brand-subtitle {
+    color: var(--solala-muted);
+    font-size: 12px;
+}
+
+/* ---------------------------------------------------------
+   Dashboard layout
+   --------------------------------------------------------- */
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(330px, 0.85fr);
+    align-items: start;
+    gap: var(--solala-gap);
+}
+
+/* ---------------------------------------------------------
+   Shared cards
+   --------------------------------------------------------- */
+
+.dashboard-card {
+    background: var(--solala-card-bg);
+    border: 1px solid var(--solala-border);
+    border-radius: var(--solala-radius);
+    box-shadow: var(--solala-shadow);
+}
+
+/* ---------------------------------------------------------
+   Power infographic
+   --------------------------------------------------------- */
+
+.infographic-card {
+    padding: 12px;
+}
+
+.infographic-title {
+    padding: 4px 8px 10px;
+    font-size: 18px;
+    font-weight: 650;
+}
+
+.infographic-container {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+}
+
+.infographic-container svg {
+    width: 100%;
+    height: auto;
+    max-width: 760px;
+}
+
+/* SVG text styles */
+
+.solala-svg-text {
+    font-family: var(--solala-font-family);
+    fill: var(--solala-text);
+}
+
+.solala-svg-text-danger {
+    font-family: var(--solala-font-family);
+    fill: var(--solala-danger);
+}
+
+.solala-svg-text-amber {
+    font-family: var(--solala-font-family);
+    fill: var(--solala-amber);
+}
+
+
+
+/* ---------------------------------------------------------
+   Battery and inverter controls
+   --------------------------------------------------------- */
+
+.control-column {
+    display: flex;
+    flex-direction: column;
+    gap: var(--solala-gap);
+}
+
+.control-card {
+    padding: var(--solala-gap);
+}
+
+.control-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 13px;
+}
+
+.control-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 20px;
+    font-weight: 650;
+}
+
+.control-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.control-buttons .wide {
+    grid-column: 1 / -1;
+}
+
+/* NiceGUI buttons */
+
+.solala-button {
+    min-height: 42px;
+    border-radius: var(--solala-control-radius);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* ---------------------------------------------------------
+   Diagnostics
+   --------------------------------------------------------- */
+
+.diagnostics-card {
+    margin-top: var(--solala-gap);
+    padding: var(--solala-gap);
+}
+
+.diagnostics-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 18px;
+    font-weight: 650;
+}
+
+.diagnostic-link {
+    display: flex;
+    min-height: 60px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border: 1px solid #e0e6eb;
+    border-radius: 8px;
+    background: var(--solala-page-bg);
+    color: #1976d2;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.diagnostic-link:hover {
+    border-color: #90caf9;
+    background: #eaf3fb;
+}
+
+.diagnostic-icon {
+    font-size: 18px;
+}
+
+/* ---------------------------------------------------------
+   Price forecast
+   --------------------------------------------------------- */
+
+.price-forecast {
+    color: var(--solala-text);
+}
+
+/* Forecast table */
+
+.price-table {
+    overflow: hidden;
+    background: var(--solala-card-bg);
+    border: 1px solid var(--solala-border);
+    border-radius: var(--solala-radius);
+    box-shadow: 0 2px 6px rgb(30 45 55 / 4%);
+}
+
+.price-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: center;
+    gap: 12px;
+    min-height: 22px;
+    padding: 0 10px;
+    border-bottom: 1px solid #edf0f2;
+}
+
+.price-row:last-child {
+    border-bottom: none;
+}
+
+.price-row-alt {
+    background: #f8f9f8;
+}
+
+.price-header {
+    min-height: 24px;
+    padding: 0 10px;
+    background: #f0f2ef;
+    color: var(--solala-muted);
+    font-size: 0.76rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.055em;
+}
+
+.price-time,
+.price-number {
+    font-variant-numeric: tabular-nums;
+    font-weight: 550;
+}
+
+.price-number {
+    text-align: right;
+}
+
+/* Buy-price status colours */
+
+.price-buy-high {
+    color: var(--solala-danger);
+}
+
+.price-buy-okay {
+    color: var(--solala-amber);
+}
+
+.price-buy-good {
+    color: var(--solala-text);
+}
+
+/* Feed-in price status colours */
+
+.price-feed-in-okay {
+    color: var(--solala-text);
+}
+
+.price-feed-in-bad {
+    color: var(--solala-danger);
+}
+
+/* ---------------------------------------------------------
+   Tablet layout
+   --------------------------------------------------------- */
+
+@media (max-width: 900px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .control-column {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+/* ---------------------------------------------------------
+   Phone layout
+   --------------------------------------------------------- */
+
+@media (max-width: 600px) {
+    .solala-page {
+        padding: 8px;
+    }
+
+    .solala-header {
+        margin-bottom: 9px;
+    }
+
+    .solala-brand img {
+        width: 35px;
+        height: 35px;
+    }
+
+    .solala-brand-name {
+        font-size: 20px;
+    }
+
+    .solala-brand-subtitle {
+        display: none;
+    }
+
+    .dashboard-grid {
+        gap: 9px;
+    }
+
+    .infographic-card {
+        padding: 7px;
+    }
+
+    .infographic-title {
+        padding: 3px 5px 6px;
+    }
+
+    .control-column {
+        display: flex;
+        gap: 9px;
+    }
+
+    .control-card {
+        padding: 12px;
+    }
+
+    .control-title {
+        font-size: 18px;
+    }
+
+    .control-buttons {
+        gap: 7px;
+    }
+
+    .solala-button {
+        min-height: 43px;
+        font-size: 12px;
+    }
+
+    .diagnostics-card {
+        margin-top: 9px;
+        padding: 12px;
+    }
+
+    .diagnostic-link {
+        min-height: 55px;
+        font-size: 11px;
+    }
+
+    .price-row {
+        grid-template-columns: 0.8fr 1fr 1fr;
+        gap: 8px;
+        font-size: 0.88rem;
+    }
+
+    .price-header {
+        font-size: 0.65rem;
+        letter-spacing: 0.015em;
+    }
+}

@@ -12,11 +12,13 @@ from nicegui.elements.mixins.content_element import ContentElement
 from solala import control_loop, server_log
 from solala.control_loop import listeners as control_loop_listeners, BatteryMode, BatteryPolicy, InverterMode, \
     InverterPolicy
-from solala.resources import IMAGE_FILES, RESOURCES
-from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE
+from solala.power_pricer.power_pricer import Price
+from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
+from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE, BUY_PRICE_RED, BUY_PRICE_AMBER
 from solala.server_constants import LOGGER
-from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY
-from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
+from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
+    CLICK_ID_INVERTER
+from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
@@ -24,265 +26,9 @@ from solala.utils.json import JSONDict, json_dict, render_json, filter_json, jso
 # Main styling
 # --------------------------------------------------------------------
 
-_H1_class = 'text-h5'
-_H2_class = 'text-h6'
-
 _HEAD_HTML = r'''
 <link rel="manifest" href="/manifest.json">
-<style>
-    /* ---------- Page ---------- */
-    .solala-page {
-        width: 100%;
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 16px;
-        background: #f5f7f9;
-    }
-    /* ---------- Header ---------- */
-    .solala-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 16px;
-    }
-    .solala-brand {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .solala-brand img {
-        width: 42px;
-        height: 42px;
-    }
-    .solala-brand-name {
-        font-size: 24px;
-        font-weight: 650;
-        line-height: 1.1;
-    }
-    .solala-brand-subtitle {
-        font-size: 12px;
-        color: #687078;
-    }
-    .system-status {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        font-size: 13px;
-        font-weight: 600;
-    }
-    .system-status-dot {
-        width: 9px;
-        height: 9px;
-        border-radius: 50%;
-        background: #16a34a;
-    }
-    /* ---------- Main grid ---------- */
-    .dashboard-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1.6fr) minmax(330px, 0.85fr);
-        gap: 16px;
-        align-items: start;
-    }
-    /* ---------- Cards ---------- */
-    .dashboard-card {
-        background: white;
-        border: 1px solid #e1e6ea;
-        border-radius: 14px;
-        box-shadow: 0 2px 7px rgba(0,0,0,.06);
-    }
-    /* ---------- Infographic ---------- */
-    .infographic-card {
-        padding: 12px;
-    }
-    .infographic-title {
-        font-size: 18px;
-        font-weight: 650;
-        padding: 4px 8px 10px;
-    }
-    .infographic-container {
-        width: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
-    .infographic-container svg {
-        width: 100%;
-        height: auto;
-        max-width: 760px;
-    }
-    /* ---------- Controls ---------- */
-    .control-column {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-    .control-card {
-        padding: 16px;
-    }
-    .control-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 13px;
-    }
-    .control-title {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        font-size: 20px;
-        font-weight: 650;
-    }
-    .control-title-icon {
-        font-size: 24px;
-    }
-    .control-state {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        padding: 4px 9px;
-        border-radius: 14px;
-        background: #e8f6eb;
-        color: #087a0b;
-        font-size: 12px;
-        font-weight: 600;
-    }
-    .control-state-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: #16a34a;
-    }
-    .control-buttons {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-    }
-    .control-buttons .wide {
-        grid-column: 1 / -1;
-    }
-    /* ---------- NiceGUI buttons ---------- */
-    .solala-button {
-        min-height: 42px;
-        border-radius: 7px;
-        font-size: 13px;
-        font-weight: 600;
-    }
-    /* ---------- Diagnostics ---------- */
-    .diagnostics-card {
-        margin-top: 16px;
-        padding: 16px;
-    }
-    .diagnostics-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 18px;
-        font-weight: 650;
-        margin-bottom: 12px;
-    }
-    .diagnostic-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
-    }
-    .diagnostic-link {
-        min-height: 60px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 3px;
-
-        border: 1px solid #e0e6eb;
-        border-radius: 8px;
-        background: #f5f7f9;
-
-        color: #1976d2;
-        text-decoration: none;
-        font-size: 12px;
-        font-weight: 600;
-    }
-    .diagnostic-link:hover {
-        background: #eaf3fb;
-        border-color: #90caf9;
-    }
-    .diagnostic-icon {
-        font-size: 18px;
-    }
-    /* ---------- Tablet ---------- */
-    @media (max-width: 900px) {
-        .dashboard-grid {
-            grid-template-columns: 1fr;
-        }
-        .control-column {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-        }
-        .diagnostics-card {
-            margin-top: 16px;
-        }
-    }
-    /* ---------- Phone ---------- */
-    @media (max-width: 600px) {
-        .solala-page {
-            padding: 8px;
-        }
-        .solala-header {
-            margin-bottom: 9px;
-        }
-        .solala-brand img {
-            width: 35px;
-            height: 35px;
-        }
-        .solala-brand-name {
-            font-size: 20px;
-        }
-        .solala-brand-subtitle {
-            display: none;
-        }
-        .system-status {
-            font-size: 11px;
-        }
-        .dashboard-grid {
-            gap: 9px;
-        }
-        .infographic-card {
-            padding: 7px;
-        }
-        .infographic-title {
-            font-size: 18px;
-            padding: 3px 5px 6px;
-        }
-        .control-column {
-            display: flex;
-            gap: 9px;
-        }
-        .control-card {
-            padding: 12px;
-        }
-        .control-title {
-            font-size: 18px;
-        }
-        .control-buttons {
-            gap: 7px;
-        }
-        .solala-button {
-            min-height: 43px;
-            font-size: 12px;
-        }
-        .diagnostics-card {
-            margin-top: 9px;
-            padding: 12px;
-        }
-        .diagnostic-grid {
-            grid-template-columns: repeat(3, 1fr);
-        }
-        .diagnostic-link {
-            min-height: 55px;
-            font-size: 11px;
-        }
-    }
-</style>
+<link rel="stylesheet" href="/css/solala.css">
 '''
 
 # Units for pretty printing status
@@ -315,10 +61,7 @@ _CONSTANTS_UNITS: Mapping[str, str] = {
     'CONTROL_DURATION': SECONDS,
     'PRICE_LOOK_AHEAD': MINUTES,
     'PRICE_SETTLE_CHECK': SECONDS,
-    'DISABLE_FEED_IN_TOLERANCE': PRICE_CENTS,
-    'ENABLE_FEED_IN_TOLERANCE': PRICE_CENTS,
-    'STOP_BUY_TOLERANCE': PRICE_CENTS,
-    'START_BUY_TOLERANCE': PRICE_CENTS,
+    'PRICE_FORECAST_DURATION': HOURS,
 }
 
 
@@ -578,7 +321,7 @@ def _json_multi_page(*names: str) -> List[ContentElement]:
         with ui.column():
             for name in names:
                 with ui.card():
-                    ui.label(name).classes(_H2_class)
+                    ui.label(name).classes('text-h6')
                     registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
                     result.append(registers_element)
 
@@ -691,26 +434,45 @@ def _ui_control_buttons() -> None:
 
 def _infographic_click(element):
     click_id: Optional[str] = element.args
-    if click_id == CLICK_ID_HOME:
+    if click_id == CLICK_ID_GRID:
+        ui.navigate.to('/price_forecast_page')
+    elif click_id == CLICK_ID_INVERTER:
+        pass
+        # ui.notify('clicked inverter')
+    elif click_id == CLICK_ID_HOME:
         pass
         # ui.notify('clicked home')
     elif click_id == CLICK_ID_SUN:
         pass
         # ui.notify('clicked the sun')
-    elif click_id == CLICK_ID_GRID:
-        pass
-        # ui.notify('clicked the grid')
     elif click_id == CLICK_ID_BATTERY:
         pass
         # ui.notify('clicked the battery')
+
+
+def _buy_price_class(price: float) -> str:
+    if price >= BUY_PRICE_RED:
+        return 'price-buy-high'
+    elif price >= BUY_PRICE_AMBER:
+        return 'price-buy-okay'
+    else:
+        return 'price-buy-good'
+
+
+def _feed_in_price_class(price: float) -> str:
+    if price >= 0:
+        return 'price-feed-in-okay'
+    else:
+        return 'price-feed-in-bad'
 
 
 # ====================================================================
 #  Pages
 # ====================================================================
 
-# Mount static directories
+# Mount static files
 app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
+app.add_static_files(url_path='/css', local_directory=str(CSS_FILES))
 app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manifest.json'))
 
 
@@ -760,10 +522,54 @@ def root_page():
                 _diagnostic_link('</>', 'API Schema', '/schema_page')
 
 
+@ui.page('/price_forecast_page')
+def price_forecast_page():
+    prices: List[Price] = control_loop.get_forecast_prices()
+
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+        _page_header(' price forecast')
+
+        if len(prices) == 0:
+            with ui.card().classes('w-full bg-white rounded-xl border border-[#e1e6ea] p-6'):
+                ui.icon('query_stats').classes('text-3xl text-[#a1a9ae]')
+                ui.label('No price forecast available').classes('text-lg font-semibold')
+                ui.label('There are currently no forecast prices to display.').classes('text-sm text-gray-500')
+            return
+
+        forecast_date = prices[0].start_time.date()
+
+        with ui.row().classes('items-center gap-2 mb-5'):
+            ui.icon('calendar_today').classes('text-lg text-gray-500')
+            ui.label(forecast_date.strftime('%A, %d %B %Y')).classes('text-sm text-gray-500')
+
+        # Forecast table
+        with ui.column().classes('w-full gap-3'):
+            with ui.element('div').classes('price-table'):
+                with ui.element('div').classes('price-row price-header'):
+                    ui.label('Time')
+                    ui.label('Buy price').classes('text-right')
+                    ui.label('Feed-in').classes('text-right')
+
+                for i, price in enumerate(prices):
+                    row_classes = 'price-row'
+                    if i % 2 == 1:
+                        row_classes += ' price-row-alt'
+
+                    with ui.element('div').classes(row_classes):
+                        ui.label(price.start_time.strftime('%H:%M')).classes('price-time')
+
+                        buy_class = _buy_price_class(price.buy_price)
+                        ui.label(f'{price.buy_price:.1f}').classes(f'price-number {buy_class}')
+
+                        feed_class = _feed_in_price_class(price.feed_in_price)
+                        ui.label(f'{price.feed_in_price:.1f}').classes(f'price-number {feed_class}')
+
+
 @ui.page('/status_page')
 def status_page():
     """
-    The main status page.
+    The old status page.
     """
     ui.add_head_html(_HEAD_HTML)
     with ui.element('div').classes('solala-page'):
@@ -773,7 +579,7 @@ def status_page():
             # Status card
             # ----------------------------------------------------------
             with ui.card():
-                ui.label('Status').classes(_H2_class)
+                ui.label('Status').classes('text-h6')
                 _register_listener(StatusUpdater(
                     status_element=ui.code(language='nothing').classes('text-sm w-full grow')
                 ))

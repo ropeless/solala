@@ -39,19 +39,25 @@ class Price:
 class PowerPricer(ABC):
 
     @abstractmethod
-    def get_price(self, forecasts: int) -> List[Price]:
+    def get_price(self) -> Price:
         """
-        Get the current price and any requested price forecasts,
-        in ascending order of time from now.
+        Get the current price.
+        """
+        ...
 
-        The pricing interval is 5 minutes, so `forecasts = 12` covers
-        1 hour and will return 13 prices.
+    @abstractmethod
+    def get_price_forecast(self, count: int) -> List[Price]:
+        """
+        Get the 30-minute price forecasts, in ascending order of time from now.
+
+        The pricing interval is 30 minutes, so `count = 12` covers
+        6 hours and will return 12 prices.
 
         Args:
-            forecasts: number of forecasts to return, >= 0.
+            count: number of prices, >= 1.
 
         Returns:
-            `forecasts + 1` prices, in ascending time order.
+            `count` prices, in ascending time order.
         """
         ...
 

@@ -36,7 +36,7 @@ class DummyPowerPricer(PowerPricer):
             'cur_price_is_estimate': self.cur_price_is_estate,
         }
 
-    def get_price(self, forecasts: int) -> List[Price]:
+    def get_price(self) -> Price:
         now: datetime = datetime.now(UTC)
         start_time: datetime = now - timedelta(
             minutes=now.minute % 5,
@@ -76,13 +76,23 @@ class DummyPowerPricer(PowerPricer):
                 estimate=self.cur_price_is_estate,
             )
 
+        return self.prices[0]
+
+    def get_price_forecast(self, count: int) -> List[Price]:
+        prices_per_30 = 30 // 5
+        needed_prices: int = count * prices_per_30
+        five_minutes: timedelta = timedelta(minutes=5)
+
+        self.get_price()  # ensure at least one price cached
+        prices = self.prices
+
         # append any required forecasts
-        while len(self.prices) <= forecasts:
-            prev_price = self.prices[-1]
+        while len(prices) < needed_prices:
+            prev_price = prices[-1]
             buy_price = self._get_buy_price(prev_price.buy_price)
             feed_in_price = self._get_feed_in_price(buy_price)
             renewables = (prev_price.renewables + 100 * random.random()) / 2
-            self.prices.append(
+            prices.append(
                 Price(
                     buy_price=buy_price,
                     feed_in_price=feed_in_price,
@@ -93,7 +103,7 @@ class DummyPowerPricer(PowerPricer):
                 )
             )
 
-        return self.prices[:forecasts + 1]
+        return [_average_price(prices[i:i + prices_per_30]) for i in range(0, needed_prices, prices_per_30)]
 
     def close(self) -> None:
         # nothing to do
@@ -108,3 +118,14 @@ class DummyPowerPricer(PowerPricer):
 
     def _get_feed_in_price(self, buy_price: float) -> float:
         return buy_price - self.feed_in_price_discount_min - random.random() * self.feed_in_price_discount_range
+
+
+def _average_price(prices: List[Price]) -> Price:
+    return Price(
+        buy_price=sum(price.buy_price for price in prices) / len(prices),
+        feed_in_price=sum(price.feed_in_price for price in prices) / len(prices),
+        renewables=sum(price.renewables for price in prices) / len(prices),
+        start_time=prices[0].start_time,
+        end_time=prices[-1].end_time,
+        estimate=True,
+    )
