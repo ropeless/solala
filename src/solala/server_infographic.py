@@ -6,6 +6,20 @@ from solala.utils.json import JSONDict, json_dict, json_num, json_bool
 
 GRAPHIC_SIZE: int = 300
 
+CLICK_ID_SUN = 'click_sun'
+CLICK_ID_GRID = 'click_grid'
+CLICK_ID_HOME = 'click_home'
+CLICK_ID_BATTERY = 'click_battery'
+
+
+def _click_area(name: str, x: float, y: float) -> Rectangle:
+    return Rectangle(
+        id=name,
+        x=x, y=y, width=60, height=60,
+        fill='transparent', stroke='transparent',
+        # fill='gray',
+    )
+
 
 class Infographic:
     def __init__(self) -> None:
@@ -28,6 +42,12 @@ class Infographic:
         self.static_background.append(Grid(x=-63 - icon_offset, y=0 + icon_offset))
         self.static_background.append(House(x=-4 + icon_offset, y=-65 - icon_offset))
         self.static_background.append(Inverter(x=0, y=0))
+
+        # Clickable areas
+        self.static_background.append(_click_area(CLICK_ID_SUN, x=-63 - icon_offset, y=-63 - icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_GRID, x=-63 - icon_offset, y=0 + icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_HOME, x=0 + icon_offset, y=-65 - icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_BATTERY, x=0 + icon_offset, y=+5 + icon_offset))
 
         # Make the default drawing
         self.make(
@@ -324,6 +344,7 @@ class Battery(Shape):
             width=28 * s,
             height=height * s,
             fill=start_of_charge_color,
+            id=CLICK_ID_BATTERY,
         ))
 
         # Battery body
@@ -362,14 +383,14 @@ class Sun(Shape):
     ):
         super().__init__(x=x, y=y, scale=size / 512)
         rays = Group(transform='rotate(45, 0, 0) translate(-256, -256)', fill=color)
-        rays.append(Rectangle(x=204, y=52, width=38, height=92, rx=19))
-        rays.append(Rectangle(x=270, y=52, width=38, height=92, rx=19))
-        rays.append(Rectangle(x=204, y=368, width=38, height=92, rx=19))
-        rays.append(Rectangle(x=270, y=368, width=38, height=92, rx=19))
-        rays.append(Rectangle(x=52, y=204, width=92, height=38, rx=19))
-        rays.append(Rectangle(x=52, y=270, width=92, height=38, rx=19))
-        rays.append(Rectangle(x=368, y=204, width=92, height=38, rx=19))
-        rays.append(Rectangle(x=368, y=270, width=92, height=38, rx=19))
+        rays.append(Rectangle(x=204, y=52, width=38, height=92, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=270, y=52, width=38, height=92, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=204, y=368, width=38, height=92, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=270, y=368, width=38, height=92, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=52, y=204, width=92, height=38, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=52, y=270, width=92, height=38, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=368, y=204, width=92, height=38, rx=19, id=CLICK_ID_SUN))
+        rays.append(Rectangle(x=368, y=270, width=92, height=38, rx=19, id=CLICK_ID_SUN))
         self.append(rays)
         self.append(Circle(cx=0, cy=0, r=116, fill=color))
 

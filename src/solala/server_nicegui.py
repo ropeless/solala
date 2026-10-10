@@ -15,7 +15,7 @@ from solala.control_loop import listeners as control_loop_listeners, BatteryMode
 from solala.resources import IMAGE_FILES, RESOURCES
 from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE
 from solala.server_constants import LOGGER
-from solala.server_infographic import Infographic
+from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY
 from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
@@ -697,6 +697,18 @@ def _ui_control_buttons() -> None:
             )
 
 
+def _infographic_click(element):
+    click_id: Optional[str] = element.args
+    if click_id == CLICK_ID_HOME:
+        ui.notify('clicked home')
+    elif click_id == CLICK_ID_SUN:
+        ui.notify('clicked the sun')
+    elif click_id == CLICK_ID_GRID:
+        ui.notify('clicked the grid')
+    elif click_id == CLICK_ID_BATTERY:
+        ui.notify('clicked the battery')
+
+
 # ====================================================================
 #  Pages
 # ====================================================================
@@ -721,6 +733,11 @@ def root_page():
 
                 with ui.element('div').classes('infographic-container'):
                     infographic = ui.html()
+                    infographic.on(
+                        'click',
+                        handler=_infographic_click,
+                        js_handler="(e) => emit(e.target.closest('rect')?.id)",
+                    )
                     _register_listener(
                         InfographicUpdater(
                             infographic_element=infographic
