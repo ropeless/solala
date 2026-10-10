@@ -72,10 +72,10 @@ class ModbusPowerController(PowerController):
 
         # Save the connection status
         devices_record: JSONDict = {}
-        opt_device_name: Optional[str]
+        unnamed_device: Optional[JSONDict] = None
+        device_name: Optional[str]
         device: ModbusDevice
-        for opt_device_name, device in modbus.devices().items():
-            device_name: str = str(opt_device_name)
+        for device_name, device in modbus.devices().items():
             host: str = device.client.comm_params.host
             device_record: JSONDict = {'host': host}
             if mac_addr_lookup is not None:
@@ -83,11 +83,16 @@ class ModbusPowerController(PowerController):
                 if mac_address is not None and mac_address != '':
                     device_record['mac_address'] = mac_address
             device_record['device'] = device.device_id
-            devices_record[device_name] = device_record
+            if device_name is None:
+                unnamed_device = device_record
+            else:
+                devices_record[device_name] = device_record
         self._connection_status = {
             'status': 'Modbus connection',
             'devices': devices_record,
         }
+        if unnamed_device is not None:
+            self._connection_status['unnamed_device'] = unnamed_device
 
         # Log all registers and their values
         for register, value in self.get_registers():
