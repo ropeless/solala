@@ -342,7 +342,7 @@ class PriceForecastUpdater(PriceForecastListener):
                     with ui.element('div').classes('price-row price-header'):
                         ui.label('Time')
                         ui.label('Buy price').classes('text-right')
-                        ui.label('Feed-in').classes('text-right')
+                        ui.label('Feed-in price').classes('text-right')
 
                     for i, price in enumerate(price_forecasts):
                         row_classes = 'price-row'
