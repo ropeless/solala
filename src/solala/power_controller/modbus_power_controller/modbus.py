@@ -23,7 +23,7 @@ class Modbus(Mapping[str, str | int | float]):
     Register names are of the form `logical_device_id/register_name`.
     """
 
-    def __init__(self, devices: Mapping[str | None, ModbusDevice] | ModbusTcpClient):
+    def __init__(self, devices: Mapping[str | None, ModbusDevice] | ModbusTcpClient | ModbusDevice):
         """
         Wraps a ModbusTcpClient to provide access to Modbus registers.
 
@@ -35,7 +35,8 @@ class Modbus(Mapping[str, str | int | float]):
         and a ModbusDevice is created for each device ID found, with `logical_device_id = str(device_id)`.
 
         Args:
-            devices: A mapping of logical device IDs to ModbusDevice objects, or a ModbusTcpClient object.
+            devices: A mapping of logical device IDs to ModbusDevice objects, or a ModbusTcpClient
+                object, or a single ModbusDevice.
         """
         if isinstance(devices, ModbusTcpClient):
             client: ModbusTcpClient = devices
@@ -43,6 +44,8 @@ class Modbus(Mapping[str, str | int | float]):
                 str(device_id): ModbusDevice(client, device_id)
                 for device_id in _find_devices(devices)
             }
+        elif isinstance(devices, ModbusDevice):
+            devices: Mapping[str | None, ModbusDevice] = {None: devices}
         self._devices: Mapping[str | None, ModbusDevice] = devices
 
         # Get unique clients
