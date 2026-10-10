@@ -24,9 +24,9 @@ class DummyPowerController(PowerController):
         self.enable_battery()
         self.enable_inverter()
 
-    def dummy_state(self) -> Dict[str, int | float | str]:
+    def get_connection_status(self) -> Dict[str, int | float | str]:
         return {
-            'status': f'{DummyPowerController.__name__} connection',
+            'status': 'Dummy connection',
             'battery_mode': self.battery_mode,
             'inverter_mode': self.inverter_mode,
             'state_of_charge': self.state_of_charge,
@@ -38,7 +38,7 @@ class DummyPowerController(PowerController):
         }
 
     def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
-        return self.dummy_state().items()
+        return self.get_connection_status().items()
 
     def get_status(self) -> PowerStatus:
         return PowerStatus(

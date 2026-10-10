@@ -63,9 +63,9 @@ class _ControlState:
     pricer_settings: Optional[PricerConnection] = None
     consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
 
-    controller_status: JSONDict = field(default_factory=_disconnected)
-    pricer_status: JSONDict = field(default_factory=_disconnected)
-    consumers_status: Dict[str, JSONDict] = field(default_factory=dict)
+    controller_connection_status: JSONDict = field(default_factory=_disconnected)
+    pricer_connection_status: JSONDict = field(default_factory=_disconnected)
+    consumers_connection_status: Dict[str, JSONDict] = field(default_factory=dict)
 
     battery_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_mode: InverterMode = InverterMode.UNKNOWN
@@ -99,7 +99,7 @@ class _ControlState:
         self.next_price_check = _MIN_DATE
 
         if controller is None:
-            self.controller_status = _disconnected()
+            self.controller_connection_status = _disconnected()
 
     def reset_pricer(self, pricer: Optional[PowerPricer]) -> None:
         self.pricer = pricer
@@ -107,7 +107,7 @@ class _ControlState:
         self.next_price_check = _MIN_DATE
 
         if pricer is None:
-            self.pricer_status = _disconnected()
+            self.pricer_connection_status = _disconnected()
 
     def force_price_check(self) -> None:
         self.next_price_check = _MIN_DATE
@@ -419,7 +419,7 @@ def get_control_status() -> JSONDict:
 def get_price_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.pricer is None:
-            return _control_state.pricer_status
+            return _control_state.pricer_connection_status
         try:
             cur_price: Price = get_cur_price()
             result = cur_price.as_dict(DATE_FORMAT, include_time=False)
@@ -431,7 +431,7 @@ def get_price_status() -> JSONDict:
 def get_power_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.controller is None:
-            return _control_state.controller_status
+            return _control_state.controller_connection_status
         try:
             result = _control_state.controller.get_status().as_dict()
             return result
@@ -457,11 +457,11 @@ def get_connection_status() -> JSONDict:
     with _control_state_lock:
         state = _control_state
         result = {
-            'controller': state.controller_status,
-            'pricer': state.pricer_status,
+            'controller': state.controller_connection_status,
+            'pricer': state.pricer_connection_status,
         }
-        if len(state.consumers_status) > 0:
-            result['consumers'] = state.consumers_status
+        if len(state.consumers_connection_status) > 0:
+            result['consumers'] = state.consumers_connection_status
         return result
 
 
@@ -624,14 +624,13 @@ def connect_controller(controller_connection: ControllerConnection) -> JSONDict:
     with _control_state_lock:
         state = _control_state
         controller: PowerController
-        controller_status: JSONDict
 
         if controller_connection.type == DummyControllerConnection.TYPE:
             assert isinstance(controller_connection, DummyControllerConnection)
-            controller, controller_status = _connect_dummy_controller(controller_connection)
+            controller = _connect_dummy_controller(controller_connection)
         elif controller_connection.type == ModbusControllerConnection.TYPE:
             assert isinstance(controller_connection, ModbusControllerConnection)
-            controller, controller_status = _connect_modbus(controller_connection)
+            controller = _connect_modbus(controller_connection)
         else:
             raise ControlLoopError(
                 'unknown controller connection type',
@@ -639,12 +638,13 @@ def connect_controller(controller_connection: ControllerConnection) -> JSONDict:
             )
 
         disconnect_controller()
+        connection_status = controller.get_connection_status()
         state.reset_controller(controller)
         state.controller_settings = controller_connection
-        state.controller_status = controller_status
+        state.controller_connection_status = connection_status
         _save_settings()
-        LOGGER.info(f'{_LOG_SRC}Power controller connection: {json.dumps(controller_status)}')
-        return controller_status
+        LOGGER.info(f'{_LOG_SRC}Power controller connection: {json.dumps(connection_status)}')
+        return connection_status
 
 
 def disconnect_controller() -> JSONDict:
@@ -658,21 +658,20 @@ def disconnect_controller() -> JSONDict:
             state.reset_controller(None)
         state.controller_settings = None
         _save_settings()
-        return state.controller_status
+        return state.controller_connection_status
 
 
 def connect_pricer(pricer_connection: PricerConnection) -> JSONDict:
     with _control_state_lock:
         state = _control_state
         pricer: PowerPricer
-        pricer_status: JSONDict
 
         if pricer_connection.type == DummyPricerConnection.TYPE:
             assert isinstance(pricer_connection, DummyPricerConnection)
-            pricer, pricer_status = _connect_dummy_pricer(pricer_connection)
+            pricer = _connect_dummy_pricer(pricer_connection)
         elif pricer_connection.type == AmberPricerConnection.TYPE:
             assert isinstance(pricer_connection, AmberPricerConnection)
-            pricer, pricer_status = _connect_amber(pricer_connection)
+            pricer = _connect_amber(pricer_connection)
 
         else:
             raise ControlLoopError(
@@ -681,12 +680,13 @@ def connect_pricer(pricer_connection: PricerConnection) -> JSONDict:
             )
 
         disconnect_pricer()
+        connection_status = pricer.get_connection_status()
         state.reset_pricer(pricer)
         state.pricer_settings = pricer_connection
-        state.pricer_status = pricer_status
+        state.pricer_connection_status = connection_status
         _save_settings()
-        LOGGER.info(f'{_LOG_SRC}Power pricer connection: {json.dumps(pricer_status)}')
-        return pricer_status
+        LOGGER.info(f'{_LOG_SRC}Power pricer connection: {json.dumps(connection_status)}')
+        return connection_status
 
 
 def disconnect_pricer() -> JSONDict:
@@ -699,21 +699,20 @@ def disconnect_pricer() -> JSONDict:
             _control_state.reset_pricer(None)
         _control_state.pricer_settings = None
         _save_settings()
-        return _control_state.pricer_status
+        return _control_state.pricer_connection_status
 
 
 def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> JSONDict:
     with _control_state_lock:
         state = _control_state
         consumer: PowerConsumer
-        consumer_status: JSONDict
 
         if consumer_connection.type == DummyConsumerConnection.TYPE:
             assert isinstance(consumer_connection, DummyConsumerConnection)
-            consumer, consumer_status = _connect_dummy_consumer(consumer_connection)
+            consumer = _connect_dummy_consumer(consumer_connection)
         elif consumer_connection.type == TeslaWallConnectorConnection.TYPE:
             assert isinstance(consumer_connection, TeslaWallConnectorConnection)
-            consumer, consumer_status = _connect_tesla_wall_connector(consumer_connection)
+            consumer = _connect_tesla_wall_connector(consumer_connection)
         else:
             raise ControlLoopError(
                 'unknown consumer connection type',
@@ -721,12 +720,13 @@ def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> JSON
             )
 
         disconnect_consumer(name)
+        connection_status = consumer.get_connection_status()
         state.consumers[name] = consumer
         state.consumers_settings[name] = consumer_connection
-        state.consumers_status[name] = consumer_status
+        state.consumers_connection_status[name] = connection_status
         _save_settings()
-        LOGGER.info(f'{_LOG_SRC}Power consumer connection {name!r}: {json.dumps(consumer_status)}')
-        return consumer_status
+        LOGGER.info(f'{_LOG_SRC}Power consumer connection {name!r}: {json.dumps(connection_status)}')
+        return connection_status
 
 
 def disconnect_consumer(name: str) -> JSONDict:
@@ -740,7 +740,7 @@ def disconnect_consumer(name: str) -> JSONDict:
             consumer.close()
         state.consumers.pop(name, None)
         state.consumers_settings.pop(name, None)
-        state.consumers_status.pop(name, None)
+        state.consumers_connection_status.pop(name, None)
         _save_settings()
         return {name: 'disconnected'}
 
@@ -749,31 +749,28 @@ def disconnect_consumer(name: str) -> JSONDict:
 #  Support functions
 # =============================================================================
 
-def _connect_dummy_controller(_: DummyControllerConnection) -> Tuple[PowerController, JSONDict]:
-    controller = DummyPowerController()
-    return controller, controller.dummy_state()
+def _connect_dummy_controller(_: DummyControllerConnection) -> PowerController:
+    return DummyPowerController()
 
 
-def _connect_dummy_pricer(pricer_connection: DummyPricerConnection) -> Tuple[PowerPricer, JSONDict]:
-    pricer = DummyPowerPricer(
+def _connect_dummy_pricer(pricer_connection: DummyPricerConnection) -> PowerPricer:
+    return DummyPowerPricer(
         buy_price_min=pricer_connection.buy_price_min,
         buy_price_max=pricer_connection.buy_price_max,
         feed_in_price_discount_min=pricer_connection.feed_in_price_discount_min,
         feed_in_price_discount_max=pricer_connection.feed_in_price_discount_max,
         cur_price_is_estimate=pricer_connection.cur_price_is_estimate,
     )
-    return pricer, pricer.dummy_state()
 
 
-def _connect_dummy_consumer(consumer_connection: DummyConsumerConnection) -> Tuple[PowerConsumer, JSONDict]:
-    consumer = DummyPowerConsumer(
+def _connect_dummy_consumer(consumer_connection: DummyConsumerConnection) -> PowerConsumer:
+    return DummyPowerConsumer(
         voltage=consumer_connection.voltage,
         current=consumer_connection.current,
     )
-    return consumer, consumer.dummy_state()
 
 
-def _connect_modbus(controller_connection: ModbusControllerConnection) -> Tuple[PowerController, JSONDict]:
+def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerController:
     """
     Establish a power controller modbus connection to the inverter.
 
@@ -822,36 +819,23 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> Tuple[
             devices[name] = ModbusDevice(slave_client, controller_connection.slave_device_id)
     devices['meter'] = ModbusDevice(master_client, controller_connection.meter_device_id)
 
+    mac_addr_lookup: Dict[str, str] = {
+        address.ip_address: address.mac_address
+        for address in addresses
+    }
+
     controller = ModbusPowerController(
         Modbus(devices),
         master='master',
         meter='meter',
         slaves=slave_names,
+        mac_addr_lookup=mac_addr_lookup,
     )
 
-    # Update the connection status record
-    mac_addr_lookup: Dict[str, str] = {
-        address.ip_address: address.mac_address
-        for address in addresses
-    }
-    devices_record: JSONDict = {}
-    for device_name, device in devices.items():
-        host: str = device.client.comm_params.host
-        mac_address: Optional[str] = mac_addr_lookup.get(host)
-        device_record: JSONDict = {'host': host}
-        if mac_address is not None and mac_address != '':
-            device_record['mac_address'] = mac_address
-        device_record['device'] = device.device_id
-        devices_record[device_name] = device_record
-    controller_status = {
-        'status': 'Modbus connection',
-        'devices': devices_record,
-    }
-
-    return controller, controller_status
+    return controller
 
 
-def _connect_amber(pricer_connection: AmberPricerConnection) -> Tuple[PowerPricer, JSONDict]:
+def _connect_amber(pricer_connection: AmberPricerConnection) -> PowerPricer:
     """
     Establish a power pricer connection using Amber.
 
@@ -870,17 +854,12 @@ def _connect_amber(pricer_connection: AmberPricerConnection) -> Tuple[PowerPrice
     except Exception as err:
         raise ControlLoopError('could not connect Amber', errors=[str(err)])
 
-    pricer_status = {
-        'status': 'Amber connection',
-        'nmi': amber_pricer.nmi,
-        'site': amber_pricer.site_id,
-    }
-    return amber_pricer, pricer_status
+    return amber_pricer
 
 
-def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnection) -> Tuple[PowerConsumer, JSONDict]:
+def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnection) -> PowerConsumer:
     """
-    Establish a car charger connection using Tesla Wall Connector.
+    Establish a power consumer connection using Tesla Wall Connector.
 
     Does not change the control state in any way.
 
@@ -889,18 +868,11 @@ def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnect
     """
     address: _Address = _resolve_addresses([consumer_connection.address])[0]
     try:
-        consumer = TeslaWallConnector(address.ip_address)
+        consumer = TeslaWallConnector(address.ip_address, address.mac_address)
     except Exception as err:
         raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
 
-    status_dict = {
-        'status': 'Tesla Wall Connector connection',
-        'host': address.ip_address,
-    }
-    if address.mac_address != '':
-        status_dict['mac_address'] = address.mac_address
-
-    return consumer, status_dict
+    return consumer
 
 
 @dataclass

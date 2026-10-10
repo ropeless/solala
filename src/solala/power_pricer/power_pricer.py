@@ -56,6 +56,13 @@ class PowerPricer(ABC):
         ...
 
     @abstractmethod
+    def get_connection_status(self) -> JSONDict:
+        """
+        Get the status of the connection.
+        """
+        ...
+
+    @abstractmethod
     def close(self) -> None:
         """
         Close any connections to the pricing system.

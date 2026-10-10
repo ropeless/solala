@@ -18,18 +18,15 @@ class DummyPowerConsumer(PowerConsumer):
     def get_status(self) -> ConsumerStatus:
         return self.status
 
-    def dummy_state(self) -> Dict[str, int | float | str]:
+    def get_connection_status(self) -> Dict[str, int | float | str]:
         return {
-            'status': f'{DummyPowerConsumer.__name__} connection',
+            'status': 'Dummy connection',
             'voltage': self.status.voltage,
             'current': self.status.current,
         }
 
     def get_registers(self) -> Iterable[Tuple[str, int | float | str | bool]]:
-        return (
-            ('voltage', self.status.voltage),
-            ('current', self.status.current),
-        )
+        return self.get_connection_status().items()
 
     def close(self) -> None:
         # nothing to do

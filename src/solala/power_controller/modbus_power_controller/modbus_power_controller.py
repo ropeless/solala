@@ -1,8 +1,9 @@
-from typing import Iterable, List, Tuple, Sequence
+from typing import Iterable, List, Tuple, Sequence, Optional, Dict
 
-from solala.power_controller.modbus_power_controller.modbus import Modbus
+from solala.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.power_controller.power_controller import PowerController, PowerStatus
 from solala.server_constants import LOGGER
+from solala.utils.json import JSONDict
 
 
 class _DEFAULT:
@@ -42,6 +43,7 @@ class ModbusPowerController(PowerController):
             master: str = 'master',
             meter: str = 'meter',
             slaves: Iterable[str] = (),
+            mac_addr_lookup: Optional[Dict[str, str]] = None,
     ):
         """
         Make a power controller from a Modbus connection.
@@ -68,6 +70,25 @@ class ModbusPowerController(PowerController):
         self._StorCtl_Mod: str = f'{master}/StorCtl_Mod'
         self._MinRsvPct: str = f'{master}/MinRsvPct'
 
+        # Save the connection status
+        devices_record: JSONDict = {}
+        opt_device_name: Optional[str]
+        device: ModbusDevice
+        for opt_device_name, device in modbus.devices().items():
+            device_name: str = str(opt_device_name)
+            host: str = device.client.comm_params.host
+            device_record: JSONDict = {'host': host}
+            if mac_addr_lookup is not None:
+                mac_address: Optional[str] = mac_addr_lookup.get(host)
+                if mac_address is not None and mac_address != '':
+                    device_record['mac_address'] = mac_address
+            device_record['device'] = device.device_id
+            devices_record[device_name] = device_record
+        self._connection_status = {
+            'status': 'Modbus connection',
+            'devices': devices_record,
+        }
+
         # Log all registers and their values
         for register, value in self.get_registers():
             LOGGER.info(f'LOG {register}: {value!r}')
@@ -77,6 +98,9 @@ class ModbusPowerController(PowerController):
         Delegate `connect` to Modbus clients.
         """
         self._modbus.connect()
+
+    def get_connection_status(self) -> JSONDict:
+        return self._connection_status
 
     def close(self) -> None:
         """

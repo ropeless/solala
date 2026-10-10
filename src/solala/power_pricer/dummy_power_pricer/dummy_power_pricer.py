@@ -26,9 +26,9 @@ class DummyPowerPricer(PowerPricer):
         self.cur_price_is_estate: bool = cur_price_is_estimate
         self.prices: List[Price] = []
 
-    def dummy_state(self) -> Dict[str, int | float | str]:
+    def get_connection_status(self) -> Dict[str, int | float | str]:
         return {
-            'status': f'{DummyPowerPricer.__name__} connection',
+            'status': 'Dummy connection',
             'buy_price_min': self.buy_price_min,
             'buy_price_max': self.buy_price_min + self.buy_price_range,
             'feed_in_price_discount_min': self.feed_in_price_discount_min,
