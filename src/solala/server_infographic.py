@@ -11,6 +11,12 @@ CLICK_ID_GRID = 'click_grid'
 CLICK_ID_HOME = 'click_home'
 CLICK_ID_BATTERY = 'click_battery'
 
+# These match recources/css/solala.css
+solala_font_family = 'Arial, Helvetica, sans-serif'
+solala_text: str = '#25313b'
+solala_danger: str = '#dc2626'
+solala_amber: str = '#ff8c00'
+
 
 def _click_area(name: str, x: float, y: float) -> Rectangle:
     return Rectangle(
@@ -112,14 +118,13 @@ class Infographic:
 
         font_size = 16
         small_font_size = 12
-        font_family = 'Verdana'
         top = -125
         bot = 130
         bot2 = bot + 20
         bot3 = bot2 + 20
         left = -83
         right = 80
-        kwargs = {'text_anchor': 'middle', 'font_family': font_family}
+        kwargs = {'text_anchor': 'middle', 'font_family': solala_font_family, 'fill': solala_text}
 
         canvas.append(Text(_to_watts(solar_power), x=left, y=top, font_size=font_size, **kwargs))
         canvas.append(Text(_to_watts(grid_power), x=left, y=bot, font_size=font_size, **kwargs))
@@ -138,15 +143,15 @@ class Infographic:
             feed_in_str = _to_cents(feed_in_price)
             units = PRICE_CENTS
         if buy_price >= BUY_PRICE_RED:
-            buy_colour = 'red'
+            buy_colour = solala_danger
         elif buy_price >= BUY_PRICE_AMBER:
-            buy_colour = 'darkorange'
+            buy_colour = solala_amber
         else:
-            buy_colour = 'black'
+            buy_colour = solala_text
         if feed_in_price < 0:
-            feed_in_colour = 'red'
+            feed_in_colour = solala_danger
         else:
-            feed_in_colour = 'black'
+            feed_in_colour = solala_text
 
         buy_text = Text(prefix + 'buy: ', x=left, y=bot2, font_size=small_font_size, **kwargs)
         buy_text.append(TSpan(buy_str + units, fill=buy_colour))
