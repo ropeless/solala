@@ -157,15 +157,15 @@ class Infographic:
         else:
             feed_in_colour = class_text
 
-        buy_text = Text(prefix + 'buy: ', x=left, y=bot2, font_size=font_sm, class_=class_text, **kwargs)
+        buy_text = Text(prefix + 'Buy: ', x=left, y=bot2, font_size=font_sm, class_=class_text, **kwargs)
         buy_text.append(TSpan(buy_str + units, class_=buy_colour))
         canvas.append(buy_text)
 
-        feed_in_text = Text(prefix + 'feed in: ', x=left, y=bot3, font_size=font_sm, class_=class_text, **kwargs)
+        feed_in_text = Text(prefix + 'Feed-in: ', x=left, y=bot3, font_size=font_sm, class_=class_text, **kwargs)
         feed_in_text.append(TSpan(feed_in_str + units, class_=feed_in_colour))
         canvas.append(feed_in_text)
 
-        renewables_str = prefix + f'renewables: {int(renewables + 0.5)}{PERCENT}'
+        renewables_str = prefix + f'Renewables: {int(renewables + 0.5)}{PERCENT}'
         feed_in_text = Text(renewables_str, x=left, y=bot4, font_size=font_sm, class_=class_text, **kwargs)
         canvas.append(feed_in_text)
 
