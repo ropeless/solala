@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict, Literal
+from typing import List, Dict, Literal, TypeAlias, Callable
 
 import requests
 
@@ -11,9 +11,12 @@ API = 'https://api.amber.com.au/v1'
 
 
 @dataclass
-class ChannelPair:
+class _ChannelPair:
     general: JSONDict
     feed_in: JSONDict
+
+
+_PriceExtract: TypeAlias = Callable[[JSONDict], float]
 
 
 class AmberPowerPricer(PowerPricer):
@@ -45,13 +48,13 @@ class AmberPowerPricer(PowerPricer):
 
     def get_price(self) -> Price:
         response = self._get(5, 0)
-        return _parse_response(response)[0]
+        return _parse_response(response, _get_perKwh)[0]
 
     def get_price_forecast(self, count: int) -> List[Price]:
         if count < 1:
             raise ValueError('Count must be positive')
         response = self._get(30, count - 1)
-        return _parse_response(response)
+        return _parse_response(response, _get_predicted)
 
     def _get_site(self) -> JSONDict:
         url = f'{API}/sites'
@@ -87,14 +90,14 @@ class AmberPowerPricer(PowerPricer):
         return response.json()
 
 
-def _parse_response(response_json) -> List[Price]:
+def _parse_response(response_json, price_f: _PriceExtract) -> List[Price]:
     # Parse the response
-    parsed: Dict[datetime, ChannelPair] = {}
+    parsed: Dict[datetime, _ChannelPair] = {}
     for channel in response_json:
         start_time = _get_datetime(channel['startTime'])
         pair = parsed.get(start_time)
         if pair is None:
-            pair = ChannelPair({}, {})
+            pair = _ChannelPair({}, {})
             parsed[start_time] = pair
 
         channel_type = channel['channelType']
@@ -110,13 +113,13 @@ def _parse_response(response_json) -> List[Price]:
                 raise IOError(f'duplicate feed-in channel: {start_time}')
 
     result: List[Price] = [
-        _make_price(start_time, pair)
+        _make_price(start_time, pair, price_f)
         for start_time, pair in sorted(parsed.items())
     ]
     return result
 
 
-def _make_price(start_time: datetime, channel_pair: ChannelPair) -> Price:
+def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _PriceExtract) -> Price:
     general: JSONDict = channel_pair.general
     feed_in: JSONDict = channel_pair.feed_in
     if len(general) == 0:
@@ -131,13 +134,24 @@ def _make_price(start_time: datetime, channel_pair: ChannelPair) -> Price:
         start_time=start_time,
         end_time=_get_datetime(json_str(general['endTime'])),
         renewables=json_num(general['renewables']),
-        buy_price=json_num(general['perKwh']),
-        feed_in_price=-json_num(feed_in['perKwh']),
+        buy_price=price_f(general),
+        feed_in_price=-price_f(feed_in),
         estimate=estimate,
         tariff_period=json_str(tariff_info['period']),
         tariff_season=json_str(tariff_info['season']),
         tariff_demand_window=json_bool(tariff_info['demandWindow']),
     )
+
+
+def _get_perKwh(data: JSONDict) -> float:
+    return json_num(data['perKwh'])
+
+
+def _get_predicted(data: JSONDict) -> float:
+    try:
+        return json_num(json_dict(data['advancedPrice'])['predicted'])
+    except (KeyError, ValueError, TypeError):
+        return _get_perKwh(data)
 
 
 def _get_datetime(date: str) -> datetime:

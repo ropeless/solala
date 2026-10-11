@@ -182,7 +182,7 @@ class ModbusPowerController(PowerController):
         """
         LOGGER.info(f'{_START} force_charge')
         self._set(self._InWRte, _DEFAULT.InWRte)
-        self._set(self._OutWRte, _DEFAULT.OutWRte)
+        self._set(self._OutWRte, 0)  # Don't try to discharge at the same time as charging
         self._set(self._StorCtl_Mod, 3)
         self._set(self._MinRsvPct, 100)
         LOGGER.info(f'{_STOP} force_charge')
