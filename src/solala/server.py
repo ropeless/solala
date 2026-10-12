@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from solala.control_loop import control_loop
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
 from solala.control_loop.errors import ControlLoopError
+from solala.resources import IMAGE_FILES
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection
 from solala.server_constants import APP_NAME
 from solala.server_constants import LOGGER
@@ -289,4 +290,5 @@ def put_pricer_disconnect():
 
 # Mount NiceGUI onto the FastAPI app (processes all nicegui pages).
 # This must come last.
-ui.run_with(app, title=APP_NAME, favicon='http://localhost/images/solala-32x32.png')
+favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
+ui.run_with(app, title=APP_NAME, favicon=favicon)
