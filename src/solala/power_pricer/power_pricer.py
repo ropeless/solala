@@ -21,15 +21,17 @@ class Price:
     tariff_demand_window: bool = False
 
     def as_dict(self, datetime_format: str, include_time: bool) -> JSONDict:
-        result = {
+        result: JSONDict = {
             'buy_price': self.buy_price,
             'feed_in_price': self.feed_in_price,
             'renewables': self.renewables,
             'estimate': self.estimate,
-            'tariff_period': self.tariff_period,
-            'tariff_season': self.tariff_season,
             'tariff_demand_window': self.tariff_demand_window,
         }
+        if self.tariff_period != '':
+            result['tariff_period'] = self.tariff_period
+        if self.tariff_season != '':
+            result['tariff_season'] = self.tariff_season
         if include_time:
             result['start_time'] = self.start_time.strftime(datetime_format)
             result['end_time'] = self.end_time.strftime(datetime_format)

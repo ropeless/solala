@@ -1,10 +1,12 @@
 # Units for pretty printing status
 PRICE_CENTS = ' ¢/kWh'
 PRICE_DOLLARS = ' $/kWh'
-WATTS = ' W'
 VOLTS = ' V'
 AMPS = ' A'
+WATTS = ' W'
 KILOWATTS = ' kW'
+WATT_HOURS = ' Wh'
+KILOWATT_HOURS = ' kWh'
 SECONDS = ' seconds'
 MINUTES = ' minutes'
 HOURS = ' hours'

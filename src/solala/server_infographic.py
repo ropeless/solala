@@ -137,7 +137,7 @@ class Infographic:
         canvas.append(Text(_to_pct(state_of_charge), x=right, y=bot2, font_size=font_sm, class_=class_text, **kwargs))
 
         # price
-        prefix: str = '~ ' if estimate else ''
+        prefix: str = '~' if estimate else ''
         if buy_price >= 100:
             buy_str = _to_dollars(buy_price)
             feed_in_str = _to_dollars(feed_in_price)
@@ -165,7 +165,7 @@ class Infographic:
         feed_in_text.append(TSpan(feed_in_str + units, class_=feed_in_colour))
         canvas.append(feed_in_text)
 
-        renewables_str = prefix + f'Renewables: {int(renewables + 0.5)}{PERCENT}'
+        renewables_str = f'Renewables: {int(renewables + 0.5)}{PERCENT}'
         feed_in_text = Text(renewables_str, x=left, y=bot4, font_size=font_sm, class_=class_text, **kwargs)
         canvas.append(feed_in_text)
 

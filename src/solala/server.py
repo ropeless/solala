@@ -10,9 +10,10 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
-from solala import control_loop
-from solala.control_loop import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlLoopError
-from solala.control_loop.settings import Settings, ModbusControllerConnection, AmberPricerConnection
+from solala.control_loop import control_loop
+from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
+from solala.control_loop.errors import ControlLoopError
+from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection
 from solala.server_constants import APP_NAME
 from solala.server_constants import LOGGER
 from solala.server_gui import ui

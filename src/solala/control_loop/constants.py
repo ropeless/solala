@@ -11,6 +11,8 @@ class Constants:
     CONTROL_DURATION: int = 11  # number of seconds a control remains active
     PRICE_SETTLE_CHECK: int = 9  # check delay to see if the power price has settled
     PRICE_FORECAST_DURATION = 13  # in hours
+    PRICE_FORECAST_AGE = 5  # number of minutes a price forecast is valid
+    SOLAR_FORECAST_AGE = 4 * 60  # number of minutes a solar forecast is valid
 
     @staticmethod
     def as_dict() -> JSONDict:

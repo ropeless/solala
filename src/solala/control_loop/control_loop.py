@@ -10,13 +10,9 @@ from pymodbus.client import ModbusTcpClient
 
 from solala.control_loop.constants import Constants
 from solala.control_loop.errors import ControlLoopError
-from solala.control_loop.listeners import RegistersListener, StatusListener, PriceForecastListener
+from solala.control_loop.listeners import RegistersListener, StatusListener, PriceForecastListener, \
+    SolarForecastListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
-from solala.control_loop.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
-    TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
-    DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD, DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD, \
-    DEFAULT_START_CHARGE_PRICE_THRESHOLD, DEFAULT_STOP_CHARGE_PRICE_THRESHOLD, DummyControllerConnection, \
-    DummyPricerConnection, DummyConsumerConnection
 from solala.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
 from solala.power_consumer.power_consumer import PowerConsumer
 from solala.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
@@ -28,6 +24,13 @@ from solala.power_pricer.amber_power_pricer.amber_power_pricer import Price, Amb
 from solala.power_pricer.dummy_power_pricer.dummy_power_pricer import DummyPowerPricer
 from solala.power_pricer.power_pricer import PowerPricer
 from solala.server_constants import LOGGER, DATE_FORMAT
+from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
+    TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
+    DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD, DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD, \
+    DEFAULT_START_CHARGE_PRICE_THRESHOLD, DEFAULT_STOP_CHARGE_PRICE_THRESHOLD, DummyControllerConnection, \
+    DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection
+from solala.solar_forecaster.open_meteo_forecaster.open_meteo_forecaster import OpenMeteoForecaster
+from solala.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast
 from solala.utils.json import JSONDict
 from solala.utils.network import find_ip_by_mac
 from solala.utils.string_extras import split_addresses
@@ -44,20 +47,57 @@ _NO_PRICE = Price(
     estimate=True,
 )
 
-
-def _disconnected() -> JSONDict:
-    """
-    Returns:
-        The standard status message for when a connection is disconnected.
-    """
-    return {'status': 'disconnected'}
+_DISCONNECTED: JSONDict = {'status': 'disconnected'}
 
 
 @dataclass
 class _Listeners:
-    control_loop_status_listeners: List[StatusListener]
-    control_loop_registers_listeners: List[RegistersListener]
-    control_loop_price_forecast_listeners: List[PriceForecastListener]
+    status_listeners: List[StatusListener] = field(default_factory=list)
+    registers_listeners: List[RegistersListener] = field(default_factory=list)
+    price_forecast_listeners: List[PriceForecastListener] = field(default_factory=list)
+    solar_forecast_listeners: List[SolarForecastListener] = field(default_factory=list)
+
+    def copy(self) -> '_Listeners':
+        return _Listeners(
+            status_listeners=self.status_listeners.copy(),
+            registers_listeners=self.registers_listeners.copy(),
+            price_forecast_listeners=self.price_forecast_listeners.copy(),
+            solar_forecast_listeners=self.solar_forecast_listeners.copy(),
+        )
+
+    def add_listener(
+            self,
+            listener: StatusListener | RegistersListener | PriceForecastListener | SolarForecastListener,
+    ) -> None:
+        remove_listener(listener)
+        if isinstance(listener, StatusListener):
+            self.status_listeners.append(listener)
+        elif isinstance(listener, RegistersListener):
+            self.registers_listeners.append(listener)
+        elif isinstance(listener, PriceForecastListener):
+            self.price_forecast_listeners.append(listener)
+        elif isinstance(listener, SolarForecastListener):
+            self.solar_forecast_listeners.append(listener)
+        else:
+            raise ValueError(f'Invalid listener type: {type(listener)}')
+
+    def remove_listener(
+            self,
+            listener: StatusListener | RegistersListener | PriceForecastListener | SolarForecastListener,
+    ) -> None:
+        try:
+            if isinstance(listener, StatusListener):
+                self.status_listeners.remove(listener)
+            elif isinstance(listener, RegistersListener):
+                self.registers_listeners.remove(listener)
+            elif isinstance(listener, PriceForecastListener):
+                self.price_forecast_listeners.remove(listener)
+            elif isinstance(listener, SolarForecastListener):
+                self.solar_forecast_listeners.remove(listener)
+            else:
+                raise ValueError(f'Invalid listener type: {type(listener)}')
+        except ValueError:
+            pass
 
 
 @dataclass
@@ -65,14 +105,12 @@ class _ControlState:
     controller: Optional[PowerController] = None
     pricer: Optional[PowerPricer] = None
     consumers: Dict[str, PowerConsumer] = field(default_factory=dict)
+    forecaster: Optional[SolarForecaster] = None
 
     controller_settings: Optional[ControllerConnection] = None
     pricer_settings: Optional[PricerConnection] = None
     consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
-
-    controller_connection_status: JSONDict = field(default_factory=_disconnected)
-    pricer_connection_status: JSONDict = field(default_factory=_disconnected)
-    consumers_connection_status: Dict[str, JSONDict] = field(default_factory=dict)
+    forecaster_settings: Optional[ForecasterConnection] = None
 
     battery_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_mode: InverterMode = InverterMode.UNKNOWN
@@ -85,6 +123,9 @@ class _ControlState:
     last_price_forecast: List[Price] = field(default_factory=list)
     next_price_forecast_check: datetime = _MIN_DATE
 
+    last_solar_forecast: List[SolarForecast] = field(default_factory=list)
+    next_solar_forecast_check: datetime = _MIN_DATE
+
     # NEG_FEED_IN_ZERO_EXPORT parameters
     disable_export_price_threshold: float = DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD
     enable_export_price_threshold: float = DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD
@@ -93,12 +134,38 @@ class _ControlState:
     start_charge_price_threshold: float = DEFAULT_START_CHARGE_PRICE_THRESHOLD
     stop_charge_price_threshold: float = DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
 
-    control_loop_status_listeners: List[StatusListener] = field(default_factory=list)
-    control_loop_registers_listeners: List[RegistersListener] = field(default_factory=list)
-    control_loop_price_forecast_listeners: List[PriceForecastListener] = field(default_factory=list)
+    listeners: _Listeners = field(default_factory=_Listeners)
 
     settings_path: Optional[Path] = None  # for using persisted settings.
     loop_start: datetime = datetime.now(UTC)  # confirms the control loop is running
+
+    @property
+    def controller_connection_status(self) -> JSONDict:
+        if self.controller is None:
+            return _DISCONNECTED
+        else:
+            return self.controller.get_connection_status()
+
+    @property
+    def pricer_connection_status(self) -> JSONDict:
+        if self.pricer is None:
+            return _DISCONNECTED
+        else:
+            return self.pricer.get_connection_status()
+
+    @property
+    def consumers_connection_status(self) -> Dict[str, JSONDict]:
+        return {
+            name: consumer.get_connection_status()
+            for name, consumer in self.consumers.items()
+        }
+
+    @property
+    def forecaster_connection_status(self) -> JSONDict:
+        if self.forecaster is None:
+            return _DISCONNECTED
+        else:
+            return self.forecaster.get_connection_status()
 
     def reset_controller(self, controller: Optional[PowerController]) -> None:
         self.controller = controller
@@ -111,9 +178,6 @@ class _ControlState:
         self.last_price_forecast: List[Price] = []
         self.next_price_forecast_check = _MIN_DATE
 
-        if controller is None:
-            self.controller_connection_status = _disconnected()
-
     def reset_pricer(self, pricer: Optional[PowerPricer]) -> None:
         self.pricer = pricer
 
@@ -122,19 +186,12 @@ class _ControlState:
         self.last_price_forecast: List[Price] = []
         self.next_price_forecast_check = _MIN_DATE
 
-        if pricer is None:
-            self.pricer_connection_status = _disconnected()
+    def reset_forecaster(self, forecaster: Optional[SolarForecaster]) -> None:
+        self.forecaster = forecaster
 
     def force_price_check(self) -> None:
         self.next_price_check = _MIN_DATE
         self.next_price_forecast_check = _MIN_DATE
-
-    def copy_listeners(self) -> _Listeners:
-        return _Listeners(
-            control_loop_status_listeners=self.control_loop_status_listeners.copy(),
-            control_loop_registers_listeners=self.control_loop_registers_listeners.copy(),
-            control_loop_price_forecast_listeners=self.control_loop_price_forecast_listeners.copy(),
-        )
 
 
 @dataclass
@@ -235,7 +292,7 @@ def _control_step(
     """
     if state.controller is None:
         prev_state.reset(None)
-        return state.copy_listeners()
+        return state.listeners.copy()
     power_controller: PowerController = state.controller
     if power_controller is not prev_state.controller:
         prev_state.reset(power_controller)
@@ -289,7 +346,7 @@ def _control_step(
     except Exception as e:
         LOGGER.error(f'{_LOG_SRC}Error processing command: {state.inverter_mode}. Error: {e}')
 
-    return state.copy_listeners()
+    return state.listeners.copy()
 
 
 # =============================================================================
@@ -330,6 +387,9 @@ def configure_from_settings(settings: Settings) -> None:
         for name, consumer_connection in settings.consumers.items():
             connect_consumer(name, consumer_connection)
 
+    if settings.forecaster is not None:
+        connect_forecaster(settings.forecaster)
+
     # Configure policy parameters
     result = set_parameters(
         disable_export_price_threshold=settings.disable_export_price_threshold,
@@ -351,52 +411,34 @@ def configure_from_settings(settings: Settings) -> None:
 
 def get_settings() -> Settings:
     with _control_state_lock:
+        state = _control_state
         return Settings(
-            controller=_control_state.controller_settings,
-            pricer=_control_state.pricer_settings,
-            consumers=_control_state.consumers_settings,
+            controller=state.controller_settings,
+            pricer=state.pricer_settings,
+            consumers=state.consumers_settings,
+            forecaster=state.forecaster_settings,
 
-            battery_mode=_control_state.battery_mode,
-            inverter_mode=_control_state.inverter_mode,
-            battery_policy=_control_state.battery_policy,
-            inverter_policy=_control_state.inverter_policy,
+            battery_mode=state.battery_mode,
+            inverter_mode=state.inverter_mode,
+            battery_policy=state.battery_policy,
+            inverter_policy=state.inverter_policy,
 
-            disable_export_price_threshold=_control_state.disable_export_price_threshold,
-            enable_export_price_threshold=_control_state.enable_export_price_threshold,
+            disable_export_price_threshold=state.disable_export_price_threshold,
+            enable_export_price_threshold=state.enable_export_price_threshold,
 
-            start_charge_price_threshold=_control_state.start_charge_price_threshold,
-            stop_charge_price_threshold=_control_state.stop_charge_price_threshold,
+            start_charge_price_threshold=state.start_charge_price_threshold,
+            stop_charge_price_threshold=state.stop_charge_price_threshold,
         )
 
 
-def add_listener(listener: StatusListener | RegistersListener | PriceForecastListener):
+def add_listener(listener: StatusListener | RegistersListener | PriceForecastListener | SolarForecastListener):
     with _control_state_lock:
-        state = _control_state
-        remove_listener(listener)
-        if isinstance(listener, StatusListener):
-            state.control_loop_status_listeners.append(listener)
-        elif isinstance(listener, RegistersListener):
-            state.control_loop_registers_listeners.append(listener)
-        elif isinstance(listener, PriceForecastListener):
-            state.control_loop_price_forecast_listeners.append(listener)
-        else:
-            raise ValueError(f'Invalid listener type: {type(listener)}')
+        _control_state.listeners.add_listener(listener)
 
 
-def remove_listener(listener: StatusListener | RegistersListener | PriceForecastListener):
+def remove_listener(listener: StatusListener | RegistersListener | PriceForecastListener | SolarForecastListener):
     with _control_state_lock:
-        state = _control_state
-        try:
-            if isinstance(listener, StatusListener):
-                state.control_loop_status_listeners.remove(listener)
-            elif isinstance(listener, RegistersListener):
-                state.control_loop_registers_listeners.remove(listener)
-            elif isinstance(listener, PriceForecastListener):
-                state.control_loop_price_forecast_listeners.remove(listener)
-            else:
-                raise ValueError(f'Invalid listener type: {type(listener)}')
-        except ValueError:
-            pass
+        _control_state.listeners.remove_listener(listener)
 
 
 def update_listeners() -> None:
@@ -405,7 +447,7 @@ def update_listeners() -> None:
     """
     with _control_state_lock:
         state = _control_state
-        listeners = state.copy_listeners()
+        listeners = state.listeners.copy()
     _update_listeners(listeners)
 
 
@@ -439,7 +481,7 @@ def get_control_status() -> JSONDict:
 def get_price_status() -> JSONDict:
     with _control_state_lock:
         if _control_state.pricer is None:
-            return _control_state.pricer_connection_status
+            return _DISCONNECTED
         try:
             cur_price: Price = get_cur_price()
             result = cur_price.as_dict(DATE_FORMAT, include_time=False)
@@ -450,13 +492,60 @@ def get_price_status() -> JSONDict:
 
 def get_power_status() -> JSONDict:
     with _control_state_lock:
-        if _control_state.controller is None:
-            return _control_state.controller_connection_status
+        state = _control_state
+        if state.controller is None:
+            return _DISCONNECTED
         try:
-            result = _control_state.controller.get_status().as_dict()
+            result: JSONDict = state.controller.get_status().as_dict()
+            if state.forecaster is not None:
+                result['forecast'] = get_daily_forecast_energy()
             return result
         except Exception as err:
             return {'error': str(err)}
+
+
+def get_solar_forecast() -> List[SolarForecast]:
+    """
+    Get the forecast prices from the power pricer.
+    """
+    with _control_state_lock:
+        state = _control_state
+        forecaster = state.forecaster
+        if forecaster is None:
+            LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: solar forecaster not connected')
+            return []
+
+        forecasts: List[SolarForecast] = state.last_solar_forecast
+        now = datetime.now(UTC)
+        if state.next_price_forecast_check <= now:
+            try:
+                LOGGER.info(f'{_LOG_SRC}Updating solar forecast')
+                forecasts = forecaster.get_forecast()
+                state.last_solar_forecast = forecasts
+                state.next_price_forecast_check = now + timedelta(minutes=Constants.SOLAR_FORECAST_AGE)
+            except Exception as err:
+                LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: {err}')
+    return forecasts
+
+
+def get_daily_forecast_energy() -> float:
+    """
+    Get the total energy forecasted for the day, in Wh.
+
+    Assumes:
+        * a forecaster is connected
+        * panel capacity is set.
+    Returns:
+        Total energy forecasted for the day, in Wh
+    """
+    with _control_state_lock:
+        state = _control_state
+        if state.forecaster is None:
+            return 0.0
+    return sum(
+        forecast.power
+        for forecast in get_solar_forecast()
+    )
 
 
 def get_consumers_status() -> JSONDict:
@@ -480,8 +569,9 @@ def get_connection_status() -> JSONDict:
             'controller': state.controller_connection_status,
             'pricer': state.pricer_connection_status,
         }
-        if len(state.consumers_connection_status) > 0:
+        if len(state.consumers) > 0:
             result['consumers'] = state.consumers_connection_status
+        result['forecaster'] = state.forecaster_connection_status
         return result
 
 
@@ -564,19 +654,19 @@ def get_forecast_prices() -> List[Price]:
     """
     with _control_state_lock:
         state = _control_state
-        prices: List[Price] = state.last_price_forecast
         pricer = state.pricer
         if pricer is None:
             LOGGER.error(f'{_LOG_SRC}Price update not available. Error: power pricer not connected')
             return []
 
+        prices: List[Price] = state.last_price_forecast
         now = datetime.now(UTC)
         if state.next_price_forecast_check <= now or len(prices) == 0 or prices[0].end_time < now:
             try:
                 LOGGER.info(f'{_LOG_SRC}Updating forecast price')
-                prices: List[Price] = pricer.get_price_forecast(Constants.PRICE_FORECAST_DURATION * 2)
+                prices = pricer.get_price_forecast(Constants.PRICE_FORECAST_DURATION * 2)
                 state.last_price_forecast = prices
-                state.next_price_forecast_check = now + timedelta(minutes=5)
+                state.next_price_forecast_check = now + timedelta(minutes=Constants.PRICE_FORECAST_AGE)
             except Exception as err:
                 LOGGER.error(f'{_LOG_SRC}Price update not available. Error: {err}')
     return prices
@@ -685,7 +775,6 @@ def connect_controller(controller_connection: ControllerConnection) -> JSONDict:
         connection_status = controller.get_connection_status()
         state.reset_controller(controller)
         state.controller_settings = controller_connection
-        state.controller_connection_status = connection_status
         _save_settings()
         LOGGER.info(f'{_LOG_SRC}Power controller connection: {json.dumps(connection_status)}')
         return connection_status
@@ -727,7 +816,6 @@ def connect_pricer(pricer_connection: PricerConnection) -> JSONDict:
         connection_status = pricer.get_connection_status()
         state.reset_pricer(pricer)
         state.pricer_settings = pricer_connection
-        state.pricer_connection_status = connection_status
         _save_settings()
         LOGGER.info(f'{_LOG_SRC}Power pricer connection: {json.dumps(connection_status)}')
         return connection_status
@@ -787,6 +875,43 @@ def disconnect_consumer(name: str) -> JSONDict:
         state.consumers_connection_status.pop(name, None)
         _save_settings()
         return {name: 'disconnected'}
+
+
+def connect_forecaster(forecaster_connection: ForecasterConnection) -> JSONDict:
+    with _control_state_lock:
+        state = _control_state
+        forecaster: SolarForecaster
+
+        if forecaster_connection.type == OpenMeteoConnection.TYPE:
+            assert isinstance(forecaster_connection, OpenMeteoConnection)
+            forecaster = _connect_open_meteo_forecaster(forecaster_connection)
+
+        else:
+            raise ControlLoopError(
+                'unknown forecaster connection type',
+                errors={'type': forecaster_connection.type}
+            )
+
+        disconnect_forecaster()
+        connection_status = forecaster.get_connection_status()
+        state.reset_forecaster(forecaster)
+        state.forecaster_settings = forecaster_connection
+        _save_settings()
+        LOGGER.info(f'{_LOG_SRC}Solar forecaster connection: {json.dumps(connection_status)}')
+        return connection_status
+
+
+def disconnect_forecaster() -> JSONDict:
+    """
+    Close the power pricer connection.
+    """
+    with _control_state_lock:
+        if _control_state.forecaster is not None:
+            _control_state.forecaster.close()
+            _control_state.reset_forecaster(None)
+        _control_state.forecaster_settings = None
+        _save_settings()
+        return _control_state.forecaster_connection_status
 
 
 # =============================================================================
@@ -912,11 +1037,25 @@ def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnect
     """
     address: _Address = _resolve_addresses([consumer_connection.address])[0]
     try:
-        consumer = TeslaWallConnector(address.ip_address, address.mac_address)
+        return TeslaWallConnector(address.ip_address, address.mac_address)
     except Exception as err:
         raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
 
-    return consumer
+
+def _connect_open_meteo_forecaster(forecaster_connection: OpenMeteoConnection) -> SolarForecaster:
+    try:
+        return OpenMeteoForecaster(
+            latitude=forecaster_connection.latitude,
+            longitude=forecaster_connection.longitude,
+            panel_orientation=forecaster_connection.panel_orientation,
+            panel_tilt=forecaster_connection.panel_tilt,
+            panel_capacity=forecaster_connection.panel_capacity,
+            inverter_limit=forecaster_connection.inverter_limit,
+            inverter_efficiency=forecaster_connection.inverter_efficiency,
+            temperature_coefficient=forecaster_connection.temperature_coefficient,
+        )
+    except Exception as err:
+        raise ControlLoopError('could not connect Open-Meteo', errors=[str(err)])
 
 
 @dataclass
@@ -987,40 +1126,62 @@ def _update_listeners(listeners: _Listeners) -> None:
     This means `_update_listeners` should be called on copies of the listener lists
     so incase there is an attempt to modify the control state while updating listeners.
     """
-    status_listeners = listeners.control_loop_status_listeners
-    registers_listeners = listeners.control_loop_registers_listeners
-    price_forecast_listeners = listeners.control_loop_price_forecast_listeners
+    _update_status_listeners(listeners.status_listeners)
+    _update_registers_listeners(listeners.registers_listeners)
+    _update_price_forecast_listeners(listeners.price_forecast_listeners)
+    _update_solar_forecast_listeners(listeners.solar_forecast_listeners)
 
-    if len(status_listeners) > 0:
+
+def _update_status_listeners(listeners: List[StatusListener]) -> None:
+    if len(listeners) > 0:
         try:
             status = get_status()
-            for status_listener in status_listeners:
+            for listener in listeners:
                 try:
-                    status_listener.update(status)
+                    listener.update(status)
                 except Exception as e:
                     LOGGER.error(f'{_LOG_SRC}Error updating status listener: {e}')
         except Exception as e:
             LOGGER.error(f'{_LOG_SRC}Error getting status for listeners: {e}')
-    if len(registers_listeners) > 0:
+
+
+def _update_registers_listeners(listeners: List[RegistersListener]) -> None:
+    if len(listeners) > 0:
         try:
             registers = get_registers()
-            for registers_listener in registers_listeners:
+            for listener in listeners:
                 try:
-                    registers_listener.update(registers)
+                    listener.update(registers)
                 except Exception as e:
                     LOGGER.error(f'{_LOG_SRC}Error updating register listener: {e}')
         except Exception as e:
             LOGGER.error(f'{_LOG_SRC}Error getting registers for listeners: {e}')
-    if len(price_forecast_listeners) > 0:
+
+
+def _update_price_forecast_listeners(listeners: List[PriceForecastListener]) -> None:
+    if len(listeners) > 0:
         try:
             price_forecast = get_forecast_prices()
-            for price_forecast_listener in price_forecast_listeners:
+            for listener in listeners:
                 try:
-                    price_forecast_listener.update(price_forecast)
+                    listener.update(price_forecast)
                 except Exception as e:
                     LOGGER.error(f'{_LOG_SRC}Error updating price forecast listener: {e}')
         except Exception as e:
             LOGGER.error(f'{_LOG_SRC}Error getting price forecast for listeners: {e}')
+
+
+def _update_solar_forecast_listeners(listeners: List[SolarForecastListener]) -> None:
+    if len(listeners) > 0:
+        try:
+            solar_forecast = get_solar_forecast()
+            for listener in listeners:
+                try:
+                    listener.update(solar_forecast)
+                except Exception as e:
+                    LOGGER.error(f'{_LOG_SRC}Error updating solar forecast listener: {e}')
+        except Exception as e:
+            LOGGER.error(f'{_LOG_SRC}Error getting solar forecast for listeners: {e}')
 
 
 def _save_settings() -> None:
