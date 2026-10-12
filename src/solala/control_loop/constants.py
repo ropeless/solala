@@ -17,9 +17,7 @@ class Constants:
     @staticmethod
     def as_dict() -> JSONDict:
         return {
-            'LOOP_TIME': Constants.LOOP_TIME,
-            'MIN_SLEEP_TIME': Constants.MIN_SLEEP_TIME,
-            'CONTROL_DURATION': Constants.CONTROL_DURATION,
-            'PRICE_SETTLE_CHECK': Constants.PRICE_SETTLE_CHECK,
-            'PRICE_FORECAST_DURATION': Constants.PRICE_FORECAST_DURATION,
+            name: getattr(Constants, name)
+            for name in dir(Constants)
+            if all((c.isupper() or c == '_') for c in name)
         }

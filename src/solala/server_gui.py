@@ -20,7 +20,7 @@ from solala.server_constants import LOGGER
 from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
 from solala.solar_forecaster.solar_forecaster import SolarForecast
-from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS
+from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
@@ -67,6 +67,14 @@ _CONSTANTS_UNITS: Mapping[str, str] = {
     'PRICE_LOOK_AHEAD': MINUTES,
     'PRICE_SETTLE_CHECK': SECONDS,
     'PRICE_FORECAST_DURATION': HOURS,
+    'PRICE_FORECAST_AGE': MINUTES,
+    'SOLAR_FORECAST_AGE': MINUTES,
+}
+_CONNECTION_UNITS: Mapping[str, str] = {
+    'latitude': DEGREES,
+    'longitude': DEGREES,
+    'panel_orientation': DEGREES,
+    'panel_tilt': DEGREES,
 }
 
 
@@ -763,7 +771,7 @@ def connection_page(match: Optional[str] = None):
         connection_json = filter_json(connection_json, match)
 
     _json_page('Connection').set_content(
-        render_json(connection_json, float_format='.2f')
+        render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
     )
 
 
