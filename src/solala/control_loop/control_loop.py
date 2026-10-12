@@ -542,12 +542,14 @@ def get_cur_price() -> Price:
         now = datetime.now(UTC)
         if state.next_price_check <= now:
             try:
+                LOGGER.info(f'{_LOG_SRC}Updating current price')
                 price: Price = pricer.get_price()
                 state.last_price = price
                 if price.estimate:
                     # price is unstable - recheck is needed
                     delay = Constants.PRICE_SETTLE_CHECK
                     state.next_price_check = min(now + timedelta(seconds=delay), price.end_time)
+                    LOGGER.info(f'{_LOG_SRC}Current price is an estimate, recheck is scheduled')
                 else:
                     # price is stable - no need to recheck for this period
                     state.next_price_check = price.end_time
@@ -569,8 +571,9 @@ def get_forecast_prices() -> List[Price]:
             return []
 
         now = datetime.now(UTC)
-        if state.next_price_forecast_check <= now:
+        if state.next_price_forecast_check <= now or len(prices) == 0 or prices[0].end_time < now:
             try:
+                LOGGER.info(f'{_LOG_SRC}Updating forecast price')
                 prices: List[Price] = pricer.get_price_forecast(Constants.PRICE_FORECAST_DURATION * 2)
                 state.last_price_forecast = prices
                 state.next_price_forecast_check = now + timedelta(minutes=5)

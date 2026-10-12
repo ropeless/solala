@@ -1,6 +1,6 @@
 import local_config as config
 from solala import server
-from solala.control_loop.history_file import HistoryFile
+from solala.data_loggers.history_file import HistoryFile
 from solala.control_loop.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
     TeslaWallConnectorConnection
 from solala.server_constants import LOGGER
