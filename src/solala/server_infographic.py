@@ -16,7 +16,7 @@ CLICK_ID_INVERTER = 'click_battery'
 def _click_area(name: str, x: float, y: float) -> Rectangle:
     return Rectangle(
         id=name,
-        x=x, y=y, width=90, height=110,
+        x=x, y=y, width=90, height=140,
         fill='transparent', stroke='transparent',
         # fill='gray',
     )
@@ -46,10 +46,10 @@ class Infographic:
         self.static_background.append(Inverter(x=0, y=0))
 
         # Clickable areas
-        self.static_background.append(_click_area(CLICK_ID_SUN, x=-83 - icon_offset, y=-83 - icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_SUN, x=-83 - icon_offset, y=-113 - icon_offset))
         self.static_background.append(_click_area(CLICK_ID_GRID, x=-83 - icon_offset, y=0 + icon_offset))
-        self.static_background.append(_click_area(CLICK_ID_HOME, x=-5 + icon_offset, y=-85 - icon_offset))
-        self.static_background.append(_click_area(CLICK_ID_BATTERY, x=0 + icon_offset, y=+5 + icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_HOME, x=-6 + icon_offset, y=-115 - icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_BATTERY, x=-6 + icon_offset, y=+5 + icon_offset))
         self.static_background.append(_click_area(CLICK_ID_INVERTER, x=-45, y=-45))
 
         # Make the default drawing
@@ -137,7 +137,7 @@ class Infographic:
         canvas.append(Text(_to_pct(state_of_charge), x=right, y=bot2, font_size=font_sm, class_=class_text, **kwargs))
 
         # price
-        prefix: str = '~ ' if estimate else ''
+        prefix: str = '~' if estimate else ''
         if buy_price >= 100:
             buy_str = _to_dollars(buy_price)
             feed_in_str = _to_dollars(feed_in_price)
@@ -165,7 +165,7 @@ class Infographic:
         feed_in_text.append(TSpan(feed_in_str + units, class_=feed_in_colour))
         canvas.append(feed_in_text)
 
-        renewables_str = prefix + f'Renewables: {int(renewables + 0.5)}{PERCENT}'
+        renewables_str = f'Renewables: {int(renewables + 0.5)}{PERCENT}'
         feed_in_text = Text(renewables_str, x=left, y=bot4, font_size=font_sm, class_=class_text, **kwargs)
         canvas.append(feed_in_text)
 

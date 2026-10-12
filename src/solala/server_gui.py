@@ -9,16 +9,18 @@ from nicegui import ui, app
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
-from solala import control_loop, server_log
-from solala.control_loop import listeners as control_loop_listeners, BatteryMode, BatteryPolicy, InverterMode, \
-    InverterPolicy
+from solala import server_log
+from solala.control_loop import control_loop
+from solala.control_loop import listeners as control_loop_listeners
+from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.power_pricer.power_pricer import Price
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE, BUY_PRICE_RED, BUY_PRICE_AMBER
 from solala.server_constants import LOGGER
 from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS
+from solala.solar_forecaster.solar_forecaster import SolarForecast
+from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
@@ -29,6 +31,7 @@ from solala.utils.json import JSONDict, json_dict, render_json, filter_json, jso
 _HEAD_HTML = r'''
 <link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/css/solala.css">
+<link rel="icon" type="image/png" href="/images/images/solala-32x32.png">
 '''
 
 # Units for pretty printing status
@@ -52,6 +55,8 @@ _STATUS_UNITS: Mapping[str, str] = dict_merge(
         'power': WATTS,
         'voltage': VOLTS,
         'current': AMPS,
+        'capacity': WATTS,
+        'forecast': WATT_HOURS,
     },
     _PARAMETERS_UNITS,
 )
@@ -62,6 +67,14 @@ _CONSTANTS_UNITS: Mapping[str, str] = {
     'PRICE_LOOK_AHEAD': MINUTES,
     'PRICE_SETTLE_CHECK': SECONDS,
     'PRICE_FORECAST_DURATION': HOURS,
+    'PRICE_FORECAST_AGE': MINUTES,
+    'SOLAR_FORECAST_AGE': MINUTES,
+}
+_CONNECTION_UNITS: Mapping[str, str] = {
+    'latitude': DEGREES,
+    'longitude': DEGREES,
+    'panel_orientation': DEGREES,
+    'panel_tilt': DEGREES,
 }
 
 
@@ -107,17 +120,36 @@ class PriceForecastListener(control_loop_listeners.PriceForecastListener):
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
 
     @final
-    def update(self, price_forecasts: List[Price]) -> None:
+    def update(self, price_forecast: List[Price]) -> None:
         """
         Thread safe update.
         """
-        self._main_loop.call_soon_threadsafe(partial(self._update, price_forecasts))
+        self._main_loop.call_soon_threadsafe(partial(self._update, price_forecast))
 
-    def _update(self, price_forecasts: List[Price]) -> None:
+    def _update(self, price_forecast: List[Price]) -> None:
         ...
 
 
-def _register_listener(listener: StatusListener | RegistersListener | PriceForecastListener) -> None:
+class SolarForecastListener(control_loop_listeners.SolarForecastListener):
+
+    def __init__(self):
+        super().__init__()
+        self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
+
+    @final
+    def update(self, solar_forecast: List[SolarForecast]) -> None:
+        """
+        Thread safe update.
+        """
+        self._main_loop.call_soon_threadsafe(partial(self._update, solar_forecast))
+
+    def _update(self, solar_forecast: List[SolarForecast]) -> None:
+        ...
+
+
+def _register_listener(
+        listener: StatusListener | RegistersListener | PriceForecastListener | SolarForecastListener
+) -> None:
     listener.update_now()
     ui.context.client.on_disconnect(partial(control_loop.remove_listener, listener))
     control_loop.add_listener(listener)
@@ -318,19 +350,19 @@ class PriceForecastUpdater(PriceForecastListener):
         super().__init__()
         self._element = element
 
-    def _update(self, price_forecasts: List[Price]) -> None:
+    def _update(self, price_forecast: List[Price]) -> None:
         # Recreate the price forecast table
         self._element.clear()
         with self._element:
 
-            if len(price_forecasts) == 0:
+            if len(price_forecast) == 0:
                 with ui.card().classes('w-full bg-white rounded-xl border border-[#e1e6ea] p-6'):
                     ui.icon('query_stats').classes('text-3xl text-[#a1a9ae]')
                     ui.label('No price forecast available').classes('text-lg font-semibold')
                     ui.label('There are currently no forecast prices to display.').classes('text-sm text-gray-500')
                 return
 
-            forecast_date = price_forecasts[0].start_time.date()
+            forecast_date = price_forecast[0].start_time.date()
 
             with ui.row().classes('items-center gap-2 mb-5'):
                 ui.icon('calendar_today').classes('text-lg text-gray-500')
@@ -345,7 +377,7 @@ class PriceForecastUpdater(PriceForecastListener):
                         ui.label('Feed-in').classes('text-right')
                         ui.label('Renewables').classes('text-right')
 
-                    for i, price in enumerate(price_forecasts):
+                    for i, price in enumerate(price_forecast):
                         row_classes = 'price-row'
                         if i % 2 == 1:
                             row_classes += ' price-row-alt'
@@ -360,6 +392,57 @@ class PriceForecastUpdater(PriceForecastListener):
                             ui.label(f'{price.feed_in_price:.1f}').classes(f'price-number {feed_class}')
 
                             ui.label(f'{price.renewables:.1f}{PERCENT}').classes('price-number')
+
+
+class SolarForecastUpdater(SolarForecastListener):
+    def __init__(self, element: ui.element):
+        super().__init__()
+        self._element = element
+
+    def _update(self, solar_forecast: List[SolarForecast]) -> None:
+        # Recreate the solar forecast table
+        self._element.clear()
+        with self._element:
+
+            if len(solar_forecast) == 0:
+                with ui.card().classes('w-full bg-white rounded-xl border border-[#e1e6ea] p-6'):
+                    ui.icon('query_stats').classes('text-3xl text-[#a1a9ae]')
+                    ui.label('No price forecast available').classes('text-lg font-semibold')
+                    ui.label('There are currently no forecast prices to display.').classes('text-sm text-gray-500')
+                return
+
+            forecast_date = solar_forecast[0].time.date()
+
+            with ui.row().classes('items-center gap-2 mb-5'):
+                ui.icon('calendar_today').classes('text-lg text-gray-500')
+                ui.label(forecast_date.strftime('%A, %d %B %Y')).classes('text-sm text-gray-500')
+
+            # Forecast table
+            with ui.column().classes('w-full gap-3'):
+                with ui.element('div').classes('price-table'):
+                    with ui.element('div').classes('price-row price-header'):
+                        ui.label('Time')
+                        ui.label('Irradiance').classes('text-right')
+                        ui.label('Temperature').classes('text-right')
+                        ui.label('Power').classes('text-right')
+
+                    forecast: SolarForecast
+                    for i, forecast in enumerate(solar_forecast):
+                        row_classes = 'price-row'
+                        if i % 2 == 1:
+                            row_classes += ' price-row-alt'
+
+                        with ui.element('div').classes(row_classes):
+                            ui.label(forecast.time.strftime('%H:%M')).classes('price-time')
+                            if forecast.irradiance > 0:
+                                ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'price-number')
+                            else:
+                                ui.label('.').classes(f'price-number')
+                            ui.label(f'{int(forecast.temperature + 0.5)}').classes(f'price-number')
+                            if forecast.power > 0:
+                                ui.label(f'{forecast.power / 1000:.2f}').classes('price-number')
+                            else:
+                                ui.label('.').classes('price-number')
 
 
 def _json_page(name: str) -> ContentElement:
@@ -502,15 +585,14 @@ def _infographic_click(element):
     click_id: Optional[str] = element.args
     if click_id == CLICK_ID_GRID:
         ui.navigate.to('/price_forecast_page')
+    elif click_id == CLICK_ID_SUN:
+        ui.navigate.to('/solar_forecast_page')
     elif click_id == CLICK_ID_INVERTER:
         pass
         # ui.notify('clicked inverter')
     elif click_id == CLICK_ID_HOME:
         pass
         # ui.notify('clicked home')
-    elif click_id == CLICK_ID_SUN:
-        pass
-        # ui.notify('clicked the sun')
     elif click_id == CLICK_ID_BATTERY:
         pass
         # ui.notify('clicked the battery')
@@ -580,11 +662,11 @@ def root_page():
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
             with ui.grid(columns=3):
-                _diagnostic_link('�', 'Status', '/status_page')
+                _diagnostic_link('?', 'Status', '/status_page')
                 _diagnostic_link('⚙', 'Parameters', '/parameters_page')
                 _diagnostic_link('↔', 'Connection', '/connection_page')
                 _diagnostic_link('▤', 'Registers', '/registers_page')
-                _diagnostic_link('🗎', 'Log', '/log_page')
+                _diagnostic_link('▣', 'Log', '/log_page')
                 _diagnostic_link('</>', 'API Schema', '/schema_page')
 
 
@@ -596,6 +678,19 @@ def price_forecast_page():
         element = ui.element('div')
         _register_listener(
             PriceForecastUpdater(
+                element=element
+            )
+        )
+
+
+@ui.page('/solar_forecast_page')
+def solar_forecast_page():
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+        _page_header(' solar forecast')
+        element = ui.element('div')
+        _register_listener(
+            SolarForecastUpdater(
                 element=element
             )
         )
@@ -676,7 +771,7 @@ def connection_page(match: Optional[str] = None):
         connection_json = filter_json(connection_json, match)
 
     _json_page('Connection').set_content(
-        render_json(connection_json)
+        render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
     )
 
 

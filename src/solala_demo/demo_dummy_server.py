@@ -1,7 +1,6 @@
 import local_config as config
 from solala import server
-from solala.control_loop import DummyPricerConnection
-from solala.control_loop.settings import Settings, DummyControllerConnection
+from solala.settings import Settings, DummyControllerConnection, OpenMeteoConnection, DummyPricerConnection
 from solala_demo.log import configure_logger
 
 HOST: str = config.SERVER_IP_ADDRESS
@@ -22,6 +21,14 @@ def main():
             # feed_in_price_discount_min=2,
             # feed_in_price_discount_max=5,
             # cur_price_is_estimate=False,
+        ),
+        forecaster=OpenMeteoConnection(
+            latitude=config.LATITUDE,
+            longitude=config.LONGITUDE,
+            panel_orientation=config.PANEL_ORIENTATION,
+            panel_tilt=config.PANEL_TILT,
+            panel_capacity=9000,
+            inverter_limit=8000,
         ),
     )
 

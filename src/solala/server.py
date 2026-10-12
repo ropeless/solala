@@ -10,12 +10,14 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
-from solala import control_loop
-from solala.control_loop import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlLoopError
-from solala.control_loop.settings import Settings, ModbusControllerConnection, PricerConnection
+from solala.control_loop import control_loop
+from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
+from solala.control_loop.errors import ControlLoopError
+from solala.resources import IMAGE_FILES
+from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection
 from solala.server_constants import APP_NAME
 from solala.server_constants import LOGGER
-from solala.server_nicegui import ui
+from solala.server_gui import ui
 from solala.utils.json import JSONDict, JSONValue, filter_json, follow_json
 
 
@@ -270,7 +272,7 @@ def put_pricer_connect(payload: PricerConnectionUpdate):
     """
     if payload.type != 'amber':
         return JSONResponse({'error': 'only amber is supported'}, status_code=status.HTTP_400_BAD_REQUEST)
-    pricer_connection = PricerConnection(
+    pricer_connection = AmberPricerConnection(
         api_token=payload.api_token,
         nmi=payload.nmi,
     )
@@ -288,4 +290,5 @@ def put_pricer_disconnect():
 
 # Mount NiceGUI onto the FastAPI app (processes all nicegui pages).
 # This must come last.
-ui.run_with(app, title=APP_NAME, favicon='http://localhost/images/solala-32x32.png')
+favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
+ui.run_with(app, title=APP_NAME, favicon=favicon)

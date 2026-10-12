@@ -8,6 +8,14 @@ NMI = '4109999999'
 SERVER_IP_ADDRESS = 'localhost'
 SERVER_PORT = 8080
 
+# Solar Forecaster parameters
+LATITUDE = -33.72
+LONGITUDE = 151.08
+PANEL_ORIENTATION = 10
+PANEL_TILT = 30
+PANEL_CAPACITY = 9000
+INVERTER_LIMIT = 8000
+
 OUT = '/users/demo_user/output'
 HISTORY_FILE = OUT + '/history.csv'
 SETTINGS_PATH = OUT + '/settings.json'

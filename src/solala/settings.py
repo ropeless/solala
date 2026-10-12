@@ -9,6 +9,10 @@ DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD: float = 0.1  # re-enable export above th
 DEFAULT_START_CHARGE_PRICE_THRESHOLD: float = 10  # start force charging below this price
 DEFAULT_STOP_CHARGE_PRICE_THRESHOLD: float = 11  # stop force charging above this price
 
+DEFAULT_INVERTER_EFFICIENCY: float = 0.96  # as a fraction (0 to 1)
+DEFAULT_INVERTER_LIMIT: float = float('inf')  # in Watts
+DEFAULT_TEMPERATURE_COEFFICIENT: float = -0.004  # in Celsius
+
 
 class DummyControllerConnection(BaseModel):
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
@@ -59,6 +63,24 @@ class TeslaWallConnectorConnection(BaseModel):
     address: str  # MAC or IP address
 
 
+class OpenMeteoConnection(BaseModel):
+    TYPE: ClassVar[Literal['open_meteo']] = 'open_meteo'
+    type: Literal['open_meteo'] = 'open_meteo'
+
+    latitude: float
+    longitude: float
+    panel_orientation: float
+    panel_tilt: float
+    panel_capacity: float
+    inverter_limit: float = DEFAULT_INVERTER_LIMIT
+    inverter_efficiency: float = DEFAULT_INVERTER_EFFICIENCY
+    temperature_coefficient: float = DEFAULT_TEMPERATURE_COEFFICIENT
+
+
+# =====================================================================================
+#  Generic connection types
+# =====================================================================================
+
 ControllerConnection: TypeAlias = Annotated[
     Union[
         DummyControllerConnection,
@@ -86,6 +108,14 @@ ConsumerConnection: TypeAlias = Annotated[
     Field(discriminator='type')
 ]
 
+ForecasterConnection: TypeAlias = Annotated[
+    Union[
+        OpenMeteoConnection,
+        # Add others as needed
+    ],
+    Field(discriminator='type')
+]
+
 
 class Settings(BaseModel):
     """
@@ -95,6 +125,7 @@ class Settings(BaseModel):
     controller: Optional[ControllerConnection] = None
     pricer: Optional[PricerConnection] = None
     consumers: Optional[Dict[str, ConsumerConnection]] = None
+    forecaster: Optional[ForecasterConnection] = None
 
     battery_mode: Optional[BatteryMode] = None
     inverter_mode: Optional[InverterMode] = None
