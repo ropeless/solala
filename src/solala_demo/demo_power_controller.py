@@ -32,7 +32,7 @@ def main():
         )
 
         print()
-        status = controller.get_status().as_dict()
+        status = controller.get_status().to_json()
         print(json.dumps(status, indent=4))
 
         # print()

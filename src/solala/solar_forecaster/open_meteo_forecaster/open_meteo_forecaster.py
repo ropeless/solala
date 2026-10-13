@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List
 
 import httpx
 
 from solala.settings import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_TEMPERATURE_COEFFICIENT
-from solala.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast
+from solala.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast, DailySolarForecast
 from solala.utils.json import JSONDict
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
@@ -48,7 +48,9 @@ class OpenMeteoForecaster(SolarForecaster):
         self._inverter_efficiency = inverter_efficiency
         self._temperature_coefficient = temperature_coefficient
 
-    def get_forecast(self) -> List[SolarForecast]:
+    def get_forecast(self, day_offset: int) -> DailySolarForecast:
+        past_days = 1 - min(day_offset, 0)
+        forecast_days = 2 + max(day_offset, 0)
         params = {
             'latitude': self._latitude,
             'longitude': self._longitude,
@@ -56,8 +58,8 @@ class OpenMeteoForecaster(SolarForecaster):
             "tilt": self._panel_tilt,
             'azimuth': self._panel_orientation,
             'timezone': 'GMT',
-            'past_days': 1,
-            'forecast_days': 2,
+            'past_days': past_days,
+            'forecast_days': forecast_days,
             'wind_speed_unit': 'ms',
         }
 
@@ -67,9 +69,9 @@ class OpenMeteoForecaster(SolarForecaster):
 
         hourly = data['hourly']
         now = datetime.now().astimezone()
-        today = now.date()
+        day_of_interest = now.date() + timedelta(days=day_offset)
         tz = now.tzinfo
-        result: List[SolarForecast] = []
+        forecasts: List[SolarForecast] = []
 
         for timestamp, irradiance, temperature, wind_speed in zip(
                 hourly['time'],
@@ -83,20 +85,20 @@ class OpenMeteoForecaster(SolarForecaster):
             )
             local_time = utc_time.astimezone(tz)
 
-            if local_time.date() != today:
+            if local_time.date() != day_of_interest:
                 continue
 
             if irradiance is None:
                 irradiance = 0
 
-            result.append(SolarForecast(
+            forecasts.append(SolarForecast(
                 time=local_time,
                 irradiance=irradiance,
                 temperature=temperature,
                 power=self.power(irradiance, temperature, wind_speed)
             ))
 
-        return result
+        return DailySolarForecast(forecasts)
 
     def get_connection_status(self) -> JSONDict:
         return {

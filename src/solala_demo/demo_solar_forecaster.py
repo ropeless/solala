@@ -12,8 +12,8 @@ def main():
         inverter_limit=config.INVERTER_LIMIT,
     )
 
-    for forecast in forecaster.get_forecast():
-        print(forecast.as_dict(datetime_format='%Y-%m-%d %H:%M:%S'))
+    for forecast in forecaster.get_forecast(0):
+        print(forecast.to_json(datetime_format='%Y-%m-%d %H:%M:%S'))
 
 
 if __name__ == '__main__':

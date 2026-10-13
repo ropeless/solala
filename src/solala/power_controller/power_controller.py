@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Iterable, Tuple
 
 from solala.utils.json import JSONDict
@@ -14,15 +14,8 @@ class PowerStatus:
     battery_power: float
     house_power: float
 
-    def as_dict(self) -> JSONDict:
-        return {
-            'state_of_charge': self.state_of_charge,
-            'power_limit': self.power_limit,
-            'grid_power': self.grid_power,
-            'solar_power': self.solar_power,
-            'battery_power': self.battery_power,
-            'house_power': self.house_power,
-        }
+    def to_json(self) -> JSONDict:
+        return asdict(self)
 
 
 class PowerController(ABC):
@@ -68,6 +61,14 @@ class PowerController(ABC):
         Get the status of the connection.
         """
         ...
+
+    @abstractmethod
+    def get_inverter_limit(self) -> float:
+        """
+        Get the reported power limit on inverter AC output.
+        """
+        ...
+
 
     # =================================================
     #  Battery Control

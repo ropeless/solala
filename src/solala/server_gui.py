@@ -11,7 +11,7 @@ from nicegui.elements.mixins.content_element import ContentElement
 
 from solala import server_log
 from solala.control_loop import control_loop
-from solala.control_loop import listeners as control_loop_listeners
+from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.power_pricer.power_pricer import Price
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
@@ -19,8 +19,9 @@ from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE, BUY
 from solala.server_constants import LOGGER
 from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.solar_forecaster.solar_forecaster import SolarForecast
-from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES
+from solala.solar_forecaster.solar_forecaster import SolarForecast, DailySolarForecast
+from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES, \
+    KILOWATT_HOURS, KILOWATTS, CELSIUS
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
@@ -52,6 +53,8 @@ _STATUS_UNITS: Mapping[str, str] = dict_merge(
         'solar_power': WATTS,
         'battery_power': WATTS,
         'house_power': WATTS,
+        'consumers_total': WATTS,
+        'consumers_remaining': WATTS,
         'power': WATTS,
         'voltage': VOLTS,
         'current': AMPS,
@@ -78,17 +81,18 @@ _CONNECTION_UNITS: Mapping[str, str] = {
 }
 
 
-class StatusListener(control_loop_listeners.StatusListener):
+class StatusListener(LoopListener):
 
     def __init__(self):
         super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
 
     @final
-    def update(self, status_json: JSONDict) -> None:
+    def update(self) -> None:
         """
         Thread safe update.
         """
+        status_json = control_loop.get_status()
         self._main_loop.call_soon_threadsafe(partial(self._update, status_json))
 
     @abstractmethod
@@ -96,61 +100,63 @@ class StatusListener(control_loop_listeners.StatusListener):
         ...
 
 
-class RegistersListener(control_loop_listeners.RegistersListener):
+class RegistersListener(LoopListener):
 
     def __init__(self):
         super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
 
     @final
-    def update(self, register_values: Dict[str, int | float | str | bool]) -> None:
+    def update(self) -> None:
         """
         Thread safe update.
         """
+        register_values: Dict[str, int | float | str | bool] = control_loop.get_registers()
         self._main_loop.call_soon_threadsafe(partial(self._update, register_values))
 
     def _update(self, registers_json: JSONDict) -> None:
         ...
 
 
-class PriceForecastListener(control_loop_listeners.PriceForecastListener):
+class PriceForecastListener(LoopListener):
 
     def __init__(self):
         super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
 
     @final
-    def update(self, price_forecast: List[Price]) -> None:
+    def update(self) -> None:
         """
         Thread safe update.
         """
+        price_forecast: List[Price] = control_loop.get_price_forecast()
         self._main_loop.call_soon_threadsafe(partial(self._update, price_forecast))
 
     def _update(self, price_forecast: List[Price]) -> None:
         ...
 
 
-class SolarForecastListener(control_loop_listeners.SolarForecastListener):
+class SolarForecastListener(LoopListener):
 
-    def __init__(self):
+    def __init__(self, day_offset: int):
         super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
+        self.day_offset: int = day_offset
 
     @final
-    def update(self, solar_forecast: List[SolarForecast]) -> None:
+    def update(self) -> None:
         """
         Thread safe update.
         """
+        solar_forecast: DailySolarForecast = control_loop.get_solar_forecast(self.day_offset)
         self._main_loop.call_soon_threadsafe(partial(self._update, solar_forecast))
 
-    def _update(self, solar_forecast: List[SolarForecast]) -> None:
+    def _update(self, solar_forecast: DailySolarForecast) -> None:
         ...
 
 
-def _register_listener(
-        listener: StatusListener | RegistersListener | PriceForecastListener | SolarForecastListener
-) -> None:
-    listener.update_now()
+def _register_listener(listener: LoopListener) -> None:
+    listener.update()
     ui.context.client.on_disconnect(partial(control_loop.remove_listener, listener))
     control_loop.add_listener(listener)
 
@@ -395,32 +401,37 @@ class PriceForecastUpdater(PriceForecastListener):
 
 
 class SolarForecastUpdater(SolarForecastListener):
-    def __init__(self, element: ui.element):
-        super().__init__()
+    def __init__(self, element: ui.element, day_offset: int):
+        super().__init__(day_offset)
         self._element = element
 
-    def _update(self, solar_forecast: List[SolarForecast]) -> None:
+    def _update(self, solar_forecast: DailySolarForecast) -> None:
         # Recreate the solar forecast table
         self._element.clear()
         with self._element:
-
-            if len(solar_forecast) == 0:
+            forecasts = solar_forecast.forecasts
+            if len(forecasts) == 0:
                 with ui.card().classes('w-full bg-white rounded-xl border border-[#e1e6ea] p-6'):
                     ui.icon('query_stats').classes('text-3xl text-[#a1a9ae]')
-                    ui.label('No price forecast available').classes('text-lg font-semibold')
+                    ui.label('No solar forecast available').classes('text-lg font-semibold')
                     ui.label('There are currently no forecast prices to display.').classes('text-sm text-gray-500')
                 return
 
-            forecast_date = solar_forecast[0].time.date()
+            forecast_date = solar_forecast.date()
 
             with ui.row().classes('items-center gap-2 mb-5'):
                 ui.icon('calendar_today').classes('text-lg text-gray-500')
                 ui.label(forecast_date.strftime('%A, %d %B %Y')).classes('text-sm text-gray-500')
 
+            with ui.row().classes('items-center gap-2 mb-5'):
+                ui.label('Daily generation estimate:').classes('text-sm text-gray-500')
+                total = f'{solar_forecast.total_forecast_energy() / 1000:.2f}'
+                ui.label(f'{total}{KILOWATT_HOURS}').classes('solar-number')
+
             # Forecast table
             with ui.column().classes('w-full gap-3'):
-                with ui.element('div').classes('price-table'):
-                    with ui.element('div').classes('price-row price-header'):
+                with ui.element('div').classes('solar-table'):
+                    with ui.element('div').classes('solar-row solar-header'):
                         ui.label('Time')
                         ui.label('Irradiance').classes('text-right')
                         ui.label('Temperature').classes('text-right')
@@ -428,21 +439,21 @@ class SolarForecastUpdater(SolarForecastListener):
 
                     forecast: SolarForecast
                     for i, forecast in enumerate(solar_forecast):
-                        row_classes = 'price-row'
+                        row_classes = 'solar-row'
                         if i % 2 == 1:
-                            row_classes += ' price-row-alt'
+                            row_classes += ' solar-row-alt'
 
                         with ui.element('div').classes(row_classes):
-                            ui.label(forecast.time.strftime('%H:%M')).classes('price-time')
+                            ui.label(forecast.time.strftime('%H:%M')).classes('solar-time')
                             if forecast.irradiance > 0:
-                                ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'price-number')
+                                ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'solar-number')
                             else:
-                                ui.label('.').classes(f'price-number')
-                            ui.label(f'{int(forecast.temperature + 0.5)}').classes(f'price-number')
+                                ui.label('.').classes(f'solar-number')
+                            ui.label(f'{int(forecast.temperature + 0.5)}{CELSIUS}').classes(f'solar-number')
                             if forecast.power > 0:
-                                ui.label(f'{forecast.power / 1000:.2f}').classes('price-number')
+                                ui.label(f'{forecast.power / 1000:.2f}{KILOWATTS}').classes('solar-number')
                             else:
-                                ui.label('.').classes('price-number')
+                                ui.label('.').classes('solar-number')
 
 
 def _json_page(name: str) -> ContentElement:
@@ -691,7 +702,8 @@ def solar_forecast_page():
         element = ui.element('div')
         _register_listener(
             SolarForecastUpdater(
-                element=element
+                element=element,
+                day_offset=0,
             )
         )
 
@@ -748,7 +760,7 @@ def parameters_page():
     Show the policy parameters and control constants.
     """
     parameters_json = control_loop.get_parameters()
-    constants_json = control_loop.Constants.as_dict()
+    constants_json = control_loop.Constants.to_json()
 
     params, consts = _json_multi_page('Parameters', 'Constants')
 

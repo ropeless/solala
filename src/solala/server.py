@@ -172,7 +172,7 @@ def get_parameters(rest_of_path: str | None = None, match: str | None = None):
 @app.get('/constants')
 @app.get('/constants/{rest_of_path:path}')
 def get_constants(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(control_loop.Constants.as_dict(), rest_of_path, match)
+    return _follow_filter_json(control_loop.Constants.to_json(), rest_of_path, match)
 
 
 @app.put('/battery')

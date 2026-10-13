@@ -15,9 +15,9 @@ class Constants:
     SOLAR_FORECAST_AGE = 4 * 60  # number of minutes a solar forecast is valid
 
     @staticmethod
-    def as_dict() -> JSONDict:
+    def to_json() -> JSONDict:
         return {
             name: getattr(Constants, name)
             for name in dir(Constants)
-            if all((c.isupper() or c == '_') for c in name)
+            if not name.startswith('_')
         }

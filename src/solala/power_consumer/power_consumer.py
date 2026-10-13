@@ -14,7 +14,7 @@ class ConsumerStatus:
     def power(self) -> float:
         return self.voltage * self.current
 
-    def as_dict(self) -> Dict[str, float]:
+    def to_json(self) -> Dict[str, float]:
         return {
             'voltage': self.voltage,
             'current': self.current,

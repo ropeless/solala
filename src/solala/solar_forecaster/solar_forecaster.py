@@ -1,19 +1,19 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime
-from typing import List
+from datetime import datetime, date
+from typing import Sequence, Iterator
 
 from solala.utils.json import JSONDict
 
 
-@dataclass
+@dataclass(frozen=True)
 class SolarForecast:
     time: datetime  # local time
     irradiance: float  # W/m^2
     temperature: float  # Celsius
     power: float  # Wh
 
-    def as_dict(self, datetime_format: str) -> JSONDict:
+    def to_json(self, datetime_format: str) -> JSONDict:
         result = {
             'time': self.time.strftime(datetime_format),
             'irradiance': self.irradiance,
@@ -23,9 +23,34 @@ class SolarForecast:
         return result
 
 
+@dataclass(frozen=True)
+class DailySolarForecast:
+    """
+    Hourly forecast of solar irradiance, temperature, and power for one day.
+    """
+    forecasts: Sequence[SolarForecast]
+
+    def __iter__(self) -> Iterator[SolarForecast]:
+        return iter(self.forecasts)
+
+    def total_forecast_energy(self) -> float:
+        """
+
+        Returns:
+            Forecast energy in Wh.
+        """
+        return sum(
+            forecast.power
+            for forecast in self.forecasts
+        )
+
+    def date(self) -> date:
+        return self.forecasts[0].time.date()
+
+
 class SolarForecaster(ABC):
     @abstractmethod
-    def get_forecast(self) -> List[SolarForecast]:
+    def get_forecast(self, day_offset: int) -> DailySolarForecast:
         """
         Provide an hourly forecast of solar irradiance and temperature for today.
         The implementer should account for the local conditions and daily weather
