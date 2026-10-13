@@ -59,7 +59,7 @@ _STATUS_UNITS: Mapping[str, str] = dict_merge(
         'voltage': VOLTS,
         'current': AMPS,
         'capacity': WATTS,
-        'forecast': WATT_HOURS,
+        'forecast_generation': WATT_HOURS,
     },
     _PARAMETERS_UNITS,
 )

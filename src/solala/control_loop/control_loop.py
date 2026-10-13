@@ -458,7 +458,7 @@ def get_power_status() -> JSONDict:
         try:
             result: JSONDict = state.controller.get_status().to_json()
             if state.forecaster is not None:
-                result['forecast'] = state.last_solar_forecast.total_forecast_energy()
+                result['forecast_generation'] = state.last_solar_forecast.total_forecast_energy()
             return result
         except Exception as err:
             return {'error': str(err)}
@@ -1071,19 +1071,23 @@ def _get_status() -> JSONDict:
     Take a snapshot of the current status.
     Assumes the control state lock is held.
     """
+    control_status = get_control_status()
+    price_status = get_price_status()
     power_status = get_power_status()
+    consumers_status: JSONDict = get_consumers_status()
+
     result: JSONDict = {
-        'control': get_control_status(),
-        'price': get_price_status(),
+        'control': control_status,
+        'price': price_status,
         'power': power_status,
     }
-    consumers_status: JSONDict = get_consumers_status()
     if len(consumers_status) > 0:
         result['consumers'] = consumers_status
         total = sum(json_num(json_dict(consumer).get('power', 0)) for consumer in consumers_status.values())
-        house_power = json_num(power_status['house_power'])
-        result['consumers_total'] = total
-        result['consumers_remaining'] = house_power - total
+        if total > 0:
+            house_power = json_num(power_status['house_power'])
+            result['consumers_total'] = total
+            result['consumers_remaining'] = house_power - total
     return result
 
 
