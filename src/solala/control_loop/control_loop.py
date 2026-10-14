@@ -64,13 +64,13 @@ class _DateKey:
 class _ControlState:
     controller: Optional[PowerController] = None
     pricer: Optional[PowerPricer] = None
-    consumers: Dict[str, PowerConsumer] = field(default_factory=dict)
     forecaster: Optional[SolarForecaster] = None
+    consumers: Dict[str, PowerConsumer] = field(default_factory=dict)
 
     controller_settings: Optional[ControllerConnection] = None
     pricer_settings: Optional[PricerConnection] = None
-    consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
     forecaster_settings: Optional[ForecasterConnection] = None
+    consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
 
     battery_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_mode: InverterMode = InverterMode.UNKNOWN
@@ -98,7 +98,6 @@ class _ControlState:
     stop_charge_price_threshold: float = DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
 
     listeners: List[LoopListener] = field(default_factory=list)
-
     settings_path: Optional[Path] = None  # for using persisted settings.
     loop_start: datetime = datetime.now(UTC)  # confirms the control loop is running
 
@@ -536,10 +535,10 @@ def get_connection_status() -> JSONDict:
         result = {
             'controller': state.controller_connection_status,
             'pricer': state.pricer_connection_status,
+            'forecaster': state.forecaster_connection_status,
         }
         if len(state.consumers) > 0:
             result['consumers'] = state.consumers_connection_status
-        result['forecaster'] = state.forecaster_connection_status
         return result
 
 
