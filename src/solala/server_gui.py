@@ -708,15 +708,20 @@ def solar_forecast_page():
 
     with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
         _page_header(' solar forecast')
-        with ui.column().classes('w-full items-center gap-3 p-4 mb-4 rounded-xl bg-gray-50 dark:bg-gray-900'):
-            with ui.row().classes('w-full items-center justify-center gap-3'):
+        with ui.column().classes('w-full items-center gap-3 p-2 mb-4 rounded-xl bg-gray-50 dark:bg-gray-900'):
+
+            # Navigation row
+            with ui.row().classes('w-full flex-nowrap items-center justify-center gap-1 sm:gap-3'):
                 ui.button(
                     icon='chevron_left',
                     on_click=lambda: change_day(-1),
-                ).props('flat round color=grey').classes('!w-10 !h-10').tooltip('Previous day')
+                ).props('flat round color=grey').classes('!w-9 !h-9 shrink-0').tooltip('Previous day')
 
                 with ui.column().classes('items-center gap-1 min-w-0'):
-                    date_element = ui.label().classes('w-52 sm:w-64 text-center text-sm text-gray-500')
+                    date_element = ui.label().classes(
+                        'w-40 sm:w-64 shrink-0 text-center '
+                        'text-xs sm:text-sm text-gray-500 whitespace-nowrap'
+                    )
                     with ui.element('div').classes('h-7 flex items-center justify-center'):
                         day_status = ui.label('today').classes('text-xs text-gray-500')
                         today_button = ui.button(
@@ -727,7 +732,7 @@ def solar_forecast_page():
                 ui.button(
                     icon='chevron_right',
                     on_click=lambda: change_day(1),
-                ).props('flat round color=grey').classes('!w-10 !h-10').tooltip('Next day')
+                ).props('flat round color=grey').classes('!w-9 !h-9 shrink-0').tooltip('Next day')
 
         # Handler for swipe actions
         def handle_swipe(event) -> None:
@@ -745,17 +750,36 @@ def solar_forecast_page():
         # What follows is rendering and navigation
 
         swipe_area.on(
+            'touchstart',
+            js_handler="""(e) => {
+                if (!e.changedTouches.length) return;
+
+                const touch = e.changedTouches[0];
+                e.currentTarget.dataset.startX = touch.clientX;
+                e.currentTarget.dataset.startY = touch.clientY;
+            }""",
+        )
+
+        swipe_area.on(
             'touchend',
             handle_swipe,
             js_handler="""(e) => {
                 if (!e.changedTouches.length) return;
+
                 const touch = e.changedTouches[0];
                 const startX = Number(e.currentTarget.dataset.startX);
                 const startY = Number(e.currentTarget.dataset.startY);
+
+                // Ignore gestures if the starting position was not recorded.
+                if (!Number.isFinite(startX) ||
+                    !Number.isFinite(startY)) return;
+
                 const dx = touch.clientX - startX;
                 const dy = touch.clientY - startY;
+
                 // Require a deliberate horizontal swipe.
-                if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+                if (Math.abs(dx) >= 60 &&
+                    Math.abs(dx) > Math.abs(dy) * 1.5) {
                     emit(dx < 0 ? 'left' : 'right');
                 }
             }""",
