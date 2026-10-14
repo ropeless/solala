@@ -1,7 +1,7 @@
 import local_config as config
 from solala import server
 from solala.settings import Settings, DummyControllerConnection, DummyPricerConnection, \
-    DummyConsumerConnection, OpenMeteoConnection
+    DummyConsumerConnection, DummySolarForecasterConnection
 from solala_demo.log import configure_logger
 
 HOST: str = config.SERVER_IP_ADDRESS
@@ -25,18 +25,18 @@ def main():
         ),
         consumers={'example_consumer': DummyConsumerConnection(current=5)},
 
-        # forecaster=DummySolarForecasterConnection(
-        #     panel_capacity=config.PANEL_CAPACITY,
-        #     inverter_limit=config.INVERTER_LIMIT,
-        # ),
-        forecaster=OpenMeteoConnection(
-            latitude=config.LATITUDE,
-            longitude=config.LONGITUDE,
-            panel_orientation=config.PANEL_ORIENTATION,
-            panel_tilt=config.PANEL_TILT,
-            panel_capacity=9000,
-            inverter_limit=8000,
+        forecaster=DummySolarForecasterConnection(
+            panel_capacity=config.PANEL_CAPACITY,
+            inverter_limit=config.INVERTER_LIMIT,
         ),
+        # forecaster=OpenMeteoConnection(
+        #     latitude=config.LATITUDE,
+        #     longitude=config.LONGITUDE,
+        #     panel_orientation=config.PANEL_ORIENTATION,
+        #     panel_tilt=config.PANEL_TILT,
+        #     panel_capacity=9000,
+        #     inverter_limit=8000,
+        # ),
 
     )
 
