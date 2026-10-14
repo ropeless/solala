@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from functools import partial
 from typing import Mapping, final, Optional, Dict, List
 
-from nicegui import ui, app
+from nicegui import ui, app, events
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
@@ -428,7 +428,6 @@ class SolarForecastUpdater(SolarForecastListener):
                 with ui.card().classes('w-full bg-white rounded-xl border border-[#e1e6ea] p-6'):
                     ui.icon('query_stats').classes('text-3xl text-[#a1a9ae]')
                     ui.label('No solar forecast available').classes('text-lg font-semibold')
-                    ui.label('There are currently no forecast prices to display.').classes('text-sm text-gray-500')
                 return
 
             with ui.row().classes('items-center gap-2 mb-5'):
@@ -717,8 +716,8 @@ def solar_forecast_page():
                 ).props('flat round color=grey').classes('!w-10 !h-10').tooltip('Previous day')
 
                 with ui.column().classes('items-center gap-1 min-w-0'):
-                    date_element = ui.label().classes('text-sm text-gray-500')
-                    with ui.row().classes('items-center gap-1'):
+                    date_element = ui.label().classes('w-52 sm:w-64 text-center text-sm text-gray-500')
+                    with ui.element('div').classes('h-7 flex items-center justify-center'):
                         day_status = ui.label('today').classes('text-xs text-gray-500')
                         today_button = ui.button(
                             'back to today',
@@ -730,10 +729,48 @@ def solar_forecast_page():
                     on_click=lambda: change_day(1),
                 ).props('flat round color=grey').classes('!w-10 !h-10').tooltip('Next day')
 
-        # Forecast table will be rendered here
-        forecast_element = ui.element('div').classes('w-full')
+        # Handler for swipe actions
+        def handle_swipe(event) -> None:
+            direction = event.args
+            if direction == 'left':
+                change_day(1)
+            elif direction == 'right':
+                change_day(-1)
+
+        swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
+        with swipe_area:
+            # Forecast table will be rendered here
+            forecast_element = ui.element('div').classes('w-full')
 
         # What follows is rendering and navigation
+
+        swipe_area.on(
+            'touchend',
+            handle_swipe,
+            js_handler="""(e) => {
+                if (!e.changedTouches.length) return;
+                const touch = e.changedTouches[0];
+                const startX = Number(e.currentTarget.dataset.startX);
+                const startY = Number(e.currentTarget.dataset.startY);
+                const dx = touch.clientX - startX;
+                const dy = touch.clientY - startY;
+                // Require a deliberate horizontal swipe.
+                if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+                    emit(dx < 0 ? 'left' : 'right');
+                }
+            }""",
+        )
+
+        def handle_key(e: events.KeyEventArguments) -> None:
+            if e.action.keydown:
+                if e.key.arrow_left:
+                    change_day(-1)
+                elif e.key.arrow_right:
+                    change_day(1)
+                elif e.key.home:
+                    set_day(today)
+
+        ui.keyboard(on_key=handle_key, repeating=False)
 
         updater = SolarForecastUpdater(element=forecast_element, day=today)
         _register_listener(updater)
