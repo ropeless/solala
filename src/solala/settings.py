@@ -18,6 +18,11 @@ class DummyControllerConnection(BaseModel):
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
 
+    inverter_limit: float = 8000
+    house_power: float = 3000
+    max_charge_param: float = 3000
+    max_discharge_param: float = 3000
+
 
 class DummyPricerConnection(BaseModel):
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
@@ -36,6 +41,14 @@ class DummyConsumerConnection(BaseModel):
 
     voltage: float = 240
     current: float = 0
+
+
+class DummySolarForecasterConnection(BaseModel):
+    TYPE: ClassVar[Literal['dummy']] = 'dummy'
+    type: Literal['dummy'] = 'dummy'
+
+    panel_capacity: float = 9000
+    inverter_limit: float = 8000
 
 
 class ModbusControllerConnection(BaseModel):
@@ -110,6 +123,7 @@ ConsumerConnection: TypeAlias = Annotated[
 
 ForecasterConnection: TypeAlias = Annotated[
     Union[
+        DummySolarForecasterConnection,
         OpenMeteoConnection,
         # Add others as needed
     ],

@@ -61,7 +61,6 @@ class ModbusPowerController(PowerController):
         self._solar_power: List[str] = [f'{inverter}/module/{i}/DCW' for inverter in self._inverters for i in [1, 2]]
         self._grid_power: str = f'{meter}/W'
         self._inverter_power: List[str] = [f'{inverter}/W' for inverter in self._inverters]
-        self._WMax: List[str] = [f'{inverter}/WMax' for inverter in self._inverters]
         self._WMaxLim_Ena: str = f'{master}/WMaxLim_Ena'
         self._WMaxLimPct: str = f'{master}/WMaxLimPct'
         self._WMaxLimPct_RvrtTms: str = f'{master}/WMaxLimPct_RvrtTms'
@@ -98,11 +97,23 @@ class ModbusPowerController(PowerController):
         for register, value in self.get_registers():
             LOGGER.info(f'LOG {register}: {value!r}')
 
+        # Calculate the constant inverter limit
+        value: float = 0
+        for inverter in self._inverters:
+            w_max = self._get(f'{inverter}/WMax')
+            w_rtg = self._get(f'{inverter}/WRtg')
+            value += min(w_max, w_rtg)
+        self._inverter_limit = value
+        LOGGER.info(f'LOG inverter_limit: {value!r}')
+
     def connect(self) -> None:
         """
         Delegate `connect` to Modbus clients.
         """
         self._modbus.connect()
+
+    def get_inverter_limit(self) -> float:
+        return self._inverter_limit
 
     def get_connection_status(self) -> JSONDict:
         return self._connection_status
@@ -224,7 +235,7 @@ class ModbusPowerController(PowerController):
 
         cur_grid_power: float = self._get(self._grid_power)
         cur_pct: float = self._get(self._WMaxLimPct)
-        max_power: float = self._get_sum(self._WMax)
+        max_power: float = self.get_inverter_limit()
         cur_power: float = self._get_sum(self._inverter_power)
 
         abs_grid_power = abs(cur_grid_power)

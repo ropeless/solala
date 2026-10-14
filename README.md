@@ -46,6 +46,15 @@ For the demos, private constants are declared in a file `local_config.py`
 which needs to be in your Python path. An example is provided in the file
 `src/solala_demo/_example_local_config.py`.
 
+GUI User Hints
+==============
+On the landing page, the "Power" panel shows a live infographic of power and pricing information.
+
+Click the infographic "grid" icon to see the forecast of power prices.
+
+Click the infographic "sun" icon to see the forecast of solar power.
+
+
 License
 =======
 

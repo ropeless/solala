@@ -10,19 +10,34 @@ class DummyPowerController(PowerController):
     This power controller approximately simulates a simple power system.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+            self,
+            *,
+            inverter_limit: float,
+            house_power: float,
+            max_charge_param: float,
+            max_discharge_param: float,
+
+    ) -> None:
         self.state_of_charge = 50
 
+        self.house_power = house_power
         self.power_limit = 0
-        self.house_power = 0
         self.battery_power = 0
         self.grid_power = 0
         self.solar_power = 0
         self.battery_mode = ''
         self.inverter_mode = ''
 
+        self.inverter_limit = inverter_limit
+        self.max_charge_param = max_charge_param
+        self.max_discharge_param = max_discharge_param
+
         self.enable_battery()
         self.enable_inverter()
+
+    def get_inverter_limit(self) -> float:
+        return self.inverter_limit
 
     def get_connection_status(self) -> Dict[str, int | float | str]:
         return {
@@ -35,6 +50,9 @@ class DummyPowerController(PowerController):
             'grid_power': self.grid_power,
             'solar_power': self.solar_power,
             'house_power': self.house_power,
+            'inverter_limit': self.inverter_limit,
+            'max_charge_param': self.max_charge_param,
+            'max_discharge_param': self.max_discharge_param,
         }
 
     def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
@@ -82,19 +100,17 @@ class DummyPowerController(PowerController):
         """
         Simulate a simple power system.
         """
-        self.house_power = 3000
+        max_generation = self.inverter_limit
+        max_charge_param = self.max_charge_param
+        max_discharge_param = self.max_discharge_param
 
-        generation_param = 5000
-        force_charge_param = 3000
-        force_discharge_param = 3000
-
-        charge_limit = 5000 if self.state_of_charge < 100 else 0
-        discharge_limit = 5000 if self.state_of_charge > 0 else 0
+        charge_limit = max_charge_param if self.state_of_charge < 100 else 0
+        discharge_limit = max_discharge_param if self.state_of_charge > 0 else 0
 
         match self.inverter_mode:
             case 'enable':
                 self.power_limit = 100
-                self.solar_power = generation_param
+                self.solar_power = max_generation
 
             case 'disable':
                 self.power_limit = 0
@@ -103,15 +119,15 @@ class DummyPowerController(PowerController):
             case 'zero_export':
                 # adjusted later
                 self.power_limit = 100
-                self.solar_power = generation_param
+                self.solar_power = max_generation
 
         power_in: float = self.solar_power
         if self.battery_mode == 'force_discharge' and self.inverter_mode != 'disable':
-            power_in += max(force_discharge_param, discharge_limit)
+            power_in += max(max_discharge_param, discharge_limit)
 
         power_out: float = self.house_power
         if self.battery_mode == 'force_charge':
-            power_out += max(force_charge_param, charge_limit)
+            power_out += max(max_charge_param, charge_limit)
 
         excess_power: float = power_in - power_out
 
@@ -127,15 +143,15 @@ class DummyPowerController(PowerController):
                 case 'disable':
                     self.battery_power = 0
                 case 'force_charge':
-                    self.battery_power = max(excess_power, force_charge_param)
+                    self.battery_power = max(excess_power, max_charge_param)
                 case 'force_discharge':
-                    self.battery_power = min(excess_power, -force_discharge_param)
+                    self.battery_power = min(excess_power, -max_discharge_param)
 
         self.grid_power = self.house_power + self.battery_power - self.solar_power
 
         if self.inverter_mode == 'zero_export' and self.grid_power < 0:
             self.solar_power = max(0, self.solar_power + self.grid_power)
-            self.power_limit = self.solar_power / generation_param * 100
+            self.power_limit = self.solar_power / max_generation * 100
             self.grid_power = self.house_power + self.battery_power - self.solar_power
 
     def close(self) -> None:
