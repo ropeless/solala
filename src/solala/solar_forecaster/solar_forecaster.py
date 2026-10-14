@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, date
 from typing import Sequence, Iterator
 
-from solala.utils.json import JSONDict
+from solala.utils.json import JSONDict, to_json
 
 
 @dataclass(frozen=True)
@@ -14,13 +14,7 @@ class SolarForecast:
     power: float  # Wh
 
     def to_json(self, datetime_format: str) -> JSONDict:
-        result = {
-            'time': self.time.strftime(datetime_format),
-            'irradiance': self.irradiance,
-            'temperature': self.temperature,
-            'power': self.power,
-        }
-        return result
+        return to_json(self, datetime_format=datetime_format)
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,10 @@
+import inspect
 import json
 import re
-from typing import TypeAlias, Dict, List, Optional, Mapping
+from collections.abc import mappingproxy
+from datetime import datetime, date
+from itertools import chain
+from typing import TypeAlias, Dict, List, Optional, Mapping, Any, Collection
 
 # Define the recursive JSON value type
 JSONValue: TypeAlias = str | int | float | bool | None | List["JSONValue"] | Dict[str, "JSONValue"]
@@ -131,6 +135,80 @@ def render_json(
     text = text.replace('"', '')
 
     return text
+
+
+def to_json(
+        thing: object,
+        *,
+        exclude_names: Collection[str] = (),
+        exclude_values: Collection[Any] = (),
+        datetime_format: str = 'YYYY-MM-DD HH:MM:SS',
+        date_format: str = 'YYYY-MM-DD',
+) -> JSONDict:
+    """
+    Support for converting classes and object with fields into JSON.
+    """
+    return _to_json(thing, exclude_names, exclude_values, datetime_format, date_format)
+
+
+def _to_json(
+        thing: object,
+        exclude_names: Collection[str],
+        exclude_values: Collection[Any],
+        datetime_format: str,
+        date_format: str,
+) -> JSONDict:
+    if isinstance(thing, type):
+        items = thing.__dict__.items()
+    else:
+        items = chain(thing.__dict__.items(), thing.__class__.__dict__.items())
+    result: JSONDict = {}
+    for name, value in items:
+        if name.startswith('_') or name in exclude_names:
+            continue
+        if isinstance(value, property):
+            value = value.__get__(thing, type(thing))
+        if value in exclude_values:
+            continue
+        if _ignore(value):
+            continue
+
+        if isinstance(value, (int, float, str, bool, None)):
+            result[name] = value
+        elif isinstance(value, datetime):
+            result[name] = value.strftime(datetime_format)
+        elif isinstance(value, date):
+            result[name] = value.strftime(date_format)
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            result[name] = [
+                _to_json(item, exclude_names, exclude_values, datetime_format, date_format)
+                for item in value
+            ]
+        elif isinstance(value, (dict, mappingproxy)):
+            result[name] = {
+                key: _to_json(value, exclude_names, exclude_values, datetime_format, date_format)
+                for key, value in value.items()
+            }
+    return result
+
+
+def _ignore(value: Any) -> bool:
+    """
+    These value types cause problems.
+    """
+    return (
+            inspect.iscode(value)
+            or inspect.isroutine(value)
+            or inspect.ismodule(value)
+            or inspect.isgenerator(value)
+            or inspect.isgeneratorfunction(value)
+            or inspect.iscoroutine(value)
+            or inspect.iscoroutinefunction(value)
+            or inspect.isasyncgen(value)
+            or inspect.isasyncgenfunction(value)
+            or inspect.isframe(value)
+            or inspect.istraceback(value)
+    )
 
 
 def _stringify_values(

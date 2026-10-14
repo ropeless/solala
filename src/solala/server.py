@@ -166,7 +166,7 @@ def get_connection(rest_of_path: str | None = None, match: str | None = None):
 @app.get('/parameters')
 @app.get('/parameters/{rest_of_path:path}')
 def get_parameters(rest_of_path: str | None = None, match: str | None = None):
-    return _follow_filter_json(control_loop.get_parameters(), rest_of_path, match)
+    return _follow_filter_json(control_loop.get_policy_parameters(), rest_of_path, match)
 
 
 @app.get('/constants')
@@ -232,7 +232,7 @@ def put_inverter(mode: str):
 
 @app.put('/parameters/{parameter}')
 def put_parameters(parameter: str, value: float):
-    if parameter not in control_loop.get_parameters():
+    if parameter not in control_loop.get_policy_parameters():
         return JSONResponse({'error': f'Invalid parameter: {parameter!r}'}, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
     kwargs = {parameter: value}

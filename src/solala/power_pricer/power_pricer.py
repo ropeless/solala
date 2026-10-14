@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List
 
-from solala.utils.json import JSONDict
+from solala.utils.json import JSONDict, to_json
 
 
 @dataclass(frozen=True)
@@ -21,21 +21,14 @@ class Price:
     tariff_demand_window: bool = False
 
     def to_json(self, datetime_format: str, include_time: bool) -> JSONDict:
-        result: JSONDict = {
-            'buy_price': self.buy_price,
-            'feed_in_price': self.feed_in_price,
-            'renewables': self.renewables,
-            'estimate': self.estimate,
-            'tariff_demand_window': self.tariff_demand_window,
-        }
-        if self.tariff_period != '':
-            result['tariff_period'] = self.tariff_period
-        if self.tariff_season != '':
-            result['tariff_season'] = self.tariff_season
-        if include_time:
-            result['start_time'] = self.start_time.strftime(datetime_format)
-            result['end_time'] = self.end_time.strftime(datetime_format)
-        return result
+        exclude_names = set() if include_time else {'start_time', 'end_time'}
+        exclude_values = ('',)
+        return to_json(
+            self,
+            datetime_format=datetime_format,
+            exclude_names=exclude_names,
+            exclude_values=exclude_values,
+        )
 
 
 class PowerPricer(ABC):

@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Iterable, Tuple, Dict
+from typing import Iterable, Tuple
 
-from solala.utils.json import JSONDict
+from solala.utils.json import JSONDict, to_json
 
 
 @dataclass(frozen=True)
@@ -14,12 +14,8 @@ class ConsumerStatus:
     def power(self) -> float:
         return self.voltage * self.current
 
-    def to_json(self) -> Dict[str, float]:
-        return {
-            'voltage': self.voltage,
-            'current': self.current,
-            'power': self.power,
-        }
+    def to_json(self) -> JSONDict:
+        return to_json(self)
 
 
 class PowerConsumer(ABC):

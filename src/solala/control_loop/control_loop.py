@@ -47,7 +47,6 @@ _NO_PRICE = Price(
     feed_in_price=0,
     estimate=True,
 )
-_NO_SOLAR_FORECAST = DailySolarForecast([])
 _DISCONNECTED: JSONDict = {'status': 'disconnected'}
 
 
@@ -77,7 +76,7 @@ class _ControlState:
     last_price_forecast: List[Price] = field(default_factory=list)
     next_price_forecast_check: datetime = _MIN_DATE
 
-    last_solar_forecast: DailySolarForecast = _NO_SOLAR_FORECAST
+    last_solar_forecast: Dict[int, DailySolarForecast] = field(default_factory=dict)
     next_solar_forecast_check: datetime = _MIN_DATE
 
     # NEG_FEED_IN_ZERO_EXPORT parameters
@@ -224,9 +223,9 @@ def run_control_loop(
 
         # Sleep for the remaining time until the next loop iteration
         sleeptime: int = int(state.loop_start.timestamp() + Constants.LOOP_TIME - datetime.now().timestamp())
-        if sleeptime < Constants.MIN_SLEEP_TIME:
-            LOGGER.warn(f'{_LOG_SRC}Low sleep time: {sleeptime} < {Constants.MIN_SLEEP_TIME}')
-            sleeptime = Constants.MIN_SLEEP_TIME
+        if sleeptime < Constants.LOOP_MIN_SLEEP_TIME:
+            LOGGER.warn(f'{_LOG_SRC}Low sleep time: {sleeptime} < {Constants.LOOP_MIN_SLEEP_TIME}')
+            sleeptime = Constants.LOOP_MIN_SLEEP_TIME
         time.sleep(sleeptime)
 
 
@@ -458,7 +457,7 @@ def get_power_status() -> JSONDict:
         try:
             result: JSONDict = state.controller.get_status().to_json()
             if state.forecaster is not None:
-                result['forecast_generation'] = state.last_solar_forecast.total_forecast_energy()
+                result['forecast_generation'] = get_solar_forecast(0).total_forecast_energy()
             return result
         except Exception as err:
             return {'error': str(err)}
@@ -473,19 +472,24 @@ def get_solar_forecast(day_offset: int) -> DailySolarForecast:
         forecaster = state.forecaster
         if forecaster is None:
             LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: solar forecaster not connected')
-            return _NO_SOLAR_FORECAST
+            return DailySolarForecast([])
 
-        forecasts: DailySolarForecast = state.last_solar_forecast
+        # Clear stale forecasts
         now = datetime.now(UTC)
         if state.next_price_forecast_check <= now:
+            state.last_solar_forecast.clear()
+            state.next_price_forecast_check = now + timedelta(minutes=Constants.SOLAR_FORECAST_AGE)
+
+        forecast: Optional[DailySolarForecast] = state.last_solar_forecast.get(day_offset)
+        if forecast is None:
             try:
-                LOGGER.info(f'{_LOG_SRC}Updating solar forecast')
-                forecasts = forecaster.get_forecast(day_offset)
-                state.last_solar_forecast = forecasts
-                state.next_price_forecast_check = now + timedelta(minutes=Constants.SOLAR_FORECAST_AGE)
+                LOGGER.info(f'{_LOG_SRC}Updating solar forecast: offset = {day_offset}')
+                forecast: DailySolarForecast = forecaster.get_forecast(day_offset)
+                state.last_solar_forecast[day_offset] = forecast
             except Exception as err:
                 LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: {err}')
-    return forecasts
+                return DailySolarForecast([])
+    return forecast
 
 
 def get_consumers_status() -> JSONDict:
@@ -524,7 +528,10 @@ def get_status() -> JSONDict:
         return state.last_status
 
 
-def get_parameters() -> JSONDict:
+def get_policy_parameters() -> JSONDict:
+    """
+    Get policy parameters.
+    """
     with _control_state_lock:
         state = _control_state
         return {
@@ -674,7 +681,7 @@ def set_parameters(
 
         _save_settings()
         state.force_price_check()
-        return get_parameters()
+        return get_policy_parameters()
 
 
 def exit_control_loop() -> None:

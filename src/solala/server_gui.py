@@ -65,7 +65,7 @@ _STATUS_UNITS: Mapping[str, str] = dict_merge(
 )
 _CONSTANTS_UNITS: Mapping[str, str] = {
     'LOOP_TIME': SECONDS,
-    'MIN_SLEEP_TIME': SECONDS,
+    'LOOP_MIN_SLEEP_TIME': SECONDS,
     'CONTROL_DURATION': SECONDS,
     'PRICE_LOOK_AHEAD': MINUTES,
     'PRICE_SETTLE_CHECK': SECONDS,
@@ -759,13 +759,13 @@ def parameters_page():
     """
     Show the policy parameters and control constants.
     """
-    parameters_json = control_loop.get_parameters()
+    policy_json = control_loop.get_policy_parameters()
     constants_json = control_loop.Constants.to_json()
 
-    params, consts = _json_multi_page('Parameters', 'Constants')
+    policy, consts = _json_multi_page('Policy', 'Constants')
 
-    params.set_content(
-        render_json(parameters_json, units=_PARAMETERS_UNITS)
+    policy.set_content(
+        render_json(policy_json, units=_PARAMETERS_UNITS)
     )
 
     consts.set_content(
