@@ -715,7 +715,13 @@ def solar_forecast_page():
                 'rounded-xl bg-gray-50 dark:bg-gray-900'
         ):
             # Navigation row
-            with ui.row().classes('w-full flex-nowrap items-center justify-center gap-1'):
+            with ui.row().classes(
+                    'w-full flex-nowrap items-center gap-1'
+            ).style(
+                'justify-content: flex-start; '
+                'align-self: stretch; '
+                'margin-left: 0; margin-right: auto;'
+            ):
                 button_classes = '!w-8 !h-8 min-w-0 shrink-0'
                 ui.button(
                     icon='chevron_left',
