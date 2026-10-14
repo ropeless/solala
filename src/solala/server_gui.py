@@ -733,14 +733,14 @@ def solar_forecast_page():
                     with ui.column().classes('items-center gap-1 min-w-0'):
                         date_element = ui.label().classes(
                             'w-40 sm:w-64 shrink-0 text-center '
-                            'text-xs sm:text-sm text-gray-500 whitespace-nowrap'
+                            'text-sm text-gray-500 whitespace-nowrap'
                         )
                         with ui.element('div').classes('h-7 flex items-center justify-center'):
-                            day_status = ui.label('today').classes('text-xs sm:text-sm text-gray-500')
+                            day_status = ui.label('today').classes('text-sm text-gray-500')
                             today_button = ui.button(
                                 'back to today',
                                 on_click=lambda: set_day(today),
-                            ).props('flat dense no-caps color=primary').classes('text-xs sm:text-sm min-h-0 px-2 py-1')
+                            ).props('flat dense no-caps color=primary').classes('text-sm min-h-0 px-2 py-1')
 
                     ui.button(
                         icon='chevron_right',
