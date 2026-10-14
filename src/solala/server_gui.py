@@ -2,6 +2,7 @@ import asyncio
 import json
 from abc import abstractmethod
 from asyncio import AbstractEventLoop
+from datetime import date, timedelta
 from functools import partial
 from typing import Mapping, final, Optional, Dict, List
 
@@ -19,9 +20,9 @@ from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE, BUY
 from solala.server_constants import LOGGER
 from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.solar_forecaster.solar_forecaster import SolarForecast, DailySolarForecast
+from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
 from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES, \
-    KILOWATT_HOURS, KILOWATTS, CELSIUS
+    KILOWATT_HOURS, CELSIUS, KILOWATTS
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
@@ -138,17 +139,17 @@ class PriceForecastListener(LoopListener):
 
 class SolarForecastListener(LoopListener):
 
-    def __init__(self, day_offset: int):
+    def __init__(self, day: date):
         super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
-        self.day_offset: int = day_offset
+        self.day: date = day
 
     @final
     def update(self) -> None:
         """
         Thread safe update.
         """
-        solar_forecast: DailySolarForecast = control_loop.get_solar_forecast(self.day_offset)
+        solar_forecast: DailySolarForecast = control_loop.get_solar_forecast(self.day)
         self._main_loop.call_soon_threadsafe(partial(self._update, solar_forecast))
 
     def _update(self, solar_forecast: DailySolarForecast) -> None:
@@ -401,13 +402,26 @@ class PriceForecastUpdater(PriceForecastListener):
 
 
 class SolarForecastUpdater(SolarForecastListener):
-    def __init__(self, element: ui.element, day_offset: int):
-        super().__init__(day_offset)
+    def __init__(self, element: ui.element, day: date):
+        super().__init__(day)
         self._element = element
+
+    def set_day(self, day: date) -> None:
+        self.day = day
+        self._element.clear()
+        forecast: Optional[DailySolarForecast] = control_loop.get_cached_solar_forecast(day)
+        if forecast is None:
+            with self._element:
+                ui.label('loading solar forecast...').classes('text-center italic')
+        else:
+            self._render(forecast)
 
     def _update(self, solar_forecast: DailySolarForecast) -> None:
         # Recreate the solar forecast table
         self._element.clear()
+        self._render(solar_forecast)
+
+    def _render(self, solar_forecast: DailySolarForecast):
         with self._element:
             forecasts = solar_forecast.forecasts
             if len(forecasts) == 0:
@@ -416,12 +430,6 @@ class SolarForecastUpdater(SolarForecastListener):
                     ui.label('No solar forecast available').classes('text-lg font-semibold')
                     ui.label('There are currently no forecast prices to display.').classes('text-sm text-gray-500')
                 return
-
-            forecast_date = solar_forecast.date()
-
-            with ui.row().classes('items-center gap-2 mb-5'):
-                ui.icon('calendar_today').classes('text-lg text-gray-500')
-                ui.label(forecast_date.strftime('%A, %d %B %Y')).classes('text-sm text-gray-500')
 
             with ui.row().classes('items-center gap-2 mb-5'):
                 ui.label('Daily generation estimate:').classes('text-sm text-gray-500')
@@ -697,15 +705,49 @@ def price_forecast_page():
 @ui.page('/solar_forecast_page')
 def solar_forecast_page():
     ui.add_head_html(_HEAD_HTML)
+    today = date.today()
+
     with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
         _page_header(' solar forecast')
-        element = ui.element('div')
-        _register_listener(
-            SolarForecastUpdater(
-                element=element,
-                day_offset=0,
-            )
-        )
+        with ui.column().classes('w-full items-center gap-3 p-4 mb-4 rounded-xl bg-gray-50 dark:bg-gray-900'):
+            with ui.row().classes('w-full items-center justify-center gap-3'):
+                ui.button(
+                    icon='chevron_left',
+                    on_click=lambda: change_day(-1),
+                ).props('flat round color=grey').classes('!w-10 !h-10').tooltip('Previous day')
+
+                with ui.column().classes('items-center gap-1 min-w-0'):
+                    date_element = ui.label().classes('text-sm text-gray-500')
+                    with ui.row().classes('items-center gap-1'):
+                        day_status = ui.label('today').classes('text-xs text-gray-500')
+                        today_button = ui.button(
+                            'back to today',
+                            on_click=lambda: set_day(today),
+                        ).props('flat dense no-caps color=primary').classes('text-xs min-h-0 px-2 py-1')
+
+                ui.button(
+                    icon='chevron_right',
+                    on_click=lambda: change_day(1),
+                ).props('flat round color=grey').classes('!w-10 !h-10').tooltip('Next day')
+
+        # Forecast table will be rendered here
+        forecast_element = ui.element('div').classes('w-full')
+
+        # What follows is rendering and navigation
+
+        updater = SolarForecastUpdater(element=forecast_element, day=today)
+        _register_listener(updater)
+
+        def set_day(day: date) -> None:
+            updater.set_day(day)
+            date_element.set_text(day.strftime('%A, %d %B %Y'))
+            day_status.set_visibility(day == today)
+            today_button.set_visibility(day != today)
+
+        def change_day(offset: int) -> None:
+            set_day(updater.day + timedelta(days=offset))
+
+        set_day(today)
 
 
 @ui.page('/status_page')

@@ -44,7 +44,7 @@ class DailySolarForecast:
 
 class SolarForecaster(ABC):
     @abstractmethod
-    def get_forecast(self, day_offset: int) -> DailySolarForecast:
+    def get_forecast(self, day: date) -> DailySolarForecast:
         """
         Provide an hourly forecast of solar irradiance and temperature for today.
         The implementer should account for the local conditions and daily weather

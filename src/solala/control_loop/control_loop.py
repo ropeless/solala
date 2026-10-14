@@ -2,7 +2,7 @@ import json
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, UTC, timedelta
+from datetime import datetime, UTC, timedelta, date
 from pathlib import Path
 from typing import Optional, List, Dict
 
@@ -50,6 +50,16 @@ _NO_PRICE = Price(
 _DISCONNECTED: JSONDict = {'status': 'disconnected'}
 
 
+@dataclass(frozen=True)
+class _DateKey:
+    year: int
+    month: int
+    day: int
+
+    def __str__(self) -> str:
+        return f'{self.year:04d}-{self.month:02d}-{self.day:02d}'
+
+
 @dataclass
 class _ControlState:
     controller: Optional[PowerController] = None
@@ -76,7 +86,7 @@ class _ControlState:
     last_price_forecast: List[Price] = field(default_factory=list)
     next_price_forecast_check: datetime = _MIN_DATE
 
-    last_solar_forecast: Dict[int, DailySolarForecast] = field(default_factory=dict)
+    last_solar_forecast: Dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
     next_solar_forecast_check: datetime = _MIN_DATE
 
     # NEG_FEED_IN_ZERO_EXPORT parameters
@@ -457,15 +467,28 @@ def get_power_status() -> JSONDict:
         try:
             result: JSONDict = state.controller.get_status().to_json()
             if state.forecaster is not None:
-                result['forecast_generation'] = get_solar_forecast(0).total_forecast_energy()
+                result['forecast_generation'] = get_solar_forecast(date.today()).total_forecast_energy()
             return result
         except Exception as err:
             return {'error': str(err)}
 
 
-def get_solar_forecast(day_offset: int) -> DailySolarForecast:
+def get_cached_solar_forecast(day: date) -> Optional[DailySolarForecast]:
     """
-    Get the forecast prices from the power pricer.
+    Get the forecast solar power, but only if already cached.
+    """
+    with _control_state_lock:
+        state = _control_state
+        now = datetime.now(UTC)
+        if state.next_price_forecast_check <= now:
+            return None
+        key = _DateKey(day.year, day.month, day.day)
+        return state.last_solar_forecast.get(key)
+
+
+def get_solar_forecast(day: date) -> DailySolarForecast:
+    """
+    Get the forecast solar power.
     """
     with _control_state_lock:
         state = _control_state
@@ -480,12 +503,13 @@ def get_solar_forecast(day_offset: int) -> DailySolarForecast:
             state.last_solar_forecast.clear()
             state.next_price_forecast_check = now + timedelta(minutes=Constants.SOLAR_FORECAST_AGE)
 
-        forecast: Optional[DailySolarForecast] = state.last_solar_forecast.get(day_offset)
+        key = _DateKey(day.year, day.month, day.day)
+        forecast: Optional[DailySolarForecast] = state.last_solar_forecast.get(key)
         if forecast is None:
             try:
-                LOGGER.info(f'{_LOG_SRC}Updating solar forecast: offset = {day_offset}')
-                forecast: DailySolarForecast = forecaster.get_forecast(day_offset)
-                state.last_solar_forecast[day_offset] = forecast
+                LOGGER.info(f'{_LOG_SRC}Updating solar forecast: day = {key}')
+                forecast: DailySolarForecast = forecaster.get_forecast(day)
+                state.last_solar_forecast[key] = forecast
             except Exception as err:
                 LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: {err}')
                 return DailySolarForecast([])
