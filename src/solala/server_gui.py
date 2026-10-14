@@ -708,14 +708,19 @@ def solar_forecast_page():
 
     with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
         _page_header(' solar forecast')
-        with ui.column().classes('w-full items-center gap-3 p-2 mb-4 rounded-xl bg-gray-50 dark:bg-gray-900'):
 
+        # Navigation column
+        with ui.column().classes(
+                'w-full items-start gap-1 p-2 mb-4 '
+                'rounded-xl bg-gray-50 dark:bg-gray-900'
+        ):
             # Navigation row
-            with ui.row().classes('w-full flex-nowrap items-center justify-center gap-1 sm:gap-3'):
+            with ui.row().classes('w-full flex-nowrap items-center justify-center gap-1'):
+                button_classes = '!w-8 !h-8 min-w-0 shrink-0'
                 ui.button(
                     icon='chevron_left',
                     on_click=lambda: change_day(-1),
-                ).props('flat round color=grey').classes('!w-9 !h-9 shrink-0').tooltip('Previous day')
+                ).props('flat round color=grey').classes(button_classes).tooltip('Previous day')
 
                 with ui.column().classes('items-center gap-1 min-w-0'):
                     date_element = ui.label().classes(
@@ -732,7 +737,7 @@ def solar_forecast_page():
                 ui.button(
                     icon='chevron_right',
                     on_click=lambda: change_day(1),
-                ).props('flat round color=grey').classes('!w-9 !h-9 shrink-0').tooltip('Next day')
+                ).props('flat round color=grey').classes(button_classes).tooltip('Next day')
 
         # Handler for swipe actions
         def handle_swipe(event) -> None:
