@@ -706,120 +706,120 @@ def solar_forecast_page():
     ui.add_head_html(_HEAD_HTML)
     today = date.today()
 
-    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
-        _page_header(' solar forecast')
+    swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
+    with swipe_area:
+        with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+            _page_header(' solar forecast')
 
-        # Navigation column
-        with ui.column().classes(
-                'w-full items-start gap-1 p-2 mb-4 '
-                'rounded-xl bg-gray-50 dark:bg-gray-900'
-        ):
-            # Navigation row
-            with ui.row().classes(
-                    'w-full flex-nowrap items-center gap-1'
-            ).style(
-                'justify-content: flex-start; '
-                'align-self: stretch; '
-                'margin-left: 0; margin-right: auto;'
+            # Navigation column
+            with ui.column().classes(
+                    'w-full items-start gap-1 p-2 mb-4 '
+                    'rounded-xl bg-gray-50 dark:bg-gray-900'
             ):
-                button_classes = '!w-8 !h-8 min-w-0 shrink-0'
-                ui.button(
-                    icon='chevron_left',
-                    on_click=lambda: change_day(-1),
-                ).props('flat round color=grey').classes(button_classes).tooltip('Previous day')
+                # Navigation row
+                with ui.row().classes(
+                        'w-full flex-nowrap items-center gap-1'
+                ).style(
+                    'justify-content: flex-start; '
+                    'align-self: stretch; '
+                    'margin-left: 0; margin-right: auto;'
+                ):
+                    button_classes = '!w-8 !h-8 min-w-0 shrink-0'
+                    ui.button(
+                        icon='chevron_left',
+                        on_click=lambda: change_day(-1),
+                    ).props('flat round color=grey').classes(button_classes).tooltip('Previous day')
 
-                with ui.column().classes('items-center gap-1 min-w-0'):
-                    date_element = ui.label().classes(
-                        'w-40 sm:w-64 shrink-0 text-center '
-                        'text-xs sm:text-sm text-gray-500 whitespace-nowrap'
-                    )
-                    with ui.element('div').classes('h-7 flex items-center justify-center'):
-                        day_status = ui.label('today').classes('text-xs text-gray-500')
-                        today_button = ui.button(
-                            'back to today',
-                            on_click=lambda: set_day(today),
-                        ).props('flat dense no-caps color=primary').classes('text-xs min-h-0 px-2 py-1')
+                    with ui.column().classes('items-center gap-1 min-w-0'):
+                        date_element = ui.label().classes(
+                            'w-40 sm:w-64 shrink-0 text-center '
+                            'text-xs sm:text-sm text-gray-500 whitespace-nowrap'
+                        )
+                        with ui.element('div').classes('h-7 flex items-center justify-center'):
+                            day_status = ui.label('today').classes('text-xs text-gray-500')
+                            today_button = ui.button(
+                                'back to today',
+                                on_click=lambda: set_day(today),
+                            ).props('flat dense no-caps color=primary').classes('text-xs min-h-0 px-2 py-1')
 
-                ui.button(
-                    icon='chevron_right',
-                    on_click=lambda: change_day(1),
-                ).props('flat round color=grey').classes(button_classes).tooltip('Next day')
+                    ui.button(
+                        icon='chevron_right',
+                        on_click=lambda: change_day(1),
+                    ).props('flat round color=grey').classes(button_classes).tooltip('Next day')
 
-        # Handler for swipe actions
-        def handle_swipe(event) -> None:
-            direction = event.args
-            if direction == 'left':
-                change_day(1)
-            elif direction == 'right':
-                change_day(-1)
-
-        swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
-        with swipe_area:
             # Forecast table will be rendered here
             forecast_element = ui.element('div').classes('w-full')
 
-        # What follows is rendering and navigation
+    # What follows is rendering and navigation
 
-        swipe_area.on(
-            'touchstart',
-            js_handler="""(e) => {
-                if (!e.changedTouches.length) return;
+    # Handler for swipe actions
+    def handle_swipe(event) -> None:
+        direction = event.args
+        if direction == 'left':
+            change_day(1)
+        elif direction == 'right':
+            change_day(-1)
 
-                const touch = e.changedTouches[0];
-                e.currentTarget.dataset.startX = touch.clientX;
-                e.currentTarget.dataset.startY = touch.clientY;
-            }""",
-        )
+    swipe_area.on(
+        'touchstart',
+        js_handler="""(e) => {
+            if (!e.changedTouches.length) return;
 
-        swipe_area.on(
-            'touchend',
-            handle_swipe,
-            js_handler="""(e) => {
-                if (!e.changedTouches.length) return;
+            const touch = e.changedTouches[0];
+            e.currentTarget.dataset.startX = touch.clientX;
+            e.currentTarget.dataset.startY = touch.clientY;
+        }""",
+    )
 
-                const touch = e.changedTouches[0];
-                const startX = Number(e.currentTarget.dataset.startX);
-                const startY = Number(e.currentTarget.dataset.startY);
+    swipe_area.on(
+        'touchend',
+        handle_swipe,
+        js_handler="""(e) => {
+            if (!e.changedTouches.length) return;
 
-                // Ignore gestures if the starting position was not recorded.
-                if (!Number.isFinite(startX) ||
-                    !Number.isFinite(startY)) return;
+            const touch = e.changedTouches[0];
+            const startX = Number(e.currentTarget.dataset.startX);
+            const startY = Number(e.currentTarget.dataset.startY);
 
-                const dx = touch.clientX - startX;
-                const dy = touch.clientY - startY;
+            // Ignore gestures if the starting position was not recorded.
+            if (!Number.isFinite(startX) ||
+                !Number.isFinite(startY)) return;
 
-                // Require a deliberate horizontal swipe.
-                if (Math.abs(dx) >= 60 &&
-                    Math.abs(dx) > Math.abs(dy) * 1.5) {
-                    emit(dx < 0 ? 'left' : 'right');
-                }
-            }""",
-        )
+            const dx = touch.clientX - startX;
+            const dy = touch.clientY - startY;
 
-        def handle_key(e: events.KeyEventArguments) -> None:
-            if e.action.keydown:
-                if e.key.arrow_left:
-                    change_day(-1)
-                elif e.key.arrow_right:
-                    change_day(1)
-                elif e.key.home:
-                    set_day(today)
+            // Require a deliberate horizontal swipe.
+            if (Math.abs(dx) >= 60 &&
+                Math.abs(dx) > Math.abs(dy) * 1.5) {
+                emit(dx < 0 ? 'left' : 'right');
+            }
+        }""",
+    )
 
-        ui.keyboard(on_key=handle_key, repeating=False)
+    def handle_key(e: events.KeyEventArguments) -> None:
+        if e.action.keydown:
+            if e.key.arrow_left:
+                change_day(-1)
+            elif e.key.arrow_right:
+                change_day(1)
+            elif e.key.home:
+                set_day(today)
 
-        updater = SolarForecastUpdater(element=forecast_element, day=today)
-        _register_listener(updater)
+    ui.keyboard(on_key=handle_key, repeating=False)
 
-        def set_day(day: date) -> None:
-            updater.set_day(day)
-            date_element.set_text(day.strftime('%A, %d %B %Y'))
-            day_status.set_visibility(day == today)
-            today_button.set_visibility(day != today)
+    updater = SolarForecastUpdater(element=forecast_element, day=today)
+    _register_listener(updater)
 
-        def change_day(offset: int) -> None:
-            set_day(updater.day + timedelta(days=offset))
+    def set_day(day: date) -> None:
+        updater.set_day(day)
+        date_element.set_text(day.strftime('%A, %d %B %Y'))
+        day_status.set_visibility(day == today)
+        today_button.set_visibility(day != today)
 
-        set_day(today)
+    def change_day(offset: int) -> None:
+        set_day(updater.day + timedelta(days=offset))
+
+    set_day(today)
 
 
 @ui.page('/status_page')

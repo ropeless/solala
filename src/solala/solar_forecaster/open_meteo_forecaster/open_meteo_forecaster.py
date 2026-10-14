@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from typing import List
 
 import httpx
@@ -51,11 +51,9 @@ class OpenMeteoForecaster(SolarForecaster):
 
     def get_forecast(self, day: date) -> DailySolarForecast:
         day: date = ensure_date(day)
-        today = datetime.now().astimezone().date()
-        day_offset = (day - today).days
+        start_date = day - timedelta(days=1)
+        end_date = day + timedelta(days=1)
 
-        past_days = 1 - min(day_offset, 0)
-        forecast_days = 2 + max(day_offset, 0)
         params = {
             'latitude': self._latitude,
             'longitude': self._longitude,
@@ -63,8 +61,8 @@ class OpenMeteoForecaster(SolarForecaster):
             "tilt": self._panel_tilt,
             'azimuth': self._panel_orientation,
             'timezone': 'GMT',
-            'past_days': past_days,
-            'forecast_days': forecast_days,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
             'wind_speed_unit': 'ms',
         }
 

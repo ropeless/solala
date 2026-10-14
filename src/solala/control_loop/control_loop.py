@@ -48,6 +48,7 @@ _NO_PRICE = Price(
     estimate=True,
 )
 _DISCONNECTED: JSONDict = {'status': 'disconnected'}
+_NO_SOLAR_FORECAST = DailySolarForecast([])
 
 
 @dataclass(frozen=True)
@@ -494,7 +495,7 @@ def get_solar_forecast(day: date) -> DailySolarForecast:
         forecaster = state.forecaster
         if forecaster is None:
             LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: solar forecaster not connected')
-            return DailySolarForecast([])
+            return _NO_SOLAR_FORECAST
 
         # Clear stale forecasts
         now = datetime.now(UTC)
@@ -511,7 +512,7 @@ def get_solar_forecast(day: date) -> DailySolarForecast:
                 state.last_solar_forecast[key] = forecast
             except Exception as err:
                 LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: {err}')
-                return DailySolarForecast([])
+                return _NO_SOLAR_FORECAST
     return forecast
 
 
