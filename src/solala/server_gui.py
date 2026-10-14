@@ -732,7 +732,7 @@ def solar_forecast_page():
 
                     with ui.column().classes('items-center gap-1 min-w-0'):
                         date_element = ui.label().classes(
-                            'w-40 sm:w-64 shrink-0 text-center '
+                            'w-64 shrink-0 text-center '
                             'text-sm text-gray-500 whitespace-nowrap'
                         )
                         with ui.element('div').classes('h-7 flex items-center justify-center'):
