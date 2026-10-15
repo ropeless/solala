@@ -1,10 +1,11 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, date, timedelta
 from typing import List
 
 import httpx
 
 from solala.settings import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_TEMPERATURE_COEFFICIENT
 from solala.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast, DailySolarForecast
+from solala.utils.datetime_extras import ensure_date
 from solala.utils.json import JSONDict
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
@@ -48,9 +49,11 @@ class OpenMeteoForecaster(SolarForecaster):
         self._inverter_efficiency = inverter_efficiency
         self._temperature_coefficient = temperature_coefficient
 
-    def get_forecast(self, day_offset: int) -> DailySolarForecast:
-        past_days = 1 - min(day_offset, 0)
-        forecast_days = 2 + max(day_offset, 0)
+    def get_forecast(self, day: date) -> DailySolarForecast:
+        day: date = ensure_date(day)
+        start_date = day - timedelta(days=1)
+        end_date = day + timedelta(days=1)
+
         params = {
             'latitude': self._latitude,
             'longitude': self._longitude,
@@ -58,8 +61,8 @@ class OpenMeteoForecaster(SolarForecaster):
             "tilt": self._panel_tilt,
             'azimuth': self._panel_orientation,
             'timezone': 'GMT',
-            'past_days': past_days,
-            'forecast_days': forecast_days,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
             'wind_speed_unit': 'ms',
         }
 
@@ -69,7 +72,6 @@ class OpenMeteoForecaster(SolarForecaster):
 
         hourly = data['hourly']
         now = datetime.now().astimezone()
-        day_of_interest = now.date() + timedelta(days=day_offset)
         tz = now.tzinfo
         forecasts: List[SolarForecast] = []
 
@@ -85,7 +87,7 @@ class OpenMeteoForecaster(SolarForecaster):
             )
             local_time = utc_time.astimezone(tz)
 
-            if local_time.date() != day_of_interest:
+            if local_time.date() != day:
                 continue
 
             if irradiance is None:

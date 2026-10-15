@@ -2,7 +2,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence, List, Dict
 
-from solala import control_loop
+from solala.control_loop import control_loop
+from solala.control_loop.loop_listener import LoopListener
 from solala.power_pricer.power_pricer import Price
 from solala.utils.json import JSONDict, json_dict
 
@@ -45,7 +46,7 @@ class HistoryFile:
         return exc_type is None
 
 
-class _Recorder(control_loop.RegistersListener):
+class _Recorder(LoopListener):
 
     def __init__(self, file, sep: str, datetime_format: str):
         self._file = file
@@ -54,10 +55,11 @@ class _Recorder(control_loop.RegistersListener):
         self._first_update = True
         self._registers: Sequence[str] = ()
 
-    def update(self, register_values: Dict[str, int | float | str | bool]) -> None:
+    def update(self) -> None:
+        register_values: Dict[str, int | float | str | bool] = control_loop.get_registers()
         now: str = datetime.now().strftime(self._datetime_format)
         control_status: JSONDict = control_loop.get_control_status()
-        price: Price = control_loop.get_cur_price()
+        price: Price = control_loop.get_price_now()
 
         def _print(*msg):
             print(*msg, file=self._file, sep=self._sep)

@@ -73,7 +73,7 @@ def uint16(addr: int, writable: bool = False) -> RegisterAccess:
 
 def int16(addr: int, writable: bool = False) -> RegisterAccess:
     """
-    Define a signed 16-bit unsigned integer register, at the given relative address.
+    Define a signed 16-bit unsigned integer register at the given relative address.
     """
     return RegisterAccessInt(addr, count=1, signed=True, writable=writable)
 
@@ -87,7 +87,7 @@ def uint32(addr: int, writable: bool = False) -> RegisterAccess:
 
 def int32(addr: int, writable: bool = False) -> RegisterAccess:
     """
-    Define a signed 32-bit unsigned integer register, at the given relative address.
+    Define a signed 32-bit unsigned integer register at the given relative address.
     """
     return RegisterAccessInt(addr, count=2, signed=True, writable=writable)
 

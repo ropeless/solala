@@ -10,5 +10,3 @@ def split_addresses(addresses: str) -> List[str]:
     Helper for connecting to devices.
     """
     return _ADDRESS_DELIMITERS_PATTERN.split(addresses)
-
-

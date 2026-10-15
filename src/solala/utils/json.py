@@ -1,9 +1,9 @@
 import inspect
 import json
 import re
-from collections.abc import mappingproxy
 from datetime import datetime, date
 from itertools import chain
+from types import MappingProxyType
 from typing import TypeAlias, Dict, List, Optional, Mapping, Any, Collection
 
 # Define the recursive JSON value type
@@ -111,6 +111,7 @@ def render_json(
         units: A lookup table of units to append to values.
         remove_key_underscores: if true, remove underscores from keys.
         remove_value_underscores: if true, remove underscores from values.
+        ensure_ascii: passed to `json.dumps`.
     Returns:
         JSON value rendered as a string.
     """
@@ -184,7 +185,7 @@ def _to_json(
                 _to_json(item, exclude_names, exclude_values, datetime_format, date_format)
                 for item in value
             ]
-        elif isinstance(value, (dict, mappingproxy)):
+        elif isinstance(value, (dict, MappingProxyType)):
             result[name] = {
                 key: _to_json(value, exclude_names, exclude_values, datetime_format, date_format)
                 for key, value in value.items()

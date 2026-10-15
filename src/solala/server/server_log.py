@@ -4,10 +4,11 @@ from typing import List
 
 from nicegui import ui
 
-from solala.server_constants import SOLALA_LOG_FORMAT, LOGGER, MAX_LOG_HISTORY
+from solala.constants import Constants
+from solala.logger import LOGGER, SOLALA_LOG_FORMAT
 
 
-class _NiceGuiLogHandler(logging.Handler):
+class _GuiLogHandler(logging.Handler):
     """
     A custom logging Handler that writes the Solala logger
     to NiceGUI ui.log components.
@@ -31,7 +32,7 @@ class _NiceGuiLogHandler(logging.Handler):
                     ui_log.push(msg)
                 # Add to history
                 self._history.append(msg)
-                while len(self._history) > MAX_LOG_HISTORY:
+                while len(self._history) > Constants.MAX_LOG_HISTORY:
                     self._history.pop(0)
         except (IOError, ValueError, RuntimeError):
             self.handleError(record)
@@ -50,7 +51,7 @@ class _NiceGuiLogHandler(logging.Handler):
             pass
 
 
-_LOG_HANDLER = _NiceGuiLogHandler()
+_LOG_HANDLER = _GuiLogHandler()
 
 
 def add(element: ui.log) -> None:

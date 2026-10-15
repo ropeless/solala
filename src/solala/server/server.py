@@ -10,14 +10,14 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
+from solala.constants import APP_NAME
 from solala.control_loop import control_loop
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
 from solala.control_loop.errors import ControlLoopError
+from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection
-from solala.server_constants import APP_NAME
-from solala.server_constants import LOGGER
-from solala.server_gui import ui
+from solala.server.server_gui import ui
 from solala.utils.json import JSONDict, JSONValue, filter_json, follow_json
 
 

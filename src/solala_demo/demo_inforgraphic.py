@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from local_config import OUT
-from solala.server_infographic import Infographic
+from solala.server.server_infographic import Infographic
 
 
 def main() -> None:

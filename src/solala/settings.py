@@ -138,8 +138,8 @@ class Settings(BaseModel):
 
     controller: Optional[ControllerConnection] = None
     pricer: Optional[PricerConnection] = None
-    consumers: Optional[Dict[str, ConsumerConnection]] = None
     forecaster: Optional[ForecasterConnection] = None
+    consumers: Optional[Dict[str, ConsumerConnection]] = None
 
     battery_mode: Optional[BatteryMode] = None
     inverter_mode: Optional[InverterMode] = None

@@ -2,16 +2,17 @@ import json
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, UTC, timedelta
+from datetime import datetime, UTC, timedelta, date
 from pathlib import Path
 from typing import Optional, List, Dict
 
 from pymodbus.client import ModbusTcpClient
 
-from solala.control_loop.constants import Constants
+from solala.constants import Constants, DATE_FORMAT
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
+from solala.logger import LOGGER
 from solala.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
 from solala.power_consumer.power_consumer import PowerConsumer
 from solala.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
@@ -22,7 +23,6 @@ from solala.power_controller.modbus_power_controller.modbus_power_controller imp
 from solala.power_pricer.amber_power_pricer.amber_power_pricer import Price, AmberPowerPricer
 from solala.power_pricer.dummy_power_pricer.dummy_power_pricer import DummyPowerPricer
 from solala.power_pricer.power_pricer import PowerPricer
-from solala.server_constants import LOGGER, DATE_FORMAT
 from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
     TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
     DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD, DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD, \
@@ -48,19 +48,30 @@ _NO_PRICE = Price(
     estimate=True,
 )
 _DISCONNECTED: JSONDict = {'status': 'disconnected'}
+_NO_SOLAR_FORECAST = DailySolarForecast([])
+
+
+@dataclass(frozen=True)
+class _DateKey:
+    year: int
+    month: int
+    day: int
+
+    def __str__(self) -> str:
+        return f'{self.year:04d}-{self.month:02d}-{self.day:02d}'
 
 
 @dataclass
 class _ControlState:
     controller: Optional[PowerController] = None
     pricer: Optional[PowerPricer] = None
-    consumers: Dict[str, PowerConsumer] = field(default_factory=dict)
     forecaster: Optional[SolarForecaster] = None
+    consumers: Dict[str, PowerConsumer] = field(default_factory=dict)
 
     controller_settings: Optional[ControllerConnection] = None
     pricer_settings: Optional[PricerConnection] = None
-    consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
     forecaster_settings: Optional[ForecasterConnection] = None
+    consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
 
     battery_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_mode: InverterMode = InverterMode.UNKNOWN
@@ -76,7 +87,7 @@ class _ControlState:
     last_price_forecast: List[Price] = field(default_factory=list)
     next_price_forecast_check: datetime = _MIN_DATE
 
-    last_solar_forecast: Dict[int, DailySolarForecast] = field(default_factory=dict)
+    last_solar_forecast: Dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
     next_solar_forecast_check: datetime = _MIN_DATE
 
     # NEG_FEED_IN_ZERO_EXPORT parameters
@@ -88,7 +99,6 @@ class _ControlState:
     stop_charge_price_threshold: float = DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
 
     listeners: List[LoopListener] = field(default_factory=list)
-
     settings_path: Optional[Path] = None  # for using persisted settings.
     loop_start: datetime = datetime.now(UTC)  # confirms the control loop is running
 
@@ -457,22 +467,35 @@ def get_power_status() -> JSONDict:
         try:
             result: JSONDict = state.controller.get_status().to_json()
             if state.forecaster is not None:
-                result['forecast_generation'] = get_solar_forecast(0).total_forecast_energy()
+                result['forecast_generation'] = get_solar_forecast(date.today()).total_forecast_energy()
             return result
         except Exception as err:
             return {'error': str(err)}
 
 
-def get_solar_forecast(day_offset: int) -> DailySolarForecast:
+def get_cached_solar_forecast(day: date) -> Optional[DailySolarForecast]:
     """
-    Get the forecast prices from the power pricer.
+    Get the forecast solar power, but only if already cached.
+    """
+    with _control_state_lock:
+        state = _control_state
+        now = datetime.now(UTC)
+        if state.next_price_forecast_check <= now:
+            return None
+        key = _DateKey(day.year, day.month, day.day)
+        return state.last_solar_forecast.get(key)
+
+
+def get_solar_forecast(day: date) -> DailySolarForecast:
+    """
+    Get the forecast solar power.
     """
     with _control_state_lock:
         state = _control_state
         forecaster = state.forecaster
         if forecaster is None:
             LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: solar forecaster not connected')
-            return DailySolarForecast([])
+            return _NO_SOLAR_FORECAST
 
         # Clear stale forecasts
         now = datetime.now(UTC)
@@ -480,15 +503,16 @@ def get_solar_forecast(day_offset: int) -> DailySolarForecast:
             state.last_solar_forecast.clear()
             state.next_price_forecast_check = now + timedelta(minutes=Constants.SOLAR_FORECAST_AGE)
 
-        forecast: Optional[DailySolarForecast] = state.last_solar_forecast.get(day_offset)
+        key = _DateKey(day.year, day.month, day.day)
+        forecast: Optional[DailySolarForecast] = state.last_solar_forecast.get(key)
         if forecast is None:
             try:
-                LOGGER.info(f'{_LOG_SRC}Updating solar forecast: offset = {day_offset}')
-                forecast: DailySolarForecast = forecaster.get_forecast(day_offset)
-                state.last_solar_forecast[day_offset] = forecast
+                LOGGER.info(f'{_LOG_SRC}Updating solar forecast: day = {key}')
+                forecast: DailySolarForecast = forecaster.get_forecast(day)
+                state.last_solar_forecast[key] = forecast
             except Exception as err:
                 LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: {err}')
-                return DailySolarForecast([])
+                return _NO_SOLAR_FORECAST
     return forecast
 
 
@@ -512,10 +536,10 @@ def get_connection_status() -> JSONDict:
         result = {
             'controller': state.controller_connection_status,
             'pricer': state.pricer_connection_status,
+            'forecaster': state.forecaster_connection_status,
         }
         if len(state.consumers) > 0:
             result['consumers'] = state.consumers_connection_status
-        result['forecaster'] = state.forecaster_connection_status
         return result
 
 
