@@ -6,7 +6,7 @@ from solala.power_pricer.amber_power_pricer.amber_power_pricer import AmberPower
 
 def main() -> None:
     amber = AmberPowerPricer(AMBER_API_TOKEN, NMI)
-    price = amber.get_price(forecasts=1)
+    price = amber.get_price()
     pprint(price)
 
 

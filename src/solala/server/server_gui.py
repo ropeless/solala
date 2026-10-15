@@ -10,15 +10,15 @@ from nicegui import ui, app, events
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
-from solala import server_log
+from solala.server import server_log
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.power_pricer.power_pricer import Price
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
-from solala.server_constants import APP_NAME, MAX_LOG_HISTORY, APP_SUBTITLE, BUY_PRICE_RED, BUY_PRICE_AMBER
-from solala.server_constants import LOGGER
-from solala.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
+from solala.constants import APP_NAME, APP_SUBTITLE, Constants
+from solala.logger import LOGGER
+from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
 from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
 from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES, \
@@ -545,6 +545,9 @@ def _diagnostic_link(icon: str, name: str, target: str) -> None:
 
 
 def _ui_control_buttons() -> None:
+    if not Constants.CONTROLS_ENABLED:
+        return
+
     with ui.element('div').classes('control-column'):
         # ======================================================
         # BATTERY
@@ -617,9 +620,9 @@ def _infographic_click(element):
 
 
 def _buy_price_class(price: float) -> str:
-    if price >= BUY_PRICE_RED:
+    if price >= Constants.BUY_PRICE_RED:
         return 'price-buy-high'
-    elif price >= BUY_PRICE_AMBER:
+    elif price >= Constants.BUY_PRICE_AMBER:
         return 'price-buy-okay'
     else:
         return 'price-buy-good'
@@ -853,7 +856,7 @@ def log_page():
     ui.add_head_html(_HEAD_HTML)
     with ui.element('div').classes('solala-page'):
         _page_header(' log console')
-        log_ui = ui.log(max_lines=MAX_LOG_HISTORY).style('height: 100vh')
+        log_ui = ui.log(max_lines=Constants.MAX_LOG_HISTORY).style('height: 100vh')
     ui.context.client.on_disconnect(partial(server_log.remove, log_ui))
     server_log.add(log_ui)
 

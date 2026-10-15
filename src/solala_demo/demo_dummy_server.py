@@ -1,5 +1,5 @@
 import local_config as config
-from solala import server
+from solala.server import server
 from solala.settings import Settings, DummyControllerConnection, DummyPricerConnection, \
     DummyConsumerConnection, DummySolarForecasterConnection
 from solala_demo.log import configure_logger

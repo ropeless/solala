@@ -2,8 +2,8 @@ from typing import Iterable, Tuple
 
 import requests
 
+from solala.logger import LOGGER
 from solala.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
-from solala.server_constants import LOGGER
 from solala.utils.json import JSONDict, json_dict, json_num
 
 NAME: str = 'Tesla Wall Charger'

@@ -2,7 +2,7 @@ from typing import Iterable, List, Tuple, Sequence, Optional, Dict
 
 from solala.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.power_controller.power_controller import PowerController, PowerStatus
-from solala.server_constants import LOGGER
+from solala.logger import LOGGER
 from solala.utils.json import JSONDict
 
 

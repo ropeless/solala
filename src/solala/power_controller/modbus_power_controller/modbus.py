@@ -3,10 +3,10 @@ from typing import Mapping, KeysView, Iterator, Set, Dict, Iterable, Sequence
 
 from pymodbus.client import ModbusTcpClient
 
+from solala.logger import LOGGER
 from solala.power_controller.modbus_power_controller.register_access import RegisterContext, RegisterAccess, \
     MODBUS_MODEL
 from solala.power_controller.modbus_power_controller.registers import MODELS, mppt_modules, MPPT_MODEL
-from solala.server_constants import LOGGER
 
 
 @dataclass

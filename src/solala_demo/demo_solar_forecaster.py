@@ -1,3 +1,5 @@
+from datetime import date
+
 import local_config as config
 from solala.solar_forecaster.open_meteo_forecaster.open_meteo_forecaster import OpenMeteoForecaster
 
@@ -12,7 +14,7 @@ def main():
         inverter_limit=config.INVERTER_LIMIT,
     )
 
-    for forecast in forecaster.get_forecast(0):
+    for forecast in forecaster.get_forecast(date.today()):
         print(forecast.to_json(datetime_format='%Y-%m-%d %H:%M:%S'))
 
 
