@@ -20,11 +20,11 @@ class Constants:
     PRICE_FORECAST_AGE = 5  # number of minutes a price forecast is valid
     SOLAR_FORECAST_AGE = 3 * 60  # number of minutes a solar forecast is valid
 
-    MAX_LOG_HISTORY: int = 1000
-    BUY_PRICE_AMBER = 20
-    BUY_PRICE_RED = 40
+    MAX_LOG_HISTORY: int = 1000  # Maximum number of log lines in the GUI log
+    BUY_PRICE_AMBER = 20  # Buy price threshold for amber colour
+    BUY_PRICE_RED = 40  # Buy price threshold for red colour
 
-    CONTROLS_ENABLED: bool = True
+    CONTROLS_ENABLED: bool = True  # Whether to present the control buttons or not
 
     @staticmethod
     def to_json() -> JSONDict:
