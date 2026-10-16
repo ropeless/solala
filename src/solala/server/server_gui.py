@@ -442,7 +442,7 @@ class SolarForecastUpdater(SolarForecastListener):
                         ui.label('Time')
                         ui.label('Sky').classes('text-right')
                         ui.label('Irradiance').classes('text-right')
-                        ui.label('Temperature').classes('text-right')
+                        ui.label('Temp').classes('text-right')
                         ui.label('Power').classes('text-right')
 
                     forecast: SolarForecast
