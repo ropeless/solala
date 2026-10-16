@@ -1,9 +1,24 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, date
+from enum import Enum, auto
 from typing import Sequence, Iterator
 
 from solala.utils.json import JSONDict, to_json
+
+
+class WeatherCode(Enum):
+    NIGHT = auto()
+    SUNNY = auto()
+    PART_CLOUD = auto()
+    CLOUD = auto()
+    OVERCAST = auto()
+    FOG = auto()
+    PART_RAIN = auto()
+    RAIN = auto()
+    SNOW = auto()
+    STORM = auto()
+    UNKNOWN = auto()
 
 
 @dataclass(frozen=True)
@@ -12,6 +27,7 @@ class SolarForecast:
     irradiance: float  # W/m^2
     temperature: float  # Celsius
     power: float  # Wh
+    weather: WeatherCode
 
     def to_json(self, datetime_format: str) -> JSONDict:
         return to_json(self, datetime_format=datetime_format)

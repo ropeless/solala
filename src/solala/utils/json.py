@@ -2,6 +2,7 @@ import inspect
 import json
 import re
 from datetime import datetime, date
+from enum import Enum
 from itertools import chain
 from types import MappingProxyType
 from typing import TypeAlias, Dict, List, Optional, Mapping, Any, Collection
@@ -174,7 +175,9 @@ def _to_json(
         if _ignore(value):
             continue
 
-        if isinstance(value, (int, float, str, bool, None)):
+        if isinstance(value, Enum):
+            result[name] = value.name
+        elif isinstance(value, (int, float, str, bool, None)):
             result[name] = value
         elif isinstance(value, datetime):
             result[name] = value.strftime(datetime_format)

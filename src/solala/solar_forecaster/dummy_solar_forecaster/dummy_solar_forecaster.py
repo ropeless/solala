@@ -1,7 +1,8 @@
+import random
 from datetime import datetime, timedelta, date
 from typing import List
 
-from solala.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast, SolarForecast
+from solala.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast, SolarForecast, WeatherCode
 from solala.utils.datetime_extras import ensure_date, date_to_datetime
 from solala.utils.json import JSONDict
 
@@ -38,12 +39,18 @@ class DummySolarForecaster(SolarForecaster):
     def get_forecast(self, day: date) -> DailySolarForecast:
         day_of_interest: datetime = date_to_datetime(ensure_date(day))
         limit = max(self.panel_capacity, self.inverter_limit)
+
+        night = WeatherCode.NIGHT
+        day = list(WeatherCode)
+        day.remove(night)
+
         forecasts: List[SolarForecast] = [
             SolarForecast(
                 time=day_of_interest + timedelta(hours=hour),
                 irradiance=self.irradiance.get(hour, 0),
                 temperature=self.temperature[hour],
-                power=min(self.irradiance.get(hour, 0) / 1000 * self.panel_capacity, limit)
+                power=min(self.irradiance.get(hour, 0) / 1000 * self.panel_capacity, limit),
+                weather=night if hour not in self.irradiance else random.choice(day),
             )
             for hour in range(24)
         ]

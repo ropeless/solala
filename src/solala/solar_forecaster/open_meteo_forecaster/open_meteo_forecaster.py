@@ -4,7 +4,7 @@ from typing import List
 import httpx
 
 from solala.settings import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_TEMPERATURE_COEFFICIENT
-from solala.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast, DailySolarForecast
+from solala.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast, DailySolarForecast, WeatherCode
 from solala.utils.datetime_extras import ensure_date
 from solala.utils.json import JSONDict
 
@@ -57,7 +57,11 @@ class OpenMeteoForecaster(SolarForecaster):
         params = {
             'latitude': self._latitude,
             'longitude': self._longitude,
-            'hourly': 'global_tilted_irradiance,temperature_2m,wind_speed_10m',
+            'hourly': 'global_tilted_irradiance,'
+                      'temperature_2m,'
+                      'wind_speed_10m,'
+                      'weather_code,'
+                      'is_day',
             "tilt": self._panel_tilt,
             'azimuth': self._panel_orientation,
             'timezone': 'GMT',
@@ -75,11 +79,13 @@ class OpenMeteoForecaster(SolarForecaster):
         tz = now.tzinfo
         forecasts: List[SolarForecast] = []
 
-        for timestamp, irradiance, temperature, wind_speed in zip(
+        for timestamp, irradiance, temperature, wind_speed, weather_code, is_day in zip(
                 hourly['time'],
                 hourly['global_tilted_irradiance'],
                 hourly['temperature_2m'],
                 hourly['wind_speed_10m'],
+                hourly['weather_code'],
+                hourly['is_day'],
         ):
             # API timestamps are UTC; attach the UTC timezone.
             utc_time = datetime.fromisoformat(timestamp).replace(
@@ -97,7 +103,8 @@ class OpenMeteoForecaster(SolarForecaster):
                 time=local_time,
                 irradiance=irradiance,
                 temperature=temperature,
-                power=self.power(irradiance, temperature, wind_speed)
+                power=self.power(irradiance, temperature, wind_speed),
+                weather=_weather(weather_code, is_day)
             ))
 
         return DailySolarForecast(forecasts)
@@ -149,3 +156,29 @@ class OpenMeteoForecaster(SolarForecaster):
         ac_kw = max(0.0, min(dc_kw * self._inverter_efficiency, self._inverter_limit))
 
         return ac_kw
+
+
+def _weather(code: int, is_day: bool) -> WeatherCode:
+    if not is_day:
+        return WeatherCode.NIGHT
+    if code == 0:
+        return WeatherCode.SUNNY
+    if code == 1:
+        return WeatherCode.PART_CLOUD
+    if code == 2:
+        return WeatherCode.CLOUD
+    if code == 3:
+        return WeatherCode.OVERCAST
+    if code in (45, 48):
+        return WeatherCode.FOG
+    if code in (51, 53, 55, 56, 57):
+        return WeatherCode.PART_RAIN
+    if code in (61, 63, 65, 66, 67):
+        return WeatherCode.RAIN
+    if code in (71, 73, 75, 77, 85, 86):
+        return WeatherCode.SNOW
+    if code in (80, 81, 82):
+        return WeatherCode.PART_RAIN
+    if code in (95, 96, 99):
+        return WeatherCode.STORM
+    return WeatherCode.UNKNOWN

@@ -10,17 +10,17 @@ from nicegui import ui, app, events
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
-from solala.server import server_log
+from solala.constants import APP_NAME, APP_SUBTITLE, Constants
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
+from solala.logger import LOGGER
 from solala.power_pricer.power_pricer import Price
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
-from solala.constants import APP_NAME, APP_SUBTITLE, Constants
-from solala.logger import LOGGER
+from solala.server import server_log
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
+from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast, WeatherCode
 from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES, \
     KILOWATT_HOURS, CELSIUS, KILOWATTS
 from solala.utils.dict_extras import dict_merge
@@ -440,6 +440,7 @@ class SolarForecastUpdater(SolarForecastListener):
                 with ui.element('div').classes('solar-table'):
                     with ui.element('div').classes('solar-row solar-header'):
                         ui.label('Time')
+                        ui.label('Sky').classes('text-right')
                         ui.label('Irradiance').classes('text-right')
                         ui.label('Temperature').classes('text-right')
                         ui.label('Power').classes('text-right')
@@ -452,6 +453,7 @@ class SolarForecastUpdater(SolarForecastListener):
 
                         with ui.element('div').classes(row_classes):
                             ui.label(forecast.time.strftime('%H:%M')).classes('solar-time')
+                            ui.label(_weather_icon(forecast.weather))
                             if forecast.irradiance > 0:
                                 ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'solar-number')
                             else:
@@ -633,6 +635,31 @@ def _feed_in_price_class(price: float) -> str:
         return 'price-feed-in-okay'
     else:
         return 'price-feed-in-bad'
+
+
+def _weather_icon(weather: WeatherCode) -> str:
+    match weather:
+        # case WeatherCode.NIGHT:
+        #     return '🌙'
+        case WeatherCode.SUNNY:
+            return '☀️'
+        case WeatherCode.PART_CLOUD:
+            return '🌤️'
+        case WeatherCode.CLOUD:
+            return '⛅'
+        case WeatherCode.OVERCAST:
+            return '☁️'
+        case WeatherCode.FOG:
+            return '🌫️'
+        case WeatherCode.PART_RAIN:
+            return '🌦️'
+        case WeatherCode.RAIN:
+            return '🌧️'
+        case WeatherCode.SNOW:
+            return '🌨️'
+        case WeatherCode.STORM:
+            return '⛈️'
+    return ''
 
 
 # ====================================================================
