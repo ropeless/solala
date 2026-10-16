@@ -719,9 +719,14 @@ def solar_forecast_page():
                     'w-full items-start gap-1 p-2 mb-4 '
                     'rounded-xl bg-gray-50 dark:bg-gray-900'
             ):
+                # Date row
+                with ui.row().classes('items-center gap-2'):
+                    ui.icon('calendar_today').classes('text-lg text-gray-500')
+                    date_element = ui.label().classes('text-sm text-gray-500')
+
                 # Navigation row
                 with ui.row().classes(
-                        'w-full flex-nowrap items-center gap-1'
+                        'w-80 items-center gap-0'
                 ).style(
                     'justify-content: flex-start; '
                     'align-self: stretch; '
@@ -733,17 +738,13 @@ def solar_forecast_page():
                         on_click=lambda: change_day(-1),
                     ).props('flat round color=grey').classes(button_classes).tooltip('Previous day')
 
-                    with ui.column().classes('items-center gap-1 min-w-0'):
-                        date_element = ui.label().classes(
-                            'w-64 shrink-0 text-center '
-                            'text-sm text-gray-500 whitespace-nowrap'
-                        )
-                        with ui.element('div').classes('h-7 flex items-center justify-center'):
-                            day_status = ui.label('today').classes('text-sm text-gray-500')
-                            today_button = ui.button(
-                                'back to today',
-                                on_click=lambda: set_day(today),
-                            ).props('flat dense no-caps color=primary').classes('text-sm min-h-0 px-2 py-1')
+                    # "today" or "back to today"
+                    with ui.row().classes('items-center gap-0 w-35 h-7 flex items-center justify-center'):
+                        day_status = ui.label('today').classes('text-sm text-gray-500')
+                        today_button = ui.button(
+                            'back to today',
+                            on_click=lambda: set_day(today),
+                        ).props('flat dense no-caps color=primary').classes('text-sm min-h-0 px-2 py-1')
 
                     ui.button(
                         icon='chevron_right',
