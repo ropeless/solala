@@ -737,7 +737,7 @@ def solar_forecast_page():
                 ui.button(
                     icon='chevron_left',
                     on_click=lambda: change_day(-1),
-                ).props('flat round color=grey').classes(
+                ).props('flat round color=primary').classes(
                     button_classes
                 ).tooltip('Previous day')
 
@@ -757,7 +757,7 @@ def solar_forecast_page():
                 ui.button(
                     icon='chevron_right',
                     on_click=lambda: change_day(1),
-                ).props('flat round color=grey').classes(
+                ).props('flat round color=primary').classes(
                     button_classes
                 ).tooltip('Next day')
 
