@@ -729,7 +729,7 @@ def solar_forecast_page():
             with ui.row().classes('items-center gap-2 w-full'):
                 # Date
                 ui.icon('calendar_today').classes('text-lg text-gray-500')
-                date_element = ui.label().classes('text-sm w-40 text-gray-500')
+                date_element = ui.label().classes('text-sm w-30 text-gray-500')
 
                 # Previous day
                 button_classes = '!w-8 !h-8 min-w-0 shrink-0'
