@@ -4,7 +4,7 @@ from abc import abstractmethod
 from asyncio import AbstractEventLoop
 from datetime import date, timedelta
 from functools import partial
-from typing import Mapping, final, Optional, Dict, List
+from typing import Mapping, final, Optional, Dict, List, Sequence
 
 from nicegui import ui, app, events
 from nicegui.elements.button import Button
@@ -20,7 +20,8 @@ from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast, WeatherCode
+from solala.server.weather_icons import weather_code_to_icon_url
+from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
 from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES, \
     KILOWATT_HOURS, CELSIUS, KILOWATTS
 from solala.utils.dict_extras import dict_merge
@@ -124,14 +125,17 @@ class PriceForecastListener(LoopListener):
     def __init__(self):
         super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
+        self._prev = None
 
     @final
     def update(self) -> None:
         """
         Thread safe update.
         """
-        price_forecast: List[Price] = control_loop.get_price_forecast()
-        self._main_loop.call_soon_threadsafe(partial(self._update, price_forecast))
+        price_forecast: Sequence[Price] = control_loop.get_price_forecast()
+        if self._prev is not price_forecast:
+            self._prev = price_forecast
+            self._main_loop.call_soon_threadsafe(partial(self._update, price_forecast))
 
     def _update(self, price_forecast: List[Price]) -> None:
         ...
@@ -142,6 +146,7 @@ class SolarForecastListener(LoopListener):
     def __init__(self, day: date):
         super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
+        self._prev = None
         self.day: date = day
 
     @final
@@ -150,7 +155,9 @@ class SolarForecastListener(LoopListener):
         Thread safe update.
         """
         solar_forecast: DailySolarForecast = control_loop.get_solar_forecast(self.day)
-        self._main_loop.call_soon_threadsafe(partial(self._update, solar_forecast))
+        if self._prev is not solar_forecast:
+            self._prev = solar_forecast
+            self._main_loop.call_soon_threadsafe(partial(self._update, solar_forecast))
 
     def _update(self, solar_forecast: DailySolarForecast) -> None:
         ...
@@ -453,7 +460,9 @@ class SolarForecastUpdater(SolarForecastListener):
 
                         with ui.element('div').classes(row_classes):
                             ui.label(forecast.time.strftime('%H:%M')).classes('solar-time')
-                            ui.label(_weather_icon(forecast.weather))
+                            ui.image(
+                                weather_code_to_icon_url(forecast.weather, Constants.ANIMATE_WEATHER_ICONS)
+                            ).classes('solar-weather-icon')
                             if forecast.irradiance > 0:
                                 ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'solar-number')
                             else:
@@ -637,31 +646,6 @@ def _feed_in_price_class(price: float) -> str:
         return 'price-feed-in-bad'
 
 
-def _weather_icon(weather: WeatherCode) -> str:
-    match weather:
-        # case WeatherCode.NIGHT:
-        #     return '🌙'
-        case WeatherCode.SUNNY:
-            return '☀️'
-        case WeatherCode.PART_CLOUD:
-            return '🌤️'
-        case WeatherCode.CLOUD:
-            return '⛅'
-        case WeatherCode.OVERCAST:
-            return '☁️'
-        case WeatherCode.FOG:
-            return '🌫️'
-        case WeatherCode.PART_RAIN:
-            return '🌦️'
-        case WeatherCode.RAIN:
-            return '🌧️'
-        case WeatherCode.SNOW:
-            return '🌨️'
-        case WeatherCode.STORM:
-            return '⛈️'
-    return ''
-
-
 # ====================================================================
 #  Pages
 # ====================================================================
@@ -741,42 +725,41 @@ def solar_forecast_page():
         with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
             _page_header(' solar forecast')
 
-            # Navigation column
-            with ui.column().classes(
-                    'w-full items-start gap-1 p-2 mb-4 '
-                    'rounded-xl bg-gray-50 dark:bg-gray-900'
-            ):
-                # Date row
-                with ui.row().classes('items-center gap-2'):
-                    ui.icon('calendar_today').classes('text-lg text-gray-500')
-                    date_element = ui.label().classes('text-sm text-gray-500')
+            # Date and navigation row
+            with ui.row().classes('items-center gap-2 w-full'):
+                # Date
+                ui.icon('calendar_today').classes('text-lg text-gray-500')
+                date_element = ui.label().classes('text-sm w-50 text-gray-500')
 
-                # Navigation row
+                # Previous day
+                button_classes = '!w-8 !h-8 min-w-0 shrink-0'
+
+                ui.button(
+                    icon='chevron_left',
+                    on_click=lambda: change_day(-1),
+                ).props('flat round color=grey').classes(
+                    button_classes
+                ).tooltip('Previous day')
+
+                # "today" or "back to today"
                 with ui.row().classes(
-                        'w-80 items-center gap-0'
-                ).style(
-                    'justify-content: flex-start; '
-                    'align-self: stretch; '
-                    'margin-left: 0; margin-right: auto;'
+                        'items-center justify-center gap-0 h-8 w-22'
                 ):
-                    button_classes = '!w-8 !h-8 min-w-0 shrink-0'
-                    ui.button(
-                        icon='chevron_left',
-                        on_click=lambda: change_day(-1),
-                    ).props('flat round color=grey').classes(button_classes).tooltip('Previous day')
+                    day_status = ui.label('today').classes('text-sm text-gray-500')
+                    today_button = ui.button(
+                        'back to today',
+                        on_click=lambda: set_day(today),
+                    ).props(
+                        'flat dense no-caps color=primary'
+                    ).classes('text-sm min-h-0 px-0 py-1')
 
-                    # "today" or "back to today"
-                    with ui.row().classes('items-center gap-0 w-35 h-7 flex items-center justify-center'):
-                        day_status = ui.label('today').classes('text-sm text-gray-500')
-                        today_button = ui.button(
-                            'back to today',
-                            on_click=lambda: set_day(today),
-                        ).props('flat dense no-caps color=primary').classes('text-sm min-h-0 px-2 py-1')
-
-                    ui.button(
-                        icon='chevron_right',
-                        on_click=lambda: change_day(1),
-                    ).props('flat round color=grey').classes(button_classes).tooltip('Next day')
+                # Next day
+                ui.button(
+                    icon='chevron_right',
+                    on_click=lambda: change_day(1),
+                ).props('flat round color=grey').classes(
+                    button_classes
+                ).tooltip('Next day')
 
             # Forecast table will be rendered here
             forecast_element = ui.element('div').classes('w-full')

@@ -161,24 +161,73 @@ class OpenMeteoForecaster(SolarForecaster):
 def _weather(code: int, is_day: bool) -> WeatherCode:
     if not is_day:
         return WeatherCode.NIGHT
+
+    # Map an Open-Meteo WMO weather code to a Solala WeatherCode.
     if code == 0:
-        return WeatherCode.SUNNY
+        return WeatherCode.CLEAR_DAY
+
     if code == 1:
-        return WeatherCode.PART_CLOUD
+        return WeatherCode.CLOUDY_1
+
     if code == 2:
-        return WeatherCode.CLOUD
+        return WeatherCode.CLOUDY_2
+
     if code == 3:
-        return WeatherCode.OVERCAST
+        return WeatherCode.CLOUDY_4
+
     if code in (45, 48):
         return WeatherCode.FOG
-    if code in (51, 53, 55, 56, 57):
-        return WeatherCode.PART_RAIN
-    if code in (61, 63, 65, 66, 67):
-        return WeatherCode.RAIN
-    if code in (71, 73, 75, 77, 85, 86):
-        return WeatherCode.SNOW
-    if code in (80, 81, 82):
-        return WeatherCode.PART_RAIN
-    if code in (95, 96, 99):
-        return WeatherCode.STORM
+
+    # Drizzle
+    if code in (51, 53):
+        return WeatherCode.RAINY_1
+    if code == 55:
+        return WeatherCode.RAINY_2
+
+    # Freezing drizzle
+    if code in (56, 57):
+        return WeatherCode.RAIN_AND_SLEET_MIX
+
+    # Rain
+    if code == 61:
+        return WeatherCode.RAINY_1
+    if code == 63:
+        return WeatherCode.RAINY_2
+    if code == 65:
+        return WeatherCode.RAINY_3
+
+    # Freezing rain
+    if code in (66, 67):
+        return WeatherCode.RAIN_AND_SLEET_MIX
+
+    # Snowfall
+    if code in (71, 77):
+        return WeatherCode.SNOWY_1
+    if code == 73:
+        return WeatherCode.SNOWY_2
+    if code == 75:
+        return WeatherCode.SNOWY_3
+
+    # Rain showers
+    if code == 80:
+        return WeatherCode.RAINY_1
+    if code == 81:
+        return WeatherCode.RAINY_2
+    if code == 82:
+        return WeatherCode.RAINY_3
+
+    # Snow showers
+    if code == 85:
+        return WeatherCode.SNOWY_1
+    if code == 86:
+        return WeatherCode.SNOWY_3
+
+    # Thunderstorms
+    if code == 95:
+        return WeatherCode.THUNDERSTORMS
+    if code == 96:
+        return WeatherCode.THUNDERSTORM_SEVERE
+    if code == 99:
+        return WeatherCode.THUNDERSTORM_SEVERE
+
     return WeatherCode.UNKNOWN

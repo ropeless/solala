@@ -25,6 +25,7 @@ class Constants:
     BUY_PRICE_RED = 40  # Buy price threshold for red colour
 
     CONTROLS_ENABLED: bool = True  # Whether to present the control buttons or not
+    ANIMATE_WEATHER_ICONS: bool = True
 
     @staticmethod
     def to_json() -> JSONDict:

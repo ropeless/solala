@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, UTC, timedelta, date
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Sequence
 
 from pymodbus.client import ModbusTcpClient
 
@@ -392,7 +392,7 @@ def get_settings() -> Settings:
         )
 
 
-def add_listener(listener: LoopListener):
+def add_listener(listener: LoopListener) -> None:
     with _control_state_lock:
         try:
             _control_state.listeners.remove(listener)
@@ -401,7 +401,7 @@ def add_listener(listener: LoopListener):
         _control_state.listeners.append(listener)
 
 
-def remove_listener(listener: LoopListener):
+def remove_listener(listener: LoopListener) -> None:
     with _control_state_lock:
         try:
             _control_state.listeners.remove(listener)
@@ -615,7 +615,7 @@ def get_price_now() -> Price:
     return price
 
 
-def get_price_forecast() -> List[Price]:
+def get_price_forecast() -> Sequence[Price]:
     """
     Get the forecast prices from the power pricer.
     """
@@ -624,7 +624,7 @@ def get_price_forecast() -> List[Price]:
         pricer = state.pricer
         if pricer is None:
             LOGGER.error(f'{_LOG_SRC}Price update not available. Error: power pricer not connected')
-            return []
+            return ()
 
         prices: List[Price] = state.last_price_forecast
         now = datetime.now(UTC)
