@@ -10,7 +10,7 @@ from nicegui import ui, app, events
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
-from solala.constants import APP_NAME, APP_SUBTITLE, Constants
+from solala.constants import APP_NAME, APP_SUBTITLE, Constants, GUI_DATE_FORMAT, GUI_TIME_FORMAT
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
@@ -380,7 +380,7 @@ class PriceForecastUpdater(PriceForecastListener):
 
             with ui.row().classes('items-center gap-2 mb-5'):
                 ui.icon('calendar_today').classes('text-lg text-gray-500')
-                ui.label(forecast_date.strftime('%A, %d %B %Y')).classes('text-sm text-gray-500')
+                ui.label(forecast_date.strftime(GUI_DATE_FORMAT)).classes('text-sm text-gray-500')
 
             # Forecast table
             with ui.column().classes('w-full gap-3'):
@@ -397,7 +397,7 @@ class PriceForecastUpdater(PriceForecastListener):
                             row_classes += ' price-row-alt'
 
                         with ui.element('div').classes(row_classes):
-                            ui.label(price.start_time.strftime('%H:%M')).classes('price-time')
+                            ui.label(price.start_time.strftime(GUI_TIME_FORMAT)).classes('price-time')
 
                             buy_class = _buy_price_class(price.buy_price)
                             ui.label(f'{price.buy_price:.1f}').classes(f'price-number {buy_class}')
@@ -459,7 +459,7 @@ class SolarForecastUpdater(SolarForecastListener):
                             row_classes += ' solar-row-alt'
 
                         with ui.element('div').classes(row_classes):
-                            ui.label(forecast.time.strftime('%H:%M')).classes('solar-time')
+                            ui.label(forecast.time.strftime(GUI_TIME_FORMAT)).classes('solar-time')
                             ui.image(
                                 weather_code_to_icon_url(forecast.weather, Constants.ANIMATE_WEATHER_ICONS)
                             ).classes('solar-weather-icon')
@@ -729,7 +729,7 @@ def solar_forecast_page():
             with ui.row().classes('items-center gap-2 w-full'):
                 # Date
                 ui.icon('calendar_today').classes('text-lg text-gray-500')
-                date_element = ui.label().classes('text-sm w-50 text-gray-500')
+                date_element = ui.label().classes('text-sm w-40 text-gray-500')
 
                 # Previous day
                 button_classes = '!w-8 !h-8 min-w-0 shrink-0'
@@ -743,7 +743,7 @@ def solar_forecast_page():
 
                 # "today" or "back to today"
                 with ui.row().classes(
-                        'items-center justify-center gap-0 h-8 w-22'
+                        'items-center justify-center gap-0 h-8 w-23'
                 ):
                     day_status = ui.label('today').classes('text-sm text-gray-500')
                     today_button = ui.button(
@@ -826,7 +826,7 @@ def solar_forecast_page():
 
     def set_day(day: date) -> None:
         updater.set_day(day)
-        date_element.set_text(day.strftime('%A, %d %B %Y'))
+        date_element.set_text(day.strftime(GUI_DATE_FORMAT))
         day_status.set_visibility(day == today)
         today_button.set_visibility(day != today)
 

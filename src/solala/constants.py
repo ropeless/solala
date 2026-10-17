@@ -4,6 +4,8 @@ APP_NAME: str = 'Solala'
 APP_SUBTITLE: str = 'Home Power Management'
 
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timestamps
+GUI_DATE_FORMAT = '%a, %d %b %Y'
+GUI_TIME_FORMAT = '%H:%M'
 
 
 class Constants:
