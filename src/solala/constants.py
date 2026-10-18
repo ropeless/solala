@@ -4,6 +4,8 @@ APP_NAME: str = 'Solala'
 APP_SUBTITLE: str = 'Home Power Management'
 
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timestamps
+GUI_DATE_FORMAT = '%a, %d %b %Y'
+GUI_TIME_FORMAT = '%H:%M'
 
 
 class Constants:
@@ -25,6 +27,7 @@ class Constants:
     BUY_PRICE_RED = 40  # Buy price threshold for red colour
 
     CONTROLS_ENABLED: bool = True  # Whether to present the control buttons or not
+    ANIMATE_WEATHER_ICONS: bool = True
 
     @staticmethod
     def to_json() -> JSONDict:

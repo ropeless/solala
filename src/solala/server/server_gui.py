@@ -1,25 +1,25 @@
 import asyncio
-import json
 from abc import abstractmethod
 from asyncio import AbstractEventLoop
 from datetime import date, timedelta
 from functools import partial
-from typing import Mapping, final, Optional, Dict, List
+from typing import Mapping, final, Optional, Dict, List, Sequence
 
 from nicegui import ui, app, events
 from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
-from solala.server import server_log
+from solala.constants import APP_NAME, APP_SUBTITLE, Constants, GUI_DATE_FORMAT, GUI_TIME_FORMAT
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
+from solala.logger import LOGGER
 from solala.power_pricer.power_pricer import Price
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
-from solala.constants import APP_NAME, APP_SUBTITLE, Constants
-from solala.logger import LOGGER
+from solala.server import server_log
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
+from solala.server.weather_icons import weather_code_to_icon_url
 from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
 from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES, \
     KILOWATT_HOURS, CELSIUS, KILOWATTS
@@ -124,14 +124,17 @@ class PriceForecastListener(LoopListener):
     def __init__(self):
         super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
+        self._prev = None
 
     @final
     def update(self) -> None:
         """
         Thread safe update.
         """
-        price_forecast: List[Price] = control_loop.get_price_forecast()
-        self._main_loop.call_soon_threadsafe(partial(self._update, price_forecast))
+        price_forecast: Sequence[Price] = control_loop.get_price_forecast()
+        if self._prev is not price_forecast:
+            self._prev = price_forecast
+            self._main_loop.call_soon_threadsafe(partial(self._update, price_forecast))
 
     def _update(self, price_forecast: List[Price]) -> None:
         ...
@@ -142,6 +145,7 @@ class SolarForecastListener(LoopListener):
     def __init__(self, day: date):
         super().__init__()
         self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
+        self._prev = None
         self.day: date = day
 
     @final
@@ -150,7 +154,9 @@ class SolarForecastListener(LoopListener):
         Thread safe update.
         """
         solar_forecast: DailySolarForecast = control_loop.get_solar_forecast(self.day)
-        self._main_loop.call_soon_threadsafe(partial(self._update, solar_forecast))
+        if self._prev is not solar_forecast:
+            self._prev = solar_forecast
+            self._main_loop.call_soon_threadsafe(partial(self._update, solar_forecast))
 
     def _update(self, solar_forecast: DailySolarForecast) -> None:
         ...
@@ -373,7 +379,7 @@ class PriceForecastUpdater(PriceForecastListener):
 
             with ui.row().classes('items-center gap-2 mb-5'):
                 ui.icon('calendar_today').classes('text-lg text-gray-500')
-                ui.label(forecast_date.strftime('%A, %d %B %Y')).classes('text-sm text-gray-500')
+                ui.label(forecast_date.strftime(GUI_DATE_FORMAT)).classes('text-sm text-gray-500')
 
             # Forecast table
             with ui.column().classes('w-full gap-3'):
@@ -390,7 +396,7 @@ class PriceForecastUpdater(PriceForecastListener):
                             row_classes += ' price-row-alt'
 
                         with ui.element('div').classes(row_classes):
-                            ui.label(price.start_time.strftime('%H:%M')).classes('price-time')
+                            ui.label(price.start_time.strftime(GUI_TIME_FORMAT)).classes('price-time')
 
                             buy_class = _buy_price_class(price.buy_price)
                             ui.label(f'{price.buy_price:.1f}').classes(f'price-number {buy_class}')
@@ -440,8 +446,9 @@ class SolarForecastUpdater(SolarForecastListener):
                 with ui.element('div').classes('solar-table'):
                     with ui.element('div').classes('solar-row solar-header'):
                         ui.label('Time')
+                        ui.label('Sky').classes('text-right')
                         ui.label('Irradiance').classes('text-right')
-                        ui.label('Temperature').classes('text-right')
+                        ui.label('Temp').classes('text-right')
                         ui.label('Power').classes('text-right')
 
                     forecast: SolarForecast
@@ -451,7 +458,10 @@ class SolarForecastUpdater(SolarForecastListener):
                             row_classes += ' solar-row-alt'
 
                         with ui.element('div').classes(row_classes):
-                            ui.label(forecast.time.strftime('%H:%M')).classes('solar-time')
+                            ui.label(forecast.time.strftime(GUI_TIME_FORMAT)).classes('solar-time')
+                            ui.image(
+                                weather_code_to_icon_url(forecast.weather, Constants.ANIMATE_WEATHER_ICONS)
+                            ).classes('solar-weather-icon')
                             if forecast.irradiance > 0:
                                 ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'solar-number')
                             else:
@@ -682,13 +692,11 @@ def root_page():
         with ui.element('div').classes('dashboard-card diagnostics-card'):
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
-            with ui.grid(columns=3):
+            with ui.grid(columns=2):
                 _diagnostic_link('?', 'Status', '/status_page')
                 _diagnostic_link('⚙', 'Parameters', '/parameters_page')
-                _diagnostic_link('↔', 'Connection', '/connection_page')
                 _diagnostic_link('▤', 'Registers', '/registers_page')
                 _diagnostic_link('▣', 'Log', '/log_page')
-                _diagnostic_link('</>', 'API Schema', '/schema_page')
 
 
 @ui.page('/price_forecast_page')
@@ -714,41 +722,41 @@ def solar_forecast_page():
         with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
             _page_header(' solar forecast')
 
-            # Navigation column
-            with ui.column().classes(
-                    'w-full items-start gap-1 p-2 mb-4 '
-                    'rounded-xl bg-gray-50 dark:bg-gray-900'
-            ):
-                # Navigation row
+            # Date and navigation row
+            with ui.row().classes('items-center gap-2 w-full'):
+                # Date
+                ui.icon('calendar_today').classes('text-lg text-gray-500')
+                date_element = ui.label().classes('text-sm w-30 text-gray-500')
+
+                # Previous day
+                button_classes = '!w-8 !h-8 min-w-0 shrink-0'
+
+                ui.button(
+                    icon='chevron_left',
+                    on_click=lambda: change_day(-1),
+                ).props('flat round color=primary').classes(
+                    button_classes
+                ).tooltip('Previous day')
+
+                # "today" or "back to today"
                 with ui.row().classes(
-                        'w-full flex-nowrap items-center gap-1'
-                ).style(
-                    'justify-content: flex-start; '
-                    'align-self: stretch; '
-                    'margin-left: 0; margin-right: auto;'
+                        'items-center justify-center gap-0 h-8 w-23'
                 ):
-                    button_classes = '!w-8 !h-8 min-w-0 shrink-0'
-                    ui.button(
-                        icon='chevron_left',
-                        on_click=lambda: change_day(-1),
-                    ).props('flat round color=grey').classes(button_classes).tooltip('Previous day')
+                    day_status = ui.label('today').classes('text-sm text-gray-500')
+                    today_button = ui.button(
+                        'back to today',
+                        on_click=lambda: set_day(today),
+                    ).props(
+                        'flat dense no-caps color=primary'
+                    ).classes('text-sm min-h-0 px-0 py-1')
 
-                    with ui.column().classes('items-center gap-1 min-w-0'):
-                        date_element = ui.label().classes(
-                            'w-64 shrink-0 text-center '
-                            'text-sm text-gray-500 whitespace-nowrap'
-                        )
-                        with ui.element('div').classes('h-7 flex items-center justify-center'):
-                            day_status = ui.label('today').classes('text-sm text-gray-500')
-                            today_button = ui.button(
-                                'back to today',
-                                on_click=lambda: set_day(today),
-                            ).props('flat dense no-caps color=primary').classes('text-sm min-h-0 px-2 py-1')
-
-                    ui.button(
-                        icon='chevron_right',
-                        on_click=lambda: change_day(1),
-                    ).props('flat round color=grey').classes(button_classes).tooltip('Next day')
+                # Next day
+                ui.button(
+                    icon='chevron_right',
+                    on_click=lambda: change_day(1),
+                ).props('flat round color=primary').classes(
+                    button_classes
+                ).tooltip('Next day')
 
             # Forecast table will be rendered here
             forecast_element = ui.element('div').classes('w-full')
@@ -815,7 +823,7 @@ def solar_forecast_page():
 
     def set_day(day: date) -> None:
         updater.set_day(day)
-        date_element.set_text(day.strftime('%A, %d %B %Y'))
+        date_element.set_text(day.strftime(GUI_DATE_FORMAT))
         day_status.set_visibility(day == today)
         today_button.set_visibility(day != today)
 
@@ -842,6 +850,17 @@ def status_page():
                 _register_listener(StatusUpdater(
                     status_element=ui.code(language='nothing').classes('text-sm w-full grow')
                 ))
+
+            # ----------------------------------------------------------
+            # Connection card
+            # ----------------------------------------------------------
+            with ui.card():
+                ui.label('Connection').classes('text-h6')
+                connection_json = control_loop.get_connection_status()
+                json_as_str = render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
+                connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
+                connection_element.set_content(json_as_str)
+
             # ----------------------------------------------------------
             # BATTERY + INVERTER control buttons
             # ----------------------------------------------------------
@@ -887,36 +906,4 @@ def parameters_page():
 
     consts.set_content(
         render_json(constants_json, remove_key_underscores=False, units=_CONSTANTS_UNITS)
-    )
-
-
-@ui.page('/connection_page')
-def connection_page(match: Optional[str] = None):
-    """
-    Show the connection status.
-    """
-    connection_json = control_loop.get_connection_status()
-    if match is not None:
-        connection_json = filter_json(connection_json, match)
-
-    _json_page('Connection').set_content(
-        render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
-    )
-
-
-@ui.page('/schema_page')
-async def schema_page():
-    """
-    Show the web API schema.
-    """
-    # Use Fast API to get the schema
-    schema_json: JSONDict
-    try:
-        await ui.context.client.connected()
-        schema_json = await ui.run_javascript('fetch("/schema").then(res => res.json())')
-    except Exception as e:
-        schema_json = {'error': str(e)}
-
-    _json_page('API Schema').set_content(
-        json.dumps(schema_json, indent=4)
     )

@@ -18,7 +18,7 @@ class TeslaWallConnector(PowerConsumer):
         self._api = f'http://{ip_address}/api/1/'
 
         self._connection_status = {
-            'status': 'Tesla Wall Connector connection',
+            'connection': 'Tesla Wall Connector',
             'host': ip_address,
         }
         if mac_address != '':
