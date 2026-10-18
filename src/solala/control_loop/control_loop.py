@@ -467,7 +467,7 @@ def get_power_status() -> JSONDict:
         try:
             result: JSONDict = state.controller.get_status().to_json()
             if state.forecaster is not None:
-                result['forecast_generation'] = get_solar_forecast(date.today()).total_forecast_energy()
+                result['forecast_generation'] = get_solar_forecast(date.today()).total_forecast_energy() / 1000
             return result
         except Exception as err:
             return {'error': str(err)}

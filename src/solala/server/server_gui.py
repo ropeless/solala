@@ -21,7 +21,7 @@ from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_I
     CLICK_ID_INVERTER
 from solala.server.weather_icons import weather_code_to_icon_url
 from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
-from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES, \
+from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, DEGREES, \
     KILOWATT_HOURS, CELSIUS, KILOWATTS
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
@@ -60,7 +60,7 @@ _STATUS_UNITS: Mapping[str, str] = dict_merge(
         'voltage': VOLTS,
         'current': AMPS,
         'capacity': WATTS,
-        'forecast_generation': WATT_HOURS,
+        'forecast_generation': KILOWATT_HOURS,
     },
     _PARAMETERS_UNITS,
 )
@@ -548,9 +548,11 @@ def _button_classes(button, primary=False, wide=False) -> None:
     return button
 
 
-def _diagnostic_link(icon: str, name: str, target: str) -> None:
+def _diagnostic_link(name: str, icon_name: str, target: str) -> None:
     with ui.link(target=target).classes('diagnostic-link'):
-        ui.label(icon).classes('diagnostic-icon')
+        ui.image(
+            f'/images/diagnostic-icons/{icon_name}.svg'
+        ).classes('diagnostic-icon')
         ui.label(name)
 
 
@@ -693,10 +695,10 @@ def root_page():
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
             with ui.grid(columns=2):
-                _diagnostic_link('?', 'Status', '/status_page')
-                _diagnostic_link('⚙', 'Parameters', '/parameters_page')
-                _diagnostic_link('▤', 'Registers', '/registers_page')
-                _diagnostic_link('▣', 'Log', '/log_page')
+                _diagnostic_link('Status', 'status', '/status_page')
+                _diagnostic_link('Parameters', 'parameters', '/parameters_page')
+                _diagnostic_link('Registers', 'registers', '/registers_page')
+                _diagnostic_link('Log', 'log', '/log_page')
 
 
 @ui.page('/price_forecast_page')
