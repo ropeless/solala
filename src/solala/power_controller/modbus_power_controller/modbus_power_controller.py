@@ -87,7 +87,7 @@ class ModbusPowerController(PowerController):
             else:
                 devices_record[device_name] = device_record
         self._connection_status = {
-            'status': 'Modbus connection',
+            'connection': 'Modbus',
             'devices': devices_record,
         }
         if unnamed_device is not None:

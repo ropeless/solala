@@ -41,7 +41,7 @@ class DummyPowerController(PowerController):
 
     def get_connection_status(self) -> Dict[str, int | float | str]:
         return {
-            'status': 'Dummy connection',
+            'connection': self.__class__.__name__,
             'battery_mode': self.battery_mode,
             'inverter_mode': self.inverter_mode,
             'state_of_charge': self.state_of_charge,

@@ -1,5 +1,4 @@
 import asyncio
-import json
 from abc import abstractmethod
 from asyncio import AbstractEventLoop
 from datetime import date, timedelta
@@ -693,13 +692,11 @@ def root_page():
         with ui.element('div').classes('dashboard-card diagnostics-card'):
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
-            with ui.grid(columns=3):
+            with ui.grid(columns=2):
                 _diagnostic_link('?', 'Status', '/status_page')
                 _diagnostic_link('⚙', 'Parameters', '/parameters_page')
-                _diagnostic_link('↔', 'Connection', '/connection_page')
                 _diagnostic_link('▤', 'Registers', '/registers_page')
                 _diagnostic_link('▣', 'Log', '/log_page')
-                _diagnostic_link('</>', 'API Schema', '/schema_page')
 
 
 @ui.page('/price_forecast_page')
@@ -853,6 +850,17 @@ def status_page():
                 _register_listener(StatusUpdater(
                     status_element=ui.code(language='nothing').classes('text-sm w-full grow')
                 ))
+
+            # ----------------------------------------------------------
+            # Connection card
+            # ----------------------------------------------------------
+            with ui.card():
+                ui.label('Connection').classes('text-h6')
+                connection_json = control_loop.get_connection_status()
+                json_as_str = render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
+                connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
+                connection_element.set_content(json_as_str)
+
             # ----------------------------------------------------------
             # BATTERY + INVERTER control buttons
             # ----------------------------------------------------------
@@ -898,36 +906,4 @@ def parameters_page():
 
     consts.set_content(
         render_json(constants_json, remove_key_underscores=False, units=_CONSTANTS_UNITS)
-    )
-
-
-@ui.page('/connection_page')
-def connection_page(match: Optional[str] = None):
-    """
-    Show the connection status.
-    """
-    connection_json = control_loop.get_connection_status()
-    if match is not None:
-        connection_json = filter_json(connection_json, match)
-
-    _json_page('Connection').set_content(
-        render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
-    )
-
-
-@ui.page('/schema_page')
-async def schema_page():
-    """
-    Show the web API schema.
-    """
-    # Use Fast API to get the schema
-    schema_json: JSONDict
-    try:
-        await ui.context.client.connected()
-        schema_json = await ui.run_javascript('fetch("/schema").then(res => res.json())')
-    except Exception as e:
-        schema_json = {'error': str(e)}
-
-    _json_page('API Schema').set_content(
-        json.dumps(schema_json, indent=4)
     )

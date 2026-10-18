@@ -28,7 +28,7 @@ class DummyPowerPricer(PowerPricer):
 
     def get_connection_status(self) -> Dict[str, int | float | str]:
         return {
-            'status': 'Dummy connection',
+            'connection': self.__class__.__name__,
             'buy_price_min': self.buy_price_min,
             'buy_price_max': self.buy_price_min + self.buy_price_range,
             'feed_in_price_discount_min': self.feed_in_price_discount_min,

@@ -20,7 +20,7 @@ class DummyPowerConsumer(PowerConsumer):
 
     def get_connection_status(self) -> Dict[str, int | float | str]:
         return {
-            'status': 'Dummy connection',
+            'connection': self.__class__.__name__,
             'voltage': self.status.voltage,
             'current': self.status.current,
         }

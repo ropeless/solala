@@ -47,7 +47,7 @@ _NO_PRICE = Price(
     feed_in_price=0,
     estimate=True,
 )
-_DISCONNECTED: JSONDict = {'status': 'disconnected'}
+_DISCONNECTED: JSONDict = {'connection': 'disconnected'}
 _NO_SOLAR_FORECAST = DailySolarForecast([])
 
 

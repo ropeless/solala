@@ -111,7 +111,7 @@ class OpenMeteoForecaster(SolarForecaster):
 
     def get_connection_status(self) -> JSONDict:
         return {
-            'status': 'Open-Meteo connection',
+            'connection': 'Open-Meteo',
             'latitude': self._latitude,
             'longitude': self._longitude,
             'panel_orientation': self._panel_orientation,

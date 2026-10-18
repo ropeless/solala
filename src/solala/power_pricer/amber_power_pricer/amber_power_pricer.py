@@ -37,7 +37,7 @@ class AmberPowerPricer(PowerPricer):
 
     def get_connection_status(self) -> JSONDict:
         return {
-            'status': 'Amber connection',
+            'connection': 'Amber',
             'nmi': self._nmi,
             'site': self._site_id,
         }
