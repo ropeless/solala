@@ -243,6 +243,8 @@ class BatteryButtonUpdater(StatusListener):
             battery_disable: Button,
             battery_force_charge: Button,
             battery_force_discharge: Button,
+            battery_charge_only: Button,
+            battery_discharge_only: Button,
             battery_cheap_force_discharge: Button,
     ):
         super().__init__()
@@ -258,13 +260,19 @@ class BatteryButtonUpdater(StatusListener):
         self.battery_force_discharge = battery_force_discharge.on_click(partial(
             self._click, BatteryMode.FORCE_DISCHARGE, BatteryPolicy.MANUAL
         ))
+        self.battery_charge_only = battery_charge_only.on_click(partial(
+            self._click, BatteryMode.CHARGE_ONLY, BatteryPolicy.MANUAL
+        ))
+        self.battery_discharge_only = battery_discharge_only.on_click(partial(
+            self._click, BatteryMode.DISCHARGE_ONLY, BatteryPolicy.MANUAL
+        ))
         self.battery_cheap_force_discharge = battery_cheap_force_discharge.on_click(partial(
             self._click, None, BatteryPolicy.CHEAP_CHARGE
         ))
 
         for button in [
             battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
-            battery_cheap_force_discharge
+            battery_charge_only, battery_discharge_only, battery_cheap_force_discharge
         ]:
             button.style('padding-top: 1px; padding-bottom: 1px;')
             button.classes('py-0 px-2 text-xs')
@@ -303,6 +311,8 @@ class BatteryButtonUpdater(StatusListener):
         self.battery_disable.props(on_props('DISABLE'))
         self.battery_force_charge.props(on_props('FORCE_CHARGE'))
         self.battery_force_discharge.props(on_props('FORCE_DISCHARGE'))
+        self.battery_charge_only.props(on_props('CHARGE_ONLY'))
+        self.battery_discharge_only.props(on_props('DISCHARGE_ONLY'))
         self.battery_cheap_force_discharge.props(on_props('CHEAP_FORCE_DISCHARGE'))
 
 
@@ -572,10 +582,14 @@ def _ui_control_buttons() -> None:
                 battery_disable = ui.button('DISABLE').classes('solala-button')
                 battery_force_charge = ui.button('FORCE CHARGE').classes('solala-button')
                 battery_force_discharge = ui.button('FORCE DISCHARGE').classes('solala-button')
+                battery_charge_only = ui.button('CHARGE ONLY').classes('solala-button')
+                battery_discharge_only = ui.button('DISCHARGE ONLY').classes('solala-button')
                 battery_cheap_force_discharge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
 
                 battery_force_charge.classes('wide')
                 battery_force_discharge.classes('wide')
+                battery_charge_only.classes('wide')
+                battery_discharge_only.classes('wide')
                 battery_cheap_force_discharge.classes('wide')
 
             _register_listener(
@@ -584,6 +598,8 @@ def _ui_control_buttons() -> None:
                     battery_disable=battery_disable,
                     battery_force_charge=battery_force_charge,
                     battery_force_discharge=battery_force_discharge,
+                    battery_charge_only=battery_charge_only,
+                    battery_discharge_only=battery_discharge_only,
                     battery_cheap_force_discharge=battery_cheap_force_discharge,
                 )
             )

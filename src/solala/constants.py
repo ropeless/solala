@@ -3,19 +3,19 @@ from solala.utils.json import JSONDict, to_json
 APP_NAME: str = 'Solala'
 APP_SUBTITLE: str = 'Home Power Management'
 
-DATE_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timestamps
+TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timestamps
 GUI_DATE_FORMAT = '%a, %d %b %Y'
 GUI_TIME_FORMAT = '%H:%M'
 
 
 class Constants:
     """
-    These constants control the behaviour of the control loop.
+    These constants control the behaviour of the control loop and GUI.
     They should only be modified by developers for testing and debugging.
     """
 
     LOOP_TIME: int = 5  # number of seconds for each loop iteration
-    LOOP_MIN_SLEEP_TIME: int = 2  # number of seconds to sleep for each loop iteration
+    LOOP_MIN_SLEEP_TIME: int = 1  # number of seconds to sleep for each loop iteration
     CONTROL_DURATION: int = 11  # number of seconds a control remains active
     PRICE_SETTLE_CHECK: int = 9  # check delay to see if the power price has settled
     PRICE_FORECAST_DURATION = 13  # in hours
@@ -27,7 +27,7 @@ class Constants:
     BUY_PRICE_RED = 40  # Buy price threshold for red colour
 
     CONTROLS_ENABLED: bool = True  # Whether to present the control buttons or not
-    ANIMATE_WEATHER_ICONS: bool = True
+    ANIMATE_WEATHER_ICONS: bool = True  # Whether to animate weather icons or not
 
     @staticmethod
     def to_json() -> JSONDict:

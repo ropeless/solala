@@ -1,8 +1,8 @@
 from typing import Iterable, List, Tuple, Sequence, Optional, Dict
 
+from solala.logger import LOGGER
 from solala.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.power_controller.power_controller import PowerController, PowerStatus
-from solala.logger import LOGGER
 from solala.utils.json import JSONDict
 
 
@@ -10,12 +10,8 @@ class _DEFAULT:
     """
     Critical registers and their default values.
     """
-    MinRsvPct = 7  # Important - minimum reserve battery percentage
-    InWRte = 100
-    OutWRte = 100
-    StorCtl_Mod = 0
-    WMaxLimPct = 100
-    WMaxLimPct_RvrtTms = 11  # Standard reversion time in seconds
+    MinRsvPct = 7  # Minimum reserve battery percentage
+    WMaxLimPct_RvrtTms = 11  # Control reversion time in seconds
 
 
 # Prefixes used for logging
@@ -68,6 +64,7 @@ class ModbusPowerController(PowerController):
         self._OutWRte: str = f'{master}/OutWRte'
         self._StorCtl_Mod: str = f'{master}/StorCtl_Mod'
         self._MinRsvPct: str = f'{master}/MinRsvPct'
+        self._ChaGriSet: str = f'{master}/ChaGriSet'
 
         # Save the connection status
         devices_record: JSONDict = {}
@@ -168,9 +165,10 @@ class ModbusPowerController(PowerController):
         This is the normal state.
         """
         LOGGER.info(f'{_START} enable_battery')
-        self._set(self._InWRte, _DEFAULT.InWRte)
-        self._set(self._OutWRte, _DEFAULT.OutWRte)
-        self._set(self._StorCtl_Mod, _DEFAULT.StorCtl_Mod)
+        self._set(self._InWRte, 100)
+        self._set(self._OutWRte, 100)
+        self._set(self._StorCtl_Mod, 0)
+        self._set(self._ChaGriSet, 0)
         self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
         LOGGER.info(f'{_STOP} enable_battery')
 
@@ -182,6 +180,7 @@ class ModbusPowerController(PowerController):
         self._set(self._InWRte, 0)
         self._set(self._OutWRte, 0)
         self._set(self._StorCtl_Mod, 3)
+        self._set(self._ChaGriSet, 0)
         self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
         LOGGER.info(f'{_STOP} disable_battery')
 
@@ -192,9 +191,10 @@ class ModbusPowerController(PowerController):
         even if it means drawing from the grid.
         """
         LOGGER.info(f'{_START} force_charge')
-        self._set(self._InWRte, _DEFAULT.InWRte)
+        self._set(self._InWRte, 100)
         self._set(self._OutWRte, 0)  # Don't try to discharge at the same time as charging
         self._set(self._StorCtl_Mod, 3)
+        self._set(self._ChaGriSet, 1)
         self._set(self._MinRsvPct, 100)
         LOGGER.info(f'{_STOP} force_charge')
 
@@ -204,11 +204,36 @@ class ModbusPowerController(PowerController):
         This is a way to force stored power to the grid.
         """
         LOGGER.info(f'{_START} force_discharge')
-        self._set(self._InWRte, -_DEFAULT.InWRte)  # negative flow
-        self._set(self._OutWRte, _DEFAULT.OutWRte)
+        self._set(self._InWRte, -100)  # negative flow
+        self._set(self._OutWRte, 100)
         self._set(self._StorCtl_Mod, 3)
+        self._set(self._ChaGriSet, 0)
         self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
         LOGGER.info(f'{_STOP} force_discharge')
+
+    def charge_only(self) -> None:
+        """
+        Allow charging but not discharging.
+        """
+        LOGGER.info(f'{_START} charge_only')
+        self._set(self._InWRte, 100)
+        self._set(self._OutWRte, 0)
+        self._set(self._StorCtl_Mod, 3)
+        self._set(self._ChaGriSet, 0)
+        self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+        LOGGER.info(f'{_STOP} charge_only')
+
+    def discharge_only(self) -> None:
+        """
+        Allow discharging but not charging.
+        """
+        LOGGER.info(f'{_START} discharge_only')
+        self._set(self._InWRte, 0)
+        self._set(self._OutWRte, 100)
+        self._set(self._StorCtl_Mod, 3)
+        self._set(self._ChaGriSet, 0)
+        self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+        LOGGER.info(f'{_STOP} discharge_only')
 
     # =================================================
     #  Grid Export Control
@@ -216,7 +241,7 @@ class ModbusPowerController(PowerController):
 
     def enable_inverter(self) -> None:
         LOGGER.info(f'{_START} enable_inverter')
-        self._set_power_pct(_DEFAULT.WMaxLimPct)
+        self._set_power_pct(100)
         LOGGER.info(f'{_STOP} enable_inverter')
 
     def disable_inverter(self, *, change_duration: int) -> None:
@@ -288,7 +313,7 @@ class ModbusPowerController(PowerController):
 
     def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
         if pct >= 100:
-            self._set(self._WMaxLimPct, _DEFAULT.WMaxLimPct)
+            self._set(self._WMaxLimPct, 100)
             self._set(self._WMaxLimPct_RvrtTms, change_duration)
             self._set(self._WMaxLim_Ena, 0)
         else:

@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Sequence
 
 from pymodbus.client import ModbusTcpClient
 
-from solala.constants import Constants, DATE_FORMAT
+from solala.constants import Constants, TIMESTAMP_FORMAT
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
@@ -281,6 +281,10 @@ def _control_step(
                 power_controller.force_charge()
             case BatteryMode.FORCE_DISCHARGE:
                 power_controller.force_discharge()
+            case BatteryMode.CHARGE_ONLY:
+                power_controller.charge_only()
+            case BatteryMode.DISCHARGE_ONLY:
+                power_controller.discharge_only()
         prev_state.battery_mode = state.battery_mode
 
     # Inverter Policy - may change Inverter Mode
@@ -453,7 +457,7 @@ def get_price_status() -> JSONDict:
             return _DISCONNECTED
         try:
             cur_price: Price = get_price_now()
-            result = cur_price.to_json(DATE_FORMAT, include_time=False)
+            result = cur_price.to_json(TIMESTAMP_FORMAT, include_time=False)
             return result
         except Exception as err:
             return {'error': str(err)}

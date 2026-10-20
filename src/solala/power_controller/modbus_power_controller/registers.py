@@ -86,6 +86,7 @@ MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
         'ChaState': scaled_uint(9, _ChaState_SF),
         'OutWRte': scaled_int(13, _InOutWRte_SF, writable=True),
         'InWRte': scaled_int(14, _InOutWRte_SF, writable=True),
+        'ChaGriSet': uint16(18, writable=True),
     },
 
     # Smart Meter
