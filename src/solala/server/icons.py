@@ -1,6 +1,10 @@
 from solala.solar_forecaster.solar_forecaster import WeatherCode
 
 
+def diagnostic_name_to_icon_url(diagnostic_name: str) -> str:
+    return f'/images/diagnostic-icons/{diagnostic_name.lower()}.svg'
+
+
 def weather_code_to_icon_url(code: WeatherCode, animated: bool = False) -> str:
     subdirectory = 'animated' if animated else 'static'
     return f'/images/weather-icons/{subdirectory}/{weather_code_to_icon_name(code)}.svg'
@@ -58,5 +62,5 @@ def weather_code_to_icon_name(code: WeatherCode) -> str:
             return 'rain-and-snow-mix'
         case WeatherCode.SNOW_AND_SLEET_MIX:
             return 'snow-and-sleet-mix'
-        
+
     return ''

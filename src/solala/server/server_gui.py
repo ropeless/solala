@@ -6,7 +6,9 @@ from functools import partial
 from typing import Mapping, final, Optional, Dict, List, Sequence
 
 from nicegui import ui, app, events
+from nicegui.element import Element
 from nicegui.elements.button import Button
+from nicegui.elements.label import Label
 from nicegui.elements.mixins.content_element import ContentElement
 
 from solala.constants import APP_NAME, APP_SUBTITLE, Constants, GUI_DATE_FORMAT, GUI_TIME_FORMAT
@@ -17,9 +19,9 @@ from solala.logger import LOGGER
 from solala.power_pricer.power_pricer import Price
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
+from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.server.weather_icons import weather_code_to_icon_url
 from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
 from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, DEGREES, \
     KILOWATT_HOURS, CELSIUS, KILOWATTS
@@ -558,11 +560,9 @@ def _button_classes(button, primary=False, wide=False) -> None:
     return button
 
 
-def _diagnostic_link(name: str, icon_name: str, target: str) -> None:
+def _diagnostic_link(name: str, target: str) -> None:
     with ui.link(target=target).classes('diagnostic-link'):
-        ui.image(
-            f'/images/diagnostic-icons/{icon_name}.svg'
-        ).classes('diagnostic-icon')
+        ui.image(diagnostic_name_to_icon_url(name)).classes('diagnostic-icon')
         ui.label(name)
 
 
@@ -663,6 +663,31 @@ def _feed_in_price_class(price: float) -> str:
         return 'price-feed-in-bad'
 
 
+def _update_loop_status(loop_status_light: Element, loop_status_label: Label) -> None:
+    overdue: float = control_loop.loop_check_overdue()
+    if overdue > Constants.LOOP_TIME:
+        loop_status_light.classes(
+            replace='w-3 h-3 rounded-full bg-red-600'
+        )
+        loop_status_light.tooltip('Control loop appears to be stalled')
+        loop_status_label.set_text('stalled')
+        loop_status_label.classes(
+            replace='text-sm text-red-600'
+        )
+    elif overdue == 0:
+        loop_status_light.classes(
+            replace='w-3 h-3 rounded-full bg-green-700'
+        )
+        loop_status_light.tooltip('Control loop appears to be active')
+        loop_status_label.set_text('active')
+        loop_status_label.classes(
+            replace='text-sm text-green-700'
+        )
+    else:
+        # Leave it as it is
+        pass
+
+
 # ====================================================================
 #  Pages
 # ====================================================================
@@ -684,7 +709,20 @@ def root_page():
             # LIVE POWER INFOGRAPHIC
             # ----------------------------------------------------------
             with ui.element('div').classes('dashboard-card infographic-card'):
-                ui.label('Power').classes('infographic-title')
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label('Power').classes('infographic-title')
+
+                    # Control loop status light
+                    with ui.row().classes('items-center gap-2'):
+                        loop_status_light = ui.element('div').classes(
+                            'w-3 h-3 rounded-full bg-green-500'
+                        )
+                        loop_status_label = ui.label('active').classes(
+                            'text-sm text-green-600'
+                        )
+
+                    _update_loop_status(loop_status_light, loop_status_label)
+                    ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
 
                 with ui.element('div').classes('infographic-container'):
                     infographic = ui.html()
@@ -711,10 +749,10 @@ def root_page():
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
             with ui.grid(columns=2):
-                _diagnostic_link('Status', 'status', '/status_page')
-                _diagnostic_link('Parameters', 'parameters', '/parameters_page')
-                _diagnostic_link('Registers', 'registers', '/registers_page')
-                _diagnostic_link('Log', 'log', '/log_page')
+                _diagnostic_link('Status', '/status_page')
+                _diagnostic_link('Parameters', '/parameters_page')
+                _diagnostic_link('Registers', '/registers_page')
+                _diagnostic_link('Log', '/log_page')
 
 
 @ui.page('/price_forecast_page')

@@ -319,17 +319,17 @@ def _control_step(
 # =============================================================================
 
 
-def loop_stale() -> bool:
+def loop_check_overdue() -> float:
     """
     The control loop is expected to iterate each `Constants.LOOP_TIME` seconds.
-    If it has been more than twice that time, then the loop is likely stale.
+    This returns the number of seconds past the last expected loop, i.e.
+    `max(0, now - (last_loop_time + Constants.LOOP_TIME))`.
 
     Returns:
-        True if the control loop appears to be stale, False otherwise.
+        The number of seconds the loop check is overdue (zero if running normally).
     """
     # We are not concerned with race conditions, so we do not need to get the control loop lock.
-    seconds_since_last_loop: float = datetime.now(UTC).timestamp() - _control_state.loop_start.timestamp()
-    return seconds_since_last_loop > 2 * Constants.LOOP_TIME
+    return max(0, datetime.now(UTC).timestamp() - (_control_state.loop_start.timestamp() + Constants.LOOP_TIME))
 
 
 def configure_from_settings(settings: Settings) -> None:
