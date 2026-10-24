@@ -28,6 +28,7 @@ class Constants:
 
     CONTROLS_ENABLED: bool = True  # Whether to present the control buttons or not
     ANIMATE_WEATHER_ICONS: bool = True  # Whether to animate weather icons or not
+    INFOGRAPHIC_INCLUDE_RENEWABLES: bool = False  # Whether to show % renewables or not
 
     @staticmethod
     def to_json() -> JSONDict:

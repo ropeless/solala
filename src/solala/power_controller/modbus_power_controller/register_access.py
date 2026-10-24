@@ -38,6 +38,14 @@ class ModbusError(IOError):
             f'Modbus {read_write} error device {device} at Model_{modbus_model}({addr})/{physical_addr}, '
             f'count {count}: {result}'
         )
+        self.device = device
+        self.modbus_model = modbus_model
+        self.addr = addr
+        self.physical_addr = physical_addr
+        self.count = count
+        self.read_write = read_write
+        self.result = result
+        self.modbus_message = _modbus_exception_code_message(result.exception_code)
 
 
 @dataclass
@@ -202,6 +210,26 @@ def _write_int(
             raise IOError('cannot write int')
 
 
+def _modbus_exception_code_message(code: int) -> str:
+    match code:
+        case 1:
+            return 'Illegal Function'
+        case 2:
+            return 'Illegal Data Address'
+        case 3:
+            return 'Illegal Data Value'
+        case 4:
+            return 'Server Device Failure'
+        case 5:
+            return 'Acknowledge'
+        case 6:
+            return 'Server Device Busy'
+        case 8:
+            return 'Memory Parity Error'
+        case _:
+            return f'Unknown Modbus error'
+
+
 def check_valid_int(value: int, count: int, signed: bool) -> None:
     """
     Raise a ValueError if the value is out of range for the given register count and sign.
@@ -245,12 +273,12 @@ class RegisterAccessInt(RegisterAccess):
         return int.from_bytes(byte_array, byteorder='big', signed=self.signed)
 
     def set(self, context: RegisterContext, value: int | float | str) -> None:
+        if not self.writable:
+            raise ReadOnlyError()
         if not isinstance(value, int):
             raise TypeError(type(value))
         if value < 0 and not self.signed:
             raise ValueError('Value is negative but register is unsigned')
-        if not self.writable:
-            raise ReadOnlyError()
         _write_int(context, self.addr, value=value, count=self.count, signed=self.signed)
 
 
@@ -286,12 +314,12 @@ class RegisterAccessScaled(RegisterAccess):
         return value * (10 ** scale)
 
     def set(self, context: RegisterContext, value: int | float | str) -> None:
+        if not self.writable:
+            raise ReadOnlyError()
         if not isinstance(value, int | float):
             raise TypeError(type(value))
         if value < 0 and not self.signed:
             raise ValueError('Value is negative but register is unsigned')
-        if not self.writable:
-            raise ReadOnlyError()
 
         # We keep the same scaling factor
         byte_array = _read_byte_array(context, self.scale_addr, count=1)

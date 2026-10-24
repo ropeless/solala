@@ -1,3 +1,4 @@
+import copy
 import json
 import threading
 import time
@@ -62,6 +63,14 @@ class _DateKey:
 
 
 @dataclass
+class ControlMode:
+    battery_mode: BatteryMode = BatteryMode.UNKNOWN
+    inverter_mode: InverterMode = InverterMode.UNKNOWN
+    battery_policy: BatteryPolicy = BatteryPolicy.MANUAL
+    inverter_policy: InverterPolicy = InverterPolicy.MANUAL
+
+
+@dataclass
 class _ControlState:
     controller: Optional[PowerController] = None
     pricer: Optional[PowerPricer] = None
@@ -73,10 +82,7 @@ class _ControlState:
     forecaster_settings: Optional[ForecasterConnection] = None
     consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
 
-    battery_mode: BatteryMode = BatteryMode.UNKNOWN
-    inverter_mode: InverterMode = InverterMode.UNKNOWN
-    battery_policy: BatteryPolicy = BatteryPolicy.MANUAL
-    inverter_policy: InverterPolicy = InverterPolicy.MANUAL
+    control_mode: ControlMode = field(default_factory=ControlMode)
 
     last_status: JSONDict = field(default_factory=dict)
     last_status_valid: bool = False
@@ -132,9 +138,9 @@ class _ControlState:
 
     def reset_controller(self, controller: Optional[PowerController]) -> None:
         self.controller = controller
-        self.battery_mode = BatteryMode.UNKNOWN
-        self.inverter_mode = InverterMode.UNKNOWN
-        self.inverter_policy = InverterPolicy.MANUAL
+        self.control_mode.battery_mode = BatteryMode.UNKNOWN
+        self.control_mode.inverter_mode = InverterMode.UNKNOWN
+        self.control_mode.inverter_policy = InverterPolicy.MANUAL
 
         self.last_price: Price = _NO_PRICE
         self.next_price_check = _MIN_DATE
@@ -160,17 +166,11 @@ class _ControlState:
 @dataclass
 class _PrevControlState:
     controller: Optional[PowerController] = None
-    battery_mode: BatteryMode = BatteryMode.UNKNOWN
-    inverter_mode: InverterMode = InverterMode.UNKNOWN
-    battery_policy: BatteryPolicy = BatteryPolicy.MANUAL
-    inverter_policy: InverterPolicy = InverterPolicy.MANUAL
+    control_mode: ControlMode = field(default_factory=ControlMode)
 
     def reset(self, controller: Optional[PowerController]) -> None:
         self.controller = controller
-        self.battery_mode = BatteryMode.UNKNOWN
-        self.inverter_mode = InverterMode.UNKNOWN
-        self.battery_policy = BatteryPolicy.MANUAL
-        self.inverter_policy = InverterPolicy.MANUAL
+        self.control_mode = ControlMode()
 
 
 # Global server state variables
@@ -262,17 +262,17 @@ def _control_step(
 
     # Battery Policy - may change Battery Mode
     if state.pricer is not None:
-        if state.battery_policy == BatteryPolicy.CHEAP_CHARGE:
+        if state.control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
             price = get_price_now()
             buy_price = price.buy_price
             if buy_price < state.start_charge_price_threshold:
-                state.battery_mode = BatteryMode.FORCE_CHARGE
+                state.control_mode.battery_mode = BatteryMode.FORCE_CHARGE
             elif buy_price > state.enable_export_price_threshold:
-                state.battery_mode = BatteryMode.ENABLE
+                state.control_mode.battery_mode = BatteryMode.ENABLE
 
     # Battery Mode
-    if state.battery_mode != prev_state.battery_mode:
-        match state.battery_mode:
+    if state.control_mode.battery_mode != prev_state.control_mode.battery_mode:
+        match state.control_mode.battery_mode:
             case BatteryMode.ENABLE:
                 power_controller.enable_battery()
             case BatteryMode.DISABLE:
@@ -285,33 +285,33 @@ def _control_step(
                 power_controller.charge_only()
             case BatteryMode.DISCHARGE_ONLY:
                 power_controller.discharge_only()
-        prev_state.battery_mode = state.battery_mode
+        prev_state.control_mode.battery_mode = state.control_mode.battery_mode
 
     # Inverter Policy - may change Inverter Mode
     if state.pricer is not None:
-        if state.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
+        if state.control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
             price = get_price_now()
             feed_in_price = price.feed_in_price
             if feed_in_price < state.disable_export_price_threshold:
-                state.inverter_mode = InverterMode.ZERO_EXPORT
+                state.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
             elif feed_in_price > state.disable_export_price_threshold:
-                state.inverter_mode = InverterMode.ENABLE
+                state.control_mode.inverter_mode = InverterMode.ENABLE
 
     # Inverter Mode
-    if state.inverter_mode != prev_state.inverter_mode:
-        if state.inverter_mode == InverterMode.ENABLE:
+    if state.control_mode.inverter_mode != prev_state.control_mode.inverter_mode:
+        if state.control_mode.inverter_mode == InverterMode.ENABLE:
             power_controller.enable_inverter()
         # All other cases managed below as they have a reversion time limit
-        prev_state.inverter_mode = state.inverter_mode
+        prev_state.control_mode.inverter_mode = state.control_mode.inverter_mode
     # Inverter modes requiring keep-alive pulse
     try:
-        match state.inverter_mode:
+        match state.control_mode.inverter_mode:
             case InverterMode.DISABLE:
                 power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
             case InverterMode.ZERO_EXPORT:
                 power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
     except Exception as e:
-        LOGGER.error(f'{_LOG_SRC}Error processing command: {state.inverter_mode}. Error: {e}')
+        LOGGER.error(f'{_LOG_SRC}Error processing command: {state.control_mode.inverter_mode}. Error: {e}')
 
 
 # =============================================================================
@@ -383,10 +383,10 @@ def get_settings() -> Settings:
             consumers=state.consumers_settings,
             forecaster=state.forecaster_settings,
 
-            battery_mode=state.battery_mode,
-            inverter_mode=state.inverter_mode,
-            battery_policy=state.battery_policy,
-            inverter_policy=state.inverter_policy,
+            battery_mode=state.control_mode.battery_mode,
+            inverter_mode=state.control_mode.inverter_mode,
+            battery_policy=state.control_mode.battery_policy,
+            inverter_policy=state.control_mode.inverter_policy,
 
             disable_export_price_threshold=state.disable_export_price_threshold,
             enable_export_price_threshold=state.enable_export_price_threshold,
@@ -424,22 +424,27 @@ def update_listeners() -> None:
         listener.update()
 
 
+def get_control_mode() -> ControlMode:
+    # No need to get the lock - just copy the object.
+    return copy.copy(_control_state.control_mode)
+
+
 def get_control_status() -> JSONDict:
     with _control_state_lock:
         battery: JSONDict = {
-            'mode': _control_state.battery_mode.name,
-            'policy': _control_state.battery_policy.name,
+            'mode': _control_state.control_mode.battery_mode.name,
+            'policy': _control_state.control_mode.battery_policy.name,
         }
         inverter: JSONDict = {
-            'mode': _control_state.inverter_mode.name,
-            'policy': _control_state.inverter_policy.name,
+            'mode': _control_state.control_mode.inverter_mode.name,
+            'policy': _control_state.control_mode.inverter_policy.name,
         }
-        if _control_state.battery_policy == BatteryPolicy.CHEAP_CHARGE:
+        if _control_state.control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
             battery.update({
                 'start_charge_price_threshold': _control_state.start_charge_price_threshold,
                 'stop_charge_price_threshold': _control_state.stop_charge_price_threshold,
             })
-        if _control_state.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
+        if _control_state.control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
             inverter.update({
                 'disable_export_price_threshold': _control_state.disable_export_price_threshold,
                 'enable_export_price_threshold': _control_state.enable_export_price_threshold,
@@ -657,13 +662,13 @@ def set_control(
         state = _control_state
 
         if battery_mode is not None:
-            state.battery_mode = battery_mode
+            state.control_mode.battery_mode = battery_mode
         if inverter_mode is not None:
-            state.inverter_mode = inverter_mode
+            state.control_mode.inverter_mode = inverter_mode
         if battery_policy is not None:
-            state.battery_policy = battery_policy
+            state.control_mode.battery_policy = battery_policy
         if inverter_policy is not None:
-            state.inverter_policy = inverter_policy
+            state.control_mode.inverter_policy = inverter_policy
 
         _save_settings()
         state.force_price_check()

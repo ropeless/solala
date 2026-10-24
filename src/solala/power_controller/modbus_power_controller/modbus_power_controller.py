@@ -1,7 +1,9 @@
+from contextlib import contextmanager
 from typing import Iterable, List, Tuple, Sequence, Optional, Dict
 
 from solala.logger import LOGGER
 from solala.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
+from solala.power_controller.modbus_power_controller.register_access import ModbusError
 from solala.power_controller.power_controller import PowerController, PowerStatus
 from solala.utils.json import JSONDict
 
@@ -49,6 +51,7 @@ class ModbusPowerController(PowerController):
         self._slaves = list(slaves)
         self._inverters = [self._master] + self._slaves
         self._meter = meter
+        self._log_set_get: bool = False
 
         # Important registers
         self._ChaState: str = f'{master}/ChaState'
@@ -131,7 +134,6 @@ class ModbusPowerController(PowerController):
         """
         Get a high-level status of the system.
         """
-        LOGGER.info(f'{_START} get_status')
         state_of_charge = self._get(self._ChaState)
         charge_power = self._get(self._charge_power)
         discharge_power = self._get(self._discharge_power)
@@ -143,8 +145,6 @@ class ModbusPowerController(PowerController):
 
         power_limit_enabled: bool = (self._get(self._WMaxLim_Ena) != 0)
         power_limit: float = self._get(self._WMaxLimPct) if power_limit_enabled else 100.0
-
-        LOGGER.info(f'{_STOP} get_status')
 
         return PowerStatus(
             state_of_charge=state_of_charge,
@@ -164,25 +164,24 @@ class ModbusPowerController(PowerController):
         Allow the battery to charge and discharge.
         This is the normal state.
         """
-        LOGGER.info(f'{_START} enable_battery')
-        self._set(self._InWRte, 100)
-        self._set(self._OutWRte, 100)
-        self._set(self._StorCtl_Mod, 0)
-        self._set(self._ChaGriSet, 0)
-        self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-        LOGGER.info(f'{_STOP} enable_battery')
+        with self._logit('enable_battery'):
+            self._set(self._StorCtl_Mod, 0)
+            self._set(self._InWRte, 100)
+            self._set(self._OutWRte, 100)
+            self._set(self._ChaGriSet, 0)
+            self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
 
     def disable_battery(self) -> None:
         """
         Stop the battery from charging and discharging.
         """
-        LOGGER.info(f'{_START} disable_battery')
-        self._set(self._InWRte, 0)
-        self._set(self._OutWRte, 0)
-        self._set(self._StorCtl_Mod, 3)
-        self._set(self._ChaGriSet, 0)
-        self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-        LOGGER.info(f'{_STOP} disable_battery')
+        with self._logit('disable_battery'):
+            self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            self._set(self._InWRte, 0)
+            self._set(self._OutWRte, 0)
+            self._set(self._StorCtl_Mod, 3)
+            self._set(self._ChaGriSet, 0)
+            self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
 
     def force_charge(self) -> None:
         """
@@ -190,64 +189,62 @@ class ModbusPowerController(PowerController):
         This will aim to charge the battery to its maximum capacity,
         even if it means drawing from the grid.
         """
-        LOGGER.info(f'{_START} force_charge')
-        self._set(self._InWRte, 100)
-        self._set(self._OutWRte, 0)  # Don't try to discharge at the same time as charging
-        self._set(self._StorCtl_Mod, 3)
-        self._set(self._ChaGriSet, 1)
-        self._set(self._MinRsvPct, 100)
-        LOGGER.info(f'{_STOP} force_charge')
+        with self._logit('force_charge'):
+            self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            self._set(self._InWRte, 100)
+            self._set(self._OutWRte, 0)  # Don't try to discharge at the same time as charging
+            self._set(self._StorCtl_Mod, 3)
+            self._set(self._ChaGriSet, 1)
+            self._set(self._MinRsvPct, 100)
 
     def force_discharge(self) -> None:
         """
         Force the battery to discharge.
         This is a way to force stored power to the grid.
         """
-        LOGGER.info(f'{_START} force_discharge')
-        self._set(self._InWRte, -100)  # negative flow
-        self._set(self._OutWRte, 100)
-        self._set(self._StorCtl_Mod, 3)
-        self._set(self._ChaGriSet, 0)
-        self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-        LOGGER.info(f'{_STOP} force_discharge')
+        with self._logit('force_discharge'):
+            self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            self._set(self._InWRte, -100)  # negative flow
+            self._set(self._OutWRte, 100)
+            self._set(self._StorCtl_Mod, 3)
+            self._set(self._ChaGriSet, 0)
+            self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
 
     def charge_only(self) -> None:
         """
         Allow charging but not discharging.
         """
-        LOGGER.info(f'{_START} charge_only')
-        self._set(self._InWRte, 100)
-        self._set(self._OutWRte, 0)
-        self._set(self._StorCtl_Mod, 3)
-        self._set(self._ChaGriSet, 0)
-        self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-        LOGGER.info(f'{_STOP} charge_only')
+        with self._logit('charge_only'):
+            self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            self._set(self._InWRte, 100)
+            self._set(self._OutWRte, 0)
+            self._set(self._StorCtl_Mod, 3)
+            self._set(self._ChaGriSet, 0)
+            self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
 
     def discharge_only(self) -> None:
         """
         Allow discharging but not charging.
         """
-        LOGGER.info(f'{_START} discharge_only')
-        self._set(self._InWRte, 0)
-        self._set(self._OutWRte, 100)
-        self._set(self._StorCtl_Mod, 3)
-        self._set(self._ChaGriSet, 0)
-        self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-        LOGGER.info(f'{_STOP} discharge_only')
+        with self._logit('discharge_only'):
+            self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            self._set(self._InWRte, 0)
+            self._set(self._OutWRte, 100)
+            self._set(self._StorCtl_Mod, 3)
+            self._set(self._ChaGriSet, 0)
+            self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
 
     # =================================================
     #  Grid Export Control
     # =================================================
 
     def enable_inverter(self) -> None:
-        LOGGER.info(f'{_START} enable_inverter')
-        self._set_power_pct(100)
-        LOGGER.info(f'{_STOP} enable_inverter')
+        with self._logit('enable_inverter'):
+            self._set_power_pct(100)
 
     def disable_inverter(self, *, change_duration: int) -> None:
-        LOGGER.info(f'{_START} disable_inverter')
-        self._set_power_pct(0, change_duration)
-        LOGGER.info(f'{_STOP} disable_inverter')
+        with self._logit('disable_inverter'):
+            self._set_power_pct(0, change_duration)
 
     def zero_export(self, *, change_duration: int) -> None:
         """
@@ -256,60 +253,70 @@ class ModbusPowerController(PowerController):
         This may need to be repeatedly called as the consumption may change,
         or the change duration expires.
         """
-        LOGGER.info(f'{_START} zero_export')
+        with self._logit('zero_export'):
+            grid_power: float = self._get(self._grid_power)
+            cur_pct: float = self._get(self._WMaxLimPct)
+            max_power: float = self.get_inverter_limit()
+            cur_power: float = self._get_sum(self._inverter_power)
 
-        cur_grid_power: float = self._get(self._grid_power)
-        cur_pct: float = self._get(self._WMaxLimPct)
-        max_power: float = self.get_inverter_limit()
-        cur_power: float = self._get_sum(self._inverter_power)
+            abs_grid_power = abs(grid_power)
+            max_power = max(max_power, cur_power)  # incase the inverter is oversupplying - simplifies maths
 
-        abs_grid_power = abs(cur_grid_power)
-        max_power = max(max_power, cur_power)  # incase the inverter is oversupplying - simplifies maths
+            if abs_grid_power < _POWER_CHANGE_TOLERANCE:
+                # Not worth changing power settings
+                LOGGER.info(f'using existing limit {cur_pct:.2f}, export too small')
 
-        if abs_grid_power < _POWER_CHANGE_TOLERANCE:
-            # Not worth changing power settings
-            LOGGER.info(f'using existing limit {cur_pct:.2f}, export too small')
-
-            new_pct = cur_pct
-            new_power = cur_power
-        elif abs_grid_power < _SMALL_CHANGE_TOLERANCE:
-            # Small power change - use the hunting method
-            LOGGER.info('using hunting method')
-
-            if cur_grid_power < 0:
-                # Exporting - reduce power
-                new_pct = cur_pct - cur_pct * (cur_power / max_power)
-            elif cur_grid_power > 0:
-                # Importing - increase power
-                new_pct = cur_pct + (100 - cur_pct) * (cur_power / max_power)
-            else:
                 new_pct = cur_pct
-            new_pct = round(max(0, min(new_pct, 100)), 2)
-            new_power = cur_power + cur_grid_power * (cur_pct - new_pct) / 100
-            new_power = max(0, min(new_power, max_power))
+                new_power = cur_power
+            elif abs_grid_power < _SMALL_CHANGE_TOLERANCE:
+                # Small power change - use the hunting method
+                LOGGER.info('using hunting method')
 
-        else:
-            # Small power change - use the exact method
-            LOGGER.info('using exact method')
+                if grid_power < 0:
+                    # Exporting - reduce power
+                    new_pct = cur_pct - cur_pct * (cur_power / max_power)
+                elif grid_power > 0:
+                    # Importing - increase power
+                    new_pct = cur_pct + (100 - cur_pct) * (cur_power / max_power)
+                else:
+                    new_pct = cur_pct
+                new_pct = round(max(0, min(new_pct, 100)), 2)
+                new_power = cur_power + grid_power * (cur_pct - new_pct) / 100
+                new_power = max(0, min(new_power, max_power))
 
-            new_power = cur_power + cur_grid_power
-            new_power = max(0, min(new_power, max_power))
+            else:
+                # Small power change - use the exact method
+                LOGGER.info('using exact method')
 
-            new_pct = new_power / max_power * 100
-            new_pct = round(max(0, min(new_pct, 100)), 2)
+                new_power = cur_power + grid_power
+                new_power = max(0, min(new_power, max_power))
 
-        power_change = new_power - cur_power
-        LOGGER.info(f'max power: {max_power:.2f}')
-        LOGGER.info(f'power change: {cur_power:.2f} -> {new_power:.2f} ({power_change:.2f})')
-        LOGGER.info(f'grid change: {cur_grid_power:.2f} -> {cur_grid_power - power_change:.2f} ({power_change:.2f})')
-        LOGGER.info(f'percent change: {cur_pct:.2f} -> {new_pct:.2f}')
+                new_pct = new_power / max_power * 100
+                new_pct = round(max(0, min(new_pct, 100)), 2)
 
-        self._set_power_pct(new_pct, change_duration)
-        LOGGER.info(f'{_STOP} zero_export')
+            power_change = new_power - cur_power
+            LOGGER.info(f'max power: {max_power:.2f}')
+            LOGGER.info(f'power change: {cur_power:.2f} -> {new_power:.2f} ({power_change:.2f})')
+            LOGGER.info(f'grid change: {grid_power:.2f} -> {grid_power - power_change:.2f} ({power_change:.2f})')
+            LOGGER.info(f'percent change: {cur_pct:.2f} -> {new_pct:.2f}')
+
+            self._set_power_pct(new_pct, change_duration)
 
     # =================================================
     #  Support
     # =================================================
+
+    @contextmanager
+    def _logit(self, name: str):
+        self._log_set_get = True
+        LOGGER.info(f'{_START} {name}')
+        yield
+        LOGGER.info(f'{_STOP} {name}')
+        self._log_set_get = False
+
+    def _logger_get_set(self, message: str) -> None:
+        if self._log_set_get:
+            LOGGER.info(message)
 
     def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
         if pct >= 100:
@@ -329,20 +336,22 @@ class ModbusPowerController(PowerController):
         old = self._modbus[name]
         if not force and old == value:
             # No change needed
-            LOGGER.info(f'SET {name}: {old!r} -> {value!r} UNCHANGED')
+            self._logger_get_set(f'SET {name}: {old!r} -> {value!r} UNCHANGED')
         else:
             # Make the change
-            self._modbus[name] = value
-            new = self._modbus[name]
-            msg = 'FAILED' if abs(new - value) > 10e-6 else 'OK'
-            LOGGER.info(f'SET {name}: {old!r} -> {value!r} checked {new!r} {msg}')
+            try:
+                self._modbus[name] = value
+            except ModbusError as err:
+                LOGGER.error(f'SET {name}: {old!r} -> {value!r} ERROR: {err}')
+                LOGGER.error(f'Modbus message: {err.modbus_message!r}')
+                return
 
-    def _set_all(self, names: Iterable[str], value: int | float, *, force: bool = False) -> None:
-        """
-        Set the value of all the named registers to the given value.
-        """
-        for name in names:
-            self._set(name, value, force=force)
+            new = self._modbus[name]
+            failed: bool = abs(new - value) > 10e-6
+            if failed:
+                LOGGER.error(f'SET {name}: {old!r} -> {value!r} checked {new!r} FAILED')
+            else:
+                self._logger_get_set(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK')
 
     def _get(self, name: str) -> int | float:
         """
@@ -350,7 +359,7 @@ class ModbusPowerController(PowerController):
         ensuring it is an int or float.
         """
         value = self._modbus[name]
-        LOGGER.info(f'GET {name}: {value!r}')
+        self._logger_get_set(f'GET {name}: {value!r}')
         if not isinstance(value, (int, float)):
             msg = f'getting register {name!r}: Expected int or float, got {type(value)}'
             LOGGER.error(msg)
@@ -358,13 +367,7 @@ class ModbusPowerController(PowerController):
         return value
 
     def _get_sum(self, names: Sequence[str]) -> int | float:
-        LOGGER.info(f'SUM {names}')
+        self._logger_get_set(f'SUM {names}')
         result = sum(self._get(name) for name in names)
-        LOGGER.info(f'SUM = {result}')
-        return result
-
-    def _get_sum_abs(self, names: Sequence[str]) -> int | float:
-        LOGGER.info(f'SUM-ABS {names}')
-        result = sum(abs(self._get(name)) for name in names)
-        LOGGER.info(f'SUM-ABS = {result}')
+        self._logger_get_set(f'SUM = {result}')
         return result

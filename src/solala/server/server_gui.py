@@ -35,7 +35,7 @@ from solala.utils.json import JSONDict, json_dict, render_json, filter_json, jso
 _HEAD_HTML = r'''
 <link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/css/solala.css">
-<link rel="icon" type="image/png" href="/images/images/solala-32x32.png">
+<link rel="icon" type="image/png" href="/images/solala-32x32.png">
 '''
 
 # Units for pretty printing status
@@ -679,7 +679,7 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
             replace='w-3 h-3 rounded-full bg-green-700'
         )
         loop_status_light.tooltip('Control loop appears to be active')
-        loop_status_label.set_text('active')
+        loop_status_label.set_text('live')
         loop_status_label.classes(
             replace='text-sm text-green-700'
         )
