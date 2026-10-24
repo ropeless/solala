@@ -2,7 +2,7 @@
 name = "Solala"
 version = "0.0.0"
 description = "Testing Synthorus"
-requires-python = ">= 3.12"
+requires-python = ">= 3.13"
 
 [tool.poetry]
 package-mode = false  # only using poetry for dependency management
@@ -16,6 +16,7 @@ fastapi = "*"
 requests = "*"
 nicegui = "*"
 drawsvg = "*"
+psycopg = { version = "^3.2", extras = ["binary", "pool"] }
 
 [build-system]
 requires = ["setuptools"]

@@ -23,3 +23,12 @@ OUT = '/users/demo_user/output'
 HISTORY_FILE = OUT + '/history.csv'
 SETTINGS_PATH = OUT + '/settings.json'
 DUMMY_SETTINGS_PATH = OUT + '/settings_dummy.json'
+
+DATABASE_ADMIN_PASSWORD = 'YOUR_PASSWORD'
+DATABASE_APP_PASSWORD = 'YOUR_PASSWORD'
+DATABASE_PORT = 5432
+DATABASE_APP_ROLE = 'solala'
+DATABASE_NAME = 'solala'
+
+DATABASE_ADMIN_URL = f'postgresql://postgres:{DATABASE_ADMIN_PASSWORD}@localhost:{DATABASE_PORT}/postgres'
+DATABASE_APP_URL = f'postgresql://{DATABASE_APP_ROLE}:{DATABASE_APP_PASSWORD}@localhost:{DATABASE_PORT}/{DATABASE_NAME}'
