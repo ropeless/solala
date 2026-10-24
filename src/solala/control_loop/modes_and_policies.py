@@ -7,6 +7,8 @@ class BatteryMode(Enum):
     DISABLE = auto()  # The battery is logically disconnected, no charge or discharge
     FORCE_CHARGE = auto()  # The battery is configured to force charge to its maximum charge
     FORCE_DISCHARGE = auto()  # The battery is configured to force discharge to its minimum charge
+    CHARGE_ONLY = auto()  # Allow the battery to charge but not discharge
+    DISCHARGE_ONLY = auto()  # Allow the battery to discharge but not charge
 
 
 class InverterMode(Enum):

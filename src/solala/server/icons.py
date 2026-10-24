@@ -1,12 +1,22 @@
+from typing import Optional
+
 from solala.solar_forecaster.solar_forecaster import WeatherCode
 
 
-def weather_code_to_icon_url(code: WeatherCode, animated: bool = False) -> str:
+def diagnostic_name_to_icon_url(diagnostic_name: str) -> str:
+    return f'/images/diagnostic-icons/{diagnostic_name.lower()}.svg'
+
+
+def weather_code_to_icon_url(code: WeatherCode, animated: bool = False) -> Optional[str]:
     subdirectory = 'animated' if animated else 'static'
-    return f'/images/weather-icons/{subdirectory}/{weather_code_to_icon_name(code)}.svg'
+    icon_name: Optional[str] = weather_code_to_icon_name(code)
+    if icon_name is None:
+        return None
+    else:
+        return f'/images/weather-icons/{subdirectory}/{icon_name}.svg'
 
 
-def weather_code_to_icon_name(code: WeatherCode) -> str:
+def weather_code_to_icon_name(code: WeatherCode) -> Optional[str]:
     match code:
         case WeatherCode.CLEAR_DAY:
             return 'clear-day'
@@ -58,5 +68,5 @@ def weather_code_to_icon_name(code: WeatherCode) -> str:
             return 'rain-and-snow-mix'
         case WeatherCode.SNOW_AND_SLEET_MIX:
             return 'snow-and-sleet-mix'
-        
-    return ''
+
+    return None

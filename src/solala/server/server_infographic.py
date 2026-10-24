@@ -4,8 +4,6 @@ from solala.constants import Constants
 from solala.units import WATTS, KILOWATTS, PERCENT, PRICE_DOLLARS, PRICE_CENTS
 from solala.utils.json import JSONDict, json_dict, json_num, json_bool
 
-GRAPHIC_SIZE: int = 300
-
 CLICK_ID_SUN = 'click_sun'
 CLICK_ID_GRID = 'click_grid'
 CLICK_ID_HOME = 'click_home'
@@ -28,7 +26,10 @@ class Infographic:
         height = 340
         icon_offset = 50
 
-        self.canvas = Drawing(width=width, height=height, origin=(-width / 2, -height / 2 + 20))
+        if Constants.INFOGRAPHIC_INCLUDE_RENEWABLES:
+            height += 20
+
+        self.canvas = Drawing(width=width, height=height, origin=(-150, -150))
         self.icon_offset = icon_offset
 
         # Make the static parts (background)
@@ -120,7 +121,7 @@ class Infographic:
         font_sm = 12
         top = -125
         bot = 130
-        bot2 = bot + 20
+        bot2 = bot + 25
         bot3 = bot2 + 20
         bot4 = bot3 + 20
         left = -83
@@ -165,9 +166,10 @@ class Infographic:
         feed_in_text.append(TSpan(feed_in_str + units, class_=feed_in_colour))
         canvas.append(feed_in_text)
 
-        renewables_str = f'Renewables: {int(renewables + 0.5)}{PERCENT}'
-        feed_in_text = Text(renewables_str, x=left, y=bot4, font_size=font_sm, class_=class_text, **kwargs)
-        canvas.append(feed_in_text)
+        if Constants.INFOGRAPHIC_INCLUDE_RENEWABLES:
+            renewables_str = f'Renewables: {int(renewables + 0.5)}{PERCENT}'
+            feed_in_text = Text(renewables_str, x=left, y=bot4, font_size=font_sm, class_=class_text, **kwargs)
+            canvas.append(feed_in_text)
 
     def as_svg(self) -> str:
         return self.canvas.as_svg()

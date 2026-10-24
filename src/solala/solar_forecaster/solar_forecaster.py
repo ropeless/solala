@@ -69,7 +69,6 @@ class DailySolarForecast:
 
     def total_forecast_energy(self) -> float:
         """
-
         Returns:
             Forecast energy in Wh.
         """

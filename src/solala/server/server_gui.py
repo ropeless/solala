@@ -6,7 +6,9 @@ from functools import partial
 from typing import Mapping, final, Optional, Dict, List, Sequence
 
 from nicegui import ui, app, events
+from nicegui.element import Element
 from nicegui.elements.button import Button
+from nicegui.elements.label import Label
 from nicegui.elements.mixins.content_element import ContentElement
 
 from solala.constants import APP_NAME, APP_SUBTITLE, Constants, GUI_DATE_FORMAT, GUI_TIME_FORMAT
@@ -17,11 +19,11 @@ from solala.logger import LOGGER
 from solala.power_pricer.power_pricer import Price
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
+from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.server.weather_icons import weather_code_to_icon_url
 from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
-from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, WATT_HOURS, DEGREES, \
+from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, DEGREES, \
     KILOWATT_HOURS, CELSIUS, KILOWATTS
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
@@ -33,7 +35,7 @@ from solala.utils.json import JSONDict, json_dict, render_json, filter_json, jso
 _HEAD_HTML = r'''
 <link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/css/solala.css">
-<link rel="icon" type="image/png" href="/images/images/solala-32x32.png">
+<link rel="icon" type="image/png" href="/images/solala-32x32.png">
 '''
 
 # Units for pretty printing status
@@ -60,7 +62,7 @@ _STATUS_UNITS: Mapping[str, str] = dict_merge(
         'voltage': VOLTS,
         'current': AMPS,
         'capacity': WATTS,
-        'forecast_generation': WATT_HOURS,
+        'forecast_generation': KILOWATT_HOURS,
     },
     _PARAMETERS_UNITS,
 )
@@ -243,6 +245,8 @@ class BatteryButtonUpdater(StatusListener):
             battery_disable: Button,
             battery_force_charge: Button,
             battery_force_discharge: Button,
+            battery_charge_only: Button,
+            battery_discharge_only: Button,
             battery_cheap_force_discharge: Button,
     ):
         super().__init__()
@@ -258,13 +262,19 @@ class BatteryButtonUpdater(StatusListener):
         self.battery_force_discharge = battery_force_discharge.on_click(partial(
             self._click, BatteryMode.FORCE_DISCHARGE, BatteryPolicy.MANUAL
         ))
+        self.battery_charge_only = battery_charge_only.on_click(partial(
+            self._click, BatteryMode.CHARGE_ONLY, BatteryPolicy.MANUAL
+        ))
+        self.battery_discharge_only = battery_discharge_only.on_click(partial(
+            self._click, BatteryMode.DISCHARGE_ONLY, BatteryPolicy.MANUAL
+        ))
         self.battery_cheap_force_discharge = battery_cheap_force_discharge.on_click(partial(
             self._click, None, BatteryPolicy.CHEAP_CHARGE
         ))
 
         for button in [
             battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
-            battery_cheap_force_discharge
+            battery_charge_only, battery_discharge_only, battery_cheap_force_discharge
         ]:
             button.style('padding-top: 1px; padding-bottom: 1px;')
             button.classes('py-0 px-2 text-xs')
@@ -303,6 +313,8 @@ class BatteryButtonUpdater(StatusListener):
         self.battery_disable.props(on_props('DISABLE'))
         self.battery_force_charge.props(on_props('FORCE_CHARGE'))
         self.battery_force_discharge.props(on_props('FORCE_DISCHARGE'))
+        self.battery_charge_only.props(on_props('CHARGE_ONLY'))
+        self.battery_discharge_only.props(on_props('DISCHARGE_ONLY'))
         self.battery_cheap_force_discharge.props(on_props('CHEAP_FORCE_DISCHARGE'))
 
 
@@ -459,9 +471,13 @@ class SolarForecastUpdater(SolarForecastListener):
 
                         with ui.element('div').classes(row_classes):
                             ui.label(forecast.time.strftime(GUI_TIME_FORMAT)).classes('solar-time')
-                            ui.image(
-                                weather_code_to_icon_url(forecast.weather, Constants.ANIMATE_WEATHER_ICONS)
-                            ).classes('solar-weather-icon')
+                            icon: Optional[str] = weather_code_to_icon_url(
+                                forecast.weather, Constants.ANIMATE_WEATHER_ICONS
+                            )
+                            if icon is None:
+                                ui.label('').classes('solar-weather-icon')
+                            else:
+                                ui.image(icon).classes('solar-weather-icon')
                             if forecast.irradiance > 0:
                                 ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'solar-number')
                             else:
@@ -548,9 +564,9 @@ def _button_classes(button, primary=False, wide=False) -> None:
     return button
 
 
-def _diagnostic_link(icon: str, name: str, target: str) -> None:
+def _diagnostic_link(name: str, target: str) -> None:
     with ui.link(target=target).classes('diagnostic-link'):
-        ui.label(icon).classes('diagnostic-icon')
+        ui.image(diagnostic_name_to_icon_url(name)).classes('diagnostic-icon')
         ui.label(name)
 
 
@@ -570,10 +586,14 @@ def _ui_control_buttons() -> None:
                 battery_disable = ui.button('DISABLE').classes('solala-button')
                 battery_force_charge = ui.button('FORCE CHARGE').classes('solala-button')
                 battery_force_discharge = ui.button('FORCE DISCHARGE').classes('solala-button')
+                battery_charge_only = ui.button('CHARGE ONLY').classes('solala-button')
+                battery_discharge_only = ui.button('DISCHARGE ONLY').classes('solala-button')
                 battery_cheap_force_discharge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
 
                 battery_force_charge.classes('wide')
                 battery_force_discharge.classes('wide')
+                battery_charge_only.classes('wide')
+                battery_discharge_only.classes('wide')
                 battery_cheap_force_discharge.classes('wide')
 
             _register_listener(
@@ -582,6 +602,8 @@ def _ui_control_buttons() -> None:
                     battery_disable=battery_disable,
                     battery_force_charge=battery_force_charge,
                     battery_force_discharge=battery_force_discharge,
+                    battery_charge_only=battery_charge_only,
+                    battery_discharge_only=battery_discharge_only,
                     battery_cheap_force_discharge=battery_cheap_force_discharge,
                 )
             )
@@ -645,6 +667,31 @@ def _feed_in_price_class(price: float) -> str:
         return 'price-feed-in-bad'
 
 
+def _update_loop_status(loop_status_light: Element, loop_status_label: Label) -> None:
+    overdue: float = control_loop.loop_check_overdue()
+    if overdue > Constants.LOOP_TIME:
+        loop_status_light.classes(
+            replace='w-3 h-3 rounded-full bg-red-600'
+        )
+        loop_status_light.tooltip('Control loop appears to be stalled')
+        loop_status_label.set_text('stalled')
+        loop_status_label.classes(
+            replace='text-sm text-red-600'
+        )
+    elif overdue == 0:
+        loop_status_light.classes(
+            replace='w-3 h-3 rounded-full bg-green-700'
+        )
+        loop_status_light.tooltip('Control loop appears to be active')
+        loop_status_label.set_text('live')
+        loop_status_label.classes(
+            replace='text-sm text-green-700'
+        )
+    else:
+        # Leave it as it is
+        pass
+
+
 # ====================================================================
 #  Pages
 # ====================================================================
@@ -666,7 +713,20 @@ def root_page():
             # LIVE POWER INFOGRAPHIC
             # ----------------------------------------------------------
             with ui.element('div').classes('dashboard-card infographic-card'):
-                ui.label('Power').classes('infographic-title')
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label('Power').classes('infographic-title')
+
+                    # Control loop status light
+                    with ui.row().classes('items-center gap-2'):
+                        loop_status_light = ui.element('div').classes(
+                            'w-3 h-3 rounded-full bg-green-500'
+                        )
+                        loop_status_label = ui.label('active').classes(
+                            'text-sm text-green-600'
+                        )
+
+                    _update_loop_status(loop_status_light, loop_status_label)
+                    ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
 
                 with ui.element('div').classes('infographic-container'):
                     infographic = ui.html()
@@ -693,10 +753,10 @@ def root_page():
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
             with ui.grid(columns=2):
-                _diagnostic_link('?', 'Status', '/status_page')
-                _diagnostic_link('⚙', 'Parameters', '/parameters_page')
-                _diagnostic_link('▤', 'Registers', '/registers_page')
-                _diagnostic_link('▣', 'Log', '/log_page')
+                _diagnostic_link('Status', '/status_page')
+                _diagnostic_link('Parameters', '/parameters_page')
+                _diagnostic_link('Registers', '/registers_page')
+                _diagnostic_link('Log', '/log_page')
 
 
 @ui.page('/price_forecast_page')

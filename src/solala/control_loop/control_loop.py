@@ -1,14 +1,16 @@
+import copy
 import json
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, UTC, timedelta, date
 from pathlib import Path
-from typing import Optional, List, Dict, Sequence
+from typing import Optional, List, Dict, Sequence, Iterator
 
 from pymodbus.client import ModbusTcpClient
 
-from solala.constants import Constants, DATE_FORMAT
+from solala.constants import Constants, TIMESTAMP_FORMAT
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy
@@ -61,22 +63,63 @@ class _DateKey:
         return f'{self.year:04d}-{self.month:02d}-{self.day:02d}'
 
 
+def _now() -> datetime:
+    """
+    Returns:
+        A timestamp in UTC.
+    """
+    return datetime.now(UTC)
+
+
+@dataclass
+class ControlMode:
+    """
+    This defines what the control loop is aiming to do for the user.
+    """
+    battery_mode: BatteryMode = BatteryMode.UNKNOWN
+    inverter_mode: InverterMode = InverterMode.UNKNOWN
+    battery_policy: BatteryPolicy = BatteryPolicy.MANUAL
+    inverter_policy: InverterPolicy = InverterPolicy.MANUAL
+
+
+@dataclass
+class _PrevControl:
+    """
+    Used to keep track of the previous control state, so the control loop only
+    makes changes when needed.
+    """
+    controller: Optional[PowerController] = None
+    control_mode: ControlMode = field(default_factory=ControlMode)
+
+    def reset(self, controller: Optional[PowerController]) -> None:
+        self.controller = controller
+        self.control_mode = ControlMode()
+
+
 @dataclass
 class _ControlState:
+    # These are the work objects for accessing the solar power system
     controller: Optional[PowerController] = None
     pricer: Optional[PowerPricer] = None
     forecaster: Optional[SolarForecaster] = None
     consumers: Dict[str, PowerConsumer] = field(default_factory=dict)
 
+    # Keep track of the settings use to connect to the solar power system
     controller_settings: Optional[ControllerConnection] = None
     pricer_settings: Optional[PricerConnection] = None
     forecaster_settings: Optional[ForecasterConnection] = None
     consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
 
-    battery_mode: BatteryMode = BatteryMode.UNKNOWN
-    inverter_mode: InverterMode = InverterMode.UNKNOWN
-    battery_policy: BatteryPolicy = BatteryPolicy.MANUAL
-    inverter_policy: InverterPolicy = InverterPolicy.MANUAL
+    # What the user is asking the control loop to do
+    control_mode: ControlMode = field(default_factory=ControlMode)
+
+    # Control mode policy parameters
+    disable_export_price_threshold: float = DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD
+    enable_export_price_threshold: float = DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD
+    start_charge_price_threshold: float = DEFAULT_START_CHARGE_PRICE_THRESHOLD
+    stop_charge_price_threshold: float = DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
+
+    # Caches of important status information
 
     last_status: JSONDict = field(default_factory=dict)
     last_status_valid: bool = False
@@ -90,17 +133,13 @@ class _ControlState:
     last_solar_forecast: Dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
     next_solar_forecast_check: datetime = _MIN_DATE
 
-    # NEG_FEED_IN_ZERO_EXPORT parameters
-    disable_export_price_threshold: float = DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD
-    enable_export_price_threshold: float = DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD
-
-    # CHEAP_CHARGE parameters
-    start_charge_price_threshold: float = DEFAULT_START_CHARGE_PRICE_THRESHOLD
-    stop_charge_price_threshold: float = DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
-
+    # Internal control loop tracking variables
+    lock: threading.RLock = field(default_factory=threading.RLock)
+    prev_state: _PrevControl = field(default_factory=_PrevControl)
+    control_loop_running: bool = True
     listeners: List[LoopListener] = field(default_factory=list)
     settings_path: Optional[Path] = None  # for using persisted settings.
-    loop_start: datetime = datetime.now(UTC)  # confirms the control loop is running
+    iteration_start: datetime = _now()  # used to confirm the control loop is running
 
     @property
     def controller_connection_status(self) -> JSONDict:
@@ -132,9 +171,9 @@ class _ControlState:
 
     def reset_controller(self, controller: Optional[PowerController]) -> None:
         self.controller = controller
-        self.battery_mode = BatteryMode.UNKNOWN
-        self.inverter_mode = InverterMode.UNKNOWN
-        self.inverter_policy = InverterPolicy.MANUAL
+        self.control_mode.battery_mode = BatteryMode.UNKNOWN
+        self.control_mode.inverter_mode = InverterMode.UNKNOWN
+        self.control_mode.inverter_policy = InverterPolicy.MANUAL
 
         self.last_price: Price = _NO_PRICE
         self.next_price_check = _MIN_DATE
@@ -157,26 +196,27 @@ class _ControlState:
         self.next_price_forecast_check = _MIN_DATE
 
 
-@dataclass
-class _PrevControlState:
-    controller: Optional[PowerController] = None
-    battery_mode: BatteryMode = BatteryMode.UNKNOWN
-    inverter_mode: InverterMode = InverterMode.UNKNOWN
-    battery_policy: BatteryPolicy = BatteryPolicy.MANUAL
-    inverter_policy: InverterPolicy = InverterPolicy.MANUAL
-
-    def reset(self, controller: Optional[PowerController]) -> None:
-        self.controller = controller
-        self.battery_mode = BatteryMode.UNKNOWN
-        self.inverter_mode = InverterMode.UNKNOWN
-        self.battery_policy = BatteryPolicy.MANUAL
-        self.inverter_policy = InverterPolicy.MANUAL
+# Global control loop state
+# For thread-safe access to the control state use `_control_state()`.
+_CONTROL_STATE: _ControlState = _ControlState()
 
 
-# Global server state variables
-_control_state_lock = threading.RLock()
-_control_state: _ControlState = _ControlState()
-_control_loop_running: bool = True
+@contextmanager
+def _control_state() -> Iterator[_ControlState]:
+    """
+    Get exclusive access to the control state.
+
+    Usage:
+    ```
+    with _control_state() as state:
+        # read and write to state.
+    ```
+
+    Returns:
+        The control state.
+    """
+    with _CONTROL_STATE.lock:
+        yield _CONTROL_STATE
 
 
 def run_control_loop(
@@ -187,6 +227,10 @@ def run_control_loop(
     """
     The control loop is an infinite loop to implement the
     control logic of the battery and inverter modes and policies.
+
+    This function is expected to be run in a separate thread (e.g. using `threading.Thread`).
+    It is not compatible to be executed on the `asyncio` event as it requires pre-emptive multitasking.
+    Specifically, it does not use `await` or `asyncio.sleep` to yield process control.
 
     Multiple thread-safe functions are provided to manage the
     behaviour of the control loop.
@@ -206,25 +250,23 @@ def run_control_loop(
     LOGGER.info(f'{_LOG_SRC}Running')
 
     # Prepare to run the control loop.
-    global _control_loop_running
-    _control_loop_running = True
-    prev_state: _PrevControlState = _PrevControlState()
+    _CONTROL_STATE.control_loop_running = True
 
-    # Configure and user settings
+    # Configure from user settings
     loaded: bool = False
     if settings_path is not None:
-        _control_state.settings_path = Path(settings_path)
+        _CONTROL_STATE.settings_path = Path(settings_path)
         if not force_settings or settings is None:
             loaded = _load_settings()
     if (not loaded or force_settings) and settings is not None:
         configure_from_settings(settings)
 
-    while _control_loop_running:
+    # Execute the main loop
+    while _CONTROL_STATE.control_loop_running:
 
-        with _control_state_lock:
-            state = _control_state
-            state.loop_start = datetime.now(UTC)  # to calculate loop sleep time
-            _control_step(state, prev_state)
+        with _control_state() as state:
+            state.iteration_start = _now()  # timestamp to calculate loop sleep time
+            _control_step(state)
             listeners = state.listeners.copy()
             state.last_status_valid = False
 
@@ -232,28 +274,27 @@ def run_control_loop(
             listener.update()
 
         # Sleep for the remaining time until the next loop iteration
-        sleeptime: int = int(state.loop_start.timestamp() + Constants.LOOP_TIME - datetime.now().timestamp())
+        sleeptime: int = int(state.iteration_start.timestamp() + Constants.LOOP_TIME - _now().timestamp())
         if sleeptime < Constants.LOOP_MIN_SLEEP_TIME:
             LOGGER.warn(f'{_LOG_SRC}Low sleep time: {sleeptime} < {Constants.LOOP_MIN_SLEEP_TIME}')
             sleeptime = Constants.LOOP_MIN_SLEEP_TIME
         time.sleep(sleeptime)
 
 
-def _control_step(
-        state: _ControlState,
-        prev_state: _PrevControlState,
-) -> None:
+def _control_step(state: _ControlState) -> None:
     """
     Perform one functional step of the control loop.
-    This function will grab the control state lock.
+    This function assumes the control state lock is already acquired for `state`.
     No work is performed if the power controller is None.
-    No non-manual policies are performed if the power pricer is None.
+    No non-manual policies are followed if the power pricer is None.
 
     Args:
-        state: the current control state
-        prev_state: the previous control state
+        state: the current control state (with the lock acquired).
     """
+    # Check to see if the power controller has changed.
+    prev_state = state.prev_state
     if state.controller is None:
+        # No work can be done if there is no power controller.
         prev_state.reset(None)
         return
     power_controller: PowerController = state.controller
@@ -262,17 +303,17 @@ def _control_step(
 
     # Battery Policy - may change Battery Mode
     if state.pricer is not None:
-        if state.battery_policy == BatteryPolicy.CHEAP_CHARGE:
+        if state.control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
             price = get_price_now()
             buy_price = price.buy_price
             if buy_price < state.start_charge_price_threshold:
-                state.battery_mode = BatteryMode.FORCE_CHARGE
+                state.control_mode.battery_mode = BatteryMode.FORCE_CHARGE
             elif buy_price > state.enable_export_price_threshold:
-                state.battery_mode = BatteryMode.ENABLE
+                state.control_mode.battery_mode = BatteryMode.ENABLE
 
     # Battery Mode
-    if state.battery_mode != prev_state.battery_mode:
-        match state.battery_mode:
+    if state.control_mode.battery_mode != prev_state.control_mode.battery_mode:
+        match state.control_mode.battery_mode:
             case BatteryMode.ENABLE:
                 power_controller.enable_battery()
             case BatteryMode.DISABLE:
@@ -281,33 +322,37 @@ def _control_step(
                 power_controller.force_charge()
             case BatteryMode.FORCE_DISCHARGE:
                 power_controller.force_discharge()
-        prev_state.battery_mode = state.battery_mode
+            case BatteryMode.CHARGE_ONLY:
+                power_controller.charge_only()
+            case BatteryMode.DISCHARGE_ONLY:
+                power_controller.discharge_only()
+        prev_state.control_mode.battery_mode = state.control_mode.battery_mode
 
     # Inverter Policy - may change Inverter Mode
     if state.pricer is not None:
-        if state.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
+        if state.control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
             price = get_price_now()
             feed_in_price = price.feed_in_price
             if feed_in_price < state.disable_export_price_threshold:
-                state.inverter_mode = InverterMode.ZERO_EXPORT
+                state.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
             elif feed_in_price > state.disable_export_price_threshold:
-                state.inverter_mode = InverterMode.ENABLE
+                state.control_mode.inverter_mode = InverterMode.ENABLE
 
     # Inverter Mode
-    if state.inverter_mode != prev_state.inverter_mode:
-        if state.inverter_mode == InverterMode.ENABLE:
+    if state.control_mode.inverter_mode != prev_state.control_mode.inverter_mode:
+        if state.control_mode.inverter_mode == InverterMode.ENABLE:
             power_controller.enable_inverter()
-        # All other cases managed below as they have a reversion time limit
-        prev_state.inverter_mode = state.inverter_mode
+        # All other cases are managed below as they have a reversion time limit
+        prev_state.control_mode.inverter_mode = state.control_mode.inverter_mode
     # Inverter modes requiring keep-alive pulse
     try:
-        match state.inverter_mode:
+        match state.control_mode.inverter_mode:
             case InverterMode.DISABLE:
                 power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
             case InverterMode.ZERO_EXPORT:
                 power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
     except Exception as e:
-        LOGGER.error(f'{_LOG_SRC}Error processing command: {state.inverter_mode}. Error: {e}')
+        LOGGER.error(f'{_LOG_SRC}Error processing command: {state.control_mode.inverter_mode}. Error: {e}')
 
 
 # =============================================================================
@@ -315,17 +360,17 @@ def _control_step(
 # =============================================================================
 
 
-def loop_stale() -> bool:
+def loop_check_overdue() -> float:
     """
     The control loop is expected to iterate each `Constants.LOOP_TIME` seconds.
-    If it has been more than twice that time, then the loop is likely stale.
+    This returns the number of seconds past the last expected loop, i.e.
+    `max(0, now - (iteration_start + Constants.LOOP_TIME))`.
 
     Returns:
-        True if the control loop appears to be stale, False otherwise.
+        The number of seconds the loop check is overdue (zero if running normally).
     """
     # We are not concerned with race conditions, so we do not need to get the control loop lock.
-    seconds_since_last_loop: float = datetime.now(UTC).timestamp() - _control_state.loop_start.timestamp()
-    return seconds_since_last_loop > 2 * Constants.LOOP_TIME
+    return max(0, _now().timestamp() - (_CONTROL_STATE.iteration_start.timestamp() + Constants.LOOP_TIME))
 
 
 def configure_from_settings(settings: Settings) -> None:
@@ -371,18 +416,17 @@ def configure_from_settings(settings: Settings) -> None:
 
 
 def get_settings() -> Settings:
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         return Settings(
             controller=state.controller_settings,
             pricer=state.pricer_settings,
             consumers=state.consumers_settings,
             forecaster=state.forecaster_settings,
 
-            battery_mode=state.battery_mode,
-            inverter_mode=state.inverter_mode,
-            battery_policy=state.battery_policy,
-            inverter_policy=state.inverter_policy,
+            battery_mode=state.control_mode.battery_mode,
+            inverter_mode=state.control_mode.inverter_mode,
+            battery_policy=state.control_mode.battery_policy,
+            inverter_policy=state.control_mode.inverter_policy,
 
             disable_export_price_threshold=state.disable_export_price_threshold,
             enable_export_price_threshold=state.enable_export_price_threshold,
@@ -393,18 +437,18 @@ def get_settings() -> Settings:
 
 
 def add_listener(listener: LoopListener) -> None:
-    with _control_state_lock:
+    with _control_state() as state:
         try:
-            _control_state.listeners.remove(listener)
+            state.listeners.remove(listener)
         except ValueError:
             pass
-        _control_state.listeners.append(listener)
+        state.listeners.append(listener)
 
 
 def remove_listener(listener: LoopListener) -> None:
-    with _control_state_lock:
+    with _control_state() as state:
         try:
-            _control_state.listeners.remove(listener)
+            state.listeners.remove(listener)
         except ValueError:
             pass
 
@@ -413,32 +457,37 @@ def update_listeners() -> None:
     """
     Call `update` on all registered control loop listeners.
     """
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         listeners = state.listeners.copy()
     for listener in listeners:
         listener.update()
 
 
+def get_control_mode() -> ControlMode:
+    # We are not concerned with race conditions, so we do not need to get the control loop lock.
+    # Just return a copy of the control mode object.
+    return copy.copy(_CONTROL_STATE.control_mode)
+
+
 def get_control_status() -> JSONDict:
-    with _control_state_lock:
+    with _control_state() as state:
         battery: JSONDict = {
-            'mode': _control_state.battery_mode.name,
-            'policy': _control_state.battery_policy.name,
+            'mode': state.control_mode.battery_mode.name,
+            'policy': state.control_mode.battery_policy.name,
         }
         inverter: JSONDict = {
-            'mode': _control_state.inverter_mode.name,
-            'policy': _control_state.inverter_policy.name,
+            'mode': state.control_mode.inverter_mode.name,
+            'policy': state.control_mode.inverter_policy.name,
         }
-        if _control_state.battery_policy == BatteryPolicy.CHEAP_CHARGE:
+        if state.control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
             battery.update({
-                'start_charge_price_threshold': _control_state.start_charge_price_threshold,
-                'stop_charge_price_threshold': _control_state.stop_charge_price_threshold,
+                'start_charge_price_threshold': state.start_charge_price_threshold,
+                'stop_charge_price_threshold': state.stop_charge_price_threshold,
             })
-        if _control_state.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
+        if state.control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
             inverter.update({
-                'disable_export_price_threshold': _control_state.disable_export_price_threshold,
-                'enable_export_price_threshold': _control_state.enable_export_price_threshold,
+                'disable_export_price_threshold': state.disable_export_price_threshold,
+                'enable_export_price_threshold': state.enable_export_price_threshold,
             })
 
         return {
@@ -448,26 +497,25 @@ def get_control_status() -> JSONDict:
 
 
 def get_price_status() -> JSONDict:
-    with _control_state_lock:
-        if _control_state.pricer is None:
+    with _control_state() as state:
+        if state.pricer is None:
             return _DISCONNECTED
         try:
             cur_price: Price = get_price_now()
-            result = cur_price.to_json(DATE_FORMAT, include_time=False)
+            result = cur_price.to_json(TIMESTAMP_FORMAT, include_time=False)
             return result
         except Exception as err:
             return {'error': str(err)}
 
 
 def get_power_status() -> JSONDict:
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         if state.controller is None:
             return _DISCONNECTED
         try:
             result: JSONDict = state.controller.get_status().to_json()
             if state.forecaster is not None:
-                result['forecast_generation'] = get_solar_forecast(date.today()).total_forecast_energy()
+                result['forecast_generation'] = get_solar_forecast(date.today()).total_forecast_energy() / 1000
             return result
         except Exception as err:
             return {'error': str(err)}
@@ -477,10 +525,8 @@ def get_cached_solar_forecast(day: date) -> Optional[DailySolarForecast]:
     """
     Get the forecast solar power, but only if already cached.
     """
-    with _control_state_lock:
-        state = _control_state
-        now = datetime.now(UTC)
-        if state.next_price_forecast_check <= now:
+    with _control_state() as state:
+        if state.next_price_forecast_check <= _now():
             return None
         key = _DateKey(day.year, day.month, day.day)
         return state.last_solar_forecast.get(key)
@@ -490,15 +536,14 @@ def get_solar_forecast(day: date) -> DailySolarForecast:
     """
     Get the forecast solar power.
     """
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         forecaster = state.forecaster
         if forecaster is None:
             LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: solar forecaster not connected')
             return _NO_SOLAR_FORECAST
 
         # Clear stale forecasts
-        now = datetime.now(UTC)
+        now = _now()
         if state.next_price_forecast_check <= now:
             state.last_solar_forecast.clear()
             state.next_price_forecast_check = now + timedelta(minutes=Constants.SOLAR_FORECAST_AGE)
@@ -517,8 +562,7 @@ def get_solar_forecast(day: date) -> DailySolarForecast:
 
 
 def get_consumers_status() -> JSONDict:
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         result: Dict[str, JSONDict] = {}
         name: str
         power_consumer: PowerConsumer
@@ -531,8 +575,7 @@ def get_consumers_status() -> JSONDict:
 
 
 def get_connection_status() -> JSONDict:
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         result = {
             'controller': state.controller_connection_status,
             'pricer': state.pricer_connection_status,
@@ -544,8 +587,7 @@ def get_connection_status() -> JSONDict:
 
 
 def get_status() -> JSONDict:
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         if not state.last_status_valid:
             state.last_status = _get_status()
             state.last_status_valid = True
@@ -556,8 +598,7 @@ def get_policy_parameters() -> JSONDict:
     """
     Get policy parameters.
     """
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         return {
             'start_charge_price_threshold': state.start_charge_price_threshold,
             'stop_charge_price_threshold': state.stop_charge_price_threshold,
@@ -573,8 +614,7 @@ def get_registers() -> Dict[str, int | float | str | bool]:
     Raises:
         ControlLoopError: if a power controller is not connected
     """
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         if state.controller is None:
             raise ControlLoopError('power controller not connected')
         else:
@@ -588,15 +628,14 @@ def get_price_now() -> Price:
     """
     Get the current price from the power pricer.
     """
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         price: Price = state.last_price
         pricer = state.pricer
         if pricer is None:
             LOGGER.error(f'{_LOG_SRC}Price update not available. Error: power pricer not connected')
             return price
 
-        now = datetime.now(UTC)
+        now = _now()
         if state.next_price_check <= now:
             try:
                 LOGGER.info(f'{_LOG_SRC}Updating current price')
@@ -618,25 +657,39 @@ def get_price_now() -> Price:
 def get_price_forecast() -> Sequence[Price]:
     """
     Get the forecast prices from the power pricer.
+
+    Get the 30-minute price forecasts, in ascending order of time from now.
+    Nominally this will return `Constants.PRICE_FORECAST_DURATION * 2` prices
+    but may be less (or zero) if there is an error.
+
+    Errors will be logged but should not raise an exception.
     """
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         pricer = state.pricer
         if pricer is None:
-            LOGGER.error(f'{_LOG_SRC}Price update not available. Error: power pricer not connected')
+            LOGGER.error(f'{_LOG_SRC}Price forecast not available. Error: power pricer not connected')
             return ()
 
         prices: List[Price] = state.last_price_forecast
-        now = datetime.now(UTC)
+        needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
+        now = _now()
         if state.next_price_forecast_check <= now or len(prices) == 0 or prices[0].end_time < now:
             try:
-                LOGGER.info(f'{_LOG_SRC}Updating forecast price')
-                prices = pricer.get_price_forecast(Constants.PRICE_FORECAST_DURATION * 2)
+                LOGGER.info(f'{_LOG_SRC}Price forecast updating')
+                # Plus one to account for possible race condition (see below).
+                prices = pricer.get_price_forecast(needed_forecasts + 1)
                 state.last_price_forecast = prices
                 state.next_price_forecast_check = now + timedelta(minutes=Constants.PRICE_FORECAST_AGE)
             except Exception as err:
-                LOGGER.error(f'{_LOG_SRC}Price update not available. Error: {err}')
-    return prices
+                LOGGER.error(f'{_LOG_SRC}Price forecast not available. Error: {err}')
+
+        # A race condition or error may mean that the first forecast is already in the past.
+        # Don't bother to update `next_price_forecast_check` as it is no more than 5 minutes in the future.
+        while len(prices) > 0 and prices[0].end_time < now:
+            LOGGER.info(f'{_LOG_SRC}Price forecast contains old data: {prices[0]}')
+            prices.pop(0)
+
+    return prices[:needed_forecasts]
 
 
 def set_control(
@@ -649,17 +702,16 @@ def set_control(
     """
     Set the control loop modes and policies.
     """
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
 
         if battery_mode is not None:
-            state.battery_mode = battery_mode
+            state.control_mode.battery_mode = battery_mode
         if inverter_mode is not None:
-            state.inverter_mode = inverter_mode
+            state.control_mode.inverter_mode = inverter_mode
         if battery_policy is not None:
-            state.battery_policy = battery_policy
+            state.control_mode.battery_policy = battery_policy
         if inverter_policy is not None:
-            state.inverter_policy = inverter_policy
+            state.control_mode.inverter_policy = inverter_policy
 
         _save_settings()
         state.force_price_check()
@@ -681,8 +733,7 @@ def set_parameters(
     Raises:
         ControlLoopError: parameters are invalid, collectively or individually.
     """
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
 
         if disable_export_price_threshold is None:
             disable_export_price_threshold = state.disable_export_price_threshold
@@ -712,9 +763,8 @@ def exit_control_loop() -> None:
     """
     Flag to exit the control loop on the next iteration.
     """
-    # No need to acquire lock
-    global _control_loop_running
-    _control_loop_running = False
+    # We are not concerned with race conditions, so we do not need to get the control loop lock.
+    _CONTROL_STATE.control_loop_running = False
 
 
 # =============================================================================
@@ -722,8 +772,7 @@ def exit_control_loop() -> None:
 # =============================================================================
 
 def connect_controller(controller_connection: ControllerConnection) -> JSONDict:
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         controller: PowerController
 
         if controller_connection.type == DummyControllerConnection.TYPE:
@@ -751,8 +800,7 @@ def disconnect_controller() -> JSONDict:
     """
     Close the power controller connection.
     """
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         if state.controller is not None:
             state.controller.close()
             state.reset_controller(None)
@@ -762,8 +810,7 @@ def disconnect_controller() -> JSONDict:
 
 
 def connect_pricer(pricer_connection: PricerConnection) -> JSONDict:
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         pricer: PowerPricer
 
         if pricer_connection.type == DummyPricerConnection.TYPE:
@@ -792,18 +839,17 @@ def disconnect_pricer() -> JSONDict:
     """
     Close the power pricer connection.
     """
-    with _control_state_lock:
-        if _control_state.pricer is not None:
-            _control_state.pricer.close()
-            _control_state.reset_pricer(None)
+    with _control_state() as state:
+        if state.pricer is not None:
+            state.pricer.close()
+            state.reset_pricer(None)
         _control_state.pricer_settings = None
         _save_settings()
-        return _control_state.pricer_connection_status
+        return state.pricer_connection_status
 
 
 def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> JSONDict:
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         consumer: PowerConsumer
 
         if consumer_connection.type == DummyConsumerConnection.TYPE:
@@ -832,8 +878,7 @@ def disconnect_consumer(name: str) -> JSONDict:
     """
     Close a power consumer connection.
     """
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         consumer: Optional[PowerConsumer] = state.consumers.get(name)
         if consumer is not None:
             consumer.close()
@@ -845,8 +890,7 @@ def disconnect_consumer(name: str) -> JSONDict:
 
 
 def connect_forecaster(forecaster_connection: ForecasterConnection) -> JSONDict:
-    with _control_state_lock:
-        state = _control_state
+    with _control_state() as state:
         forecaster: SolarForecaster
 
         if forecaster_connection.type == DummySolarForecasterConnection.TYPE:
@@ -874,18 +918,19 @@ def disconnect_forecaster() -> JSONDict:
     """
     Close the power pricer connection.
     """
-    with _control_state_lock:
-        if _control_state.forecaster is not None:
-            _control_state.forecaster.close()
-            _control_state.reset_forecaster(None)
-        _control_state.forecaster_settings = None
+    with _control_state() as state:
+        if state.forecaster is not None:
+            state.forecaster.close()
+            state.reset_forecaster(None)
+        state.forecaster_settings = None
         _save_settings()
-        return _control_state.forecaster_connection_status
+        return state.forecaster_connection_status
 
 
 # =============================================================================
 #  Support functions
 # =============================================================================
+
 
 def _connect_dummy_controller(controller_connection: DummyControllerConnection) -> PowerController:
     return DummyPowerController(
@@ -1127,8 +1172,8 @@ def _save_settings() -> None:
     This is called when the user settings are changed. We persist the settings
     so that they are available across restarts.
     """
-    with _control_state_lock:
-        settings_path = _control_state.settings_path
+    with _control_state() as state:
+        settings_path = state.settings_path
         if settings_path is not None:
             try:
                 with open(settings_path, 'w') as file:
@@ -1145,8 +1190,8 @@ def _load_settings() -> bool:
     Returns:
         True if settings were loaded successfully, False otherwise.
     """
-    with _control_state_lock:
-        settings_path = _control_state.settings_path
+    with _control_state() as state:
+        settings_path = state.settings_path
         if settings_path is not None:
             try:
                 with open(settings_path, 'r') as file:

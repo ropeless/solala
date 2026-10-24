@@ -66,6 +66,7 @@ class PowerController(ABC):
     def get_inverter_limit(self) -> float:
         """
         Get the reported power limit on inverter AC output.
+        This is expected to stay constant for the lifetime of the connection.
         """
         ...
 
@@ -102,6 +103,24 @@ class PowerController(ABC):
         """
         Force the battery to discharge.
         This is a way to force stored power to the grid.
+        """
+        ...
+
+    @abstractmethod
+    def charge_only(self) -> None:
+        """
+        Allow the battery to charge (when there is excess solar power)
+        but do not allow the battery to discharge (when there is insufficient solar power).
+        If there is insufficient solar power, power will be drawn from the grid.
+        """
+        ...
+
+    @abstractmethod
+    def discharge_only(self) -> None:
+        """
+        Allow the battery to discharge (when there is insufficient solar power)
+        but do not allow the battery to charge (when there is an oversupply of solar power).
+        If there is an oversupply of solar power, power will be sent to the grid.
         """
         ...
 
