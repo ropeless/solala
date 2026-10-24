@@ -350,6 +350,8 @@ class ModbusPowerController(PowerController):
             failed: bool = abs(new - value) > 10e-6
             if failed:
                 LOGGER.error(f'SET {name}: {old!r} -> {value!r} checked {new!r} FAILED')
+            elif force:
+                self._logger_get_set(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK FORCED')
             else:
                 self._logger_get_set(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK')
 
