@@ -471,9 +471,13 @@ class SolarForecastUpdater(SolarForecastListener):
 
                         with ui.element('div').classes(row_classes):
                             ui.label(forecast.time.strftime(GUI_TIME_FORMAT)).classes('solar-time')
-                            ui.image(
-                                weather_code_to_icon_url(forecast.weather, Constants.ANIMATE_WEATHER_ICONS)
-                            ).classes('solar-weather-icon')
+                            icon: Optional[str] = weather_code_to_icon_url(
+                                forecast.weather, Constants.ANIMATE_WEATHER_ICONS
+                            )
+                            if icon is None:
+                                ui.label('')
+                            else:
+                                ui.image(icon).classes('solar-weather-icon')
                             if forecast.irradiance > 0:
                                 ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'solar-number')
                             else:
