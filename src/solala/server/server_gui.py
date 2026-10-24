@@ -475,7 +475,7 @@ class SolarForecastUpdater(SolarForecastListener):
                                 forecast.weather, Constants.ANIMATE_WEATHER_ICONS
                             )
                             if icon is None:
-                                ui.label('')
+                                ui.label('').classes('solar-weather-icon')
                             else:
                                 ui.image(icon).classes('solar-weather-icon')
                             if forecast.irradiance > 0:
