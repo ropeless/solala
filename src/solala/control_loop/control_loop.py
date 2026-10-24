@@ -632,19 +632,24 @@ def get_price_forecast() -> Sequence[Price]:
         state = _control_state
         pricer = state.pricer
         if pricer is None:
-            LOGGER.error(f'{_LOG_SRC}Price update not available. Error: power pricer not connected')
+            LOGGER.error(f'{_LOG_SRC}Price forecast not available. Error: power pricer not connected')
             return ()
 
         prices: List[Price] = state.last_price_forecast
         now = datetime.now(UTC)
         if state.next_price_forecast_check <= now or len(prices) == 0 or prices[0].end_time < now:
             try:
-                LOGGER.info(f'{_LOG_SRC}Updating forecast price')
+                LOGGER.info(f'{_LOG_SRC}Price forecast updating')
                 prices = pricer.get_price_forecast(Constants.PRICE_FORECAST_DURATION * 2)
                 state.last_price_forecast = prices
                 state.next_price_forecast_check = now + timedelta(minutes=Constants.PRICE_FORECAST_AGE)
             except Exception as err:
-                LOGGER.error(f'{_LOG_SRC}Price update not available. Error: {err}')
+                LOGGER.error(f'{_LOG_SRC}Price forecast not available. Error: {err}')
+
+        while len(prices) > 0 and prices[0].end_time < now:
+            LOGGER.info(f'{_LOG_SRC}Price forecast contains old data: {prices[0]}')
+            prices.pop(0)
+
     return prices
 
 
