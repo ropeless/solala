@@ -656,23 +656,15 @@ def _feed_in_price_class(price: float) -> str:
 def _update_loop_status(loop_status_light: Element, loop_status_label: Label) -> None:
     overdue: float = control_loop.loop_check_overdue()
     if overdue > Constants.LOOP_TIME:
-        loop_status_light.classes(
-            replace='w-3 h-3 rounded-full bg-red-600'
-        )
-        loop_status_light.tooltip('Control loop appears to be stalled')
+        loop_status_light.classes(replace='w-3 h-3 rounded-full bg-red-600')
+        loop_status_light.tooltip('The control loop appears to be stalled')
         loop_status_label.set_text('stalled')
-        loop_status_label.classes(
-            replace='text-sm text-red-600'
-        )
+        loop_status_label.classes(replace='text-sm text-red-600')
     elif overdue == 0:
-        loop_status_light.classes(
-            replace='w-3 h-3 rounded-full bg-green-700'
-        )
-        loop_status_light.tooltip('Control loop appears to be active')
+        loop_status_light.classes(replace='w-3 h-3 rounded-full bg-green-700')
+        loop_status_light.tooltip('The control loop appears to be active')
         loop_status_label.set_text('live')
-        loop_status_label.classes(
-            replace='text-sm text-green-700'
-        )
+        loop_status_label.classes(replace='text-sm text-green-700')
     else:
         # Leave it as it is
         pass
@@ -704,12 +696,8 @@ async def root_page():
 
                     # Control loop status light
                     with ui.row().classes('items-center gap-2'):
-                        loop_status_light = ui.element('div').classes(
-                            'w-3 h-3 rounded-full bg-green-500'
-                        )
-                        loop_status_label = ui.label('active').classes(
-                            'text-sm text-green-600'
-                        )
+                        loop_status_light = ui.element('div').classes('w-3 h-3 rounded-full')
+                        loop_status_label = ui.label().classes('text-sm')
 
                     _update_loop_status(loop_status_light, loop_status_label)
                     ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
