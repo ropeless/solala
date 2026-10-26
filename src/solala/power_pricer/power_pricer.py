@@ -34,14 +34,14 @@ class Price:
 class PowerPricer(ABC):
 
     @abstractmethod
-    def get_price(self) -> Price:
+    async def get_price(self) -> Price:
         """
         Get the current price.
         """
         ...
 
     @abstractmethod
-    def get_price_forecast(self, count: int) -> List[Price]:
+    async def get_price_forecast(self, count: int) -> List[Price]:
         """
         Get the 30-minute price forecasts, in ascending order of time from now.
 
@@ -64,15 +64,8 @@ class PowerPricer(ABC):
         ...
 
     @abstractmethod
-    def close(self) -> None:
+    async def close(self) -> None:
         """
         Close any connections to the pricing system.
         """
         ...
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-        return exc_type is None

@@ -71,16 +71,16 @@ class Infographic:
         power_dict: JSONDict = json_dict(status['power'])
         price_dict: JSONDict = json_dict(status['price'])
         self.make(
-            state_of_charge=json_num(power_dict['state_of_charge']),
-            solar_power=json_num(power_dict['solar_power']),
-            grid_power=json_num(power_dict['grid_power']),
-            house_power=json_num(power_dict['house_power']),
-            battery_power=json_num(power_dict['battery_power']),
+            state_of_charge=json_num(power_dict.get('state_of_charge', 0)),
+            solar_power=json_num(power_dict.get('solar_power', 0)),
+            grid_power=json_num(power_dict.get('grid_power', 0)),
+            house_power=json_num(power_dict.get('house_power', 0)),
+            battery_power=json_num(power_dict.get('battery_power', 0)),
             power_scale=power_scale,
-            buy_price=json_num(price_dict['buy_price']),
-            feed_in_price=json_num(price_dict['feed_in_price']),
-            renewables=json_num(price_dict['renewables']),
-            estimate=json_bool(price_dict['estimate']),
+            buy_price=json_num(price_dict.get('buy_price', 0)),
+            feed_in_price=json_num(price_dict.get('feed_in_price', 0)),
+            renewables=json_num(price_dict.get('renewables', 0)),
+            estimate=json_bool(price_dict.get('estimate', True)),
         )
 
     def make(
@@ -97,6 +97,19 @@ class Infographic:
             renewables: float,
             estimate: bool,
     ) -> None:
+        """
+        Args:
+            state_of_charge: percentage charge: 0 to 100
+            solar_power: kW
+            grid_power: kW
+            house_power: kW
+            battery_power: kW
+            power_scale: default max kW for a power flow arrow.
+            buy_price: c/kWh
+            feed_in_price: c/kWh
+            renewables: %
+            estimate: Boolean flag to indicate whether the price is an estimate or not.
+        """
         canvas = self.canvas
         icon_offset = self.icon_offset
 

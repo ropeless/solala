@@ -8,6 +8,16 @@ GUI_DATE_FORMAT = '%a, %d %b %Y'
 GUI_TIME_FORMAT = '%H:%M'
 
 
+DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.1  # disable export below this price
+DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD: float = 0.1  # re-enable export above this price
+DEFAULT_START_CHARGE_PRICE_THRESHOLD: float = 10  # start force charging below this price
+DEFAULT_STOP_CHARGE_PRICE_THRESHOLD: float = 11  # stop force charging above this price
+
+DEFAULT_INVERTER_EFFICIENCY: float = 0.96  # as a fraction (0 to 1)
+DEFAULT_INVERTER_LIMIT: float = float('inf')  # in Watts
+DEFAULT_TEMPERATURE_COEFFICIENT: float = -0.004  # in Celsius
+
+
 class Constants:
     """
     These constants control the behaviour of the control loop and GUI.
@@ -26,7 +36,7 @@ class Constants:
     BUY_PRICE_AMBER = 20  # Buy price threshold for amber colour
     BUY_PRICE_RED = 40  # Buy price threshold for red colour
 
-    CONTROLS_ENABLED: bool = True  # Whether to present the control buttons or not
+    CONTROLS_ENABLED: bool = False  # Whether to present the control buttons or not
     ANIMATE_WEATHER_ICONS: bool = True  # Whether to animate weather icons or not
     INFOGRAPHIC_INCLUDE_RENEWABLES: bool = False  # Whether to show % renewables or not
 

@@ -83,7 +83,7 @@ class DailySolarForecast:
 
 class SolarForecaster(ABC):
     @abstractmethod
-    def get_forecast(self, day: date) -> DailySolarForecast:
+    async def get_forecast(self, day: date) -> DailySolarForecast:
         """
         Provide an hourly forecast of solar irradiance and temperature for today.
         The implementer should account for the local conditions and daily weather
@@ -99,15 +99,8 @@ class SolarForecaster(ABC):
         ...
 
     @abstractmethod
-    def close(self) -> None:
+    async def close(self) -> None:
         """
         Close any connections to the pricing system.
         """
         ...
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-        return exc_type is None

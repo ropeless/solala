@@ -24,32 +24,25 @@ class PowerController(ABC):
     """
 
     @abstractmethod
-    def close(self) -> None:
+    async def close(self) -> None:
         """
         Close any connections to the power system.
         """
         ...
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-        return exc_type is None
 
     # =================================================
     #  Power controller status
     # =================================================
 
     @abstractmethod
-    def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
+    async def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
         """
         Get the values of all known registers.
         """
         ...
 
     @abstractmethod
-    def get_status(self) -> PowerStatus:
+    async def get_status(self) -> PowerStatus:
         """
         Get the high-level status of the system.
         """

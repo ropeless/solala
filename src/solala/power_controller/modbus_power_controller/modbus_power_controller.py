@@ -94,7 +94,7 @@ class ModbusPowerController(PowerController):
             self._connection_status['unnamed_device'] = unnamed_device
 
         # Log all registers and their values
-        for register, value in self.get_registers():
+        for register, value in self._modbus.items():
             LOGGER.info(f'LOG {register}: {value!r}')
 
         # Calculate the constant inverter limit
@@ -118,19 +118,19 @@ class ModbusPowerController(PowerController):
     def get_connection_status(self) -> JSONDict:
         return self._connection_status
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """
         Delegate `close` to Modbus clients.
         """
         self._modbus.close()
 
-    def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
+    async def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
         """
         Get the values of all known registers.
         """
         return self._modbus.items()
 
-    def get_status(self) -> PowerStatus:
+    async def get_status(self) -> PowerStatus:
         """
         Get a high-level status of the system.
         """

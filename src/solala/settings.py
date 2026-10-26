@@ -2,16 +2,8 @@ from typing import Literal, TypeAlias, Optional, Annotated, Union, ClassVar, Dic
 
 from pydantic import BaseModel, Field
 
+from solala.constants import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_TEMPERATURE_COEFFICIENT
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, InverterPolicy, BatteryPolicy
-
-DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.1  # disable export below this price
-DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD: float = 0.1  # re-enable export above this price
-DEFAULT_START_CHARGE_PRICE_THRESHOLD: float = 10  # start force charging below this price
-DEFAULT_STOP_CHARGE_PRICE_THRESHOLD: float = 11  # stop force charging above this price
-
-DEFAULT_INVERTER_EFFICIENCY: float = 0.96  # as a fraction (0 to 1)
-DEFAULT_INVERTER_LIMIT: float = float('inf')  # in Watts
-DEFAULT_TEMPERATURE_COEFFICIENT: float = -0.004  # in Celsius
 
 
 class DummyControllerConnection(BaseModel):

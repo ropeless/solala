@@ -48,8 +48,9 @@ class OpenMeteoForecaster(SolarForecaster):
         self._inverter_limit = inverter_limit
         self._inverter_efficiency = inverter_efficiency
         self._temperature_coefficient = temperature_coefficient
+        self._client = httpx.AsyncClient()
 
-    def get_forecast(self, day: date) -> DailySolarForecast:
+    async def get_forecast(self, day: date) -> DailySolarForecast:
         day: date = ensure_date(day)
         start_date = day - timedelta(days=1)
         end_date = day + timedelta(days=1)
@@ -70,7 +71,7 @@ class OpenMeteoForecaster(SolarForecaster):
             'wind_speed_unit': 'ms',
         }
 
-        response = httpx.get(API_URL, params=params)
+        response = await self._client.get(API_URL, params=params)
         response.raise_for_status()
         data = response.json()
 
@@ -118,9 +119,8 @@ class OpenMeteoForecaster(SolarForecaster):
             'panel_tilt': self._panel_tilt,
         }
 
-    def close(self) -> None:
-        # nothing to do
-        pass
+    async def close(self) -> None:
+        await self._client.aclose()
 
     def power(
             self,

@@ -24,7 +24,7 @@ class PowerConsumer(ABC):
     """
 
     @abstractmethod
-    def get_status(self) -> ConsumerStatus:
+    async def get_status(self) -> ConsumerStatus:
         """
         Get the status of the consumer.
         """
@@ -38,22 +38,15 @@ class PowerConsumer(ABC):
         ...
 
     @abstractmethod
-    def get_registers(self) -> Iterable[Tuple[str, int | float | str | bool]]:
+    async def get_registers(self) -> Iterable[Tuple[str, int | float | str | bool]]:
         """
         Get the values of all known registers.
         """
         ...
 
     @abstractmethod
-    def close(self) -> None:
+    async def close(self) -> None:
         """
         Close any connections to the consumer.
         """
         ...
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-        return exc_type is None

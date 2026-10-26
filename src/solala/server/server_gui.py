@@ -1,6 +1,4 @@
-import asyncio
 from abc import abstractmethod
-from asyncio import AbstractEventLoop
 from datetime import date, timedelta
 from functools import partial
 from typing import Mapping, final, Optional, Dict, List, Sequence
@@ -86,17 +84,10 @@ _CONNECTION_UNITS: Mapping[str, str] = {
 
 class StatusListener(LoopListener):
 
-    def __init__(self):
-        super().__init__()
-        self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
-
     @final
-    def update(self) -> None:
-        """
-        Thread safe update.
-        """
-        status_json = control_loop.get_status()
-        self._main_loop.call_soon_threadsafe(partial(self._update, status_json))
+    async def update(self) -> None:
+        status_json: JSONDict = await control_loop.get_status()
+        self._update(status_json)
 
     @abstractmethod
     def _update(self, status_json: JSONDict) -> None:
@@ -105,17 +96,10 @@ class StatusListener(LoopListener):
 
 class RegistersListener(LoopListener):
 
-    def __init__(self):
-        super().__init__()
-        self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
-
     @final
-    def update(self) -> None:
-        """
-        Thread safe update.
-        """
-        register_values: Dict[str, int | float | str | bool] = control_loop.get_registers()
-        self._main_loop.call_soon_threadsafe(partial(self._update, register_values))
+    async def update(self) -> None:
+        register_values: Dict[str, int | float | str | bool] = await control_loop.get_registers()
+        self._update(register_values)
 
     def _update(self, registers_json: JSONDict) -> None:
         ...
@@ -125,20 +109,19 @@ class PriceForecastListener(LoopListener):
 
     def __init__(self):
         super().__init__()
-        self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
         self._prev = None
 
     @final
-    def update(self) -> None:
+    async def update(self) -> None:
         """
         Thread safe update.
         """
-        price_forecast: Sequence[Price] = control_loop.get_price_forecast()
+        price_forecast: Sequence[Price] = await control_loop.get_price_forecast()
         if self._prev is not price_forecast:
             self._prev = price_forecast
-            self._main_loop.call_soon_threadsafe(partial(self._update, price_forecast))
+            self._update(price_forecast)
 
-    def _update(self, price_forecast: List[Price]) -> None:
+    def _update(self, price_forecast: Sequence[Price]) -> None:
         ...
 
 
@@ -146,28 +129,27 @@ class SolarForecastListener(LoopListener):
 
     def __init__(self, day: date):
         super().__init__()
-        self._main_loop: AbstractEventLoop = asyncio.get_running_loop()
         self._prev = None
         self.day: date = day
 
     @final
-    def update(self) -> None:
+    async def update(self) -> None:
         """
         Thread safe update.
         """
-        solar_forecast: DailySolarForecast = control_loop.get_solar_forecast(self.day)
+        solar_forecast: DailySolarForecast = await control_loop.get_solar_forecast(self.day)
         if self._prev is not solar_forecast:
             self._prev = solar_forecast
-            self._main_loop.call_soon_threadsafe(partial(self._update, solar_forecast))
+            self._update(solar_forecast)
 
     def _update(self, solar_forecast: DailySolarForecast) -> None:
         ...
 
 
-def _register_listener(listener: LoopListener) -> None:
-    listener.update()
+async def _register_listener(listener: LoopListener) -> None:
+    await listener.update()
+    await control_loop.add_listener(listener)
     ui.context.client.on_disconnect(partial(control_loop.remove_listener, listener))
-    control_loop.add_listener(listener)
 
 
 class InverterButtonUpdater(StatusListener):
@@ -375,7 +357,7 @@ class PriceForecastUpdater(PriceForecastListener):
         super().__init__()
         self._element = element
 
-    def _update(self, price_forecast: List[Price]) -> None:
+    def _update(self, price_forecast: Sequence[Price]) -> None:
         # Recreate the price forecast table
         self._element.clear()
         with self._element:
@@ -424,10 +406,10 @@ class SolarForecastUpdater(SolarForecastListener):
         super().__init__(day)
         self._element = element
 
-    def set_day(self, day: date) -> None:
+    async def set_day(self, day: date) -> None:
         self.day = day
         self._element.clear()
-        forecast: Optional[DailySolarForecast] = control_loop.get_cached_solar_forecast(day)
+        forecast: Optional[DailySolarForecast] = await control_loop.get_cached_solar_forecast(day)
         if forecast is None:
             with self._element:
                 ui.label('loading solar forecast...').classes('text-center italic')
@@ -570,7 +552,7 @@ def _diagnostic_link(name: str, target: str) -> None:
         ui.label(name)
 
 
-def _ui_control_buttons() -> None:
+async def _ui_control_buttons() -> None:
     if not Constants.CONTROLS_ENABLED:
         return
 
@@ -596,7 +578,7 @@ def _ui_control_buttons() -> None:
                 battery_discharge_only.classes('wide')
                 battery_cheap_force_discharge.classes('wide')
 
-            _register_listener(
+            await _register_listener(
                 BatteryButtonUpdater(
                     battery_enable=battery_enable,
                     battery_disable=battery_disable,
@@ -624,7 +606,7 @@ def _ui_control_buttons() -> None:
                 inverter_zero_export.classes('wide')
                 inverter_neg_feed_in_zero_export.classes('wide')
 
-            _register_listener(
+            await _register_listener(
                 InverterButtonUpdater(
                     inverter_enable=inverter_enable,
                     inverter_disable=inverter_disable,
@@ -703,7 +685,7 @@ app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manif
 
 
 @ui.page('/')
-def root_page():
+async def root_page():
     ui.add_head_html(_HEAD_HTML)
     with ui.element('div').classes('solala-page'):
         _page_header(link=False)
@@ -735,7 +717,7 @@ def root_page():
                         handler=_infographic_click,
                         js_handler="(e) => emit(e.target.closest('rect')?.id)",
                     )
-                    _register_listener(
+                    await _register_listener(
                         InfographicUpdater(
                             infographic_element=infographic
                         )
@@ -744,7 +726,7 @@ def root_page():
             # ----------------------------------------------------------
             # BATTERY + INVERTER control buttons
             # ----------------------------------------------------------
-            _ui_control_buttons()
+            await _ui_control_buttons()
 
         # ==============================================================
         # DIAGNOSTICS
@@ -760,12 +742,12 @@ def root_page():
 
 
 @ui.page('/price_forecast_page')
-def price_forecast_page():
+async def price_forecast_page():
     ui.add_head_html(_HEAD_HTML)
     with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
         _page_header(' price forecast')
         element = ui.element('div')
-        _register_listener(
+        await _register_listener(
             PriceForecastUpdater(
                 element=element
             )
@@ -773,7 +755,7 @@ def price_forecast_page():
 
 
 @ui.page('/solar_forecast_page')
-def solar_forecast_page():
+async def solar_forecast_page():
     ui.add_head_html(_HEAD_HTML)
     today = date.today()
 
@@ -867,34 +849,34 @@ def solar_forecast_page():
         }""",
     )
 
-    def handle_key(e: events.KeyEventArguments) -> None:
+    async def handle_key(e: events.KeyEventArguments) -> None:
         if e.action.keydown:
             if e.key.arrow_left:
-                change_day(-1)
+                await change_day(-1)
             elif e.key.arrow_right:
-                change_day(1)
+                await change_day(1)
             elif e.key.home:
-                set_day(today)
+                await set_day(today)
 
     ui.keyboard(on_key=handle_key, repeating=False)
 
     updater = SolarForecastUpdater(element=forecast_element, day=today)
-    _register_listener(updater)
+    await _register_listener(updater)
 
-    def set_day(day: date) -> None:
-        updater.set_day(day)
+    async def set_day(day: date) -> None:
+        await updater.set_day(day)
         date_element.set_text(day.strftime(GUI_DATE_FORMAT))
         day_status.set_visibility(day == today)
         today_button.set_visibility(day != today)
 
-    def change_day(offset: int) -> None:
-        set_day(updater.day + timedelta(days=offset))
+    async def change_day(offset: int) -> None:
+        await set_day(updater.day + timedelta(days=offset))
 
-    set_day(today)
+    await set_day(today)
 
 
 @ui.page('/status_page')
-def status_page():
+async def status_page():
     """
     The old status page.
     """
@@ -907,7 +889,7 @@ def status_page():
             # ----------------------------------------------------------
             with ui.card():
                 ui.label('Status').classes('text-h6')
-                _register_listener(StatusUpdater(
+                await _register_listener(StatusUpdater(
                     status_element=ui.code(language='nothing').classes('text-sm w-full grow')
                 ))
 
@@ -916,7 +898,7 @@ def status_page():
             # ----------------------------------------------------------
             with ui.card():
                 ui.label('Connection').classes('text-h6')
-                connection_json = control_loop.get_connection_status()
+                connection_json: JSONDict = await control_loop.get_connection_status()
                 json_as_str = render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
                 connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
                 connection_element.set_content(json_as_str)
@@ -924,11 +906,11 @@ def status_page():
             # ----------------------------------------------------------
             # BATTERY + INVERTER control buttons
             # ----------------------------------------------------------
-            _ui_control_buttons()
+            await _ui_control_buttons()
 
 
 @ui.page('/log_page')
-def log_page():
+async def log_page():
     """
     Listen to the Solala logger and display log messages.
     """
@@ -941,29 +923,28 @@ def log_page():
 
 
 @ui.page('/registers_page')
-def registers_page(match: Optional[str] = None):
+async def registers_page(match: Optional[str] = None):
     """
     Show the inverter registers.
     """
     json_element = _json_page('Registers')
     registers_elements = RegistersUpdater(registers_element=json_element, match=match)
-    _register_listener(registers_elements)
+    await _register_listener(registers_elements)
 
 
 @ui.page('/parameters_page')
-def parameters_page():
+async def parameters_page():
     """
     Show the policy parameters and control constants.
     """
-    policy_json = control_loop.get_policy_parameters()
-    constants_json = control_loop.Constants.to_json()
-
     policy, consts = _json_multi_page('Policy', 'Constants')
 
-    policy.set_content(
-        render_json(policy_json, units=_PARAMETERS_UNITS)
-    )
-
+    constants_json: JSONDict = control_loop.Constants.to_json()
     consts.set_content(
         render_json(constants_json, remove_key_underscores=False, units=_CONSTANTS_UNITS)
+    )
+
+    policy_json: JSONDict = await control_loop.get_control_status()
+    policy.set_content(
+        render_json(policy_json, units=_PARAMETERS_UNITS)
     )

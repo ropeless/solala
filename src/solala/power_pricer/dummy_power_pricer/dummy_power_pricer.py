@@ -36,7 +36,7 @@ class DummyPowerPricer(PowerPricer):
             'cur_price_is_estimate': self.cur_price_is_estate,
         }
 
-    def get_price(self) -> Price:
+    async def get_price(self) -> Price:
         now: datetime = datetime.now(UTC)
         start_time: datetime = now - timedelta(
             minutes=now.minute % 5,
@@ -78,12 +78,12 @@ class DummyPowerPricer(PowerPricer):
 
         return self.prices[0]
 
-    def get_price_forecast(self, count: int) -> List[Price]:
+    async def get_price_forecast(self, count: int) -> List[Price]:
         prices_per_30 = 30 // 5
         needed_prices: int = count * prices_per_30
         five_minutes: timedelta = timedelta(minutes=5)
 
-        self.get_price()  # ensure at least one price cached
+        await self.get_price()  # ensure at least one price cached
         prices = self.prices
 
         # append any required forecasts
@@ -105,7 +105,7 @@ class DummyPowerPricer(PowerPricer):
 
         return [_average_price(prices[i:i + prices_per_30]) for i in range(0, needed_prices, prices_per_30)]
 
-    def close(self) -> None:
+    async def close(self) -> None:
         # nothing to do
         pass
 

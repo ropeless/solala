@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Dict, Literal, TypeAlias, Callable
 
+import httpx
 import requests
 
 from solala.power_pricer.power_pricer import PowerPricer, Price
@@ -26,6 +27,7 @@ class AmberPowerPricer(PowerPricer):
         self._nmi: str = nmi
         self._site: JSONDict = self._get_site()
         self._site_id: str = json_str(self._site['id'])
+        self._client = httpx.AsyncClient()
 
     @property
     def nmi(self) -> str:
@@ -42,18 +44,17 @@ class AmberPowerPricer(PowerPricer):
             'site': self._site_id,
         }
 
-    def close(self) -> None:
-        # nothing to do
-        pass
+    async def close(self) -> None:
+        await self._client.aclose()
 
-    def get_price(self) -> Price:
-        response = self._get(5, 0)
+    async def get_price(self) -> Price:
+        response = await self._get(5, 0)
         return _parse_response(response, _get_perKwh)[0]
 
-    def get_price_forecast(self, count: int) -> List[Price]:
+    async def get_price_forecast(self, count: int) -> List[Price]:
         if count < 1:
             raise ValueError('Count must be positive')
-        response = self._get(30, count - 1)
+        response = await self._get(30, count - 1)
         return _parse_response(response, _get_predicted)
 
     def _get_site(self) -> JSONDict:
@@ -73,7 +74,7 @@ class AmberPowerPricer(PowerPricer):
 
         raise ValueError(f'NMI not found in sites')
 
-    def _get(self, resolution: Literal[5, 30], forecasts: int) -> JSONDict:
+    async def _get(self, resolution: Literal[5, 30], forecasts: int) -> JSONDict:
         url = f'{API}/sites/{self._site_id}/prices/current'
         headers = {
             'accept': 'application/json',
@@ -84,7 +85,8 @@ class AmberPowerPricer(PowerPricer):
             'next': forecasts,
             'resolution': resolution,
         }
-        response = requests.get(url, headers=headers, params=params)
+
+        response = await self._client.get(url, headers=headers, params=params)
         if response.status_code != requests.codes.ok:
             raise IOError(f'error accessing Amber prices: {response}')
         return response.json()
