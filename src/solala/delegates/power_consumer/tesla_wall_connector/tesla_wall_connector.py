@@ -3,7 +3,7 @@ from typing import Tuple, List
 import httpx
 
 from solala.logger import LOGGER
-from solala.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
+from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.utils.json import JSONDict, json_dict, json_num
 
 NAME: str = 'Tesla Wall Charger'

@@ -5,7 +5,7 @@ from typing import List, Dict, Literal, TypeAlias, Callable
 import httpx
 import requests
 
-from solala.power_pricer.power_pricer import PowerPricer, Price
+from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
 from solala.utils.json import JSONDict, json_str, json_num, json_bool, json_dict
 
 API = 'https://api.amber.com.au/v1'

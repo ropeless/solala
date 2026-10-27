@@ -1,10 +1,10 @@
 from contextlib import contextmanager
 from typing import Iterable, List, Tuple, Sequence, Optional, Dict
 
+from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
+from solala.delegates.power_controller.modbus_power_controller.register_access import ModbusError
+from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 from solala.logger import LOGGER
-from solala.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
-from solala.power_controller.modbus_power_controller.register_access import ModbusError
-from solala.power_controller.power_controller import PowerController, PowerStatus
 from solala.utils.json import JSONDict
 
 
@@ -60,9 +60,11 @@ class ModbusPowerController(PowerController):
         self._solar_power: List[str] = [f'{inverter}/module/{i}/DCW' for inverter in self._inverters for i in [1, 2]]
         self._grid_power: str = f'{meter}/W'
         self._inverter_power: List[str] = [f'{inverter}/W' for inverter in self._inverters]
+
         self._WMaxLim_Ena: str = f'{master}/WMaxLim_Ena'
         self._WMaxLimPct: str = f'{master}/WMaxLimPct'
         self._WMaxLimPct_RvrtTms: str = f'{master}/WMaxLimPct_RvrtTms'
+
         self._InWRte: str = f'{master}/InWRte'
         self._OutWRte: str = f'{master}/OutWRte'
         self._StorCtl_Mod: str = f'{master}/StorCtl_Mod'

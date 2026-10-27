@@ -1,7 +1,7 @@
 from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text, TSpan
 
 from solala.constants import Constants
-from solala.units import WATTS, KILOWATTS, PERCENT, PRICE_DOLLARS, PRICE_CENTS
+from solala.constants import WATTS, KILOWATTS, PERCENT, PRICE_DOLLARS, PRICE_CENTS
 from solala.utils.json import JSONDict, json_dict, json_num, json_bool
 
 CLICK_ID_SUN = 'click_sun'

@@ -4,7 +4,7 @@ from typing import Sequence, List, Dict
 
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
-from solala.power_pricer.power_pricer import Price
+from solala.delegates.power_pricer.power_pricer import Price
 from solala.utils.json import JSONDict, json_dict
 
 

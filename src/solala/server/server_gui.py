@@ -14,14 +14,14 @@ from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.logger import LOGGER
-from solala.power_pricer.power_pricer import Price
+from solala.delegates.power_pricer.power_pricer import Price
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
-from solala.units import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, DEGREES, \
+from solala.delegates.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
+from solala.constants import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, DEGREES, \
     KILOWATT_HOURS, CELSIUS, KILOWATTS
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
@@ -182,8 +182,8 @@ class InverterButtonUpdater(StatusListener):
             button.style('padding-top: 1px; padding-bottom: 1px;')
             button.classes('py-0 px-2 text-xs')
 
-    def _click(self, mode: Optional[InverterMode], policy: InverterPolicy) -> None:
-        control_loop.set_control(
+    async def _click(self, mode: Optional[InverterMode], policy: InverterPolicy) -> None:
+        await control_loop.set_control(
             inverter_mode=mode,
             inverter_policy=policy,
         )
@@ -261,8 +261,8 @@ class BatteryButtonUpdater(StatusListener):
             button.style('padding-top: 1px; padding-bottom: 1px;')
             button.classes('py-0 px-2 text-xs')
 
-    def _click(self, mode: Optional[BatteryMode], policy: BatteryPolicy) -> None:
-        control_loop.set_control(
+    async def _click(self, mode: Optional[BatteryMode], policy: BatteryPolicy) -> None:
+        await control_loop.set_control(
             battery_mode=mode,
             battery_policy=policy,
         )

@@ -1,7 +1,7 @@
 from datetime import date
 
 import local_config as config
-from solala.solar_forecaster.open_meteo_forecaster.open_meteo_forecaster import OpenMeteoForecaster
+from solala.delegates.solar_forecaster import OpenMeteoForecaster
 
 
 def main():

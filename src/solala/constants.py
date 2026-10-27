@@ -7,6 +7,21 @@ TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timesta
 GUI_DATE_FORMAT = '%a, %d %b %Y'
 GUI_TIME_FORMAT = '%H:%M'
 
+# Units for pretty printing status
+PRICE_CENTS = ' ¢/kWh'
+PRICE_DOLLARS = ' $/kWh'
+VOLTS = ' V'
+AMPS = ' A'
+WATTS = ' W'
+KILOWATTS = ' kW'
+WATT_HOURS = ' Wh'
+KILOWATT_HOURS = ' kWh'
+SECONDS = ' seconds'
+MINUTES = ' minutes'
+HOURS = ' hours'
+PERCENT = '%'
+DEGREES = '°'
+CELSIUS = '°C'
 
 DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.1  # disable export below this price
 DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD: float = 0.1  # re-enable export above this price

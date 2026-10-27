@@ -1,6 +1,6 @@
 from typing import Iterable, Tuple, Dict
 
-from solala.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
+from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 
 
 class DummyPowerConsumer(PowerConsumer):

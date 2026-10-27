@@ -2,11 +2,11 @@ import asyncio
 import copy
 import json
 import threading
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, UTC, timedelta, date
 from pathlib import Path
-from typing import Optional, List, Dict, Sequence, Iterable, Iterator
+from typing import Optional, List, Dict, Sequence, Iterable, AsyncIterator
 
 from pymodbus.client import ModbusTcpClient
 
@@ -14,26 +14,26 @@ from solala.constants import Constants, TIMESTAMP_FORMAT
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
+from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
+from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
+from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
+from solala.delegates.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
+from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
+from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
+from solala.delegates.power_controller.power_controller import PowerController
+from solala.delegates.power_controller.power_controller import PowerStatus
+from solala.delegates.power_pricer.amber_power_pricer.amber_power_pricer import Price, AmberPowerPricer
+from solala.delegates.power_pricer.dummy_power_pricer.dummy_power_pricer import DummyPowerPricer
+from solala.delegates.power_pricer.power_pricer import PowerPricer
+from solala.delegates.solar_forecaster.dummy_solar_forecaster.dummy_solar_forecaster import DummySolarForecaster
+from solala.delegates.solar_forecaster.open_meteo_forecaster.open_meteo_forecaster import OpenMeteoForecaster
+from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast
 from solala.logger import LOGGER
-from solala.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
-from solala.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
-from solala.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
-from solala.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
-from solala.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
-from solala.power_controller.modbus_power_controller.modbus_power_controller import PowerController, \
-    ModbusPowerController
-from solala.power_controller.power_controller import PowerStatus
-from solala.power_pricer.amber_power_pricer.amber_power_pricer import Price, AmberPowerPricer
-from solala.power_pricer.dummy_power_pricer.dummy_power_pricer import DummyPowerPricer
-from solala.power_pricer.power_pricer import PowerPricer
 from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
     TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
     DummyControllerConnection, \
     DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
     DummySolarForecasterConnection
-from solala.solar_forecaster.dummy_solar_forecaster.dummy_solar_forecaster import DummySolarForecaster
-from solala.solar_forecaster.open_meteo_forecaster.open_meteo_forecaster import OpenMeteoForecaster
-from solala.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast
 from solala.utils.datetime_extras import now
 from solala.utils.json import JSONDict, json_num
 from solala.utils.network import find_ip_by_mac
@@ -92,6 +92,51 @@ class _PrevControl:
         self.inverter_policy = InverterPolicy.MANUAL
 
 
+class _ControlLock:
+    def __init__(self) -> None:
+        self._rlock = threading.RLock()
+        self._alock = asyncio.Lock()
+        self._owner = None
+        self._count = 0
+
+    async def acquire(self):
+        self._rlock.acquire()
+
+        me = asyncio.current_task()
+
+        # If the current task already owns the lock, just increment the counter
+        if self._owner is me:
+            self._count += 1
+            return True
+
+        # Otherwise, wait to acquire the underlying lock
+        await self._alock.acquire()
+        self._owner = me
+        self._count = 1
+        return True
+
+    def release(self):
+        me = asyncio.current_task()
+
+        if self._owner is not me:
+            raise RuntimeError('Cannot release a lock you do not own')
+
+        self._count -= 1
+        if self._count == 0:
+            self._owner = None
+            self._alock.release()
+
+        self._rlock.release()
+
+    async def __aenter__(self):
+        await self.acquire()
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        self.release()
+        return exc_type is None
+
+
 @dataclass
 class _ControlState:
     # These are the work objects for accessing the solar power system
@@ -124,7 +169,7 @@ class _ControlState:
     next_solar_forecast_check: datetime = _MIN_DATE
 
     # Internal control loop tracking variables
-    lock: threading.RLock = field(default_factory=threading.RLock)
+    lock: _ControlLock = field(default_factory=_ControlLock)
     prev_state: _PrevControl = field(default_factory=_PrevControl)
     control_loop_running: bool = True
     listeners: List[LoopListener] = field(default_factory=list)
@@ -189,18 +234,14 @@ class _ControlState:
 
         self.next_solar_forecast_check = _MIN_DATE
 
-    def force_price_check(self) -> None:
-        self.next_price_check = _MIN_DATE
-        self.next_price_forecast_check = _MIN_DATE
-
 
 # Global control loop state
 # For thread-safe access to the control state use `_control_state()`.
 _CONTROL_STATE: _ControlState = _ControlState()
 
 
-@contextmanager
-def _control_state() -> Iterator[_ControlState]:
+@asynccontextmanager
+async def _control_state() -> AsyncIterator[_ControlState]:
     """
     Get exclusive access to the control state.
 
@@ -208,14 +249,14 @@ def _control_state() -> Iterator[_ControlState]:
 
     Usage:
     ```
-    with _control_state() as state:
+    async with _control_state() as state:
         # read and write to state.
     ```
 
     Returns:
         The control state.
     """
-    with _CONTROL_STATE.lock:
+    async with _CONTROL_STATE.lock:
         yield _CONTROL_STATE
 
 
@@ -257,7 +298,7 @@ async def control_loop(
 
     # Execute the main loop
     while _CONTROL_STATE.control_loop_running:
-        with _control_state() as state:
+        async with _control_state() as state:
             state.iteration_start = now()  # timestamp to calculate loop sleep time
             await _control_step(state)
             listeners = state.listeners.copy()
@@ -339,12 +380,12 @@ async def configure_from_settings(settings: Settings) -> None:
 
 
 async def get_settings() -> Settings:
-    with _control_state() as state:
+    async with _control_state() as state:
         return _get_settings(state)
 
 
 async def add_listener(listener: LoopListener) -> None:
-    with _control_state() as state:
+    async with _control_state() as state:
         try:
             state.listeners.remove(listener)
         except ValueError:
@@ -353,7 +394,7 @@ async def add_listener(listener: LoopListener) -> None:
 
 
 async def remove_listener(listener: LoopListener) -> None:
-    with _control_state() as state:
+    async with _control_state() as state:
         try:
             state.listeners.remove(listener)
         except ValueError:
@@ -364,7 +405,7 @@ async def update_listeners() -> None:
     """
     Call `update` on all registered control loop listeners.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         listeners = state.listeners.copy()
     # Update the listeners while not holding the control state lock.
     _update_listeners(listeners)
@@ -374,12 +415,12 @@ async def get_control_mode() -> ControlMode:
     """
     Get what the control loop is aiming to do for the user.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         return copy.copy(state.control_mode)
 
 
 async def get_power_status() -> PowerStatus:
-    with _control_state() as state:
+    async with _control_state() as state:
         if not state.last_power_valid:
             controller: Optional[PowerController] = state.controller
             if controller is None:
@@ -394,7 +435,7 @@ async def get_registers() -> Dict[str, int | float | str | bool]:
     """
     Get the values of all registers of the power controller.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         if state.controller is None:
             LOGGER.error(f'{_LOG_SRC}Power registers not available. Error: power controller not connected')
             return {}
@@ -409,7 +450,7 @@ async def get_price_now() -> Price:
     """
     Get the current price from the power pricer.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         price: Price = state.last_price
         pricer = state.pricer
         if pricer is None:
@@ -429,9 +470,10 @@ async def get_price_now() -> Price:
                     LOGGER.info(f'{_LOG_SRC}Current price is an estimate, recheck is scheduled')
                 else:
                     # price is stable - no need to recheck for this period
-                    state.next_price_check = price.end_time
+                    state.next_price_check = price.end_time.astimezone(UTC)
             except Exception as err:
                 LOGGER.error(f'{_LOG_SRC}Price update not available. Error: {err}')
+
     return price
 
 
@@ -445,7 +487,7 @@ async def get_price_forecast() -> Sequence[Price]:
 
     Errors will be logged but should not raise an exception.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         pricer = state.pricer
         if pricer is None:
             LOGGER.error(f'{_LOG_SRC}Price forecast not available. Error: power pricer not connected')
@@ -474,7 +516,7 @@ async def get_price_forecast() -> Sequence[Price]:
 
 
 async def get_consumers_status() -> Dict[str, ConsumerStatus]:
-    with _control_state() as state:
+    async with _control_state() as state:
         names = state.consumers.keys()
         statuses = await asyncio.gather(*[
             state.consumers[name].get_status()
@@ -484,7 +526,7 @@ async def get_consumers_status() -> Dict[str, ConsumerStatus]:
 
 
 async def get_connection_status() -> JSONDict:
-    with _control_state() as state:
+    async with _control_state() as state:
         result = {
             'controller': state.controller_connection_status,
             'pricer': state.pricer_connection_status,
@@ -530,7 +572,7 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
     """
     Get the forecast solar power.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         forecaster = state.forecaster
         if forecaster is None:
             LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: solar forecaster not connected')
@@ -571,7 +613,7 @@ async def set_control(
     """
     Set the control loop modes and policies.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         control_mode = state.control_mode
 
         if disable_export_price_threshold is None:
@@ -603,7 +645,6 @@ async def set_control(
         control_mode.stop_charge_price_threshold = stop_charge_price_threshold
 
         await _save_settings()
-        state.force_price_check()
         LOGGER.info(f'{_LOG_SRC}Control: {json.dumps(state.control_mode.to_json())}')
 
 
@@ -612,7 +653,7 @@ async def set_control(
 # =============================================================================
 
 async def connect_controller(controller_connection: ControllerConnection) -> None:
-    with _control_state() as state:
+    async with _control_state() as state:
         controller: PowerController
 
         if controller_connection.type == DummyControllerConnection.TYPE:
@@ -638,7 +679,7 @@ async def disconnect_controller() -> None:
     """
     Close the power controller connection.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         if state.controller is not None:
             await state.controller.close()
             state.reset_controller(None, None)
@@ -647,7 +688,7 @@ async def disconnect_controller() -> None:
 
 
 async def connect_pricer(pricer_connection: PricerConnection) -> None:
-    with _control_state() as state:
+    async with _control_state() as state:
         pricer: PowerPricer
 
         if pricer_connection.type == DummyPricerConnection.TYPE:
@@ -671,7 +712,7 @@ async def disconnect_pricer() -> None:
     """
     Close the power pricer connection.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         if state.pricer is not None:
             await state.pricer.close()
             state.reset_pricer(None, None)
@@ -680,7 +721,7 @@ async def disconnect_pricer() -> None:
 
 
 async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> None:
-    with _control_state() as state:
+    async with _control_state() as state:
         consumer: PowerConsumer
 
         if consumer_connection.type == DummyConsumerConnection.TYPE:
@@ -708,7 +749,7 @@ async def disconnect_consumer(name: str) -> None:
     """
     Close a power consumer connection.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         consumer: Optional[PowerConsumer] = state.consumers.get(name)
         if consumer is not None:
             await consumer.close()
@@ -720,7 +761,7 @@ async def disconnect_consumer(name: str) -> None:
 
 
 async def connect_forecaster(forecaster_connection: ForecasterConnection) -> None:
-    with _control_state() as state:
+    async with _control_state() as state:
         forecaster: SolarForecaster
 
         if forecaster_connection.type == DummySolarForecasterConnection.TYPE:
@@ -746,7 +787,7 @@ async def disconnect_forecaster() -> None:
     """
     Close the power pricer connection.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         if state.forecaster is not None:
             await state.forecaster.close()
             state.reset_forecaster(None, None)
@@ -1089,7 +1130,7 @@ async def _save_settings() -> None:
     This is called when the user settings are changed. We persist the settings
     so that they are available across restarts.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         settings_path = state.settings_path
         if settings_path is not None:
             try:
@@ -1107,7 +1148,7 @@ async def _load_settings() -> bool:
     Returns:
         True if settings were loaded successfully, False otherwise.
     """
-    with _control_state() as state:
+    async with _control_state() as state:
         settings_path = state.settings_path
         if settings_path is not None:
             try:

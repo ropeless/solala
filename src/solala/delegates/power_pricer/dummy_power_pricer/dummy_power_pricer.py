@@ -2,7 +2,7 @@ import random
 from datetime import datetime, UTC, timedelta
 from typing import List, Optional, Dict
 
-from solala.power_pricer.power_pricer import PowerPricer, Price
+from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
 
 
 class DummyPowerPricer(PowerPricer):

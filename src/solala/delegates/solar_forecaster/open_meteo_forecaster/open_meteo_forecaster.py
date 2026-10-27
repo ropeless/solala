@@ -4,7 +4,7 @@ from typing import List
 import httpx
 
 from solala.settings import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_TEMPERATURE_COEFFICIENT
-from solala.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast, DailySolarForecast, WeatherCode
+from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast, DailySolarForecast, WeatherCode
 from solala.utils.datetime_extras import ensure_date
 from solala.utils.json import JSONDict
 

@@ -2,7 +2,7 @@ import random
 from datetime import datetime, timedelta, date
 from typing import List
 
-from solala.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast, SolarForecast, WeatherCode
+from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast, SolarForecast, WeatherCode
 from solala.utils.datetime_extras import ensure_date, date_to_datetime
 from solala.utils.json import JSONDict
 

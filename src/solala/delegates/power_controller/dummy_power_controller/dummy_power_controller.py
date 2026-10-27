@@ -1,7 +1,7 @@
 from enum import Enum, auto
 from typing import Iterable, Tuple, Dict
 
-from solala.power_controller.power_controller import PowerController, PowerStatus
+from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 
 
 class BatteryMode(Enum):
