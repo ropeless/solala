@@ -5,7 +5,6 @@ import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, UTC, timedelta, date
-from functools import partial
 from pathlib import Path
 from typing import Optional, List, Dict, Sequence, Iterable, Iterator
 
@@ -36,13 +35,21 @@ from solala.solar_forecaster.dummy_solar_forecaster.dummy_solar_forecaster impor
 from solala.solar_forecaster.open_meteo_forecaster.open_meteo_forecaster import OpenMeteoForecaster
 from solala.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast
 from solala.utils.datetime_extras import now
-from solala.utils.json import JSONDict, json_num, json_dict
+from solala.utils.json import JSONDict, json_num
 from solala.utils.network import find_ip_by_mac
 from solala.utils.string_extras import split_addresses
 
 _LOG_SRC = '[control loop] '  # prefix for log messages
 
 _MIN_DATE = datetime.min.replace(tzinfo=UTC)
+_NO_POWER = PowerStatus(
+    state_of_charge=0,
+    power_limit=0,
+    grid_power=0,
+    solar_power=0,
+    battery_power=0,
+    house_power=0,
+)
 _NO_PRICE = Price(
     start_time=_MIN_DATE,
     end_time=_MIN_DATE,
@@ -104,13 +111,13 @@ class _ControlState:
 
     # Caches of status components
 
-    last_status: JSONDict = field(default_factory=dict)
-    last_status_valid: bool = False
+    last_power: PowerStatus = field(default_factory=lambda: _NO_POWER)
+    last_power_valid: bool = False
 
     last_price: Price = _NO_PRICE
     next_price_check: datetime = _MIN_DATE
 
-    last_price_forecast: List[Price] = field(default_factory=list)
+    last_price_forecast: Sequence[Price] = ()
     next_price_forecast_check: datetime = _MIN_DATE
 
     last_solar_forecast: Dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
@@ -152,27 +159,34 @@ class _ControlState:
         else:
             return self.forecaster.get_connection_status()
 
-    def reset_controller(self, controller: Optional[PowerController]) -> None:
+    def reset_controller(self, controller: Optional[PowerController], settings: Optional[ControllerConnection]) -> None:
         self.controller = controller
+        self.controller_settings = settings
+
         self.control_mode.battery_mode = BatteryMode.UNKNOWN
         self.control_mode.inverter_mode = InverterMode.UNKNOWN
         self.control_mode.inverter_policy = InverterPolicy.MANUAL
 
+        self.last_power = _NO_POWER
+        self.last_power_valid = False
         self.last_price: Price = _NO_PRICE
         self.next_price_check = _MIN_DATE
-        self.last_price_forecast: List[Price] = []
+        self.last_price_forecast = ()
         self.next_price_forecast_check = _MIN_DATE
 
-    def reset_pricer(self, pricer: Optional[PowerPricer]) -> None:
+    def reset_pricer(self, pricer: Optional[PowerPricer], settings: Optional[PricerConnection]) -> None:
         self.pricer = pricer
+        self.pricer_settings = settings
 
         self.last_price: Price = _NO_PRICE
         self.next_price_check = _MIN_DATE
-        self.last_price_forecast: List[Price] = []
+        self.last_price_forecast = ()
         self.next_price_forecast_check = _MIN_DATE
 
-    def reset_forecaster(self, forecaster: Optional[SolarForecaster]) -> None:
+    def reset_forecaster(self, forecaster: Optional[SolarForecaster], settings: Optional[ForecasterConnection]) -> None:
         self.forecaster = forecaster
+        self.forecaster_settings = settings
+
         self.next_solar_forecast_check = _MIN_DATE
 
     def force_price_check(self) -> None:
@@ -247,7 +261,7 @@ async def control_loop(
             state.iteration_start = now()  # timestamp to calculate loop sleep time
             await _control_step(state)
             listeners = state.listeners.copy()
-            state.last_status_valid = False
+            state.last_power_valid = False
 
         # Update the listeners while not holding the control state lock.
         _update_listeners(listeners)
@@ -312,7 +326,7 @@ async def configure_from_settings(settings: Settings) -> None:
         await connect_forecaster(settings.forecaster)
 
     # Initialise control modes
-    result: JSONDict = await set_control(
+    await set_control(
         battery_mode=settings.battery_mode,
         inverter_mode=settings.inverter_mode,
         battery_policy=settings.battery_policy,
@@ -322,7 +336,6 @@ async def configure_from_settings(settings: Settings) -> None:
         start_charge_price_threshold=settings.start_charge_price_threshold,
         stop_charge_price_threshold=settings.stop_charge_price_threshold,
     )
-    LOGGER.info(f'{_LOG_SRC}Control: {json.dumps(result)}')
 
 
 async def get_settings() -> Settings:
@@ -357,73 +370,6 @@ async def update_listeners() -> None:
     _update_listeners(listeners)
 
 
-async def get_control_status() -> JSONDict:
-    with _control_state() as state:
-        return state.control_mode.to_json()
-
-
-async def get_price_status() -> JSONDict:
-    with _control_state() as state:
-        if state.pricer is None:
-            return _DISCONNECTED
-        try:
-            cur_price: Price = await get_price_now()
-            result = cur_price.to_json(TIMESTAMP_FORMAT, include_time=False)
-            return result
-        except Exception as err:
-            return {'error': str(err)}
-
-
-async def get_power_status() -> JSONDict:
-    with _control_state() as state:
-        if state.controller is None:
-            return _DISCONNECTED
-        try:
-            power_status: PowerStatus = await state.controller.get_status()
-            solar_forecast: DailySolarForecast = await get_solar_forecast(date.today())
-
-            result: JSONDict = power_status.to_json()
-            if state.forecaster is not None:
-                result['forecast_generation'] = solar_forecast.total_forecast_energy() / 1000
-            return result
-        except Exception as err:
-            return {'error': str(err)}
-
-
-async def get_consumers_status() -> JSONDict:
-    with _control_state() as state:
-        result: Dict[str, JSONDict] = {}
-        name: str
-        power_consumer: PowerConsumer
-        for name, power_consumer in state.consumers.items():
-            try:
-                consumer_status: ConsumerStatus = await power_consumer.get_status()
-                result[name] = consumer_status.to_json()
-            except Exception as err:
-                result[name] = {'error': str(err)}
-    return result
-
-
-async def get_connection_status() -> JSONDict:
-    with _control_state() as state:
-        result = {
-            'controller': state.controller_connection_status,
-            'pricer': state.pricer_connection_status,
-            'forecaster': state.forecaster_connection_status,
-        }
-        if len(state.consumers) > 0:
-            result['consumers'] = state.consumers_connection_status
-        return result
-
-
-async def get_status() -> JSONDict:
-    with _control_state() as state:
-        if not state.last_status_valid:
-            state.last_status = await _get_status()
-            state.last_status_valid = True
-        return state.last_status
-
-
 async def get_control_mode() -> ControlMode:
     """
     Get what the control loop is aiming to do for the user.
@@ -432,61 +378,31 @@ async def get_control_mode() -> ControlMode:
         return copy.copy(state.control_mode)
 
 
+async def get_power_status() -> PowerStatus:
+    with _control_state() as state:
+        if not state.last_power_valid:
+            controller: Optional[PowerController] = state.controller
+            if controller is None:
+                LOGGER.error(f'{_LOG_SRC}Power update not available. Error: power controller not connected')
+            else:
+                state.last_power = await controller.get_status()
+            state.last_power_valid = True
+        return state.last_power
+
+
 async def get_registers() -> Dict[str, int | float | str | bool]:
     """
     Get the values of all registers of the power controller.
-
-    Raises:
-        ControlLoopError: if a power controller is not connected
     """
     with _control_state() as state:
         if state.controller is None:
-            raise ControlLoopError('power controller not connected')
+            LOGGER.error(f'{_LOG_SRC}Power registers not available. Error: power controller not connected')
+            return {}
         else:
             return {
                 register: value
                 for register, value in await state.controller.get_registers()
             }
-
-
-async def get_cached_solar_forecast(day: date) -> Optional[DailySolarForecast]:
-    """
-    Get the forecast solar power, but only if already cached.
-    """
-    with _control_state() as state:
-        if state.next_price_forecast_check <= now():
-            return None
-        key = _DateKey(day.year, day.month, day.day)
-        return state.last_solar_forecast.get(key)
-
-
-async def get_solar_forecast(day: date) -> DailySolarForecast:
-    """
-    Get the forecast solar power.
-    """
-    with _control_state() as state:
-        forecaster = state.forecaster
-        if forecaster is None:
-            LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: solar forecaster not connected')
-            return _NO_SOLAR_FORECAST
-
-        # Clear stale forecasts
-        timestamp = now()
-        if state.next_price_forecast_check <= timestamp:
-            state.last_solar_forecast.clear()
-            state.next_price_forecast_check = timestamp + timedelta(minutes=Constants.SOLAR_FORECAST_AGE)
-
-        key = _DateKey(day.year, day.month, day.day)
-        forecast: Optional[DailySolarForecast] = state.last_solar_forecast.get(key)
-        if forecast is None:
-            try:
-                forecast: DailySolarForecast = await forecaster.get_forecast(day)
-                LOGGER.info(f'{_LOG_SRC}Updating solar forecast: day = {key}')
-                state.last_solar_forecast[key] = forecast
-            except Exception as err:
-                LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: {err}')
-                return _NO_SOLAR_FORECAST
-    return forecast
 
 
 async def get_price_now() -> Price:
@@ -535,7 +451,7 @@ async def get_price_forecast() -> Sequence[Price]:
             LOGGER.error(f'{_LOG_SRC}Price forecast not available. Error: power pricer not connected')
             return ()
 
-        prices: List[Price] = state.last_price_forecast
+        prices: Sequence[Price] = state.last_price_forecast
         needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
         timestamp = now()
         if state.next_price_forecast_check <= timestamp or len(prices) == 0 or prices[0].end_time < timestamp:
@@ -552,9 +468,102 @@ async def get_price_forecast() -> Sequence[Price]:
         # Don't bother to update `next_price_forecast_check` as it is no more than 5 minutes in the future.
         while len(prices) > 0 and prices[0].end_time < timestamp:
             LOGGER.info(f'{_LOG_SRC}Price forecast contains old data: {prices[0]}')
-            prices.pop(0)
+            prices = prices[1:]
 
     return prices[:needed_forecasts]
+
+
+async def get_consumers_status() -> Dict[str, ConsumerStatus]:
+    with _control_state() as state:
+        names = state.consumers.keys()
+        statuses = await asyncio.gather(*[
+            state.consumers[name].get_status()
+            for name in names
+        ])
+    return {name: status for name, status in zip(names, statuses)}
+
+
+async def get_connection_status() -> JSONDict:
+    with _control_state() as state:
+        result = {
+            'controller': state.controller_connection_status,
+            'pricer': state.pricer_connection_status,
+            'forecaster': state.forecaster_connection_status,
+        }
+        if len(state.consumers) > 0:
+            result['consumers'] = state.consumers_connection_status
+        return result
+
+
+async def get_status() -> JSONDict:
+    """
+    Take a snapshot of the current status.
+    """
+    control_mode: ControlMode
+    power_status: PowerStatus
+    price: Price
+    consumers_status: Dict[str, ConsumerStatus]
+
+    control_mode, power_status, price, consumers_status = await asyncio.gather(
+        get_control_mode(),
+        get_power_status(),
+        get_price_now(),
+        get_consumers_status(),
+    )
+
+    result: JSONDict = {
+        'control': control_mode.to_json(),
+        'power': power_status.to_json(),
+        'price': price.to_json(datetime_format=TIMESTAMP_FORMAT, include_time=False),
+    }
+    if len(consumers_status) > 0:
+        result['consumers'] = consumers_status
+        total = sum(json_num(consumer.power) for consumer in consumers_status.values())
+        if total > 0:
+            house_power = power_status.house_power
+            result['consumers_total'] = total
+            result['consumers_remaining'] = house_power - total
+    return result
+
+
+async def get_cached_solar_forecast(day: date) -> Optional[DailySolarForecast]:
+    """
+    Get the forecast solar power, but only if already cached.
+    """
+    with _control_state() as state:
+        if state.next_price_forecast_check <= now():
+            return None
+        key = _DateKey(day.year, day.month, day.day)
+        return state.last_solar_forecast.get(key)
+
+
+async def get_solar_forecast(day: date) -> DailySolarForecast:
+    """
+    Get the forecast solar power.
+    """
+    with _control_state() as state:
+        forecaster = state.forecaster
+        if forecaster is None:
+            LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: solar forecaster not connected')
+            return _NO_SOLAR_FORECAST
+
+        # Clear stale forecasts
+        timestamp = now()
+        if state.next_price_forecast_check <= timestamp:
+            state.last_solar_forecast.clear()
+            state.next_price_forecast_check = timestamp + timedelta(minutes=Constants.SOLAR_FORECAST_AGE)
+
+        key = _DateKey(day.year, day.month, day.day)
+        forecast: Optional[DailySolarForecast] = state.last_solar_forecast.get(key)
+        if forecast is None:
+            try:
+                forecast: DailySolarForecast = await forecaster.get_forecast(day)
+                LOGGER.info(f'{_LOG_SRC}Updating solar forecast: day = {key}')
+                state.last_solar_forecast[key] = forecast
+            except Exception as err:
+                LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: {err}')
+                return _NO_SOLAR_FORECAST
+    return forecast
 
 
 async def set_control(
@@ -569,7 +578,7 @@ async def set_control(
         # CHEAP_CHARGE parameters
         start_charge_price_threshold: Optional[float] = None,
         stop_charge_price_threshold: Optional[float] = None,
-) -> JSONDict:
+) -> None:
     """
     Set the control loop modes and policies.
     """
@@ -606,14 +615,14 @@ async def set_control(
 
         await _save_settings()
         state.force_price_check()
-        return await get_control_status()
+        LOGGER.info(f'{_LOG_SRC}Control: {json.dumps(state.control_mode.to_json())}')
 
 
 # =============================================================================
 #  Connection management for power control and price
 # =============================================================================
 
-async def connect_controller(controller_connection: ControllerConnection) -> JSONDict:
+async def connect_controller(controller_connection: ControllerConnection) -> None:
     with _control_state() as state:
         controller: PowerController
 
@@ -631,27 +640,24 @@ async def connect_controller(controller_connection: ControllerConnection) -> JSO
 
         await disconnect_controller()
         connection_status = controller.get_connection_status()
-        state.reset_controller(controller)
-        state.controller_settings = controller_connection
-        await _save_settings()
+        state.reset_controller(controller, controller_connection)
         LOGGER.info(f'{_LOG_SRC}Power controller connection: {json.dumps(connection_status)}')
-        return connection_status
+        await _save_settings()
 
 
-async def disconnect_controller() -> JSONDict:
+async def disconnect_controller() -> None:
     """
     Close the power controller connection.
     """
     with _control_state() as state:
         if state.controller is not None:
             await state.controller.close()
-            state.reset_controller(None)
-        state.controller_settings = None
+            state.reset_controller(None, None)
+            LOGGER.info(f'{_LOG_SRC}Power controller disconnected')
         await _save_settings()
-        return state.controller_connection_status
 
 
-async def connect_pricer(pricer_connection: PricerConnection) -> JSONDict:
+async def connect_pricer(pricer_connection: PricerConnection) -> None:
     with _control_state() as state:
         pricer: PowerPricer
 
@@ -663,34 +669,28 @@ async def connect_pricer(pricer_connection: PricerConnection) -> JSONDict:
             pricer = _connect_amber(pricer_connection)
 
         else:
-            raise ControlLoopError(
-                'unknown pricer connection type',
-                errors={'type': pricer_connection.type}
-            )
+            raise ControlLoopError('unknown pricer connection type', errors={'type': pricer_connection.type})
 
         await disconnect_pricer()
         connection_status = pricer.get_connection_status()
-        state.reset_pricer(pricer)
-        state.pricer_settings = pricer_connection
-        await _save_settings()
+        state.reset_pricer(pricer, pricer_connection)
         LOGGER.info(f'{_LOG_SRC}Power pricer connection: {json.dumps(connection_status)}')
-        return connection_status
+        await _save_settings()
 
 
-async def disconnect_pricer() -> JSONDict:
+async def disconnect_pricer() -> None:
     """
     Close the power pricer connection.
     """
     with _control_state() as state:
         if state.pricer is not None:
             await state.pricer.close()
-            state.reset_pricer(None)
-        state.pricer_settings = None
+            state.reset_pricer(None, None)
+            LOGGER.info(f'{_LOG_SRC}Pricer disconnected')
         await _save_settings()
-        return state.pricer_connection_status
 
 
-async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> JSONDict:
+async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> None:
     with _control_state() as state:
         consumer: PowerConsumer
 
@@ -711,12 +711,11 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
         state.consumers[name] = consumer
         state.consumers_settings[name] = consumer_connection
         state.consumers_connection_status[name] = connection_status
+        LOGGER.info(f'{_LOG_SRC}Power consumer {name!r} connection: {json.dumps(connection_status)}')
         await _save_settings()
-        LOGGER.info(f'{_LOG_SRC}Power consumer connection {name!r}: {json.dumps(connection_status)}')
-        return connection_status
 
 
-async def disconnect_consumer(name: str) -> JSONDict:
+async def disconnect_consumer(name: str) -> None:
     """
     Close a power consumer connection.
     """
@@ -724,14 +723,14 @@ async def disconnect_consumer(name: str) -> JSONDict:
         consumer: Optional[PowerConsumer] = state.consumers.get(name)
         if consumer is not None:
             await consumer.close()
-        state.consumers.pop(name, None)
-        state.consumers_settings.pop(name, None)
-        state.consumers_connection_status.pop(name, None)
+            state.consumers.pop(name, None)
+            state.consumers_settings.pop(name, None)
+            state.consumers_connection_status.pop(name, None)
+            LOGGER.info(f'{_LOG_SRC}Power consumer {name!r} disconnected')
         await _save_settings()
-        return {name: 'disconnected'}
 
 
-async def connect_forecaster(forecaster_connection: ForecasterConnection) -> JSONDict:
+async def connect_forecaster(forecaster_connection: ForecasterConnection) -> None:
     with _control_state() as state:
         forecaster: SolarForecaster
 
@@ -749,24 +748,21 @@ async def connect_forecaster(forecaster_connection: ForecasterConnection) -> JSO
 
         await disconnect_forecaster()
         connection_status = forecaster.get_connection_status()
-        state.reset_forecaster(forecaster)
-        state.forecaster_settings = forecaster_connection
-        await _save_settings()
+        state.reset_forecaster(forecaster, forecaster_connection)
         LOGGER.info(f'{_LOG_SRC}Solar forecaster connection: {json.dumps(connection_status)}')
-        return connection_status
+        await _save_settings()
 
 
-async def disconnect_forecaster() -> JSONDict:
+async def disconnect_forecaster() -> None:
     """
     Close the power pricer connection.
     """
     with _control_state() as state:
         if state.forecaster is not None:
             await state.forecaster.close()
-            state.reset_forecaster(None)
-        state.forecaster_settings = None
+            state.reset_forecaster(None, None)
+            LOGGER.info(f'{_LOG_SRC}Solar forecaster disconnected')
         await _save_settings()
-        return state.forecaster_connection_status
 
 
 # =============================================================================
@@ -1072,31 +1068,6 @@ def _update_listeners(listeners: Iterable[LoopListener]) -> None:
         # noinspection PyProtectedMember
         event_loop = listener._event_loop
         asyncio.run_coroutine_threadsafe(listener.update(), event_loop)
-
-
-async def _get_status() -> JSONDict:
-    """
-    Take a snapshot of the current status.
-    Assumes the control state lock is held.
-    """
-    control_status: JSONDict = await get_control_status()
-    price_status: JSONDict = await get_price_status()
-    power_status: JSONDict = await get_power_status()
-    consumers_status: JSONDict = await get_consumers_status()
-
-    result: JSONDict = {
-        'control': control_status,
-        'price': price_status,
-        'power': power_status,
-    }
-    if len(consumers_status) > 0:
-        result['consumers'] = consumers_status
-        total = sum(json_num(json_dict(consumer).get('power', 0)) for consumer in consumers_status.values())
-        if total > 0:
-            house_power = json_num(power_status['house_power'])
-            result['consumers_total'] = total
-            result['consumers_remaining'] = house_power - total
-    return result
 
 
 def _get_settings(state: _ControlState) -> Settings:

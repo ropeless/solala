@@ -405,21 +405,25 @@ class SolarForecastUpdater(SolarForecastListener):
     def __init__(self, element: ui.element, day: date):
         super().__init__(day)
         self._element = element
+        self._forecast: Optional[DailySolarForecast] = None
 
     async def set_day(self, day: date) -> None:
         self.day = day
         self._element.clear()
-        forecast: Optional[DailySolarForecast] = await control_loop.get_cached_solar_forecast(day)
-        if forecast is None:
-            with self._element:
-                ui.label('loading solar forecast...').classes('text-center italic')
-        else:
-            self._render(forecast)
+        with self._element:
+            ui.label('loading solar forecast...').classes('text-center italic')
+        solar_forecast: Optional[DailySolarForecast] = await control_loop.get_cached_solar_forecast(day)
+        self._forecast = solar_forecast
+        if solar_forecast is not None:
+            self._element.clear()
+            self._render(solar_forecast)
 
     def _update(self, solar_forecast: DailySolarForecast) -> None:
-        # Recreate the solar forecast table
-        self._element.clear()
-        self._render(solar_forecast)
+        # Recreate the solar forecast table if needed
+        if self._forecast is not solar_forecast:
+            self._element.clear()
+            self._forecast = solar_forecast
+            self._render(solar_forecast)
 
     def _render(self, solar_forecast: DailySolarForecast):
         with self._element:
@@ -944,7 +948,7 @@ async def parameters_page():
         render_json(constants_json, remove_key_underscores=False, units=_CONSTANTS_UNITS)
     )
 
-    policy_json: JSONDict = await control_loop.get_control_status()
+    policy_json: JSONDict = (await control_loop.get_control_mode()).to_json()
     policy.set_content(
         render_json(policy_json, units=_PARAMETERS_UNITS)
     )
