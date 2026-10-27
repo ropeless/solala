@@ -42,11 +42,7 @@ def run_server(
     favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
     ui.run_with(app, title=APP_NAME, favicon=favicon)
 
-    # Start the control loop in a separate thread.
-    coroutine = control_loop.control_loop(settings_path, settings, force_settings)
-    target = partial(asyncio.run, coroutine)
-    control_loop_thread = threading.Thread(target=target, daemon=True)
-    control_loop_thread.start()
+    control_loop_thread = start_control_loop_thread(settings_path, settings, force_settings)
 
     uvicorn.run(app, host=host, port=port, workers=1, log_level='info')
 
@@ -54,3 +50,40 @@ def run_server(
     control_loop.exit_control_loop()
     LOGGER.info('waiting for the control loop to terminate')
     control_loop_thread.join()
+
+
+def start_control_loop_thread(
+        settings_path: Optional[Path | str] = None,
+        settings: Optional[Settings] = None,
+        force_settings: bool = False,
+) -> threading.Thread:
+    """
+    Start the control loop in a separate thread.
+
+    The control loop needs to be in its own thread as it must continue to interact with the
+    inverters, even while the GUI is doing something else.
+
+    Multiple thread-safe functions are provided to manage the behaviour of the control loop.
+
+    Call `exit_control_loop()` to gracefully terminate the control loop, then join the thread
+    (returned by this function).
+
+    Args:
+        settings_path: Path to the settings file, if settings are to be persisted. If provided, the control
+            loop will attempt to load settings from the file.
+
+        settings: Settings object to use if the settings file cannot be loaded.
+
+        force_settings: If True, the given settings object will always override any settings loaded from the file.
+            Note that if settings are provided, they will override any settings loaded from the file. This includes
+            modes and policies if the power controller is reloaded.
+
+    Returns:
+        The control loop thread.
+    """
+    coroutine = control_loop.control_loop(settings_path, settings, force_settings)
+    target = partial(asyncio.run, coroutine)
+
+    control_loop_thread = threading.Thread(target=target, daemon=True)
+    control_loop_thread.start()
+    return control_loop_thread

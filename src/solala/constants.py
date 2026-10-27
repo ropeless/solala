@@ -36,8 +36,8 @@ class Constants:
     BUY_PRICE_AMBER = 20  # Buy price threshold for amber colour
     BUY_PRICE_RED = 40  # Buy price threshold for red colour
 
-    CONTROLS_ENABLED: bool = False  # Whether to present the control buttons or not
-    ANIMATE_WEATHER_ICONS: bool = False  # Whether to animate weather icons or not
+    CONTROLS_ENABLED: bool = True  # Whether to present the control buttons or not
+    ANIMATE_WEATHER_ICONS: bool = True  # Whether to animate weather icons or not
     INFOGRAPHIC_INCLUDE_RENEWABLES: bool = False  # Whether to show % renewables or not
 
     @staticmethod

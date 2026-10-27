@@ -526,17 +526,6 @@ async def get_status() -> JSONDict:
     return result
 
 
-async def get_cached_solar_forecast(day: date) -> Optional[DailySolarForecast]:
-    """
-    Get the forecast solar power, but only if already cached.
-    """
-    with _control_state() as state:
-        if state.next_price_forecast_check <= now():
-            return None
-        key = _DateKey(day.year, day.month, day.day)
-        return state.last_solar_forecast.get(key)
-
-
 async def get_solar_forecast(day: date) -> DailySolarForecast:
     """
     Get the forecast solar power.

@@ -129,7 +129,7 @@ class SolarForecastListener(LoopListener):
 
     def __init__(self, day: date):
         super().__init__()
-        self._prev = None
+        self.prev = None
         self.day: date = day
 
     @final
@@ -138,8 +138,8 @@ class SolarForecastListener(LoopListener):
         Thread safe update.
         """
         solar_forecast: DailySolarForecast = await control_loop.get_solar_forecast(self.day)
-        if self._prev is not solar_forecast:
-            self._prev = solar_forecast
+        if self.prev is not solar_forecast:
+            self.prev = solar_forecast
             self._update(solar_forecast)
 
     def _update(self, solar_forecast: DailySolarForecast) -> None:
@@ -405,27 +405,21 @@ class SolarForecastUpdater(SolarForecastListener):
     def __init__(self, element: ui.element, day: date):
         super().__init__(day)
         self._element = element
-        self._forecast: Optional[DailySolarForecast] = None
 
     async def set_day(self, day: date) -> None:
-        self.day = day
         self._element.clear()
         with self._element:
             ui.label('loading solar forecast...').classes('text-center italic')
-        solar_forecast: Optional[DailySolarForecast] = await control_loop.get_cached_solar_forecast(day)
-        self._forecast = solar_forecast
+        solar_forecast: Optional[DailySolarForecast] = await control_loop.get_solar_forecast(day)
+
+        self.day = day
+        self.prev = solar_forecast
         if solar_forecast is not None:
-            self._element.clear()
-            self._render(solar_forecast)
+            self._update(solar_forecast)
 
     def _update(self, solar_forecast: DailySolarForecast) -> None:
         # Recreate the solar forecast table if needed
-        if self._forecast is not solar_forecast:
-            self._element.clear()
-            self._forecast = solar_forecast
-            self._render(solar_forecast)
-
-    def _render(self, solar_forecast: DailySolarForecast):
+        self._element.clear()
         with self._element:
             forecasts = solar_forecast.forecasts
             if len(forecasts) == 0:
@@ -656,15 +650,23 @@ def _feed_in_price_class(price: float) -> str:
 def _update_loop_status(loop_status_light: Element, loop_status_label: Label) -> None:
     overdue: float = control_loop.loop_check_overdue()
     if overdue > Constants.LOOP_TIME:
-        loop_status_light.classes(replace='w-3 h-3 rounded-full bg-red-600')
-        loop_status_light.tooltip('The control loop appears to be stalled')
+        loop_status_light.classes(
+            replace='w-3 h-3 rounded-full bg-red-600'
+        )
+        loop_status_light.tooltip('Control loop appears to be stalled')
         loop_status_label.set_text('stalled')
-        loop_status_label.classes(replace='text-sm text-red-600')
+        loop_status_label.classes(
+            replace='text-sm text-red-600'
+        )
     elif overdue == 0:
-        loop_status_light.classes(replace='w-3 h-3 rounded-full bg-green-700')
-        loop_status_light.tooltip('The control loop appears to be active')
+        loop_status_light.classes(
+            replace='w-3 h-3 rounded-full bg-green-700'
+        )
+        loop_status_light.tooltip('Control loop appears to be active')
         loop_status_label.set_text('live')
-        loop_status_label.classes(replace='text-sm text-green-700')
+        loop_status_label.classes(
+            replace='text-sm text-green-700'
+        )
     else:
         # Leave it as it is
         pass
@@ -696,8 +698,12 @@ async def root_page():
 
                     # Control loop status light
                     with ui.row().classes('items-center gap-2'):
-                        loop_status_light = ui.element('div').classes('w-3 h-3 rounded-full')
-                        loop_status_label = ui.label().classes('text-sm')
+                        loop_status_light = ui.element('div').classes(
+                            'w-3 h-3 rounded-full bg-green-500'
+                        )
+                        loop_status_label = ui.label('active').classes(
+                            'text-sm text-green-600'
+                        )
 
                     _update_loop_status(loop_status_light, loop_status_label)
                     ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
