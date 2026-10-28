@@ -559,7 +559,10 @@ async def get_status() -> JSONDict:
         'price': price.to_json(datetime_format=TIMESTAMP_FORMAT, include_time=False),
     }
     if len(consumers_status) > 0:
-        result['consumers'] = consumers_status
+        result['consumers'] = {
+            consumer: status.to_json()
+            for consumer, status in consumers_status.items()
+        }
         total = sum(json_num(consumer.power) for consumer in consumers_status.values())
         if total > 0:
             house_power = power_status.house_power
