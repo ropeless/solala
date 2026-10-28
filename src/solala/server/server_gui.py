@@ -1,3 +1,4 @@
+import asyncio
 from abc import abstractmethod
 from datetime import date, timedelta
 from functools import partial
@@ -10,19 +11,19 @@ from nicegui.elements.label import Label
 from nicegui.elements.mixins.content_element import ContentElement
 
 from solala.constants import APP_NAME, APP_SUBTITLE, Constants, GUI_DATE_FORMAT, GUI_TIME_FORMAT
+from solala.constants import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, DEGREES, \
+    KILOWATT_HOURS, CELSIUS, KILOWATTS
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
-from solala.logger import LOGGER
 from solala.delegates.power_pricer.power_pricer import Price
+from solala.delegates.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
+from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.delegates.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
-from solala.constants import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, DEGREES, \
-    KILOWATT_HOURS, CELSIUS, KILOWATTS
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
@@ -125,29 +126,7 @@ class PriceForecastListener(LoopListener):
         ...
 
 
-class SolarForecastListener(LoopListener):
-
-    def __init__(self, day: date):
-        super().__init__()
-        self.prev = None
-        self.day: date = day
-
-    @final
-    async def update(self) -> None:
-        """
-        Thread safe update.
-        """
-        solar_forecast: DailySolarForecast = await control_loop.get_solar_forecast(self.day)
-        if self.prev is not solar_forecast:
-            self.prev = solar_forecast
-            self._update(solar_forecast)
-
-    def _update(self, solar_forecast: DailySolarForecast) -> None:
-        ...
-
-
 async def _register_listener(listener: LoopListener) -> None:
-    await listener.update()
     await control_loop.add_listener(listener)
     ui.context.client.on_disconnect(partial(control_loop.remove_listener, listener))
 
@@ -181,6 +160,7 @@ class InverterButtonUpdater(StatusListener):
         ]:
             button.style('padding-top: 1px; padding-bottom: 1px;')
             button.classes('py-0 px-2 text-xs')
+            button.props('color=grey dense')
 
     async def _click(self, mode: Optional[InverterMode], policy: InverterPolicy) -> None:
         await control_loop.set_control(
@@ -260,6 +240,7 @@ class BatteryButtonUpdater(StatusListener):
         ]:
             button.style('padding-top: 1px; padding-bottom: 1px;')
             button.classes('py-0 px-2 text-xs')
+            button.props('color=grey dense')
 
     async def _click(self, mode: Optional[BatteryMode], policy: BatteryPolicy) -> None:
         await control_loop.set_control(
@@ -316,10 +297,7 @@ class StatusUpdater(StatusListener):
 
 
 class InfographicUpdater(StatusListener):
-    def __init__(
-            self,
-            infographic_element: ContentElement,
-    ):
+    def __init__(self, infographic_element: ContentElement):
         super().__init__()
         self.infographic_element = infographic_element
         self.infographic = Infographic()
@@ -401,21 +379,38 @@ class PriceForecastUpdater(PriceForecastListener):
                             ui.label(f'{price.renewables:.1f}{PERCENT}').classes('price-number')
 
 
-class SolarForecastUpdater(SolarForecastListener):
-    def __init__(self, element: ui.element, day: date):
-        super().__init__(day)
-        self._element = element
+class SolarForecastUpdater(LoopListener):
+
+    def __init__(self, element: ui.element):
+        super().__init__()
+        self._prev: Optional[DailySolarForecast] = None
+        self._day: date = date.today()
+        self._element: ui.element = element
+        self._show_loading()
+
+    @final
+    async def update(self) -> None:
+        """
+        Thread safe update.
+        """
+        solar_forecast: DailySolarForecast = await control_loop.get_solar_forecast(self._day)
+        if self._prev is not solar_forecast:
+            self._prev = solar_forecast
+            self._update(solar_forecast)
+
+    @property
+    def day(self) -> date:
+        return self._day
 
     async def set_day(self, day: date) -> None:
+        self._show_loading()
+        self._day = day
+        asyncio.create_task(self.update())
+
+    def _show_loading(self) -> None:
         self._element.clear()
         with self._element:
             ui.label('loading solar forecast...').classes('text-center italic')
-        solar_forecast: Optional[DailySolarForecast] = await control_loop.get_solar_forecast(day)
-
-        self.day = day
-        self.prev = solar_forecast
-        if solar_forecast is not None:
-            self._update(solar_forecast)
 
     def _update(self, solar_forecast: DailySolarForecast) -> None:
         # Recreate the solar forecast table if needed
@@ -551,6 +546,9 @@ def _diagnostic_link(name: str, target: str) -> None:
 
 
 async def _ui_control_buttons() -> None:
+    """
+    Add the control buttons to the UI (if Constants.CONTROLS_ENABLED is True).
+    """
     if not Constants.CONTROLS_ENABLED:
         return
 
@@ -576,17 +574,17 @@ async def _ui_control_buttons() -> None:
                 battery_discharge_only.classes('wide')
                 battery_cheap_force_discharge.classes('wide')
 
-            await _register_listener(
-                BatteryButtonUpdater(
-                    battery_enable=battery_enable,
-                    battery_disable=battery_disable,
-                    battery_force_charge=battery_force_charge,
-                    battery_force_discharge=battery_force_discharge,
-                    battery_charge_only=battery_charge_only,
-                    battery_discharge_only=battery_discharge_only,
-                    battery_cheap_force_discharge=battery_cheap_force_discharge,
-                )
+            updater = BatteryButtonUpdater(
+                battery_enable=battery_enable,
+                battery_disable=battery_disable,
+                battery_force_charge=battery_force_charge,
+                battery_force_discharge=battery_force_discharge,
+                battery_charge_only=battery_charge_only,
+                battery_discharge_only=battery_discharge_only,
+                battery_cheap_force_discharge=battery_cheap_force_discharge,
             )
+            await updater.update()  # call synchronously to avoid flicker
+            await _register_listener(updater)
 
         # ======================================================
         # INVERTER
@@ -604,14 +602,14 @@ async def _ui_control_buttons() -> None:
                 inverter_zero_export.classes('wide')
                 inverter_neg_feed_in_zero_export.classes('wide')
 
-            await _register_listener(
-                InverterButtonUpdater(
-                    inverter_enable=inverter_enable,
-                    inverter_disable=inverter_disable,
-                    inverter_zero_export=inverter_zero_export,
-                    inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
-                )
+            updater = InverterButtonUpdater(
+                inverter_enable=inverter_enable,
+                inverter_disable=inverter_disable,
+                inverter_zero_export=inverter_zero_export,
+                inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
             )
+            await updater.update()  # call synchronously to avoid flicker
+            await _register_listener(updater)
 
 
 def _infographic_click(element):
@@ -715,11 +713,9 @@ async def root_page():
                         handler=_infographic_click,
                         js_handler="(e) => emit(e.target.closest('rect')?.id)",
                     )
-                    await _register_listener(
-                        InfographicUpdater(
-                            infographic_element=infographic
-                        )
-                    )
+                    updater = InfographicUpdater(infographic_element=infographic)
+                    asyncio.create_task(updater.update())
+                    await _register_listener(updater)
 
             # ----------------------------------------------------------
             # BATTERY + INVERTER control buttons
@@ -745,17 +741,14 @@ async def price_forecast_page():
     with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
         _page_header(' price forecast')
         element = ui.element('div')
-        await _register_listener(
-            PriceForecastUpdater(
-                element=element
-            )
-        )
+        updater = PriceForecastUpdater(element=element)
+        asyncio.create_task(updater.update())
+        await _register_listener(updater)
 
 
 @ui.page('/solar_forecast_page')
 async def solar_forecast_page():
     ui.add_head_html(_HEAD_HTML)
-    today = date.today()
 
     swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
     with swipe_area:
@@ -785,7 +778,7 @@ async def solar_forecast_page():
                     day_status = ui.label('today').classes('text-sm text-gray-500')
                     today_button = ui.button(
                         'back to today',
-                        on_click=lambda: set_day(today),
+                        on_click=lambda: set_day(date.today()),
                     ).props(
                         'flat dense no-caps color=primary'
                     ).classes('text-sm min-h-0 px-0 py-1')
@@ -854,23 +847,25 @@ async def solar_forecast_page():
             elif e.key.arrow_right:
                 await change_day(1)
             elif e.key.home:
-                await set_day(today)
+                await set_day(date.today())
 
     ui.keyboard(on_key=handle_key, repeating=False)
 
-    updater = SolarForecastUpdater(element=forecast_element, day=today)
+    updater = SolarForecastUpdater(element=forecast_element)
+    # no need to call update on the updater now as that will be done by `set_day` below.
     await _register_listener(updater)
 
     async def set_day(day: date) -> None:
         await updater.set_day(day)
         date_element.set_text(day.strftime(GUI_DATE_FORMAT))
+        today = date.today()
         day_status.set_visibility(day == today)
         today_button.set_visibility(day != today)
 
     async def change_day(offset: int) -> None:
         await set_day(updater.day + timedelta(days=offset))
 
-    await set_day(today)
+    await set_day(date.today())
 
 
 @ui.page('/status_page')
@@ -887,9 +882,9 @@ async def status_page():
             # ----------------------------------------------------------
             with ui.card():
                 ui.label('Status').classes('text-h6')
-                await _register_listener(StatusUpdater(
-                    status_element=ui.code(language='nothing').classes('text-sm w-full grow')
-                ))
+                updater = StatusUpdater(status_element=ui.code(language='nothing').classes('text-sm w-full grow'))
+                asyncio.create_task(updater.update())
+                await _register_listener(updater)
 
             # ----------------------------------------------------------
             # Connection card
@@ -927,6 +922,7 @@ async def registers_page(match: Optional[str] = None):
     """
     json_element = _json_page('Registers')
     registers_elements = RegistersUpdater(registers_element=json_element, match=match)
+    asyncio.create_task(registers_elements.update())
     await _register_listener(registers_elements)
 
 
