@@ -4,7 +4,7 @@ import re
 from datetime import datetime, date
 from enum import Enum
 from itertools import chain
-from types import MappingProxyType
+from types import MappingProxyType, NoneType
 from typing import TypeAlias, Dict, List, Optional, Mapping, Any, Collection
 
 # Define the recursive JSON value type
@@ -177,7 +177,7 @@ def _to_json(
 
         if isinstance(value, Enum):
             result[name] = value.name
-        elif isinstance(value, (int, float, str, bool, None)):
+        elif isinstance(value, (int, float, str, bool, NoneType)):
             result[name] = value
         elif isinstance(value, datetime):
             result[name] = value.strftime(datetime_format)

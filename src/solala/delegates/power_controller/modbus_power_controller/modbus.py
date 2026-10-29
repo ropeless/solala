@@ -20,19 +20,28 @@ class Modbus(Mapping[str, str | int | float]):
     This class provides access to Modbus registers for devices (potentially via multiple clients).
     Register access takes into account the data type of each register (string, integer, or scaled integer, etc.).
 
-    Register names are of the form `logical_device_id/register_name`.
+    Register names are of the form `logical_device_id/register_name` if the logical device ID is provided, otherwise
+    registers are named `register_name`.
     """
 
     def __init__(self, devices: Mapping[str | None, ModbusDevice] | ModbusTcpClient | ModbusDevice):
         """
         Wraps a ModbusTcpClient to provide access to Modbus registers.
 
-        If `devices` is a Mappint, then it maps logical device IDs to ModbusDevice objects. If the logical
-        device ID is a string, then registers are named `{logical_device_id}/register_name`. If the logical
-        device ID is None, then registers are named `register_name`.
+        The available registers are determined automatically using potential registers defined in `registers.MODELS`.
+        Given a ModbusTcpClient and device id, the register blocks of that device are searched to find all
+        matching Modbus models matching `registers.MODELS`.
+
+        If `devices` is a Mapping, then it maps logical device IDs to ModbusDevice objects. If the logical
+        device ID is a string, then registers are named `{logical_device_id}/{register_name}`, where `{register_name}`
+        is taken from matching models. If the logical device ID is None, then registers are named `{register_name}`.
+
+        If `devices` is a single ModbusDevice object, `device`, then it is equivalent to the mapping `{None: device}`.
+        I.e. a single device with no logical device name.
 
         If `devices` is a ModbusTcpClient, then it is assumed that all devices are on the same client,
-        and a ModbusDevice is created for each device ID found, with `logical_device_id = str(device_id)`.
+        and a ModbusDevice is created for each device ID found (in the range 1 to 255), with
+        `logical_device_id = str(device_id)`.
 
         Args:
             devices: A mapping of logical device IDs to ModbusDevice objects, or a ModbusTcpClient

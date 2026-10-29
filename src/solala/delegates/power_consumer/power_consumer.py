@@ -50,3 +50,10 @@ class PowerConsumer(ABC):
         Close any connections to the consumer.
         """
         ...
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.close()
+        return exc_type is None

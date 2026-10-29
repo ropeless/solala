@@ -1,18 +1,20 @@
+import asyncio
 import json
 
 from pymodbus.client import ModbusTcpClient
 
 from local_config import MASTER_INVERTER_ADDR, SLAVE_INVERTER_ADDR
-from solala_demo.log import configure_logger
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
-from solala.delegates.power_controller.modbus_power_controller import ModbusPowerController
+from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
+from solala.delegates.power_controller.power_controller import PowerStatus
+from solala_demo.log import configure_logger
 
 MASTER_INVERTER_DEVICE_ID = 1
 SLAVE_INVERTER_DEVICE_ID = 1
 METER_INVERTER_DEVICE_ID = 200
 
 
-def main():
+async def main():
     configure_logger()
     master = ModbusTcpClient(MASTER_INVERTER_ADDR)
     slave = ModbusTcpClient(SLAVE_INVERTER_ADDR)
@@ -32,8 +34,8 @@ def main():
         )
 
         print()
-        status = controller.get_status().to_json()
-        print(json.dumps(status, indent=4))
+        status: PowerStatus = await controller.get_status()
+        print(json.dumps(status.to_json(), indent=4))
 
         # print()
         # controller.enable_battery()
@@ -52,4 +54,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())

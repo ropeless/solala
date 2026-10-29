@@ -104,3 +104,10 @@ class SolarForecaster(ABC):
         Close any connections to the pricing system.
         """
         ...
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.close()
+        return exc_type is None
