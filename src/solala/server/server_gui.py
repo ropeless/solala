@@ -81,6 +81,7 @@ _CONNECTION_UNITS: Mapping[str, str] = {
     'panel_orientation': DEGREES,
     'panel_tilt': DEGREES,
     'panel_capacity': WATTS,
+    'panel_temperature_coefficient': CELSIUS,
     'inverter_limit': WATTS,
 }
 

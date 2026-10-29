@@ -129,9 +129,9 @@ class OpenMeteoForecaster(SolarForecaster):
             'panel_orientation': self._panel_orientation,
             'panel_tilt': self._panel_tilt,
             'panel_capacity': self._panel_capacity,
+            'panel_temperature_coefficient': self._panel_temperature_coefficient,
             'inverter_limit': self._inverter_limit,
             'inverter_efficiency': self._inverter_efficiency,
-            'panel_temperature_coefficient': self._panel_temperature_coefficient,
         }
 
     async def close(self) -> None:
