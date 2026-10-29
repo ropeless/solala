@@ -132,10 +132,13 @@ def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _Pric
 
     estimate: bool = True if 'estimate' not in general else json_bool(general['estimate'])
 
+    renewables: float = json_num(general['renewables'])
+    renewables = max(0, min(renewables, 100))  # clamp renewables to 0-100 due to API limitations
+
     return Price(
         start_time=start_time,
         end_time=_get_datetime(json_str(general['endTime'])),
-        renewables=json_num(general['renewables']),
+        renewables=renewables,
         buy_price=price_f(general),
         feed_in_price=-price_f(feed_in),
         estimate=estimate,

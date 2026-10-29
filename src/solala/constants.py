@@ -30,10 +30,11 @@ DEFAULT_STOP_CHARGE_PRICE_THRESHOLD: float = 11  # stop force charging above thi
 
 DEFAULT_INVERTER_EFFICIENCY: float = 0.96  # as a fraction (0 to 1)
 DEFAULT_INVERTER_LIMIT: float = float('inf')  # in Watts
-DEFAULT_TEMPERATURE_COEFFICIENT: float = -0.004  # in Celsius
+DEFAULT_PANEL_TEMPERATURE_COEFFICIENT: float = -0.004  # in Celsius
 
 
 class Constants:
+
     """
     These constants control the behaviour of the control loop and GUI.
     They should only be modified by developers for testing and debugging.
@@ -51,7 +52,7 @@ class Constants:
     BUY_PRICE_AMBER = 20  # Buy price threshold for amber colour
     BUY_PRICE_RED = 40  # Buy price threshold for red colour
 
-    CONTROLS_ENABLED: bool = True  # Whether to present the control buttons or not
+    CONTROLS_ENABLED: bool = True  # Whether to present the control buttons or not - GUI only!
     ANIMATE_WEATHER_ICONS: bool = True  # Whether to animate weather icons or not
     INFOGRAPHIC_INCLUDE_RENEWABLES: bool = False  # Whether to show % renewables or not
 

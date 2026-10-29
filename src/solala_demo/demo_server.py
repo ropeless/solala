@@ -25,8 +25,10 @@ def main():
             longitude=config.LONGITUDE,
             panel_orientation=config.PANEL_ORIENTATION,
             panel_tilt=config.PANEL_TILT,
-            panel_capacity=9000,
-            inverter_limit=8000,
+            panel_capacity=config.PANEL_CAPACITY,
+            panel_temperature_coefficient=config.PANEL_TEMPERATURE_COEFFICIENT,
+            inverter_limit=config.INVERTER_LIMIT,
+            inverter_efficiency=config.INVERTER_EFFICIENCY,
         ),
 
         # inverter_mode=InverterMode.ENABLE,

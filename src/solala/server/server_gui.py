@@ -17,7 +17,7 @@ from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.delegates.power_pricer.power_pricer import Price
-from solala.delegates.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast
+from solala.delegates.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast, WeatherCode
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
@@ -80,6 +80,8 @@ _CONNECTION_UNITS: Mapping[str, str] = {
     'longitude': DEGREES,
     'panel_orientation': DEGREES,
     'panel_tilt': DEGREES,
+    'panel_capacity': WATTS,
+    'inverter_limit': WATTS,
 }
 
 
@@ -433,9 +435,9 @@ class SolarForecastUpdater(LoopListener):
                 with ui.element('div').classes('solar-table'):
                     with ui.element('div').classes('solar-row solar-header'):
                         ui.label('Time')
+                        ui.label('Temp').classes('text-right')
                         ui.label('Sky').classes('text-right')
                         ui.label('Irradiance').classes('text-right')
-                        ui.label('Temp').classes('text-right')
                         ui.label('Power').classes('text-right')
 
                     forecast: SolarForecast
@@ -443,25 +445,23 @@ class SolarForecastUpdater(LoopListener):
                         row_classes = 'solar-row'
                         if i % 2 == 1:
                             row_classes += ' solar-row-alt'
+                        icon: Optional[str] = weather_code_to_icon_url(
+                            forecast.weather, Constants.ANIMATE_WEATHER_ICONS
+                        )
 
                         with ui.element('div').classes(row_classes):
                             ui.label(forecast.time.strftime(GUI_TIME_FORMAT)).classes('solar-time')
-                            icon: Optional[str] = weather_code_to_icon_url(
-                                forecast.weather, Constants.ANIMATE_WEATHER_ICONS
-                            )
+                            ui.label(f'{int(forecast.temperature + 0.5)}{CELSIUS}').classes(f'solar-number')
                             if icon is None:
                                 ui.label('').classes('solar-weather-icon')
                             else:
                                 ui.image(icon).classes('solar-weather-icon')
-                            if forecast.irradiance > 0:
-                                ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'solar-number')
-                            else:
+                            if forecast.weather == WeatherCode.NIGHT:
                                 ui.label('.').classes(f'solar-number')
-                            ui.label(f'{int(forecast.temperature + 0.5)}{CELSIUS}').classes(f'solar-number')
-                            if forecast.power > 0:
-                                ui.label(f'{forecast.power / 1000:.2f}{KILOWATTS}').classes('solar-number')
-                            else:
                                 ui.label('.').classes('solar-number')
+                            else:
+                                ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'solar-number')
+                                ui.label(f'{forecast.power / 1000:.2f}{KILOWATTS}').classes('solar-number')
 
 
 def _json_page(name: str) -> ContentElement:

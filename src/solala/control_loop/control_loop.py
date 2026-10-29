@@ -1022,9 +1022,9 @@ def _connect_open_meteo_forecaster(forecaster_connection: OpenMeteoConnection) -
             panel_orientation=forecaster_connection.panel_orientation,
             panel_tilt=forecaster_connection.panel_tilt,
             panel_capacity=forecaster_connection.panel_capacity,
+            panel_temperature_coefficient=forecaster_connection.panel_temperature_coefficient,
             inverter_limit=forecaster_connection.inverter_limit,
             inverter_efficiency=forecaster_connection.inverter_efficiency,
-            temperature_coefficient=forecaster_connection.temperature_coefficient,
         )
     except Exception as err:
         raise ControlLoopError('could not connect Open-Meteo', errors=[str(err)])

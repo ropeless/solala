@@ -262,6 +262,11 @@ def _stringify_values(
         if '.' in value_str:
             # Clean up trailing zeros and decimal point for rendered float
             value_str = value_str.rstrip('0').rstrip('.')
+        if value_str == '-0':
+            value_str = '0'
+        # Check for misleading formatting
+        if value_str == '0' and abs(value) > 0.0000001:
+            value_str = f'{value:.2g}'
     elif isinstance(value, bool):
         # Always show booleans in lower case
         value_str = str(value).lower()

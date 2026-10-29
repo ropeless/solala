@@ -3,8 +3,9 @@ from typing import List
 
 import httpx
 
-from solala.settings import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_TEMPERATURE_COEFFICIENT
-from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast, DailySolarForecast, WeatherCode
+from solala.constants import DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY
+from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast, DailySolarForecast, \
+    WeatherCode
 from solala.utils.datetime_extras import ensure_date
 from solala.utils.json import JSONDict
 
@@ -25,9 +26,9 @@ class OpenMeteoForecaster(SolarForecaster):
             panel_orientation: float,
             panel_tilt: float,
             panel_capacity: float,
+            panel_temperature_coefficient: float = DEFAULT_PANEL_TEMPERATURE_COEFFICIENT,
             inverter_limit: float = DEFAULT_INVERTER_LIMIT,
             inverter_efficiency: float = DEFAULT_INVERTER_EFFICIENCY,
-            temperature_coefficient: float = DEFAULT_TEMPERATURE_COEFFICIENT,
     ):
         """
         Args:
@@ -36,9 +37,9 @@ class OpenMeteoForecaster(SolarForecaster):
             panel_orientation: Orientation of the solar panel in degrees.
             panel_tilt: Tilt of the solar panel in degrees.
             panel_capacity: Capacity of the solar panel in W.
+            panel_temperature_coefficient: Temperature coefficient of the solar panel.
             inverter_limit: Power output limit of the inverter in W.
             inverter_efficiency: Efficiency of the inverter.
-            temperature_coefficient: Temperature coefficient of the solar panel.
         """
         self._latitude = latitude
         self._longitude = longitude
@@ -47,7 +48,7 @@ class OpenMeteoForecaster(SolarForecaster):
         self._panel_capacity = panel_capacity
         self._inverter_limit = inverter_limit
         self._inverter_efficiency = inverter_efficiency
-        self._temperature_coefficient = temperature_coefficient
+        self._panel_temperature_coefficient = panel_temperature_coefficient
         self._client = httpx.AsyncClient()
 
     async def get_forecast(self, day: date) -> DailySolarForecast:
@@ -55,6 +56,8 @@ class OpenMeteoForecaster(SolarForecaster):
         start_date = day - timedelta(days=1)
         end_date = day + timedelta(days=1)
 
+        # We use the Open-Meteo API to get hourly solar irradiance forecast
+        # with UTC timestamps, then manage the conversion to local time ourselves.
         params = {
             'latitude': self._latitude,
             'longitude': self._longitude,
@@ -80,9 +83,12 @@ class OpenMeteoForecaster(SolarForecaster):
         tz = now.tzinfo
         forecasts: List[SolarForecast] = []
 
+        # All measures are instantaneous as at the timestamp in the 'time' field, except
+        # 'global_tilted_irradiance' which is the average irradiance over the preceding hour.
+        # We skip the first value of irradiance to reinterpret it as for the hour starting at the timestamp.
         for timestamp, irradiance, temperature, wind_speed, weather_code, is_day in zip(
                 hourly['time'],
-                hourly['global_tilted_irradiance'],
+                hourly['global_tilted_irradiance'][1:],
                 hourly['temperature_2m'],
                 hourly['wind_speed_10m'],
                 hourly['weather_code'],
@@ -97,8 +103,13 @@ class OpenMeteoForecaster(SolarForecaster):
             if local_time.date() != day:
                 continue
 
-            if irradiance is None:
+            # It is possible to get small positive irradiance even when
+            # the sun is below the horizon (is_day == 0). We ignore the small
+            # positive irradiance at night.
+            if irradiance is None or irradiance < 0 or not is_day:
                 irradiance = 0
+
+            wind_speed = max(0.0, wind_speed)  # deal with API rounding errors
 
             forecasts.append(SolarForecast(
                 time=local_time,
@@ -117,6 +128,10 @@ class OpenMeteoForecaster(SolarForecaster):
             'longitude': self._longitude,
             'panel_orientation': self._panel_orientation,
             'panel_tilt': self._panel_tilt,
+            'panel_capacity': self._panel_capacity,
+            'inverter_limit': self._inverter_limit,
+            'inverter_efficiency': self._inverter_efficiency,
+            'panel_temperature_coefficient': self._panel_temperature_coefficient,
         }
 
     async def close(self) -> None:
@@ -129,25 +144,30 @@ class OpenMeteoForecaster(SolarForecaster):
             wind_speed: float,
     ) -> float:
         """
-        Estimate PV output from forecast data.
+        Calculate the AC power output of a solar panel system given the
+        irradiance, ambient temperature, and wind speed. The calculation
+        incorporates a Faiman-style temperature estimate, temperature
+        correction factor, and a simplified DC-to-AC conversion accounting for
+        inverter efficiency and capacity limit.
 
         Args:
-        Returns:
-             estimated AC power in W.
-        """
+            irradiance: Solar irradiance in watts per square meter.
+            temperature: Ambient temperature in degrees Celsius.
+            wind_speed: Wind speed in meters per second.
 
-        irradiance = max(0.0, irradiance)
-        wind = max(0.0, wind_speed)
+        Returns:
+            AC power output in kilowatts.
+        """
 
         # Faiman-style module temperature estimate.
         cell_temp = temperature + irradiance / (
-                25.0 + 6.84 * wind
+                25.0 + 6.84 * wind_speed
         )
 
         # Temperature-corrected DC output.
         temp_factor = max(
             0.0,
-            1.0 + self._temperature_coefficient * (cell_temp - 25.0),
+            1.0 + self._panel_temperature_coefficient * (cell_temp - 25.0),
         )
 
         dc_kw = self._panel_capacity * irradiance / 1000.0 * temp_factor

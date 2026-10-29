@@ -2,7 +2,7 @@ from typing import Literal, TypeAlias, Optional, Annotated, Union, ClassVar, Dic
 
 from pydantic import BaseModel, Field
 
-from solala.constants import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_TEMPERATURE_COEFFICIENT
+from solala.constants import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_PANEL_TEMPERATURE_COEFFICIENT
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, InverterPolicy, BatteryPolicy
 
 
@@ -77,9 +77,9 @@ class OpenMeteoConnection(BaseModel):
     panel_orientation: float
     panel_tilt: float
     panel_capacity: float
+    panel_temperature_coefficient: float = DEFAULT_PANEL_TEMPERATURE_COEFFICIENT
     inverter_limit: float = DEFAULT_INVERTER_LIMIT
     inverter_efficiency: float = DEFAULT_INVERTER_EFFICIENCY
-    temperature_coefficient: float = DEFAULT_TEMPERATURE_COEFFICIENT
 
 
 # =====================================================================================
