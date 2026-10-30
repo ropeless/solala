@@ -1,7 +1,7 @@
 from enum import Enum, auto
 from typing import Iterable, Tuple, Dict
 
-from solala.power_controller.power_controller import PowerController, PowerStatus
+from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 
 
 class BatteryMode(Enum):
@@ -70,10 +70,10 @@ class DummyPowerController(PowerController):
             'max_discharge_param': self.max_discharge_param,
         }
 
-    def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
+    async def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
         return self.get_connection_status().items()
 
-    def get_status(self) -> PowerStatus:
+    async def get_status(self) -> PowerStatus:
         return PowerStatus(
             state_of_charge=self.state_of_charge,
             power_limit=self.power_limit,
@@ -190,6 +190,6 @@ class DummyPowerController(PowerController):
             self.power_limit = self.solar_power / max_generation * 100
             self.grid_power = self.house_power + self.battery_power - self.solar_power
 
-    def close(self) -> None:
+    async def close(self) -> None:
         # nothing to do
         pass

@@ -1,7 +1,15 @@
-from datetime import datetime, date, time
+from datetime import datetime, date, time, UTC
 
 
-def ensure_date(obj: date):
+def now() -> datetime:
+    """
+    Returns:
+        A timestamp in UTC.
+    """
+    return datetime.now(UTC)
+
+
+def ensure_date(obj: date) -> date:
     if isinstance(obj, datetime):
         return obj.date()  # Extracts the date portion
     elif isinstance(obj, date):

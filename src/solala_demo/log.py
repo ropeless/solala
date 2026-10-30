@@ -1,7 +1,8 @@
 import logging
 import sys
 
-from solala.logger import SOLALA_LOG_FORMAT, LOGGER
+from solala.logger import LOGGER
+from local_config import SOLALA_LOG_FORMAT
 
 
 def configure_logger():

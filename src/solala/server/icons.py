@@ -1,6 +1,6 @@
 from typing import Optional
 
-from solala.solar_forecaster.solar_forecaster import WeatherCode
+from solala.delegates.solar_forecaster.solar_forecaster import WeatherCode
 
 
 def diagnostic_name_to_icon_url(diagnostic_name: str) -> str:

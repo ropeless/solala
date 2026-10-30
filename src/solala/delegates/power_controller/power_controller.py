@@ -24,32 +24,25 @@ class PowerController(ABC):
     """
 
     @abstractmethod
-    def close(self) -> None:
+    async def close(self) -> None:
         """
         Close any connections to the power system.
         """
         ...
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-        return exc_type is None
 
     # =================================================
     #  Power controller status
     # =================================================
 
     @abstractmethod
-    def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
+    async def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
         """
         Get the values of all known registers.
         """
         ...
 
     @abstractmethod
-    def get_status(self) -> PowerStatus:
+    async def get_status(self) -> PowerStatus:
         """
         Get the high-level status of the system.
         """
@@ -165,3 +158,10 @@ class PowerController(ABC):
             change_duration: the expected minimum auto-revert duration in seconds.
         """
         ...
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.close()
+        return exc_type is None

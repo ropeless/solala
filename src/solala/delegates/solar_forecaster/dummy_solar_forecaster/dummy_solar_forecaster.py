@@ -2,7 +2,7 @@ import random
 from datetime import datetime, timedelta, date
 from typing import List
 
-from solala.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast, SolarForecast, WeatherCode
+from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast, SolarForecast, WeatherCode
 from solala.utils.datetime_extras import ensure_date, date_to_datetime
 from solala.utils.json import JSONDict
 
@@ -36,7 +36,7 @@ class DummySolarForecaster(SolarForecaster):
             19, 19, 20, 17, 17, 17, 17, 16, 15, 15, 15, 15,
         ]
 
-    def get_forecast(self, day: date) -> DailySolarForecast:
+    async def get_forecast(self, day: date) -> DailySolarForecast:
         day_of_interest: datetime = date_to_datetime(ensure_date(day))
         limit = max(self.panel_capacity, self.inverter_limit)
 
@@ -64,6 +64,6 @@ class DummySolarForecaster(SolarForecaster):
             'today': self._today.date().isoformat()
         }
 
-    def close(self) -> None:
+    async def close(self) -> None:
         # nothing to do
         pass
