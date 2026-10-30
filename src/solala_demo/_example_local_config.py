@@ -32,3 +32,5 @@ DATABASE_NAME = 'solala'
 
 DATABASE_ADMIN_URL = f'postgresql://postgres:{DATABASE_ADMIN_PASSWORD}@localhost:{DATABASE_PORT}/postgres'
 DATABASE_APP_URL = f'postgresql://{DATABASE_APP_ROLE}:{DATABASE_APP_PASSWORD}@localhost:{DATABASE_PORT}/{DATABASE_NAME}'
+
+SOLALA_LOG_FORMAT: str = '%(asctime)s %(levelname)s: %(name)s %(message)s'
