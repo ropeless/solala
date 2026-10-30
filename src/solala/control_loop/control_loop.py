@@ -191,38 +191,36 @@ class _ControlState:
             return self.pricer.get_connection_status()
 
     @property
-    def consumers_connection_status(self) -> Dict[str, JSONDict]:
-        return {
-            name: consumer.get_connection_status()
-            for name, consumer in self.consumers.items()
-        }
-
-    @property
     def forecaster_connection_status(self) -> JSONDict:
         if self.forecaster is None:
             return _DISCONNECTED
         else:
             return self.forecaster.get_connection_status()
 
+    @property
+    def consumers_connection_status(self) -> Dict[str, JSONDict]:
+        return {
+            name: consumer.get_connection_status()
+            for name, consumer in self.consumers.items()
+        }
+
     def reset_controller(self, controller: Optional[PowerController], settings: Optional[ControllerConnection]) -> None:
         self.controller = controller
         self.controller_settings = settings
 
+        # Modes are now unknown, but leave the current policies in place
         self.control_mode.battery_mode = BatteryMode.UNKNOWN
         self.control_mode.inverter_mode = InverterMode.UNKNOWN
-        self.control_mode.inverter_policy = InverterPolicy.MANUAL
 
+        # Invalidate cached status
         self.last_power = _NO_POWER
         self.last_power_valid = False
-        self.last_price: Price = _NO_PRICE
-        self.next_price_check = _MIN_DATE
-        self.last_price_forecast = ()
-        self.next_price_forecast_check = _MIN_DATE
 
     def reset_pricer(self, pricer: Optional[PowerPricer], settings: Optional[PricerConnection]) -> None:
         self.pricer = pricer
         self.pricer_settings = settings
 
+        # Invalidate cached status
         self.last_price: Price = _NO_PRICE
         self.next_price_check = _MIN_DATE
         self.last_price_forecast = ()
@@ -232,7 +230,19 @@ class _ControlState:
         self.forecaster = forecaster
         self.forecaster_settings = settings
 
+        # Invalidate cached status
+        self.last_price_forecast = ()
         self.next_solar_forecast_check = _MIN_DATE
+
+    def reset_consumer(self, consumer_name: str, consumer: Optional[PowerConsumer], settings: Optional[ConsumerConnection]) -> None:
+        if consumer is None:
+            assert settings is None
+            self.consumers.pop(consumer_name, None)
+            self.consumers_settings.pop(consumer_name, None)
+        else:
+            assert settings is not None
+            self.consumers[consumer_name] = consumer
+            self.consumers_settings[consumer_name] = settings
 
 
 # Global control loop state
@@ -679,8 +689,8 @@ async def connect_controller(controller_connection: ControllerConnection) -> Non
             )
 
         await disconnect_controller()
-        connection_status = controller.get_connection_status()
         state.reset_controller(controller, controller_connection)
+        connection_status = controller.get_connection_status()
         LOGGER.info(f'{_LOG_SRC}Power controller connection: {json.dumps(connection_status)}')
         await _save_settings()
 
@@ -712,8 +722,8 @@ async def connect_pricer(pricer_connection: PricerConnection) -> None:
             raise ControlLoopError('unknown pricer connection type', errors={'type': pricer_connection.type})
 
         await disconnect_pricer()
-        connection_status = pricer.get_connection_status()
         state.reset_pricer(pricer, pricer_connection)
+        connection_status = pricer.get_connection_status()
         LOGGER.info(f'{_LOG_SRC}Power pricer connection: {json.dumps(connection_status)}')
         await _save_settings()
 
@@ -747,10 +757,8 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
             )
 
         await disconnect_consumer(name)
+        state.reset_consumer(name, consumer, consumer_connection)
         connection_status = consumer.get_connection_status()
-        state.consumers[name] = consumer
-        state.consumers_settings[name] = consumer_connection
-        state.consumers_connection_status[name] = connection_status
         LOGGER.info(f'{_LOG_SRC}Power consumer {name!r} connection: {json.dumps(connection_status)}')
         await _save_settings()
 
@@ -763,9 +771,7 @@ async def disconnect_consumer(name: str) -> None:
         consumer: Optional[PowerConsumer] = state.consumers.get(name)
         if consumer is not None:
             await consumer.close()
-            state.consumers.pop(name, None)
-            state.consumers_settings.pop(name, None)
-            state.consumers_connection_status.pop(name, None)
+            state.reset_consumer(name, None, None)
             LOGGER.info(f'{_LOG_SRC}Power consumer {name!r} disconnected')
         await _save_settings()
 
@@ -787,8 +793,8 @@ async def connect_forecaster(forecaster_connection: ForecasterConnection) -> Non
             )
 
         await disconnect_forecaster()
-        connection_status = forecaster.get_connection_status()
         state.reset_forecaster(forecaster, forecaster_connection)
+        connection_status = forecaster.get_connection_status()
         LOGGER.info(f'{_LOG_SRC}Solar forecaster connection: {json.dumps(connection_status)}')
         await _save_settings()
 
