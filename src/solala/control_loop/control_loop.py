@@ -307,8 +307,14 @@ async def control_loop(
         # Update the listeners while not holding the control state lock.
         _update_listeners(listeners)
 
-        # Sleep for the remaining time until the next loop iteration
-        sleeptime: int = int(state.iteration_start.timestamp() + Constants.LOOP_TIME - now().timestamp())
+        # Sleep for the remaining time until the next loop iteration.
+        # Make adjustment so that iterations tend to fall just after whole minutes
+        # (assuming `Constants.LOOP_TIME` is a factor of 60).
+        # The adjustment is limited to -1 to +1 second away from `Constants.LOOP_TIME`.
+        next_start_timestamp = state.iteration_start.timestamp() + Constants.LOOP_TIME
+        ideal_start_timestamp = round(next_start_timestamp / Constants.LOOP_TIME) * Constants.LOOP_TIME + 0.000001
+        next_start_timestamp += max(-1, min(ideal_start_timestamp - next_start_timestamp, 1))  # limited adjustment
+        sleeptime: float = next_start_timestamp - now().timestamp()
         if sleeptime < Constants.LOOP_MIN_SLEEP_TIME:
             LOGGER.warn(f'{_LOG_SRC}Low sleep time: {sleeptime} < {Constants.LOOP_MIN_SLEEP_TIME}')
             sleeptime = Constants.LOOP_MIN_SLEEP_TIME

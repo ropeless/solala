@@ -40,7 +40,7 @@ class Constants:
     They should only be modified by developers for testing and debugging.
     """
 
-    LOOP_TIME: int = 5  # number of seconds for each loop iteration
+    LOOP_TIME: int = 5  # number of seconds for each loop iteration - should be a factor of 60
     LOOP_MIN_SLEEP_TIME: int = 1  # number of seconds to sleep for each loop iteration
     CONTROL_DURATION: int = 11  # number of seconds a control remains active
     PRICE_SETTLE_CHECK: int = 9  # check delay to see if the power price has settled
