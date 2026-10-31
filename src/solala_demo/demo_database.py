@@ -7,6 +7,7 @@ from typing import Optional
 import local_config as config
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.database.solala_database import Measurement, solala_database
+from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.json import to_json
 
 
@@ -29,15 +30,24 @@ async def main() -> None:
 
             buy_price=67,
             feed_in_price=78,
+            renewables=66,
 
             accumulated_solar_energy=123,
             accumulated_grid_energy_import=345,
             accumulated_grid_energy_export=678,
+            accumulated_battery_energy_charge=890,
+            accumulated_battery_energy_discharge=901,
 
             battery_mode=BatteryMode.ENABLE,
             battery_policy=BatteryPolicy.MANUAL,
             inverter_mode=InverterMode.ENABLE,
             inverter_policy=InverterPolicy.MANUAL,
+
+            forecast_irradiance=543,
+            forecast_temperature=432,
+            forecast_power=321,
+            forecast_weather=WeatherCode.CLEAR_DAY,
+
         )
         await db.insert_measurement(measurement)
         got: Optional[Measurement] = await db.get_latest_measurement()

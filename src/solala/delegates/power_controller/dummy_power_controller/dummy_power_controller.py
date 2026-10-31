@@ -54,6 +54,8 @@ class DummyPowerController(PowerController):
         self.accumulated_solar_energy: float = 0
         self.accumulated_grid_energy_import: float = 0
         self.accumulated_grid_energy_export: float = 0
+        self.accumulated_battery_energy_charge: float = 0
+        self.accumulated_battery_energy_discharge: float = 0
 
         self.update_status()
 
@@ -91,6 +93,8 @@ class DummyPowerController(PowerController):
             accumulated_solar_energy=self.accumulated_solar_energy,
             accumulated_grid_energy_import=self.accumulated_grid_energy_import,
             accumulated_grid_energy_export=self.accumulated_grid_energy_export,
+            accumulated_battery_energy_charge=self.accumulated_battery_energy_charge,
+            accumulated_battery_energy_discharge=self.accumulated_battery_energy_discharge,
         )
 
     def enable_battery(self) -> None:
@@ -139,8 +143,11 @@ class DummyPowerController(PowerController):
         self.last_accumulation = now_timestamp
         self.accumulated_solar_energy += self.solar_power * hours
         grid_energy = self.grid_power * hours
+        batt_energy = self.battery_power * hours
         self.accumulated_grid_energy_import += max(0, grid_energy)
         self.accumulated_grid_energy_export -= min(0, grid_energy)
+        self.accumulated_battery_energy_charge += max(0, batt_energy)
+        self.accumulated_battery_energy_discharge -= min(0, batt_energy)
 
         max_generation = self.inverter_limit
         max_charge_param = self.max_charge_param

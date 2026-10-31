@@ -1,84 +1,8 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from datetime import datetime, date
-from enum import Enum, auto
-from typing import Sequence, Iterator
+from datetime import date
 
-from solala.utils.json import JSONDict, to_json
-
-
-class WeatherCode(Enum):
-    NIGHT = auto()
-
-    CLEAR_DAY = auto()
-
-    CLOUDY_1 = auto()
-    CLOUDY_2 = auto()
-    CLOUDY_3 = auto()
-    CLOUDY_4 = auto()
-
-    DUST = auto()
-    FOG = auto()
-    FROST = auto()
-    HAIL = auto()
-    HAZE = auto()
-
-    RAINY_1 = auto()
-    RAINY_2 = auto()
-    RAINY_3 = auto()
-
-    THUNDERSTORMS = auto()
-    THUNDERSTORMS_ISOLATED = auto()
-    THUNDERSTORMS_SCATTERED = auto()
-    THUNDERSTORM_SEVERE = auto()
-    HURRICANE = auto()
-    TORNADO = auto()
-
-    SNOWY_1 = auto()
-    SNOWY_2 = auto()
-    SNOWY_3 = auto()
-
-    RAIN_AND_SLEET_MIX = auto()
-    RAIN_AND_SNOW_MIX = auto()
-    SNOW_AND_SLEET_MIX = auto()
-
-    UNKNOWN = auto()
-
-
-@dataclass(frozen=True)
-class SolarForecast:
-    time: datetime  # local time
-    irradiance: float  # W/m^2
-    temperature: float  # Celsius
-    power: float  # Wh
-    weather: WeatherCode
-
-    def to_json(self, datetime_format: str) -> JSONDict:
-        return to_json(self, datetime_format=datetime_format)
-
-
-@dataclass(frozen=True)
-class DailySolarForecast:
-    """
-    Hourly forecast of solar irradiance, temperature, and power for one day.
-    """
-    forecasts: Sequence[SolarForecast]
-
-    def __iter__(self) -> Iterator[SolarForecast]:
-        return iter(self.forecasts)
-
-    def total_forecast_energy(self) -> float:
-        """
-        Returns:
-            Forecast energy in Wh.
-        """
-        return sum(
-            forecast.power
-            for forecast in self.forecasts
-        )
-
-    def date(self) -> date:
-        return self.forecasts[0].time.date()
+from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast
+from solala.utils.json import JSONDict
 
 
 class SolarForecaster(ABC):

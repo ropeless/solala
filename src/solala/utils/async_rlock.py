@@ -3,6 +3,10 @@ import threading
 
 
 class AsyncRLock:
+    """
+    Note, we assume maximum one asyncio event loop per thread.
+    """
+
     def __init__(self) -> None:
         self._rlock = threading.RLock()
         self._alock = None

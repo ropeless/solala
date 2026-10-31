@@ -1,9 +1,8 @@
 from typing import Tuple, List
 
-import httpx
-
-from solala.logger import LOGGER
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
+from solala.logger import LOGGER
+from solala.utils.httpx_extras import async_get
 from solala.utils.json import JSONDict, json_dict, json_num
 
 NAME: str = 'Tesla Wall Charger'
@@ -16,7 +15,6 @@ class TeslaWallConnector(PowerConsumer):
 
     def __init__(self, host: str, mac_address: str = '') -> None:
         self._api = f'http://{host}/api/1/'
-        self._client = httpx.AsyncClient()
 
         self._connection_status = {
             'connection': 'Tesla Wall Connector',
@@ -49,9 +47,9 @@ class TeslaWallConnector(PowerConsumer):
         return self._connection_status
 
     async def close(self) -> None:
-        await self._client.aclose()
+        pass
 
     async def _get_vitals(self) -> JSONDict:
         url = self._api + 'vitals'
-        response = await self._client.get(url)
+        response = await async_get(url)
         return json_dict(response.json())

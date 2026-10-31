@@ -15,15 +15,24 @@ CREATE TABLE measurement
 
     buy_price                       DOUBLE PRECISION,        -- c/kWh at the timestamp
     feed_in_price                   DOUBLE PRECISION,        -- c/kWh at the timestamp
+    renewables                      DOUBLE PRECISION,        -- percentage
 
-    accumulated_solar_energy        DOUBLE PRECISION,        -- energy produced since some reference time
-    accumulated_grid_energy_import  DOUBLE PRECISION,        -- energy drawn from grid since some reference time
-    accumulated_grid_energy_export  DOUBLE PRECISION,        -- energy drawn since some reference time
+    accumulated_solar_energy               DOUBLE PRECISION,        -- energy produced since some reference time
+    accumulated_grid_energy_import         DOUBLE PRECISION,        -- energy drawn from grid since some reference time
+    accumulated_grid_energy_export         DOUBLE PRECISION,        -- energy drawn since some reference time
+    accumulated_battery_energy_charge      DOUBLE PRECISION,        -- energy to battery since some reference time
+    accumulated_battery_energy_discharge   DOUBLE PRECISION,        -- energy from battery since some reference time
 
     battery_mode                    TEXT,
     battery_policy                  TEXT,
     inverter_mode                   TEXT,
-    inverter_policy                 TEXT
+    inverter_policy                 TEXT,
+
+    forecast_irradiance       DOUBLE PRECISION,  -- W/m^2
+    forecast_temperature      DOUBLE PRECISION,  -- Celsius
+    forecast_power            DOUBLE PRECISION,  -- W
+    forecast_weather          TEXT
+
 );
 
 CREATE TABLE solar_forecast

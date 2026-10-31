@@ -1,12 +1,12 @@
 from datetime import datetime, timezone, date, timedelta
 from typing import List
 
-import httpx
-
 from solala.constants import DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY
-from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, SolarForecast, DailySolarForecast, \
-    WeatherCode
+from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
+from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster
+from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.datetime_extras import ensure_date
+from solala.utils.httpx_extras import async_get
 from solala.utils.json import JSONDict
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
@@ -49,7 +49,6 @@ class OpenMeteoForecaster(SolarForecaster):
         self._inverter_limit = inverter_limit
         self._inverter_efficiency = inverter_efficiency
         self._panel_temperature_coefficient = panel_temperature_coefficient
-        self._client = httpx.AsyncClient()
 
     async def get_forecast(self, day: date) -> DailySolarForecast:
         day: date = ensure_date(day)
@@ -74,13 +73,14 @@ class OpenMeteoForecaster(SolarForecaster):
             'wind_speed_unit': 'ms',
         }
 
-        response = await self._client.get(API_URL, params=params)
+        response = await async_get(API_URL, params=params)
         response.raise_for_status()
         data = response.json()
 
         hourly = data['hourly']
         now = datetime.now().astimezone()
         tz = now.tzinfo
+        duration = timedelta(hours=1)
         forecasts: List[SolarForecast] = []
 
         # All measures are instantaneous as at the timestamp in the 'time' field, except
@@ -112,7 +112,8 @@ class OpenMeteoForecaster(SolarForecaster):
             wind_speed = max(0.0, wind_speed)  # deal with API rounding errors
 
             forecasts.append(SolarForecast(
-                time=local_time,
+                start_time=local_time,
+                end_time=local_time + duration,
                 irradiance=irradiance,
                 temperature=temperature,
                 power=self.power(irradiance, temperature, wind_speed),
@@ -135,7 +136,7 @@ class OpenMeteoForecaster(SolarForecaster):
         }
 
     async def close(self) -> None:
-        await self._client.aclose()
+        pass
 
     def power(
             self,
@@ -156,7 +157,7 @@ class OpenMeteoForecaster(SolarForecaster):
             wind_speed: Wind speed in meters per second.
 
         Returns:
-            AC power output in kilowatts.
+            AC power output in watts.
         """
 
         # Faiman-style module temperature estimate.
@@ -169,13 +170,12 @@ class OpenMeteoForecaster(SolarForecaster):
             0.0,
             1.0 + self._panel_temperature_coefficient * (cell_temp - 25.0),
         )
-
-        dc_kw = self._panel_capacity * irradiance / 1000.0 * temp_factor
+        dc_watts = self._panel_capacity * irradiance / 1000.0 * temp_factor
 
         # Simplified DC-to-AC conversion.
-        ac_kw = max(0.0, min(dc_kw * self._inverter_efficiency, self._inverter_limit))
+        ac_watts = max(0.0, min(dc_watts * self._inverter_efficiency, self._inverter_limit))
 
-        return ac_kw
+        return ac_watts
 
 
 def _weather(code: int, is_day: bool) -> WeatherCode:

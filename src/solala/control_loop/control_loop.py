@@ -27,7 +27,9 @@ from solala.delegates.power_pricer.dummy_power_pricer.dummy_power_pricer import 
 from solala.delegates.power_pricer.power_pricer import PowerPricer
 from solala.delegates.solar_forecaster.dummy_solar_forecaster.dummy_solar_forecaster import DummySolarForecaster
 from solala.delegates.solar_forecaster.open_meteo_forecaster.open_meteo_forecaster import OpenMeteoForecaster
+from solala.delegates.solar_forecaster.solar_forecast import SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast
+from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
 from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
     TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
@@ -53,6 +55,8 @@ _NO_POWER = PowerStatus(
     accumulated_grid_energy_export=0,
     accumulated_grid_energy_import=0,
     accumulated_solar_energy=0,
+    accumulated_battery_energy_charge=0,
+    accumulated_battery_energy_discharge=0,
 )
 _NO_PRICE = Price(
     start_time=_MIN_DATE,
@@ -61,6 +65,14 @@ _NO_PRICE = Price(
     buy_price=0,
     feed_in_price=0,
     is_estimate=True,
+)
+_NO_FORECAST = SolarForecast(
+    start_time=_MIN_DATE,
+    end_time=_MIN_DATE,
+    irradiance=0.0,
+    temperature=0.0,
+    power=0.0,
+    weather=WeatherCode.UNKNOWN
 )
 _DISCONNECTED: JSONDict = {'connection': 'disconnected'}
 _NO_SOLAR_FORECAST = DailySolarForecast([])
@@ -875,11 +887,20 @@ async def _insert_measurement(dt_now: datetime, db: SolalaDatabase) -> None:
     control_mode: ControlMode
     power_status: PowerStatus
     price: Price
-    control_mode, power_status, price = await asyncio.gather(
+    daily_forecast: DailySolarForecast
+
+    control_mode, power_status, price, daily_forecast = await asyncio.gather(
         get_prev_control_mode(),
         get_power_status(),
         get_price_now_no_estimate(),
+        get_solar_forecast(dt_now.date())
     )
+
+    forecast: Optional[SolarForecast] = daily_forecast.find_contemporary(dt_now)
+    if forecast is None:
+        LOGGER.warning(f'{_LOG_SRC}No solar forecast found for {dt_now}')
+        forecast: SolarForecast = _NO_FORECAST
+
     measurement = Measurement(
         timestamp=dt_now,
         solar_power=power_status.solar_power,
@@ -889,13 +910,20 @@ async def _insert_measurement(dt_now: datetime, db: SolalaDatabase) -> None:
         battery_charge=power_status.state_of_charge,
         buy_price=price.buy_price,
         feed_in_price=price.feed_in_price,
+        renewables=price.renewables,
         accumulated_solar_energy=power_status.accumulated_solar_energy,
         accumulated_grid_energy_import=power_status.accumulated_grid_energy_import,
         accumulated_grid_energy_export=power_status.accumulated_grid_energy_export,
+        accumulated_battery_energy_charge=power_status.accumulated_battery_energy_charge,
+        accumulated_battery_energy_discharge=power_status.accumulated_battery_energy_discharge,
         battery_mode=control_mode.battery_mode,
         battery_policy=control_mode.battery_policy,
         inverter_mode=control_mode.inverter_mode,
         inverter_policy=control_mode.inverter_policy,
+        forecast_irradiance=forecast.irradiance,
+        forecast_temperature=forecast.temperature,
+        forecast_power=forecast.power,
+        forecast_weather=forecast.weather,
     )
     await db.insert_measurement(measurement)
     LOGGER.info(f'{_LOG_SRC}Inserted a measurement into the database')

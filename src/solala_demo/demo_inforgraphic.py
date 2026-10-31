@@ -16,7 +16,7 @@ def main() -> None:
         buy_price=14.3,
         feed_in_price=12.5,
         renewables=12,
-        estimate=False,
+        is_estimate=False,
     )
 
     file_path: Path = OUT / 'infographic.svg'

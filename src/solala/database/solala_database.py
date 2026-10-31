@@ -10,30 +10,8 @@ from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel
 
 from solala.constants import DEFAULT_DB_HOST, DEFAULT_DB_PORT, DEFAULT_DB_NAME
-from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
+from solala.database.measurement import Measurement
 from solala.utils.json import JSONDict
-
-
-class Measurement(BaseModel):
-    timestamp: datetime
-
-    solar_power: float
-    grid_power: float
-    house_power: float
-    battery_power: float
-    battery_charge: float
-
-    buy_price: float
-    feed_in_price: float
-
-    accumulated_solar_energy: float
-    accumulated_grid_energy_import: float
-    accumulated_grid_energy_export: float
-
-    battery_mode: BatteryMode
-    battery_policy: BatteryPolicy
-    inverter_mode: InverterMode
-    inverter_policy: InverterPolicy
 
 
 class SolalaDatabase:

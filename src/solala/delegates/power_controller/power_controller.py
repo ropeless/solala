@@ -18,6 +18,8 @@ class PowerStatus:
     accumulated_solar_energy: float
     accumulated_grid_energy_import: float
     accumulated_grid_energy_export: float
+    accumulated_battery_energy_charge: float
+    accumulated_battery_energy_discharge: float
 
     def to_json(self) -> JSONDict:
         return asdict(self)

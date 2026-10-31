@@ -68,9 +68,9 @@ class ModbusPowerController(PowerController):
         self._accumulated_grid_export: str = f'{meter}/TotWhExp'
         self._accumulated_solar_energy: List[str] = [f'{inverter}/module/{i}/DCWH' for inverter in self._inverters for i
                                                      in [1, 2]]
+        self._accumulated_charge_energy: str = f'{master}/module/3/DCWH'
+        self._accumulated_discharge_energy: str = f'{master}/module/4/DCWH'
         # self._accumulated_inverter_power: List[str] = [f'{inverter}/ActWh' for inverter in self._inverters]
-        # self._accumulated_charge_energy: str = f'{master}/module/3/DCWH'
-        # self._accumulated_discharge_energy: str = f'{master}/module/4/DCWH'
 
         self._WMaxLim_Ena: str = f'{master}/WMaxLim_Ena'
         self._WMaxLimPct: str = f'{master}/WMaxLimPct'
@@ -156,9 +156,9 @@ class ModbusPowerController(PowerController):
         accumulated_grid_import = self._get(self._accumulated_grid_import)
         accumulated_grid_export = self._get(self._accumulated_grid_export)
         accumulated_solar_energy = self._get_sum(self._accumulated_solar_energy)
+        accumulated_charge_energy = self._get(self._accumulated_charge_energy)
+        accumulated_discharge_energy = self._get(self._accumulated_discharge_energy)
         # accumulated_inverter_power = self._get_sum(self._accumulated_inverter_power)
-        # accumulated_charge_energy = self._get(self._accumulated_charge_energy)
-        # accumulated_discharge_energy = self._get(self._accumulated_discharge_energy)
 
         battery_power = charge_power - discharge_power
         house_power = grid_power + solar_power - battery_power
@@ -175,7 +175,9 @@ class ModbusPowerController(PowerController):
             house_power=house_power,
             accumulated_solar_energy=accumulated_solar_energy,
             accumulated_grid_energy_import=accumulated_grid_import,
-            accumulated_grid_energy_export=accumulated_grid_export
+            accumulated_grid_energy_export=accumulated_grid_export,
+            accumulated_battery_energy_charge=accumulated_charge_energy,
+            accumulated_battery_energy_discharge=accumulated_discharge_energy,
         )
 
     # =================================================
