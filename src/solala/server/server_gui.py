@@ -798,12 +798,12 @@ async def solar_forecast_page():
     # What follows is rendering and navigation
 
     # Handler for swipe actions
-    def handle_swipe(event) -> None:
+    async def handle_swipe(event) -> None:
         direction = event.args
         if direction == 'left':
-            change_day(1)
+            await change_day(1)
         elif direction == 'right':
-            change_day(-1)
+            await change_day(-1)
 
     swipe_area.on(
         'touchstart',
