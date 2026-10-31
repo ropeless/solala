@@ -62,7 +62,7 @@ class DummyPowerPricer(PowerPricer):
                     renewables=renewables,
                     start_time=start_time,
                     end_time=end_time,
-                    estimate=self.cur_price_is_estate,
+                    is_estimate=self.cur_price_is_estate,
                 )
             )
         else:
@@ -73,7 +73,7 @@ class DummyPowerPricer(PowerPricer):
                 renewables=cur_price.renewables,
                 start_time=start_time,
                 end_time=end_time,
-                estimate=self.cur_price_is_estate,
+                is_estimate=self.cur_price_is_estate,
             )
 
         return self.prices[0]
@@ -99,7 +99,7 @@ class DummyPowerPricer(PowerPricer):
                     renewables=renewables,
                     start_time=prev_price.end_time,
                     end_time=prev_price.end_time + five_minutes,
-                    estimate=True,
+                    is_estimate=True,
                 )
             )
 
@@ -127,5 +127,5 @@ def _average_price(prices: List[Price]) -> Price:
         renewables=sum(price.renewables for price in prices) / len(prices),
         start_time=prices[0].start_time,
         end_time=prices[-1].end_time,
-        estimate=True,
+        is_estimate=True,
     )

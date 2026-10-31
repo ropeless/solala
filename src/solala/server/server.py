@@ -1,4 +1,5 @@
 import asyncio
+import selectors
 import threading
 from functools import partial
 from pathlib import Path
@@ -81,8 +82,11 @@ def start_control_loop_thread(
     Returns:
         The control loop thread.
     """
-    coroutine = control_loop.control_loop(settings_path, settings, force_settings)
-    target = partial(asyncio.run, coroutine)
+    target = partial(
+        asyncio.run,
+        control_loop.control_loop(settings_path, settings, force_settings),
+        loop_factory=(lambda: asyncio.SelectorEventLoop(selectors.SelectSelector())),
+    )
 
     control_loop_thread = threading.Thread(target=target, daemon=True)
     control_loop_thread.start()

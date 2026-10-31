@@ -2,6 +2,7 @@ from enum import Enum, auto
 from typing import Iterable, Tuple, Dict
 
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
+from solala.utils.datetime_extras import now
 
 
 class BatteryMode(Enum):
@@ -49,6 +50,13 @@ class DummyPowerController(PowerController):
         self.max_charge_param = max_charge_param
         self.max_discharge_param = max_discharge_param
 
+        self.last_accumulation: float = now().timestamp()
+        self.accumulated_solar_energy: float = 0
+        self.accumulated_grid_energy_import: float = 0
+        self.accumulated_grid_energy_export: float = 0
+        self.accumulated_battery_energy_charge: float = 0
+        self.accumulated_battery_energy_discharge: float = 0
+
         self.update_status()
 
     def get_inverter_limit(self) -> float:
@@ -74,6 +82,7 @@ class DummyPowerController(PowerController):
         return self.get_connection_status().items()
 
     async def get_status(self) -> PowerStatus:
+        self.update_status()
         return PowerStatus(
             state_of_charge=self.state_of_charge,
             power_limit=self.power_limit,
@@ -81,6 +90,11 @@ class DummyPowerController(PowerController):
             grid_power=self.grid_power,
             solar_power=self.solar_power,
             house_power=self.house_power,
+            accumulated_solar_energy=self.accumulated_solar_energy,
+            accumulated_grid_energy_import=self.accumulated_grid_energy_import,
+            accumulated_grid_energy_export=self.accumulated_grid_energy_export,
+            accumulated_battery_energy_charge=self.accumulated_battery_energy_charge,
+            accumulated_battery_energy_discharge=self.accumulated_battery_energy_discharge,
         )
 
     def enable_battery(self) -> None:
@@ -123,6 +137,18 @@ class DummyPowerController(PowerController):
         """
         Simulate a simple power system.
         """
+        # accumulate energy
+        now_timestamp = now().timestamp()
+        hours = (now_timestamp - self.last_accumulation) / 3600
+        self.last_accumulation = now_timestamp
+        self.accumulated_solar_energy += self.solar_power * hours
+        grid_energy = self.grid_power * hours
+        batt_energy = self.battery_power * hours
+        self.accumulated_grid_energy_import += max(0, grid_energy)
+        self.accumulated_grid_energy_export -= min(0, grid_energy)
+        self.accumulated_battery_energy_charge += max(0, batt_energy)
+        self.accumulated_battery_energy_discharge -= min(0, batt_energy)
+
         max_generation = self.inverter_limit
         max_charge_param = self.max_charge_param
         max_discharge_param = self.max_discharge_param

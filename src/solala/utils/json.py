@@ -7,6 +7,8 @@ from itertools import chain
 from types import MappingProxyType, NoneType
 from typing import TypeAlias, Dict, List, Optional, Mapping, Any, Collection
 
+from pydantic import BaseModel
+
 # Define the recursive JSON value type
 JSONValue: TypeAlias = str | int | float | bool | None | List["JSONValue"] | Dict[str, "JSONValue"]
 
@@ -144,8 +146,8 @@ def to_json(
         *,
         exclude_names: Collection[str] = (),
         exclude_values: Collection[Any] = (),
-        datetime_format: str = 'YYYY-MM-DD HH:MM:SS',
-        date_format: str = 'YYYY-MM-DD',
+        datetime_format: str = '%Y-%m-%d %H:%M:%S',
+        date_format: str = '%Y-%m-%d',
 ) -> JSONDict:
     """
     Support for converting classes and object with fields into JSON.
@@ -160,7 +162,11 @@ def _to_json(
         datetime_format: str,
         date_format: str,
 ) -> JSONDict:
-    if isinstance(thing, type):
+    if isinstance(thing, BaseModel):
+        items = thing.__dict__.items()
+        exclude_names = set(exclude_names)
+        exclude_names.add('model_config')
+    elif isinstance(thing, type):
         items = thing.__dict__.items()
     else:
         items = chain(thing.__dict__.items(), thing.__class__.__dict__.items())

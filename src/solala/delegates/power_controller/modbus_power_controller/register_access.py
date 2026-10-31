@@ -1,6 +1,6 @@
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
-from typing import TypeAlias
+from typing import TypeAlias, Sequence
 
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ModbusPDU
@@ -93,11 +93,25 @@ def uint32(addr: int, writable: bool = False) -> RegisterAccess:
     return RegisterAccessInt(addr, count=2, signed=False, writable=writable)
 
 
+def uint64(addr: int, writable: bool = False) -> RegisterAccess:
+    """
+    Define an unsigned 64-bit unsigned integer register, at the given relative address.
+    """
+    return RegisterAccessInt(addr, count=4, signed=False, writable=writable)
+
+
 def int32(addr: int, writable: bool = False) -> RegisterAccess:
     """
     Define a signed 32-bit unsigned integer register at the given relative address.
     """
     return RegisterAccessInt(addr, count=2, signed=True, writable=writable)
+
+
+def int64(addr: int, writable: bool = False) -> RegisterAccess:
+    """
+    Define a signed 64-bit unsigned integer register at the given relative address.
+    """
+    return RegisterAccessInt(addr, count=4, signed=True, writable=writable)
 
 
 def str2(addr: int) -> RegisterAccess:
@@ -128,20 +142,36 @@ def str16(addr: int) -> RegisterAccess:
     return RegisterAccessStr(addr, count=16)
 
 
-def scaled_uint(addr: int, scale_addr: int, writable: bool = False) -> RegisterAccess:
+def scaled_uint16(addr: int, scale_addr: int, writable: bool = False) -> RegisterAccess:
     """
     Define a scaled unsigned integer at the given relative address.
     Internal format: uint16 & scale-factor.
     """
-    return RegisterAccessScaled(addr, scale_addr, signed=False, writable=writable)
+    return RegisterAccessScaled(addr, scale_addr, 1, signed=False, writable=writable)
 
 
-def scaled_int(addr: int, scale_addr: int, writable: bool = False) -> RegisterAccess:
+def scaled_int16(addr: int, scale_addr: int, writable: bool = False) -> RegisterAccess:
     """
     Define a scaled unsigned integer at the given relative address.
     Internal format: int16 & scale-factor.
     """
-    return RegisterAccessScaled(addr, scale_addr, signed=True, writable=writable)
+    return RegisterAccessScaled(addr, scale_addr, 1, signed=True, writable=writable)
+
+
+def scaled_uint32(addr: int, scale_addr: int, writable: bool = False) -> RegisterAccess:
+    """
+    Define a scaled unsigned integer at the given relative address.
+    Internal format: uint32 & scale-factor.
+    """
+    return RegisterAccessScaled(addr, scale_addr, 2, signed=False, writable=writable)
+
+
+def scaled_int32(addr: int, scale_addr: int, writable: bool = False) -> RegisterAccess:
+    """
+    Define a scaled unsigned integer at the given relative address.
+    Internal format: int32 & scale-factor.
+    """
+    return RegisterAccessScaled(addr, scale_addr, 2, signed=True, writable=writable)
 
 
 def _read_byte_array(
@@ -169,8 +199,12 @@ def _read_byte_array(
     )
     if result.isError():
         raise ModbusError(context.device_id, context.modbus_model, addr, physical_addr, count, 'read', result)
+    return _registers_to_bytearray(result.registers)
+
+
+def _registers_to_bytearray(registers: Sequence[int]) -> bytearray:
     byte_array = bytearray()
-    for reg_result in result.registers:
+    for reg_result in registers:
         byte_array.extend(reg_result.to_bytes(2, byteorder='big'))
     return byte_array
 
@@ -284,33 +318,35 @@ class RegisterAccessInt(RegisterAccess):
 
 class RegisterAccessScaled(RegisterAccess):
 
-    def __init__(self, addr: int, scale_addr: int, signed: bool, writable: bool):
+    def __init__(self, addr: int, scale_addr: int, count: int, signed: bool, writable: bool):
         self.addr = addr
         self.scale_addr = (addr + 1) if scale_addr == NEXT_SF else scale_addr
+        self.count = count
         self.signed = signed
         self.start = min(self.addr, self.scale_addr)
-        self.count = max(self.addr, self.scale_addr) - self.start + 1
+        self.end = max(self.addr + count - 1, self.scale_addr)
+        self.run_length = self.end - self.start + 1
         self.writable = writable
 
     def get(self, context: RegisterContext) -> float:
         physical_addr = self.start + context.address_offset
         result: ModbusPDU = context.client.read_holding_registers(
             physical_addr,
-            count=self.count,
+            count=self.run_length,
             device_id=context.device_id,
         )
         if result.isError():
             raise ModbusError(
-                context.device_id, context.modbus_model, self.start, physical_addr, self.count, 'read', result
+                context.device_id, context.modbus_model, self.start, physical_addr, self.run_length, 'read', result
             )
 
-        def reg_value(_addr: int, _signed: bool) -> int:
-            value_reg = result.registers[_addr - self.start]
-            value_byte_array = bytearray(value_reg.to_bytes(2, byteorder='big'))
+        def reg_value(_addr: int, _count: int, _signed: bool) -> int:
+            _addr -= self.start
+            value_byte_array = _registers_to_bytearray(result.registers[_addr: _addr + _count])
             return int.from_bytes(value_byte_array, byteorder='big', signed=_signed)
 
-        value: int = reg_value(self.addr, self.signed)
-        scale: int = reg_value(self.scale_addr, True)
+        value: int = reg_value(self.addr, self.count, self.signed)
+        scale: int = reg_value(self.scale_addr, 1, True)
         return value * (10 ** scale)
 
     def set(self, context: RegisterContext, value: int | float | str) -> None:
@@ -328,7 +364,7 @@ class RegisterAccessScaled(RegisterAccess):
         if isinstance(value, float):
             scaled_value = int(value * (10 ** -scale) + 0.5)  # add 0.5 for rounding
             _write_int(
-                context, self.addr, value=scaled_value, count=1, signed=self.signed
+                context, self.addr, value=scaled_value, count=self.count, signed=self.signed
             )
         elif isinstance(value, int):
             if scale > 0:
@@ -339,7 +375,7 @@ class RegisterAccessScaled(RegisterAccess):
             else:
                 scaled_value = value * (10 ** -scale)
             _write_int(
-                context, self.addr, value=scaled_value, count=1, signed=self.signed
+                context, self.addr, value=scaled_value, count=self.count, signed=self.signed
             )
         else:
             assert False, 'unexpected type'

@@ -1,7 +1,7 @@
 import local_config as config
 from solala.server import server
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
-    TeslaWallConnectorConnection, OpenMeteoConnection
+    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection
 from solala_demo.log import configure_logger
 
 HOST: str = config.SERVER_IP_ADDRESS
@@ -31,6 +31,14 @@ def main():
             inverter_efficiency=config.INVERTER_EFFICIENCY,
         ),
 
+        database=DatabaseConnection(
+            role=config.DATABASE_APP_ROLE,
+            password=config.DATABASE_APP_PASSWORD,
+            host=config.DATABASE_HOST,
+            port=config.DATABASE_PORT,
+            database_name=config.DATABASE_NAME,
+        ),
+
         # inverter_mode=InverterMode.ENABLE,
         # inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT,
         # disable_export_price_threshold=10,
@@ -43,11 +51,9 @@ def main():
         # stop_charge_price_threshold = 2,
     )
 
-    # DEBUG: Change control loop constants for testing and debugging.
-    # Constants.PRICE_LOOK_AHEAD = 0
-
     # Create and register a history file
     # history = HistoryFile(config.HISTORY_FILE)
+    # control_loop.add_listener(history)
     # LOGGER.info(f'registered history file: {history}')
 
     server.run_server(

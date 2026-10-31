@@ -150,7 +150,6 @@ class Modbus(Mapping[str, str | int | float]):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
-        return exc_type is None
 
     def __len__(self) -> int:
         return len(self._registers)

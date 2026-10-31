@@ -17,7 +17,8 @@ from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.delegates.power_pricer.power_pricer import Price
-from solala.delegates.solar_forecaster.solar_forecaster import DailySolarForecast, SolarForecast, WeatherCode
+from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
+from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
@@ -451,7 +452,7 @@ class SolarForecastUpdater(LoopListener):
                         )
 
                         with ui.element('div').classes(row_classes):
-                            ui.label(forecast.time.strftime(GUI_TIME_FORMAT)).classes('solar-time')
+                            ui.label(forecast.start_time.strftime(GUI_TIME_FORMAT)).classes('solar-time')
                             ui.label(f'{int(forecast.temperature + 0.5)}{CELSIUS}').classes(f'solar-number')
                             if icon is None:
                                 ui.label('').classes('solar-weather-icon')

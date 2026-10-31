@@ -2,7 +2,8 @@ from typing import Literal, TypeAlias, Optional, Annotated, Union, ClassVar, Dic
 
 from pydantic import BaseModel, Field
 
-from solala.constants import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_PANEL_TEMPERATURE_COEFFICIENT
+from solala.constants import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, \
+    DEFAULT_DB_HOST, DEFAULT_DB_PORT, DEFAULT_DB_NAME
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, InverterPolicy, BatteryPolicy
 
 
@@ -82,6 +83,14 @@ class OpenMeteoConnection(BaseModel):
     inverter_efficiency: float = DEFAULT_INVERTER_EFFICIENCY
 
 
+class DatabaseConnection(BaseModel):
+    role: str
+    password: str
+    host: str = DEFAULT_DB_HOST
+    port: int = DEFAULT_DB_PORT
+    database_name: str = DEFAULT_DB_NAME
+
+
 # =====================================================================================
 #  Generic connection types
 # =====================================================================================
@@ -132,6 +141,7 @@ class Settings(BaseModel):
     pricer: Optional[PricerConnection] = None
     forecaster: Optional[ForecasterConnection] = None
     consumers: Optional[Dict[str, ConsumerConnection]] = None
+    database: Optional[DatabaseConnection] = None
 
     battery_mode: Optional[BatteryMode] = None
     inverter_mode: Optional[InverterMode] = None
