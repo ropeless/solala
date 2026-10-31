@@ -64,7 +64,7 @@ class Infographic:
             buy_price=0,
             feed_in_price=0,
             renewables=0,
-            estimate=True,
+            is_estimate=True,
         )
 
     def make_from_status(self, status: JSONDict, power_scale=2000) -> None:
@@ -80,7 +80,7 @@ class Infographic:
             buy_price=json_num(price_dict.get('buy_price', 0)),
             feed_in_price=json_num(price_dict.get('feed_in_price', 0)),
             renewables=json_num(price_dict.get('renewables', 0)),
-            estimate=json_bool(price_dict.get('estimate', True)),
+            is_estimate=json_bool(price_dict.get('is_estimate', True)),
         )
 
     def make(
@@ -95,7 +95,7 @@ class Infographic:
             buy_price: float,
             feed_in_price: float,
             renewables: float,
-            estimate: bool,
+            is_estimate: bool,
     ) -> None:
         """
         Args:
@@ -108,7 +108,7 @@ class Infographic:
             buy_price: c/kWh
             feed_in_price: c/kWh
             renewables: %
-            estimate: Boolean flag to indicate whether the price is an estimate or not.
+            is_estimate: Boolean flag to indicate whether the price is an estimate or not.
         """
         canvas = self.canvas
         icon_offset = self.icon_offset
@@ -151,7 +151,7 @@ class Infographic:
         canvas.append(Text(_to_pct(state_of_charge), x=right, y=bot2, font_size=font_sm, class_=class_text, **kwargs))
 
         # price
-        prefix: str = '~' if estimate else ''
+        prefix: str = '~' if is_estimate else ''
         if buy_price >= 100:
             buy_str = _to_dollars(buy_price)
             feed_in_str = _to_dollars(feed_in_price)

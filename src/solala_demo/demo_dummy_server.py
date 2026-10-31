@@ -31,9 +31,6 @@ def main():
 
     )
 
-    # DEBUG: Change control loop constants for testing and debugging.
-    # Constants.PRICE_LOOK_AHEAD = 0
-
     server.run_server(
         host=HOST,
         port=PORT,

@@ -6,6 +6,7 @@ APP_SUBTITLE: str = 'Home Power Management'
 TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timestamps
 GUI_DATE_FORMAT = '%a, %d %b %Y'
 GUI_TIME_FORMAT = '%H:%M'
+GUI_LOG_FORMAT: str = '%(asctime)s %(levelname)s: %(name)s %(message)s'
 
 # Units for pretty printing status
 PRICE_CENTS = ' ¢/kWh'
@@ -32,6 +33,10 @@ DEFAULT_INVERTER_EFFICIENCY: float = 0.96  # as a fraction (0 to 1)
 DEFAULT_INVERTER_LIMIT: float = float('inf')  # in Watts
 DEFAULT_PANEL_TEMPERATURE_COEFFICIENT: float = -0.004  # in Celsius
 
+DEFAULT_DB_HOST: str = 'localhost'
+DEFAULT_DB_PORT: int = 5432
+DEFAULT_DB_NAME: str = 'solala'
+
 
 class Constants:
 
@@ -44,13 +49,14 @@ class Constants:
     LOOP_MIN_SLEEP_TIME: int = 1  # number of seconds to sleep for each loop iteration
     CONTROL_DURATION: int = 11  # number of seconds a control remains active
     PRICE_SETTLE_CHECK: int = 9  # check delay to see if the power price has settled
-    PRICE_FORECAST_DURATION = 13  # in hours
-    PRICE_FORECAST_AGE = 5  # number of minutes a price forecast is valid
-    SOLAR_FORECAST_AGE = 3 * 60  # number of minutes a solar forecast is valid
+    PRICE_FORECAST_DURATION: int = 13  # in hours
+    PRICE_FORECAST_AGE: int = 5  # number of minutes a price forecast is valid
+    SOLAR_FORECAST_AGE: int = 3 * 60  # number of minutes a solar forecast is valid
+    DATABASE_LOG_LOOP_TIME = 5 * 60  # five minutes, in seconds
 
     MAX_LOG_HISTORY: int = 1000  # Maximum number of log lines in the GUI log
-    BUY_PRICE_AMBER = 20  # Buy price threshold for amber colour
-    BUY_PRICE_RED = 40  # Buy price threshold for red colour
+    BUY_PRICE_AMBER: float = 20  # Buy price threshold for amber colour
+    BUY_PRICE_RED: float = 40  # Buy price threshold for red colour
 
     CONTROLS_ENABLED: bool = True  # Whether to present the control buttons or not - GUI only!
     ANIMATE_WEATHER_ICONS: bool = True  # Whether to animate weather icons or not

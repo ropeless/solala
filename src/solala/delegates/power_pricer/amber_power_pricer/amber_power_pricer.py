@@ -133,7 +133,7 @@ def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _Pric
     estimate: bool = True if 'estimate' not in general else json_bool(general['estimate'])
 
     renewables: float = json_num(general['renewables'])
-    renewables = max(0, min(renewables, 100))  # clamp renewables to 0-100 due to API limitations
+    renewables = max(0.0, min(renewables, 100.0))  # clamp renewables to 0-100 due to API limitations
 
     return Price(
         start_time=start_time,
@@ -141,7 +141,7 @@ def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _Pric
         renewables=renewables,
         buy_price=price_f(general),
         feed_in_price=-price_f(feed_in),
-        estimate=estimate,
+        is_estimate=estimate,
         tariff_period=json_str(tariff_info['period']),
         tariff_season=json_str(tariff_info['season']),
         tariff_demand_window=json_bool(tariff_info['demandWindow']),

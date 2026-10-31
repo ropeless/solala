@@ -9,10 +9,15 @@ from solala.utils.json import JSONDict
 class PowerStatus:
     state_of_charge: float
     power_limit: float
+
     grid_power: float
     solar_power: float
     battery_power: float
     house_power: float
+
+    accumulated_solar_energy: float
+    accumulated_grid_energy_import: float
+    accumulated_grid_energy_export: float
 
     def to_json(self) -> JSONDict:
         return asdict(self)
@@ -164,4 +169,3 @@ class PowerController(ABC):
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         await self.close()
-        return exc_type is None

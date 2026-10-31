@@ -1,8 +1,9 @@
 from typing import Dict, Tuple, Iterator, Mapping
 
-from solala.delegates.power_controller.modbus_power_controller.register_access import NEXT_SF as _NEXT_SF, uint32, MODBUS_MODEL, str2
-from solala.delegates.power_controller.modbus_power_controller.register_access import RegisterAccess, str16, str8, uint16, scaled_uint, \
-    scaled_int
+from solala.delegates.power_controller.modbus_power_controller.register_access import NEXT_SF as _NEXT_SF, uint32, \
+    MODBUS_MODEL, str2, uint64, scaled_uint32
+from solala.delegates.power_controller.modbus_power_controller.register_access import RegisterAccess, str16, str8, uint16, scaled_uint16, \
+    scaled_int16
 
 MPPT_MODEL: MODBUS_MODEL = 160  # special model with variable number of registers
 
@@ -19,8 +20,10 @@ _ChaState_SF = 23  # Model 124
 _InOutWRte_SF = 26  # Model 124
 
 _DCW_SF = 5  # Model 160
+_DCWH_SF = 6  # Model 160
 
 _W_SF = 23  # Model 201
+_TotWh_SF = 55   # Model 201
 
 MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
 
@@ -40,20 +43,20 @@ MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
 
     # Inverter
     101: {
-        'W': scaled_int(15, _NEXT_SF),
-        'HZ': scaled_uint(17, _NEXT_SF),
-        'DCW': scaled_int(32, _NEXT_SF),
-        'TmpCab': scaled_int(34, _TMP_SF),  # Temperature in Celsius
+        'W': scaled_int16(15, _NEXT_SF),
+        'HZ': scaled_uint16(17, _NEXT_SF),
+        'DCW': scaled_int16(32, _NEXT_SF),
+        'TmpCab': scaled_int16(34, _TMP_SF),  # Temperature in Celsius
     },
 
     # Inverter Nameplate
     120: {
-        'WRtg': scaled_uint(4, _NEXT_SF),  # Inverter maximum output power
+        'WRtg': scaled_uint16(4, _NEXT_SF),  # Inverter maximum output power
     },
 
     # Inverter Settings
     121: {
-        'WMax': scaled_uint(3, _WMax_SF),  # Inverter maximum output power
+        'WMax': scaled_uint16(3, _WMax_SF),  # Inverter maximum output power
     },
 
     # Inverter Status
@@ -61,7 +64,9 @@ MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
         'PVConn': uint16(3),
         'StorConn': uint16(4),
         'ECPConn': uint16(5),
+        'ActWh': uint64(6),
         'StActCtl': uint32(36),
+        'Tms': uint32(42),
     },
 
     # Inverter Control
@@ -69,7 +74,7 @@ MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
         'Conn_WinTms': uint16(3, writable=True),
         'Conn_RvrtTms': uint16(4, writable=True),
         'Conn': uint16(5, writable=True),
-        'WMaxLimPct': scaled_uint(6, _WMaxLimPct_SF, writable=True),
+        'WMaxLimPct': scaled_uint16(6, _WMaxLimPct_SF, writable=True),
         'WMaxLimPct_WinTms': uint16(7, writable=True),
         'WMaxLimPct_RvrtTms': uint16(8, writable=True),
         'WMaxLimPct_RmpTms': uint16(9, writable=True),
@@ -78,21 +83,23 @@ MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
 
     # Storage Control
     124: {
-        'WchaMax': scaled_uint(3, _WChaMax_SF, writable=True),
-        'WchaGra': scaled_uint(4, _WChaDisChaGra_SF, writable=True),
-        'WdisChaGra': scaled_uint(5, _WChaDisChaGra_SF, writable=True),
+        'WchaMax': scaled_uint16(3, _WChaMax_SF, writable=True),
+        'WchaGra': scaled_uint16(4, _WChaDisChaGra_SF, writable=True),
+        'WdisChaGra': scaled_uint16(5, _WChaDisChaGra_SF, writable=True),
         'StorCtl_Mod': uint16(6, writable=True),  # 0 or 1
-        'MinRsvPct': scaled_uint(8, _MinRsvPct_SF, writable=True),
-        'ChaState': scaled_uint(9, _ChaState_SF),
-        'OutWRte': scaled_int(13, _InOutWRte_SF, writable=True),
-        'InWRte': scaled_int(14, _InOutWRte_SF, writable=True),
+        'MinRsvPct': scaled_uint16(8, _MinRsvPct_SF, writable=True),
+        'ChaState': scaled_uint16(9, _ChaState_SF),
+        'OutWRte': scaled_int16(13, _InOutWRte_SF, writable=True),
+        'InWRte': scaled_int16(14, _InOutWRte_SF, writable=True),
         'ChaGriSet': uint16(18, writable=True),
     },
 
     # Smart Meter
     201: {
-        'W': scaled_int(19, _W_SF),
-        'Hz': scaled_int(17, _NEXT_SF),
+        'W': scaled_int16(19, _W_SF),
+        'Hz': scaled_int16(17, _NEXT_SF),
+        'TotWhExp': scaled_uint32(39, _TotWh_SF),
+        'TotWhImp': scaled_uint32(47, _TotWh_SF),
     },
 
     # MPPT common
@@ -111,4 +118,6 @@ def mppt_modules(number_of_modules: int) -> Iterator[Tuple[str, RegisterAccess]]
         module_offset = i * 20
         yield f'module/{module_id}/ID', uint16(11 + module_offset)
         yield f'module/{module_id}/IDStr', str8(12 + module_offset),
-        yield f'module/{module_id}/DCW', scaled_uint(22 + module_offset, _DCW_SF)
+        yield f'module/{module_id}/DCW', scaled_uint16(22 + module_offset, _DCW_SF)
+        yield f'module/{module_id}/DCWH', scaled_uint32(23 + module_offset, _DCWH_SF)
+        yield f'module/{module_id}/Tms', uint32(25 + module_offset)

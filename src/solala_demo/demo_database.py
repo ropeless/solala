@@ -1,38 +1,56 @@
+import asyncio
+import json
+import selectors
 from datetime import datetime
+from typing import Optional
 
 import local_config as config
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
-from solala.database.solala_database import Measurement, SolalaConnections
+from solala.database.solala_database import Measurement, solala_database
+from solala.utils.json import to_json
 
 
-def main() -> None:
-    with SolalaConnections(config.DATABASE_APP_URL) as pool:
-        with pool.solala_data() as db:
-            measurement = Measurement(
-                timestamp=datetime.now(),
+async def main() -> None:
+    async with solala_database(
+            role=config.DATABASE_APP_ROLE,
+            password=config.DATABASE_APP_PASSWORD,
+            host=config.DATABASE_HOST,
+            port=config.DATABASE_PORT,
+            database_name=config.DATABASE_NAME,
+    ) as db:
+        measurement = Measurement(
+            timestamp=datetime.now(),
 
-                solar_power=12,
-                grid_power=23,
-                house_power=34,
-                battery_power=45,
-                battery_charge=56,
+            solar_power=12,
+            grid_power=23,
+            house_power=34,
+            battery_power=45,
+            battery_charge=56,
 
-                buy_price=67,
-                feed_in_price=78,
+            buy_price=67,
+            feed_in_price=78,
 
-                accumulated_solar_energy=123,
-                accumulated_grid_energy_draw=345,
-                accumulated_grid_energy_feed_in=678,
+            accumulated_solar_energy=123,
+            accumulated_grid_energy_import=345,
+            accumulated_grid_energy_export=678,
 
-                battery_mode=BatteryMode.ENABLE,
-                battery_policy=BatteryPolicy.MANUAL,
-                inverter_mode=InverterMode.ENABLE,
-                inverter_policy=InverterPolicy.MANUAL,
-            )
-            db.insert_measurement(measurement)
-            got = db.get_latest_measurement()
-            print(got)
+            battery_mode=BatteryMode.ENABLE,
+            battery_policy=BatteryPolicy.MANUAL,
+            inverter_mode=InverterMode.ENABLE,
+            inverter_policy=InverterPolicy.MANUAL,
+        )
+        await db.insert_measurement(measurement)
+        got: Optional[Measurement] = await db.get_latest_measurement()
+
+        if got is not None:
+            to_print = json.dumps(to_json(got), indent=4)
+            print(to_print)
+        else:
+            print('No measurement in database')
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(
+        main(),
+        loop_factory=(lambda: asyncio.SelectorEventLoop(selectors.SelectSelector())),
+    )

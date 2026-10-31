@@ -1,5 +1,6 @@
 from contextlib import contextmanager
-from typing import Iterable, List, Tuple, Sequence, Optional, Dict
+from itertools import chain
+from typing import Iterable, List, Tuple, Optional, Dict
 
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.delegates.power_controller.modbus_power_controller.register_access import ModbusError
@@ -26,6 +27,8 @@ _STATUS_TOLERANCE = 100  # Watts
 # Tolerance for power change.
 _POWER_CHANGE_TOLERANCE = 100  # Watts
 _SMALL_CHANGE_TOLERANCE = 2000  # Watts
+
+_INVERTER_LIMIT_NAME: str = 'inverter_limit'
 
 
 class ModbusPowerController(PowerController):
@@ -60,6 +63,14 @@ class ModbusPowerController(PowerController):
         self._solar_power: List[str] = [f'{inverter}/module/{i}/DCW' for inverter in self._inverters for i in [1, 2]]
         self._grid_power: str = f'{meter}/W'
         self._inverter_power: List[str] = [f'{inverter}/W' for inverter in self._inverters]
+
+        self._accumulated_grid_import: str = f'{meter}/TotWhImp'
+        self._accumulated_grid_export: str = f'{meter}/TotWhExp'
+        self._accumulated_solar_energy: List[str] = [f'{inverter}/module/{i}/DCWH' for inverter in self._inverters for i
+                                                     in [1, 2]]
+        # self._accumulated_inverter_power: List[str] = [f'{inverter}/ActWh' for inverter in self._inverters]
+        # self._accumulated_charge_energy: str = f'{master}/module/3/DCWH'
+        # self._accumulated_discharge_energy: str = f'{master}/module/4/DCWH'
 
         self._WMaxLim_Ena: str = f'{master}/WMaxLim_Ena'
         self._WMaxLimPct: str = f'{master}/WMaxLimPct'
@@ -106,7 +117,7 @@ class ModbusPowerController(PowerController):
             w_rtg = self._get(f'{inverter}/WRtg')
             value += min(w_max, w_rtg)
         self._inverter_limit = value
-        LOGGER.info(f'LOG inverter_limit: {value!r}')
+        LOGGER.info(f'LOG {_INVERTER_LIMIT_NAME}: {value!r}')
 
     def connect(self) -> None:
         """
@@ -130,7 +141,7 @@ class ModbusPowerController(PowerController):
         """
         Get the values of all known registers.
         """
-        return self._modbus.items()
+        return chain(self._modbus.items(), [(_INVERTER_LIMIT_NAME, self._inverter_limit)])
 
     async def get_status(self) -> PowerStatus:
         """
@@ -141,6 +152,13 @@ class ModbusPowerController(PowerController):
         discharge_power = self._get(self._discharge_power)
         solar_power = self._get_sum(self._solar_power)
         grid_power = self._get(self._grid_power)
+
+        accumulated_grid_import = self._get(self._accumulated_grid_import)
+        accumulated_grid_export = self._get(self._accumulated_grid_export)
+        accumulated_solar_energy = self._get_sum(self._accumulated_solar_energy)
+        # accumulated_inverter_power = self._get_sum(self._accumulated_inverter_power)
+        # accumulated_charge_energy = self._get(self._accumulated_charge_energy)
+        # accumulated_discharge_energy = self._get(self._accumulated_discharge_energy)
 
         battery_power = charge_power - discharge_power
         house_power = grid_power + solar_power - battery_power
@@ -155,6 +173,9 @@ class ModbusPowerController(PowerController):
             solar_power=solar_power,
             battery_power=battery_power,
             house_power=house_power,
+            accumulated_solar_energy=accumulated_solar_energy,
+            accumulated_grid_energy_import=accumulated_grid_import,
+            accumulated_grid_energy_export=accumulated_grid_export
         )
 
     # =================================================
@@ -370,7 +391,7 @@ class ModbusPowerController(PowerController):
             raise TypeError(msg)
         return value
 
-    def _get_sum(self, names: Sequence[str]) -> int | float:
+    def _get_sum(self, names: List[str]) -> int | float:
         self._logger_get_set(f'SUM {names}')
         result = sum(self._get(name) for name in names)
         self._logger_get_set(f'SUM = {result}')

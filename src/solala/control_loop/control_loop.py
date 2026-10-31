@@ -1,7 +1,6 @@
 import asyncio
 import copy
 import json
-import threading
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, UTC, timedelta, date
@@ -14,6 +13,7 @@ from solala.constants import Constants, TIMESTAMP_FORMAT
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
+from solala.database.solala_database import SolalaDatabaseConnections, SolalaDatabase, Measurement
 from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
@@ -33,7 +33,8 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
     DummyControllerConnection, \
     DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
-    DummySolarForecasterConnection
+    DummySolarForecasterConnection, DatabaseConnection
+from solala.utils.async_rlock import AsyncRLock
 from solala.utils.datetime_extras import now
 from solala.utils.json import JSONDict, json_num
 from solala.utils.network import find_ip_by_mac
@@ -49,6 +50,9 @@ _NO_POWER = PowerStatus(
     solar_power=0,
     battery_power=0,
     house_power=0,
+    accumulated_grid_energy_export=0,
+    accumulated_grid_energy_import=0,
+    accumulated_solar_energy=0,
 )
 _NO_PRICE = Price(
     start_time=_MIN_DATE,
@@ -56,7 +60,7 @@ _NO_PRICE = Price(
     renewables=0,
     buy_price=0,
     feed_in_price=0,
-    estimate=True,
+    is_estimate=True,
 )
 _DISCONNECTED: JSONDict = {'connection': 'disconnected'}
 _NO_SOLAR_FORECAST = DailySolarForecast([])
@@ -79,62 +83,14 @@ class _PrevControl:
     makes changes when needed.
     """
     controller: Optional[PowerController] = None
-    battery_mode: BatteryMode = BatteryMode.UNKNOWN
-    inverter_mode: InverterMode = InverterMode.UNKNOWN
-    battery_policy: BatteryPolicy = BatteryPolicy.MANUAL
-    inverter_policy: InverterPolicy = InverterPolicy.MANUAL
+    control_mode: ControlMode = field(default_factory=ControlMode)
 
     def reset(self, controller: Optional[PowerController]) -> None:
         self.controller = controller
-        self.battery_mode = BatteryMode.UNKNOWN
-        self.inverter_mode = InverterMode.UNKNOWN
-        self.battery_policy = BatteryPolicy.MANUAL
-        self.inverter_policy = InverterPolicy.MANUAL
-
-
-class _ControlLock:
-    def __init__(self) -> None:
-        self._rlock = threading.RLock()
-        self._alock = asyncio.Lock()
-        self._owner = None
-        self._count = 0
-
-    async def acquire(self):
-        self._rlock.acquire()
-
-        me = asyncio.current_task()
-
-        # If the current task already owns the lock, just increment the counter
-        if self._owner is me:
-            self._count += 1
-            return True
-
-        # Otherwise, wait to acquire the underlying lock
-        await self._alock.acquire()
-        self._owner = me
-        self._count = 1
-        return True
-
-    def release(self):
-        me = asyncio.current_task()
-
-        if self._owner is not me:
-            raise RuntimeError('Cannot release a lock you do not own')
-
-        self._count -= 1
-        if self._count == 0:
-            self._owner = None
-            self._alock.release()
-
-        self._rlock.release()
-
-    async def __aenter__(self):
-        await self.acquire()
-        return self
-
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        self.release()
-        return exc_type is None
+        self.control_mode.battery_mode = BatteryMode.UNKNOWN
+        self.control_mode.inverter_mode = InverterMode.UNKNOWN
+        self.control_mode.battery_policy = BatteryPolicy.MANUAL
+        self.control_mode.inverter_policy = InverterPolicy.MANUAL
 
 
 @dataclass
@@ -144,12 +100,14 @@ class _ControlState:
     pricer: Optional[PowerPricer] = None
     forecaster: Optional[SolarForecaster] = None
     consumers: Dict[str, PowerConsumer] = field(default_factory=dict)
+    database_connections: Optional[SolalaDatabaseConnections] = None
 
     # Keep track of the settings use to connect to the solar power system
     controller_settings: Optional[ControllerConnection] = None
     pricer_settings: Optional[PricerConnection] = None
     forecaster_settings: Optional[ForecasterConnection] = None
     consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
+    database_settings: Optional[DatabaseConnection] = None
 
     # What the user is asking the control loop to do
     control_mode: ControlMode = field(default_factory=ControlMode)
@@ -169,7 +127,7 @@ class _ControlState:
     next_solar_forecast_check: datetime = _MIN_DATE
 
     # Internal control loop tracking variables
-    lock: _ControlLock = field(default_factory=_ControlLock)
+    lock: AsyncRLock = field(default_factory=AsyncRLock)
     prev_state: _PrevControl = field(default_factory=_PrevControl)
     control_loop_running: bool = True
     listeners: List[LoopListener] = field(default_factory=list)
@@ -204,7 +162,15 @@ class _ControlState:
             for name, consumer in self.consumers.items()
         }
 
+    @property
+    def database_connection_status(self) -> JSONDict:
+        if self.database_connections is None:
+            return _DISCONNECTED
+        else:
+            return self.database_connections.get_connection_status()
+
     def reset_controller(self, controller: Optional[PowerController], settings: Optional[ControllerConnection]) -> None:
+        assert (controller is None) == (settings is None)
         self.controller = controller
         self.controller_settings = settings
 
@@ -217,6 +183,7 @@ class _ControlState:
         self.last_power_valid = False
 
     def reset_pricer(self, pricer: Optional[PowerPricer], settings: Optional[PricerConnection]) -> None:
+        assert (pricer is None) == (settings is None)
         self.pricer = pricer
         self.pricer_settings = settings
 
@@ -227,6 +194,7 @@ class _ControlState:
         self.next_price_forecast_check = _MIN_DATE
 
     def reset_forecaster(self, forecaster: Optional[SolarForecaster], settings: Optional[ForecasterConnection]) -> None:
+        assert (forecaster is None) == (settings is None)
         self.forecaster = forecaster
         self.forecaster_settings = settings
 
@@ -234,7 +202,8 @@ class _ControlState:
         self.last_price_forecast = ()
         self.next_solar_forecast_check = _MIN_DATE
 
-    def reset_consumer(self, consumer_name: str, consumer: Optional[PowerConsumer], settings: Optional[ConsumerConnection]) -> None:
+    def reset_consumer(self, consumer_name: str, consumer: Optional[PowerConsumer],
+                       settings: Optional[ConsumerConnection]) -> None:
         if consumer is None:
             assert settings is None
             self.consumers.pop(consumer_name, None)
@@ -243,6 +212,12 @@ class _ControlState:
             assert settings is not None
             self.consumers[consumer_name] = consumer
             self.consumers_settings[consumer_name] = settings
+
+    def reset_database(self, database: Optional[SolalaDatabaseConnections],
+                       settings: Optional[DatabaseConnection]) -> None:
+        assert (database is None) == (settings is None)
+        self.database_connections = database
+        self.database_settings = settings
 
 
 # Global control loop state
@@ -270,6 +245,11 @@ async def _control_state() -> AsyncIterator[_ControlState]:
         yield _CONTROL_STATE
 
 
+# ============================================================================
+#  Public control loop functions
+# ============================================================================
+
+
 async def control_loop(
         settings_path: Optional[Path | str] = None,
         settings: Optional[Settings] = None,
@@ -292,7 +272,6 @@ async def control_loop(
             Note that if settings are provided, they will override any settings loaded from the file. This includes
             modes and policies if the power controller is reloaded.
     """
-    LOGGER.info(f'{_LOG_SRC}Running')
 
     # Prepare to run the control loop.
     _CONTROL_STATE.control_loop_running = True
@@ -306,31 +285,9 @@ async def control_loop(
     if (not loaded or force_settings) and settings is not None:
         await configure_from_settings(settings)
 
-    # Execute the main loop
-    while _CONTROL_STATE.control_loop_running:
-        async with _control_state() as state:
-            state.iteration_start = now()  # timestamp to calculate loop sleep time
-            await _control_step(state)
-            listeners = state.listeners.copy()
-            state.last_power_valid = False
-
-        # Update the listeners while not holding the control state lock.
-        _update_listeners(listeners)
-
-        # Sleep for the remaining time until the next loop iteration.
-        # Make adjustment so that iterations tend to fall just after whole minutes
-        # (assuming `Constants.LOOP_TIME` is a factor of 60).
-        # The adjustment is limited to -1 to +1 second away from `Constants.LOOP_TIME`.
-        next_start_timestamp = state.iteration_start.timestamp() + Constants.LOOP_TIME
-        ideal_start_timestamp = round(next_start_timestamp / Constants.LOOP_TIME) * Constants.LOOP_TIME + 0.000001
-        next_start_timestamp += max(-1, min(ideal_start_timestamp - next_start_timestamp, 1))  # limited adjustment
-        sleeptime: float = next_start_timestamp - now().timestamp()
-        if sleeptime < Constants.LOOP_MIN_SLEEP_TIME:
-            LOGGER.warn(f'{_LOG_SRC}Low sleep time: {sleeptime} < {Constants.LOOP_MIN_SLEEP_TIME}')
-            sleeptime = Constants.LOOP_MIN_SLEEP_TIME
-        await asyncio.sleep(sleeptime)
-
-    LOGGER.info(f'{_LOG_SRC}Stopped')
+    database_task = asyncio.create_task(_database_loop())
+    await _control_loop()
+    database_task.cancel()
 
 
 # =============================================================================
@@ -345,7 +302,7 @@ def loop_check_overdue() -> float:
     `max(0, now - (iteration_start + Constants.LOOP_TIME))`.
 
     Returns:
-        The number of seconds the loop check is overdue (zero if running normally).
+        The number of seconds the loop check is overdue (a small number if running normally).
     """
     # We are not concerned with race conditions, so we do not need to get the control loop lock.
     return max(0, now().timestamp() - (_CONTROL_STATE.iteration_start.timestamp() + Constants.LOOP_TIME))
@@ -381,6 +338,9 @@ async def configure_from_settings(settings: Settings) -> None:
 
     if settings.forecaster is not None:
         await connect_forecaster(settings.forecaster)
+
+    if settings.database is not None:
+        await connect_database(settings.database)
 
     # Initialise control modes
     await set_control(
@@ -435,6 +395,14 @@ async def get_control_mode() -> ControlMode:
         return copy.copy(state.control_mode)
 
 
+async def get_prev_control_mode() -> ControlMode:
+    """
+    Get what the control loop last did for the user.
+    """
+    async with _control_state() as state:
+        return copy.copy(state.prev_state.control_mode)
+
+
 async def get_power_status() -> PowerStatus:
     async with _control_state() as state:
         if not state.last_power_valid:
@@ -477,9 +445,9 @@ async def get_price_now() -> Price:
         if state.next_price_check <= timestamp:
             try:
                 price: Price = await pricer.get_price()
-                LOGGER.info(f'{_LOG_SRC}Updating current price')
+                LOGGER.info(f'{_LOG_SRC}Updated current price: {price}')
                 state.last_price = price
-                if price.estimate:
+                if price.is_estimate:
                     # price is unstable - recheck is needed
                     delay = Constants.PRICE_SETTLE_CHECK
                     state.next_price_check = min(timestamp + timedelta(seconds=delay), price.end_time)
@@ -490,6 +458,22 @@ async def get_price_now() -> Price:
             except Exception as err:
                 LOGGER.error(f'{_LOG_SRC}Price update not available. Error: {err}')
 
+        return price
+
+
+async def get_price_now_no_estimate(max_tries: int = 10) -> Price:
+    """
+    Get the current price from the power pricer, looping until the price is not an estimate.
+
+    The returned price may be an estimate if the pricer is not available or could not
+    provide a non-estimate price within the given number of tries.
+    """
+    price: Price = await get_price_now()
+    max_tries -= 1
+    while price.is_estimate and max_tries > 1 and _CONTROL_STATE.pricer is not None:
+        max_tries -= 1
+        await asyncio.sleep(Constants.PRICE_SETTLE_CHECK)
+        price = await get_price_now()
     return price
 
 
@@ -547,6 +531,7 @@ async def get_connection_status() -> JSONDict:
             'controller': state.controller_connection_status,
             'pricer': state.pricer_connection_status,
             'forecaster': state.forecaster_connection_status,
+            'database': state.database_connection_status,
         }
         if len(state.consumers) > 0:
             result['consumers'] = state.consumers_connection_status
@@ -615,6 +600,25 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
                 return _NO_SOLAR_FORECAST
 
     return forecast
+
+
+@asynccontextmanager
+async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaDatabase]:
+    async with _control_state() as state:
+        database_connections = state.database_connections
+        if database_connections is None:
+            raise ConnectionError('Database pool not connected')
+        database_connections: SolalaDatabaseConnections
+        db: SolalaDatabase = await database_connections.get_db()
+
+    # Release the control state lock, then provide the database connection
+    yield db
+
+    # Release the database connection
+    async with _control_state() as state:
+        if database_connections is not state.database_connections:
+            raise ConnectionError('Database pool closed with in use')
+        await database_connections.put_db(db, commit_on_close)
 
 
 async def set_control(
@@ -811,9 +815,121 @@ async def disconnect_forecaster() -> None:
         await _save_settings()
 
 
+async def connect_database(database_connection: DatabaseConnection) -> None:
+    async with _control_state() as state:
+        database_connections = SolalaDatabaseConnections(
+            role=database_connection.role,
+            password=database_connection.password,
+            host=database_connection.host,
+            port=database_connection.port,
+            database_name=database_connection.database_name,
+        )
+        await disconnect_database()
+        state.reset_database(database_connections, database_connection)
+        connection_status = database_connections.get_connection_status()
+        LOGGER.info(f'{_LOG_SRC}Database connection: {json.dumps(connection_status)}')
+        await _save_settings()
+
+
+async def disconnect_database() -> None:
+    """
+    Close the database connection pool.
+    """
+    async with _control_state() as state:
+        if state.database_connections is not None:
+            await state.database_connections.close()
+            state.reset_database(None, None)
+            LOGGER.info(f'{_LOG_SRC}Database disconnected')
+        await _save_settings()
+
+
 # =============================================================================
 #  Support functions
 # =============================================================================
+
+
+async def _database_loop() -> None:
+    """
+    Execute the database logging loop.
+    """
+    LOGGER.info(f'{_LOG_SRC}Running database loop')
+    while _CONTROL_STATE.control_loop_running:
+        iteration_start = now()
+        try:
+            async with solala_database() as db:
+                await _insert_measurement(iteration_start, db)
+        except ConnectionError as err:
+            LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
+
+        # Sleep for the remaining time until the next loop iteration.
+        iter_time = Constants.DATABASE_LOG_LOOP_TIME
+        start_timestamp = (int(iteration_start.timestamp() / iter_time) + 1) * iter_time
+        sleeptime: float = start_timestamp - now().timestamp()
+        await asyncio.sleep(sleeptime)
+
+    LOGGER.info(f'{_LOG_SRC}Stopped database loop')
+
+
+async def _insert_measurement(dt_now: datetime, db: SolalaDatabase) -> None:
+    LOGGER.info(f'{_LOG_SRC}Gathering a measurement for the database')
+    control_mode: ControlMode
+    power_status: PowerStatus
+    price: Price
+    control_mode, power_status, price = await asyncio.gather(
+        get_prev_control_mode(),
+        get_power_status(),
+        get_price_now_no_estimate(),
+    )
+    measurement = Measurement(
+        timestamp=dt_now,
+        solar_power=power_status.solar_power,
+        grid_power=power_status.grid_power,
+        house_power=power_status.house_power,
+        battery_power=power_status.battery_power,
+        battery_charge=power_status.state_of_charge,
+        buy_price=price.buy_price,
+        feed_in_price=price.feed_in_price,
+        accumulated_solar_energy=power_status.accumulated_solar_energy,
+        accumulated_grid_energy_import=power_status.accumulated_grid_energy_import,
+        accumulated_grid_energy_export=power_status.accumulated_grid_energy_export,
+        battery_mode=control_mode.battery_mode,
+        battery_policy=control_mode.battery_policy,
+        inverter_mode=control_mode.inverter_mode,
+        inverter_policy=control_mode.inverter_policy,
+    )
+    await db.insert_measurement(measurement)
+    LOGGER.info(f'{_LOG_SRC}Inserted a measurement into the database')
+
+
+async def _control_loop() -> None:
+    """
+    Execute the main control loop.
+    """
+    LOGGER.info(f'{_LOG_SRC}Running control loop')
+    while _CONTROL_STATE.control_loop_running:
+        async with _control_state() as state:
+            state.iteration_start = now()  # timestamp to calculate loop sleep time
+            await _control_step(state)
+            listeners = state.listeners.copy()
+            state.last_power_valid = False
+
+        # Update the listeners while not holding the control state lock.
+        _update_listeners(listeners)
+
+        # Sleep for the remaining time until the next loop iteration.
+        # Make adjustment so that iterations tend to fall at whole minutes
+        # (assuming `Constants.LOOP_TIME` is a factor of 60).
+        # The adjustment is limited to -1 to +1 second away from `Constants.LOOP_TIME`.
+        next_start_timestamp = state.iteration_start.timestamp() + Constants.LOOP_TIME
+        ideal_start_timestamp = round(next_start_timestamp / Constants.LOOP_TIME) * Constants.LOOP_TIME
+        next_start_timestamp += max(-1, min(ideal_start_timestamp - next_start_timestamp, 1))  # limited adjustment
+        sleeptime: float = next_start_timestamp - now().timestamp()
+        if sleeptime < Constants.LOOP_MIN_SLEEP_TIME:
+            LOGGER.warn(f'{_LOG_SRC}Low sleep time: {sleeptime} < {Constants.LOOP_MIN_SLEEP_TIME}')
+            sleeptime = Constants.LOOP_MIN_SLEEP_TIME
+        await asyncio.sleep(sleeptime)
+
+    LOGGER.info(f'{_LOG_SRC}Stopped control loop')
 
 
 async def _control_step(state: _ControlState) -> None:
@@ -847,7 +963,7 @@ async def _control_step(state: _ControlState) -> None:
                 state.control_mode.battery_mode = BatteryMode.ENABLE
 
     # Battery Mode
-    if state.control_mode.battery_mode != prev_state.battery_mode:
+    if state.control_mode.battery_mode != prev_state.control_mode.battery_mode:
         match state.control_mode.battery_mode:
             case BatteryMode.ENABLE:
                 power_controller.enable_battery()
@@ -861,7 +977,6 @@ async def _control_step(state: _ControlState) -> None:
                 power_controller.charge_only()
             case BatteryMode.DISCHARGE_ONLY:
                 power_controller.discharge_only()
-        prev_state.battery_mode = state.control_mode.battery_mode
 
     # Inverter Policy - may change Inverter Mode
     if state.pricer is not None:
@@ -874,11 +989,10 @@ async def _control_step(state: _ControlState) -> None:
                 state.control_mode.inverter_mode = InverterMode.ENABLE
 
     # Inverter Mode
-    if state.control_mode.inverter_mode != prev_state.inverter_mode:
+    if state.control_mode.inverter_mode != prev_state.control_mode.inverter_mode:
         if state.control_mode.inverter_mode == InverterMode.ENABLE:
             power_controller.enable_inverter()
         # All other cases are managed below as they have a reversion time limit
-        prev_state.inverter_mode = state.control_mode.inverter_mode
     # Inverter modes requiring keep-alive pulse
     try:
         match state.control_mode.inverter_mode:
@@ -888,6 +1002,9 @@ async def _control_step(state: _ControlState) -> None:
                 power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
     except Exception as e:
         LOGGER.error(f'{_LOG_SRC}Error processing command: {state.control_mode.inverter_mode}. Error: {e}')
+
+    # Remember how we left things
+    prev_state.control_mode = copy.copy(state.control_mode)
 
 
 def _connect_dummy_controller(controller_connection: DummyControllerConnection) -> PowerController:
@@ -1127,6 +1244,7 @@ def _get_settings(state: _ControlState) -> Settings:
         pricer=state.pricer_settings,
         consumers=state.consumers_settings,
         forecaster=state.forecaster_settings,
+        database=state.database_settings,
 
         battery_mode=control_mode.battery_mode,
         inverter_mode=control_mode.inverter_mode,

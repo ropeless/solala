@@ -4,8 +4,8 @@ from typing import List
 
 from nicegui import ui
 
-from solala.constants import Constants
-from solala.logger import LOGGER, SOLALA_LOG_FORMAT
+from solala.constants import Constants, GUI_LOG_FORMAT
+from solala.logger import LOGGER
 
 
 class _GuiLogHandler(logging.Handler):
@@ -19,7 +19,7 @@ class _GuiLogHandler(logging.Handler):
         self._log_elements: List[ui.log] = []
         self._history: List[str] = []
         self._lock = threading.Lock()
-        self.setFormatter(logging.Formatter(SOLALA_LOG_FORMAT))
+        self.setFormatter(logging.Formatter(GUI_LOG_FORMAT))
         LOGGER.addHandler(self)
 
     def emit(self, record):

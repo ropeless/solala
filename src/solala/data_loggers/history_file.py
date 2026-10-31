@@ -1,14 +1,15 @@
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence, List, Dict
 
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
+from solala.control_loop.modes_and_policies import ControlMode
 from solala.delegates.power_pricer.power_pricer import Price
-from solala.utils.json import JSONDict, json_dict
 
 
-class HistoryFile:
+class HistoryFile(LoopListener):
     """
     Record a history of:
     * control modes and policies
@@ -17,10 +18,13 @@ class HistoryFile:
     """
 
     def __init__(self, file_path: Path | str, sep: str = ',', datetime_format: str = '%Y-%m-%d %H:%M:%S'):
+        super().__init__()
         self._path = Path(file_path)
         self._file = open(file_path, 'a')
-        self._recorder = _Recorder(self._file, sep, datetime_format)
-        control_loop.add_listener(self._recorder)
+        self._sep = sep
+        self._datetime_format = datetime_format
+        self._first_update = True
+        self._registers: Sequence[str] = ()
 
     def __str__(self) -> str:
         return f'{self.__class__.__name__}({self._path})'
@@ -30,7 +34,7 @@ class HistoryFile:
         return self._path
 
     def close(self) -> None:
-        control_loop.remove_listener(self._recorder)
+        control_loop.remove_listener(self)
         if self._file is not None:
             self._file.close()
             self._file = None
@@ -43,23 +47,18 @@ class HistoryFile:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
-        return exc_type is None
 
-
-class _Recorder(LoopListener):
-
-    def __init__(self, file, sep: str, datetime_format: str):
-        self._file = file
-        self._sep = sep
-        self._datetime_format = datetime_format
-        self._first_update = True
-        self._registers: Sequence[str] = ()
-
-    def update(self) -> None:
-        register_values: Dict[str, int | float | str | bool] = control_loop.get_registers()
+    async def update(self) -> None:
         now: str = datetime.now().strftime(self._datetime_format)
-        control_status: JSONDict = control_loop.get_control_status()
-        price: Price = control_loop.get_price_now()
+
+        register_values: Dict[str, int | float | str | bool]
+        control_mode: ControlMode
+        price: Price
+        register_values, control_mode, price = await asyncio.gather(
+            control_loop.get_registers(),
+            control_loop.get_control_mode(),
+            control_loop.get_price_now()
+        )
 
         def _print(*msg):
             print(*msg, file=self._file, sep=self._sep)
@@ -87,10 +86,10 @@ class _Recorder(LoopListener):
 
         row: List[int | float | str | bool] = [
             now,
-            str(json_dict(control_status['battery'])['mode']),
-            str(json_dict(control_status['battery'])['policy']),
-            str(json_dict(control_status['inverter'])['mode']),
-            str(json_dict(control_status['inverter'])['policy']),
+            control_mode.battery_mode.name,
+            control_mode.battery_policy.name,
+            control_mode.inverter_mode.name,
+            control_mode.inverter_policy.name,
         ]
         row.extend(register_values[key] for key in self._registers)
         row.append(price.buy_price)

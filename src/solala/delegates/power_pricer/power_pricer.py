@@ -13,7 +13,7 @@ class Price:
     renewables: float  # percentage
     start_time: datetime  # date + time + timezone
     end_time: datetime  # date + time + timezone
-    estimate: bool  # whether the price is an estimate or not
+    is_estimate: bool  # whether the price is an estimate or not
 
     # Optional tariff information.
     tariff_period: str = ''
@@ -75,4 +75,3 @@ class PowerPricer(ABC):
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         await self.close()
-        return exc_type is None

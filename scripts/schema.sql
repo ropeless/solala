@@ -17,8 +17,8 @@ CREATE TABLE measurement
     feed_in_price                   DOUBLE PRECISION,        -- c/kWh at the timestamp
 
     accumulated_solar_energy        DOUBLE PRECISION,        -- energy produced since some reference time
-    accumulated_grid_energy_draw    DOUBLE PRECISION,        -- energy drawn from grid since some reference time
-    accumulated_grid_energy_feed_in DOUBLE PRECISION,        -- energy drawn since some reference time
+    accumulated_grid_energy_import  DOUBLE PRECISION,        -- energy drawn from grid since some reference time
+    accumulated_grid_energy_export  DOUBLE PRECISION,        -- energy drawn since some reference time
 
     battery_mode                    TEXT,
     battery_policy                  TEXT,
