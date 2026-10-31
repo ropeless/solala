@@ -16,6 +16,7 @@ from solala.constants import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, 
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
+from solala.database.measurement import Measurement
 from solala.delegates.power_pricer.power_pricer import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
@@ -730,8 +731,10 @@ async def root_page():
         with ui.element('div').classes('dashboard-card diagnostics-card'):
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
-            with ui.grid(columns=2):
+            with ui.grid(columns=3):
+                _diagnostic_link('Graphs', '/graph_page')
                 _diagnostic_link('Status', '/status_page')
+                _diagnostic_link('Connection', '/connection_page')
                 _diagnostic_link('Parameters', '/parameters_page')
                 _diagnostic_link('Registers', '/registers_page')
                 _diagnostic_link('Log', '/log_page')
@@ -870,10 +873,23 @@ async def solar_forecast_page():
     await set_day(date.today())
 
 
+@ui.page('/graph_page')
+async def graph_page():
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page'):
+        _page_header()
+
+        async with control_loop.solala_database() as db:
+            measurements = await db.get_measurements()
+            measurement: Measurement
+            for measurement in measurements:
+                ui.label(f'{measurement.timestamp} {measurement.solar_power}')
+
+
 @ui.page('/status_page')
 async def status_page():
     """
-    The old status page.
+    Show the system status textually.
     """
     ui.add_head_html(_HEAD_HTML)
     with ui.element('div').classes('solala-page'):
@@ -891,17 +907,38 @@ async def status_page():
             # ----------------------------------------------------------
             # Connection card
             # ----------------------------------------------------------
+            # with ui.card():
+            #     ui.label('Connection').classes('text-h6')
+            #     connection_json: JSONDict = await control_loop.get_connection_status()
+            #     json_as_str = render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
+            #     connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
+            #     connection_element.set_content(json_as_str)
+
+            # ----------------------------------------------------------
+            # BATTERY + INVERTER control buttons
+            # ----------------------------------------------------------
+            # We used to have the control button on the status page, but no longer.
+            # await _ui_control_buttons()
+
+
+@ui.page('/connection_page')
+async def connection_page():
+    """
+    Show the connections.
+    """
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page'):
+        _page_header()
+        with ui.element('div').classes('dashboard-grid'):
+            # ----------------------------------------------------------
+            # Connection card
+            # ----------------------------------------------------------
             with ui.card():
                 ui.label('Connection').classes('text-h6')
                 connection_json: JSONDict = await control_loop.get_connection_status()
                 json_as_str = render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
                 connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
                 connection_element.set_content(json_as_str)
-
-            # ----------------------------------------------------------
-            # BATTERY + INVERTER control buttons
-            # ----------------------------------------------------------
-            await _ui_control_buttons()
 
 
 @ui.page('/log_page')

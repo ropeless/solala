@@ -6,7 +6,8 @@ from typing import Optional
 
 import local_config as config
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
-from solala.database.solala_database import Measurement, solala_database
+from solala.database.solala_database import Measurement
+from solala.database.solala_database_connections import solala_database
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.json import to_json
 
