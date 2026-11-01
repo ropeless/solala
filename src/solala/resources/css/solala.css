@@ -27,6 +27,14 @@
     --solala-gap: 16px;
 
     --solala-shadow: 0 2px 7px rgb(0 0 0 / 6%);
+
+    --solala-sun-color: #FFB700;
+    --solala-house-color: #2196F3;
+    --solala-grid-color: #101010;
+    --solala-inverter-color: #808080;
+    --solala-flow-color: #808080;
+    --solala-battery-color: #006400;
+    --solala-battery-charge-color: #00A000;
 }
 
 

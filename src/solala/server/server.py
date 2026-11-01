@@ -43,9 +43,8 @@ def run_server(
     favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
     ui.run_with(app, title=APP_NAME, favicon=favicon)
 
-    control_loop_thread = start_control_loop_thread(settings_path, settings, force_settings)
-
-    uvicorn.run(app, host=host, port=port, workers=1, log_level='info')
+    control_loop_thread = _start_control_loop_thread(settings_path, settings, force_settings)
+    _start_server(app, host, port)
 
     # Cleanly stop the control loop thread
     control_loop.exit_control_loop()
@@ -53,7 +52,24 @@ def run_server(
     control_loop_thread.join()
 
 
-def start_control_loop_thread(
+def _start_server(
+        app: FastAPI,
+        host: str,
+        port: int,
+) -> None:
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        workers=1,
+        log_level='info',
+    )
+    server = uvicorn.Server(config)
+    with asyncio.Runner(loop_factory=_loop_factory) as runner:
+        runner.run(server.serve())
+
+
+def _start_control_loop_thread(
         settings_path: Optional[Path | str] = None,
         settings: Optional[Settings] = None,
         force_settings: bool = False,
@@ -85,9 +101,13 @@ def start_control_loop_thread(
     target = partial(
         asyncio.run,
         control_loop.control_loop(settings_path, settings, force_settings),
-        loop_factory=(lambda: asyncio.SelectorEventLoop(selectors.SelectSelector())),
+        loop_factory=_loop_factory,
     )
 
     control_loop_thread = threading.Thread(target=target, daemon=True)
     control_loop_thread.start()
     return control_loop_thread
+
+
+def _loop_factory():
+    return asyncio.SelectorEventLoop(selectors.SelectSelector())

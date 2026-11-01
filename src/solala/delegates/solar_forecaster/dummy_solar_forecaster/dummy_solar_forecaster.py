@@ -13,9 +13,7 @@ class DummySolarForecaster(SolarForecaster):
     def __init__(self, panel_capacity: float, inverter_limit: float):
         self.panel_capacity: float = panel_capacity
         self.inverter_limit: float = inverter_limit
-
-        now = datetime.now().astimezone()
-        self._today = datetime.combine(now.date(), datetime.min.time())
+        self._tz = datetime.now().astimezone().tzinfo
 
         # Create dummy forecasts, for today, assuming power limit is 1.
         self.irradiance = {
@@ -39,7 +37,7 @@ class DummySolarForecaster(SolarForecaster):
         ]
 
     async def get_forecast(self, day: date) -> DailySolarForecast:
-        day_of_interest: datetime = date_to_datetime(ensure_date(day))
+        day_of_interest: datetime = date_to_datetime(ensure_date(day)).replace(tzinfo=self._tz)
         limit = max(self.panel_capacity, self.inverter_limit)
 
         night = WeatherCode.NIGHT
@@ -64,7 +62,7 @@ class DummySolarForecaster(SolarForecaster):
             'connection': self.__class__.__name__,
             'panel_capacity': self.panel_capacity,
             'inverter_limit': self.inverter_limit,
-            'today': self._today.date().isoformat()
+            'timezone': str(self._tz),
         }
 
     async def close(self) -> None:

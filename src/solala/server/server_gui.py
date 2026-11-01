@@ -16,13 +16,13 @@ from solala.constants import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, 
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
-from solala.database.measurement import Measurement
 from solala.delegates.power_pricer.power_pricer import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
+from solala.server.graphs import power_chart, energy_chart
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
@@ -673,6 +673,22 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
         pass
 
 
+async def _css_colours() -> Dict[str, str]:
+    return await ui.run_javascript("""
+        (() => {
+            const style = getComputedStyle(document.documentElement);
+            return {
+                sun: style.getPropertyValue('--solala-sun-color').trim(),
+                house: style.getPropertyValue('--solala-house-color').trim(),
+                grid: style.getPropertyValue('--solala-grid-color').trim(),
+                inverter: style.getPropertyValue('--solala-inverter-color').trim(),
+                battery: style.getPropertyValue('--solala-battery-color').trim(),
+                battery_charge: style.getPropertyValue('--solala-battery-charge-color').trim(),
+            };
+        })()
+    """)
+
+
 # ====================================================================
 #  Pages
 # ====================================================================
@@ -732,7 +748,7 @@ async def root_page():
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
             with ui.grid(columns=3):
-                _diagnostic_link('Graphs', '/graph_page')
+                _diagnostic_link('Graphs', '/graphs_page')
                 _diagnostic_link('Status', '/status_page')
                 _diagnostic_link('Connection', '/connection_page')
                 _diagnostic_link('Parameters', '/parameters_page')
@@ -873,17 +889,28 @@ async def solar_forecast_page():
     await set_day(date.today())
 
 
-@ui.page('/graph_page')
-async def graph_page():
+@ui.page('/graphs_page')
+async def graphs_page():
     ui.add_head_html(_HEAD_HTML)
+    colours = await _css_colours()
+
+    day = date.today()
+    async with control_loop.solala_database() as db:
+        measurements = await db.get_measurements(day)
+
     with ui.element('div').classes('solala-page'):
         _page_header()
+        with ui.element('div'):
+            # Date
+            with ui.row().classes('items-center gap-2 mb-5'):
+                ui.icon('calendar_today').classes('text-lg text-gray-500')
+                ui.label(day.strftime(GUI_DATE_FORMAT)).classes('text-sm text-gray-500')
 
-        async with control_loop.solala_database() as db:
-            measurements = await db.get_measurements()
-            measurement: Measurement
-            for measurement in measurements:
-                ui.label(f'{measurement.timestamp} {measurement.solar_power}')
+            with ui.row().classes('items-center gap-2 mb-5'):
+                power_chart(colours, measurements)
+
+            with ui.row().classes('items-center gap-2 mb-5'):
+                energy_chart(colours, measurements)
 
 
 @ui.page('/status_page')

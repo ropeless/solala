@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 from typing import Optional, TypeVar, Dict, List, Tuple, Sequence
 
@@ -16,13 +16,15 @@ class SolalaDatabase:
     async def insert_measurement(self, measurement: Measurement) -> None:
         await self._insert('measurement', measurement)
 
-    async def get_measurements(self) -> Sequence[Measurement]:
+    async def get_measurements(self, day: date) -> Sequence[Measurement]:
         result = await self._connection.execute(
             """
             SELECT *
             FROM measurement
+            WHERE date(timestamp) = %(day)s
             ORDER BY timestamp ASC
-            """
+            """,
+            {'day': day}
         )
         return [
             _model_from_row(row, Measurement)

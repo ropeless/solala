@@ -5,7 +5,7 @@ import psycopg
 from psycopg import sql
 
 import local_config as config
-from solala.database.solala_database import make_connection_string
+from solala.database.solala_database_connections import make_connection_string
 
 
 def create_database() -> None:

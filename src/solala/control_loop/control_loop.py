@@ -38,7 +38,7 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
     DummySolarForecasterConnection, DatabaseConnection
 from solala.utils.async_rlock import AsyncRLock
-from solala.utils.datetime_extras import now
+from solala.utils.datetime_extras import now, local_time_zone
 from solala.utils.json import JSONDict, json_num
 from solala.utils.network import find_ip_by_mac
 from solala.utils.string_extras import split_addresses
@@ -885,16 +885,17 @@ async def _database_loop() -> None:
 
 async def _insert_measurement(dt_now: datetime, db: SolalaDatabase) -> None:
     LOGGER.info(f'{_LOG_SRC}Gathering a measurement for the database')
+    today = dt_now.astimezone(local_time_zone()).date()
+
     control_mode: ControlMode
     power_status: PowerStatus
     price: Price
     daily_forecast: DailySolarForecast
-
     control_mode, power_status, price, daily_forecast = await asyncio.gather(
         get_prev_control_mode(),
         get_power_status(),
         get_price_now_no_estimate(),
-        get_solar_forecast(dt_now.date())
+        get_solar_forecast(today)
     )
 
     forecast: Optional[SolarForecast] = daily_forecast.find_contemporary(dt_now)
