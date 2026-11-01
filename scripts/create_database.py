@@ -14,7 +14,6 @@ def create_database() -> None:
         password=config.DATABASE_ADMIN_PASSWORD,
         host=config.DATABASE_HOST,
         port=config.DATABASE_PORT,
-        database_name=config.DATABASE_NAME,
     )
 
     with psycopg.connect(admin_connection_str, autocommit=True) as conn:

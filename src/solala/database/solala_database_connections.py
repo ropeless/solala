@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
 import psycopg
 from psycopg import AsyncConnection
@@ -16,9 +16,13 @@ def make_connection_string(
         password: str,
         host: str,
         port: int,
-        database_name: str,
+        database_name: Optional[str] = None,
 ) -> str:
-    return f'postgresql://{role}:{password}@{host}:{port}/{database_name}'
+    if database_name is None:
+        database_name = ''
+    else:
+        database_name = '/' + database_name
+    return f'postgresql://{role}:{password}@{host}:{port}{database_name}'
 
 
 @asynccontextmanager
