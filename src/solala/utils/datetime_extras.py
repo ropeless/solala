@@ -34,5 +34,8 @@ def ensure_date(obj: date, tz: Optional[tzinfo] = None) -> date:
     raise TypeError('Expected date or datetime object')
 
 
-def date_to_datetime(obj: date) -> datetime:
-    return datetime.combine(ensure_date(obj), time.min)
+def date_to_datetime(obj: date, tz: Optional[tzinfo] = None) -> datetime:
+    result = datetime.combine(ensure_date(obj), time.min)
+    if tz is not None:
+        result = result.astimezone(tz)
+    return result

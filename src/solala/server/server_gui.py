@@ -22,7 +22,7 @@ from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
-from solala.server.graphs import power_chart, energy_chart
+from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
@@ -892,11 +892,13 @@ async def solar_forecast_page():
 @ui.page('/graphs_page')
 async def graphs_page():
     ui.add_head_html(_HEAD_HTML)
-    colours = await _css_colours()
+    colours = await _css_colours()  # must come after adding head html.
 
+    # Get measurement data
     day = date.today()
     async with control_loop.solala_database() as db:
         measurements = await db.get_measurements(day)
+    interpolator = GraphingInterpolator(day, measurements)
 
     with ui.element('div').classes('solala-page'):
         _page_header()
@@ -907,10 +909,10 @@ async def graphs_page():
                 ui.label(day.strftime(GUI_DATE_FORMAT)).classes('text-sm text-gray-500')
 
             with ui.row().classes('items-center gap-2 mb-5'):
-                power_chart(colours, measurements)
+                power_chart(colours, interpolator)
 
             with ui.row().classes('items-center gap-2 mb-5'):
-                energy_chart(colours, measurements)
+                energy_chart(colours, interpolator)
 
 
 @ui.page('/status_page')

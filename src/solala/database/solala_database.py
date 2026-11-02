@@ -4,6 +4,7 @@ from typing import Optional, TypeVar, Dict, List, Tuple, Sequence
 
 from psycopg import sql, AsyncConnection
 from pydantic import BaseModel
+from pydantic.fields import FieldInfo
 
 from solala.database.measurement import Measurement
 
@@ -21,7 +22,7 @@ class SolalaDatabase:
             """
             SELECT *
             FROM measurement
-            WHERE date(timestamp) = %(day)s
+            WHERE date (timestamp) = %(day)s
             ORDER BY timestamp ASC
             """,
             {'day': day}
@@ -93,7 +94,9 @@ def _get_enum_fields(model_type: type[_ModelType]) -> List[Tuple[str, type[Enum]
     if got is not None:
         return got
     got: List[Tuple[str, type[Enum]]] = []
-    for field_name, field in model_type.model_fields.items():
+
+    model_fields: Dict[str, FieldInfo] = model_type.__pydantic_fields__
+    for field_name, field in model_fields.items():
         if (
                 isinstance(field.annotation, type)
                 and issubclass(field.annotation, Enum)

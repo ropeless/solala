@@ -146,6 +146,7 @@ class _ControlState:
     listeners: List[LoopListener] = field(default_factory=list)
     settings_path: Optional[Path] = None  # for using persisted settings.
     iteration_start: datetime = field(default_factory=now)  # used to confirm the control loop is running
+    database_write: bool = True
 
     @property
     def controller_connection_status(self) -> JSONDict:
@@ -267,6 +268,7 @@ async def control_loop(
         settings_path: Optional[Path | str] = None,
         settings: Optional[Settings] = None,
         force_settings: bool = False,
+        database_write: bool = True,
 ) -> None:
     """
     Execute the control loop.
@@ -284,10 +286,13 @@ async def control_loop(
         force_settings: If True, the given settings object will always override any settings loaded from the file.
             Note that if settings are provided, they will override any settings loaded from the file. This includes
             modes and policies if the power controller is reloaded.
+
+        database_write: If False, the control loop will not write to the database. This is useful for testing.
     """
 
     # Prepare to run the control loop.
     _CONTROL_STATE.control_loop_running = True
+    _CONTROL_STATE.database_write = database_write
 
     # Configure from user settings
     loaded: bool = False
@@ -458,7 +463,9 @@ async def get_price_now() -> Price:
         if state.next_price_check <= timestamp:
             try:
                 price: Price = await pricer.get_price()
-                LOGGER.info(f'{_LOG_SRC}Updated current price: {price}')
+                LOGGER.info(
+                    f'{_LOG_SRC}Updated current price: {price.buy_price} {price.feed_in_price} {price.is_estimate}'
+                )
                 state.last_price = price
                 if price.is_estimate:
                     # price is unstable - recheck is needed
@@ -868,11 +875,12 @@ async def _database_loop() -> None:
     LOGGER.info(f'{_LOG_SRC}Running database loop')
     while _CONTROL_STATE.control_loop_running:
         iteration_start = now()
-        try:
-            async with solala_database() as db:
-                await _insert_measurement(iteration_start, db)
-        except ConnectionError as err:
-            LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
+        if _CONTROL_STATE.database_write:
+            try:
+                async with solala_database() as db:
+                    await _insert_measurement(iteration_start, db)
+            except ConnectionError as err:
+                LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
 
         # Sleep for the remaining time until the next loop iteration.
         iter_time = Constants.DATABASE_LOG_LOOP_TIME

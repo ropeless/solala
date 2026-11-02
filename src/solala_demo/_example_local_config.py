@@ -5,7 +5,7 @@ TESLA_WALL_CONNECTOR_ADDR = '192.168.0.202'
 AMBER_API_TOKEN = 'psk_k56thisisnotarealapitokenlm5t0adf0f'
 NMI = '4109999999'
 
-SERVER_IP_ADDRESS = 'localhost'
+SERVER_HOST = 'localhost'
 SERVER_PORT = 8080
 
 # Solar Forecaster parameters
@@ -31,5 +31,7 @@ DATABASE_PORT = 5432
 DATABASE_ADMIN_ROLE = 'postgres'
 DATABASE_APP_ROLE = 'solala'
 DATABASE_NAME = 'solala'
+DATABASE_WRITE = False
 
+FORCE_SETTINGS: bool = False
 DEMO_LOG_FORMAT: str = '%(asctime)s %(levelname)s: %(name)s %(message)s'
