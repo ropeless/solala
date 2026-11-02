@@ -143,10 +143,11 @@ class _ControlState:
     lock: AsyncRLock = field(default_factory=AsyncRLock)
     prev_state: _PrevControl = field(default_factory=_PrevControl)
     control_loop_running: bool = True
-    listeners: List[LoopListener] = field(default_factory=list)
+    control_loop_listeners: List[LoopListener] = field(default_factory=list)
+    database_loop_listeners: List[LoopListener] = field(default_factory=list)
+    database_write: bool = True
     settings_path: Optional[Path] = None  # for using persisted settings.
     iteration_start: datetime = field(default_factory=now)  # used to confirm the control loop is running
-    database_write: bool = True
 
     @property
     def controller_connection_status(self) -> JSONDict:
@@ -378,31 +379,38 @@ async def get_settings() -> Settings:
         return _get_settings(state)
 
 
-async def add_listener(listener: LoopListener) -> None:
+async def add_control_loop_listener(listener: LoopListener) -> None:
     async with _control_state() as state:
         try:
-            state.listeners.remove(listener)
+            state.control_loop_listeners.remove(listener)
         except ValueError:
             pass
-        state.listeners.append(listener)
+        state.control_loop_listeners.append(listener)
 
 
-async def remove_listener(listener: LoopListener) -> None:
+async def remove_control_loop_listener(listener: LoopListener) -> None:
     async with _control_state() as state:
         try:
-            state.listeners.remove(listener)
+            state.control_loop_listeners.remove(listener)
         except ValueError:
             pass
 
 
-async def update_listeners() -> None:
-    """
-    Call `update` on all registered control loop listeners.
-    """
+async def add_database_loop_listener(listener: LoopListener) -> None:
     async with _control_state() as state:
-        listeners = state.listeners.copy()
-    # Update the listeners while not holding the control state lock.
-    _update_listeners(listeners)
+        try:
+            state.database_loop_listeners.remove(listener)
+        except ValueError:
+            pass
+        state.database_loop_listeners.append(listener)
+
+
+async def remove_database_loop_listener(listener: LoopListener) -> None:
+    async with _control_state() as state:
+        try:
+            state.database_loop_listeners.remove(listener)
+        except ValueError:
+            pass
 
 
 async def get_control_mode() -> ControlMode:
@@ -872,6 +880,9 @@ async def _database_loop() -> None:
     """
     Execute the database logging loop.
     """
+    # Note that this loop avoids locking the control state as much as possible
+    # to keep out of the way of the control loop.
+
     LOGGER.info(f'{_LOG_SRC}Running database loop')
     while _CONTROL_STATE.control_loop_running:
         iteration_start = now()
@@ -881,6 +892,11 @@ async def _database_loop() -> None:
                     await _insert_measurement(iteration_start, db)
             except ConnectionError as err:
                 LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
+
+        async with _control_state() as state:
+            listeners = state.database_loop_listeners.copy()
+        # Update the listeners while not holding the control state lock.
+        _update_listeners(listeners)
 
         # Sleep for the remaining time until the next loop iteration.
         iter_time = Constants.DATABASE_LOG_LOOP_TIME
@@ -948,7 +964,7 @@ async def _control_loop() -> None:
         async with _control_state() as state:
             state.iteration_start = now()  # timestamp to calculate loop sleep time
             await _control_step(state)
-            listeners = state.listeners.copy()
+            listeners = state.control_loop_listeners.copy()
             state.last_power_valid = False
 
         # Update the listeners while not holding the control state lock.

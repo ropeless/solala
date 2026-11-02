@@ -132,8 +132,8 @@ class PriceForecastListener(LoopListener):
 
 
 async def _register_listener(listener: LoopListener) -> None:
-    await control_loop.add_listener(listener)
-    ui.context.client.on_disconnect(partial(control_loop.remove_listener, listener))
+    await control_loop.add_control_loop_listener(listener)
+    ui.context.client.on_disconnect(partial(control_loop.remove_control_loop_listener, listener))
 
 
 class InverterButtonUpdater(StatusListener):
