@@ -35,6 +35,9 @@ from solala.utils.json import JSONDict, json_dict, render_json, filter_json, jso
 # Main styling
 # --------------------------------------------------------------------
 
+LIVE_COLOUR = 'green-700'
+STALE_COLOUR = 'red-600'
+
 _HEAD_HTML = r'''
 <link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/css/solala.css">
@@ -717,21 +720,21 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
     overdue: float = control_loop.loop_check_overdue()
     if overdue > Constants.LOOP_TIME:
         loop_status_light.classes(
-            replace='w-3 h-3 rounded-full bg-red-600'
+            replace=f'w-3 h-3 rounded-full bg-{STALE_COLOUR}'
         )
         loop_status_light.tooltip('Control loop appears to be stalled')
         loop_status_label.set_text('stalled')
         loop_status_label.classes(
-            replace='text-sm text-red-600'
+            replace=f'text-sm text-{STALE_COLOUR}'
         )
     elif overdue == 0:
         loop_status_light.classes(
-            replace='w-3 h-3 rounded-full bg-green-700'
+            replace=f'w-3 h-3 rounded-full bg-{LIVE_COLOUR}'
         )
         loop_status_light.tooltip('Control loop appears to be active')
         loop_status_label.set_text('live')
         loop_status_label.classes(
-            replace='text-sm text-green-700'
+            replace=f'text-sm text-{LIVE_COLOUR}'
         )
     else:
         # Leave it as it is
@@ -812,6 +815,7 @@ app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manif
 @ui.page('/')
 async def root_page():
     ui.add_head_html(_HEAD_HTML)
+
     with ui.element('div').classes('solala-page'):
         _page_header(link=False)
 
@@ -826,14 +830,27 @@ async def root_page():
                     # Control loop status light
                     with ui.row().classes('items-center gap-2'):
                         loop_status_light = ui.element('div').classes(
-                            'w-3 h-3 rounded-full bg-green-500'
+                            f'w-3 h-3 rounded-full bg-{STALE_COLOUR}'
                         )
                         loop_status_label = ui.label('active').classes(
-                            'text-sm text-green-600'
+                            f'text-sm text-{STALE_COLOUR}'
                         )
 
                     _update_loop_status(loop_status_light, loop_status_label)
                     ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
+
+                    _ = ui.run_javascript(f"""
+                        const light = getHtmlElement({loop_status_light.id});
+                        const label = getHtmlElement({loop_status_label.id});
+
+                        window.socket.on('disconnect', () => {{
+                            light.className = 'w-3 h-3 rounded-full bg-{STALE_COLOUR}';
+                            light.title = 'Connection to Solala server lost';
+
+                            label.textContent = 'stale';
+                            label.className = 'text-sm text-{STALE_COLOUR}';
+                        }});
+                    """)
 
                 with ui.element('div').classes('infographic-container'):
                     infographic = ui.html()
