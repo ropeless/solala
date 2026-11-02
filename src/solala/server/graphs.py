@@ -5,7 +5,7 @@ import numpy as np
 from nicegui import ui
 from nicegui.elements.echart import EChart
 
-from solala.constants import KILOWATTS, GUI_TIME_FORMAT, KILOWATT_HOURS, PRICE_CENTS
+from solala.constants import KILOWATTS, GUI_TIME_FORMAT, KILOWATT_HOURS, PRICE_CENTS, PERCENT
 from solala.server.css_colours import Colours
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.utils.json import JSONDict
@@ -192,15 +192,14 @@ def price_chart(data: GraphingInterpolator) -> EChart:
 
 
 def charge_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
-    units = PRICE_CENTS
-
+    units = PERCENT
     options: JSONDict = {
         'backgroundColor': 'transparent',
         'tooltip': _graph_tooltip(units),
-        'legend': _legend(),
+        'legend': None,
         'grid': _grid(),
         'xAxis': _x_axis(data.timestamps),
-        'yAxis': _y_axis('Price', units),
+        'yAxis': _y_axis('Charge', units),
         'series': [
             _create_series('Charge', data.battery_charge, colours.battery),
         ]

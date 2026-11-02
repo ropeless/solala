@@ -231,7 +231,10 @@ def _zero(data: Iterable[float]) -> List[float]:
         return result
     while np.isnan(first):
         result.append(first)
-        first = next(it)
+        try:
+            first = next(it)
+        except StopIteration:
+            return result
     result.append(0)
     result.extend(val - first for val in it)
     return result
