@@ -13,7 +13,8 @@ from solala.constants import Constants, TIMESTAMP_FORMAT
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
-from solala.database.solala_database import SolalaDatabaseConnections, SolalaDatabase, Measurement
+from solala.database.solala_database import SolalaDatabase, Measurement
+from solala.database.solala_database_connections import SolalaDatabaseConnections
 from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
@@ -37,7 +38,7 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
     DummySolarForecasterConnection, DatabaseConnection
 from solala.utils.async_rlock import AsyncRLock
-from solala.utils.datetime_extras import now
+from solala.utils.datetime_extras import now, local_time_zone
 from solala.utils.json import JSONDict, json_num
 from solala.utils.network import find_ip_by_mac
 from solala.utils.string_extras import split_addresses
@@ -142,7 +143,9 @@ class _ControlState:
     lock: AsyncRLock = field(default_factory=AsyncRLock)
     prev_state: _PrevControl = field(default_factory=_PrevControl)
     control_loop_running: bool = True
-    listeners: List[LoopListener] = field(default_factory=list)
+    control_loop_listeners: List[LoopListener] = field(default_factory=list)
+    database_loop_listeners: List[LoopListener] = field(default_factory=list)
+    database_write: bool = True
     settings_path: Optional[Path] = None  # for using persisted settings.
     iteration_start: datetime = field(default_factory=now)  # used to confirm the control loop is running
 
@@ -266,6 +269,7 @@ async def control_loop(
         settings_path: Optional[Path | str] = None,
         settings: Optional[Settings] = None,
         force_settings: bool = False,
+        database_write: bool = True,
 ) -> None:
     """
     Execute the control loop.
@@ -283,10 +287,13 @@ async def control_loop(
         force_settings: If True, the given settings object will always override any settings loaded from the file.
             Note that if settings are provided, they will override any settings loaded from the file. This includes
             modes and policies if the power controller is reloaded.
+
+        database_write: If False, the control loop will not write to the database. This is useful for testing.
     """
 
     # Prepare to run the control loop.
     _CONTROL_STATE.control_loop_running = True
+    _CONTROL_STATE.database_write = database_write
 
     # Configure from user settings
     loaded: bool = False
@@ -372,31 +379,38 @@ async def get_settings() -> Settings:
         return _get_settings(state)
 
 
-async def add_listener(listener: LoopListener) -> None:
+async def add_control_loop_listener(listener: LoopListener) -> None:
     async with _control_state() as state:
         try:
-            state.listeners.remove(listener)
+            state.control_loop_listeners.remove(listener)
         except ValueError:
             pass
-        state.listeners.append(listener)
+        state.control_loop_listeners.append(listener)
 
 
-async def remove_listener(listener: LoopListener) -> None:
+async def remove_control_loop_listener(listener: LoopListener) -> None:
     async with _control_state() as state:
         try:
-            state.listeners.remove(listener)
+            state.control_loop_listeners.remove(listener)
         except ValueError:
             pass
 
 
-async def update_listeners() -> None:
-    """
-    Call `update` on all registered control loop listeners.
-    """
+async def add_database_loop_listener(listener: LoopListener) -> None:
     async with _control_state() as state:
-        listeners = state.listeners.copy()
-    # Update the listeners while not holding the control state lock.
-    _update_listeners(listeners)
+        try:
+            state.database_loop_listeners.remove(listener)
+        except ValueError:
+            pass
+        state.database_loop_listeners.append(listener)
+
+
+async def remove_database_loop_listener(listener: LoopListener) -> None:
+    async with _control_state() as state:
+        try:
+            state.database_loop_listeners.remove(listener)
+        except ValueError:
+            pass
 
 
 async def get_control_mode() -> ControlMode:
@@ -457,7 +471,9 @@ async def get_price_now() -> Price:
         if state.next_price_check <= timestamp:
             try:
                 price: Price = await pricer.get_price()
-                LOGGER.info(f'{_LOG_SRC}Updated current price: {price}')
+                LOGGER.info(
+                    f'{_LOG_SRC}Updated current price: {price.buy_price} {price.feed_in_price} {price.is_estimate}'
+                )
                 state.last_price = price
                 if price.is_estimate:
                     # price is unstable - recheck is needed
@@ -631,6 +647,11 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
         if database_connections is not state.database_connections:
             raise ConnectionError('Database pool closed with in use')
         await database_connections.put_db(db, commit_on_close)
+
+
+async def solala_database_measurements(day: date) -> Sequence[Measurement]:
+    async with solala_database() as db:
+        return await db.get_measurements(day)
 
 
 async def set_control(
@@ -864,14 +885,23 @@ async def _database_loop() -> None:
     """
     Execute the database logging loop.
     """
+    # Note that this loop avoids locking the control state as much as possible
+    # to keep out of the way of the control loop.
+
     LOGGER.info(f'{_LOG_SRC}Running database loop')
     while _CONTROL_STATE.control_loop_running:
         iteration_start = now()
-        try:
-            async with solala_database() as db:
-                await _insert_measurement(iteration_start, db)
-        except ConnectionError as err:
-            LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
+        if _CONTROL_STATE.database_write:
+            try:
+                async with solala_database() as db:
+                    await _insert_measurement(iteration_start, db)
+            except ConnectionError as err:
+                LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
+
+        async with _control_state() as state:
+            listeners = state.database_loop_listeners.copy()
+        # Update the listeners while not holding the control state lock.
+        _update_listeners(listeners)
 
         # Sleep for the remaining time until the next loop iteration.
         iter_time = Constants.DATABASE_LOG_LOOP_TIME
@@ -884,16 +914,17 @@ async def _database_loop() -> None:
 
 async def _insert_measurement(dt_now: datetime, db: SolalaDatabase) -> None:
     LOGGER.info(f'{_LOG_SRC}Gathering a measurement for the database')
+    today = dt_now.astimezone(local_time_zone()).date()
+
     control_mode: ControlMode
     power_status: PowerStatus
     price: Price
     daily_forecast: DailySolarForecast
-
     control_mode, power_status, price, daily_forecast = await asyncio.gather(
         get_prev_control_mode(),
         get_power_status(),
         get_price_now_no_estimate(),
-        get_solar_forecast(dt_now.date())
+        get_solar_forecast(today)
     )
 
     forecast: Optional[SolarForecast] = daily_forecast.find_contemporary(dt_now)
@@ -938,7 +969,7 @@ async def _control_loop() -> None:
         async with _control_state() as state:
             state.iteration_start = now()  # timestamp to calculate loop sleep time
             await _control_step(state)
-            listeners = state.listeners.copy()
+            listeners = state.control_loop_listeners.copy()
             state.last_power_valid = False
 
         # Update the listeners while not holding the control state lock.

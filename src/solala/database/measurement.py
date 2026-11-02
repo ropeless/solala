@@ -13,6 +13,7 @@ class Measurement(BaseModel):
     grid_power: float
     house_power: float
     battery_power: float
+
     battery_charge: float
 
     buy_price: float

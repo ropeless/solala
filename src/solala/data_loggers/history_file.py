@@ -34,7 +34,7 @@ class HistoryFile(LoopListener):
         return self._path
 
     def close(self) -> None:
-        control_loop.remove_listener(self)
+        control_loop.remove_control_loop_listener(self)
         if self._file is not None:
             self._file.close()
             self._file = None

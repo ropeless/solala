@@ -17,6 +17,8 @@ requests = "*"
 nicegui = "*"
 drawsvg = "*"
 psycopg = { version = "^3.2", extras = ["binary", "pool"] }
+numpy = "*"
+scipy = "*"
 
 [build-system]
 requires = ["setuptools"]

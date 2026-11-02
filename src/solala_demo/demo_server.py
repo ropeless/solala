@@ -4,16 +4,12 @@ from solala.settings import Settings, ModbusControllerConnection, AmberPricerCon
     TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection
 from solala_demo.log import configure_logger
 
-HOST: str = config.SERVER_IP_ADDRESS
-PORT: int = config.SERVER_PORT
-
-
 def main():
     configure_logger()
 
     # Optional initial control loop parameters.
     # These will be used if the settings file cannot be loaded or force_settings is True.
-    force_settings: bool = False
+    force_settings: bool = config.FORCE_SETTINGS
     settings = Settings(
 
         controller=ModbusControllerConnection(address=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}'),
@@ -57,11 +53,12 @@ def main():
     # LOGGER.info(f'registered history file: {history}')
 
     server.run_server(
-        host=HOST,
-        port=PORT,
+        host=config.SERVER_HOST,
+        port=config.SERVER_PORT,
         settings_path=config.SETTINGS_PATH,
         settings=settings,
         force_settings=force_settings,
+        database_write=config.DATABASE_WRITE,
     )
 
 

@@ -245,7 +245,6 @@ class House(Shape):
             x: float = 0,
             y: float = 0,
             stroke_width=5,
-            color='#2196F3',
     ):
         """
         Draw a simple house icon with no windows.
@@ -261,6 +260,8 @@ class House(Shape):
 
         # Scale from the original 64 x 64 design
         s = size / 64
+
+        color = 'var(--solala-house-color)'
 
         # Roof
         self.append(Path(
@@ -308,9 +309,10 @@ class Inverter(Shape):
             x: float = 0,
             y: float = 0,
             stroke_width=3,
-            color: str = 'gray',
     ) -> None:
         super().__init__(x=x, y=y)
+
+        color = 'var(--solala-inverter-color)'
 
         diamond = Lines(
             0, size,  # Top point
@@ -358,11 +360,12 @@ class Battery(Shape):
             y: float = 0,
             stroke_width=5,
             state_of_charge: float = 100,
-            color: str = 'darkgreen',
-            start_of_charge_color: str = '#00A000',
     ) -> None:
         super().__init__(x=x, y=y)
         s = size / 64
+
+        color = 'var(--solala-battery-color)'
+        charge_color = 'var(--solala-battery-charge-color)'
 
         # Battery charge visual
         height = state_of_charge / 100 * 30 + stroke_width + 0.3
@@ -371,7 +374,7 @@ class Battery(Shape):
             y=(52 - stroke_width / 2 - height) * s,
             width=28 * s,
             height=height * s,
-            fill=start_of_charge_color,
+            fill=charge_color,
             id=CLICK_ID_BATTERY,
         ))
 
@@ -407,9 +410,10 @@ class Sun(Shape):
             size: float = 80,
             x: float = 0,
             y: float = 0,
-            color: str = '#FFB700',
     ):
         super().__init__(x=x, y=y, scale=size / 512)
+        color = 'var(--solala-sun-color)'
+
         rays = Group(transform='rotate(45, 0, 0) translate(-256, -256)', fill=color)
         rays.append(Rectangle(x=204, y=52, width=38, height=92, rx=19, id=CLICK_ID_SUN))
         rays.append(Rectangle(x=270, y=52, width=38, height=92, rx=19, id=CLICK_ID_SUN))
@@ -431,10 +435,10 @@ class Grid(Shape):
             x: float = 0,
             y: float = 0,
             stroke_width: float = 5,
-            color: str = 'black',
     ):
         super().__init__(x=x, y=y)
         s = size / 64
+        color = 'var(--solala-grid-color)'
 
         # Main pole
         self.append(Path(
@@ -507,9 +511,9 @@ class Chevron(Shape):
             y: float = 0,
             rotate: float = 0,
             stroke_width: float = 5,
-            color: str = 'gray',
     ):
         super().__init__(x=x, y=y, rotate=rotate)
+        color = 'var(--solala-flow-color)'
 
         min_width = 4
 

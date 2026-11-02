@@ -4,9 +4,6 @@ from solala.settings import Settings, DummyControllerConnection, DummyPricerConn
     DummyConsumerConnection, DummySolarForecasterConnection
 from solala_demo.log import configure_logger
 
-HOST: str = config.SERVER_IP_ADDRESS
-PORT: int = config.SERVER_PORT
-
 
 def main():
     configure_logger()
@@ -32,11 +29,11 @@ def main():
     )
 
     server.run_server(
-        host=HOST,
-        port=PORT,
+        host=config.SERVER_HOST,
+        port=config.SERVER_PORT,
         settings_path=config.DUMMY_SETTINGS_PATH,
         settings=settings,
-        force_settings=force_settings,
+        force_settings=config.FORCE_SETTINGS,
     )
 
 

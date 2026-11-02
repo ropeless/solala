@@ -22,10 +22,12 @@ def run_server(
         settings_path: Optional[Path | str] = None,
         settings: Optional[Settings] = None,
         force_settings: bool = False,
+        database_write: bool = True,
 ) -> None:
     """
     Run the server in the current thread.
     Spawns a thread for the control loop.
+
     Args:
         host: Host address to bind the server to.
         port: Port to bind the server to.
@@ -38,25 +40,48 @@ def run_server(
         force_settings: If True, the given settings object will always override any settings loaded from the file.
             Note that if settings are provided, they will override any settings loaded from the file. This includes
             modes and policies if the power controller is reloaded.
+
+        database_write: If False, the control loop will not write to the database. This is useful for testing.
     """
     app = FastAPI()
     favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
     ui.run_with(app, title=APP_NAME, favicon=favicon)
 
-    control_loop_thread = start_control_loop_thread(settings_path, settings, force_settings)
+    control_loop_thread = _start_control_loop_thread(settings_path, settings, force_settings, database_write)
 
-    uvicorn.run(app, host=host, port=port, workers=1, log_level='info')
+    try:
+        _start_server(app, host, port)
+    except KeyboardInterrupt:
+        LOGGER.info('keyboard interrupt')
+    finally:
+        # Cleanly stop the control loop thread
+        control_loop.exit_control_loop()
+        LOGGER.info('waiting for the control loop to terminate')
+        control_loop_thread.join()
 
-    # Cleanly stop the control loop thread
-    control_loop.exit_control_loop()
-    LOGGER.info('waiting for the control loop to terminate')
-    control_loop_thread.join()
+
+def _start_server(
+        app: FastAPI,
+        host: str,
+        port: int,
+) -> None:
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        workers=1,
+        log_level='info',
+    )
+    server = uvicorn.Server(config)
+    with asyncio.Runner(loop_factory=_loop_factory) as runner:
+        runner.run(server.serve())
 
 
-def start_control_loop_thread(
+def _start_control_loop_thread(
         settings_path: Optional[Path | str] = None,
         settings: Optional[Settings] = None,
         force_settings: bool = False,
+        database_write: bool = True,
 ) -> threading.Thread:
     """
     Start the control loop in a separate thread.
@@ -79,15 +104,20 @@ def start_control_loop_thread(
             Note that if settings are provided, they will override any settings loaded from the file. This includes
             modes and policies if the power controller is reloaded.
 
+        database_write: If False, the control loop will not write to the database. This is useful for testing.
+
     Returns:
         The control loop thread.
     """
     target = partial(
         asyncio.run,
-        control_loop.control_loop(settings_path, settings, force_settings),
-        loop_factory=(lambda: asyncio.SelectorEventLoop(selectors.SelectSelector())),
+        control_loop.control_loop(settings_path, settings, force_settings, database_write),
+        loop_factory=_loop_factory,
     )
-
     control_loop_thread = threading.Thread(target=target, daemon=True)
     control_loop_thread.start()
     return control_loop_thread
+
+
+def _loop_factory():
+    return asyncio.SelectorEventLoop(selectors.SelectSelector())

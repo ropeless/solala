@@ -5,7 +5,7 @@ import psycopg
 from psycopg import sql
 
 import local_config as config
-from solala.database.solala_database import make_connection_string
+from solala.database.solala_database_connections import make_connection_string
 
 
 def create_database() -> None:
@@ -14,7 +14,6 @@ def create_database() -> None:
         password=config.DATABASE_ADMIN_PASSWORD,
         host=config.DATABASE_HOST,
         port=config.DATABASE_PORT,
-        database_name=config.DATABASE_NAME,
     )
 
     with psycopg.connect(admin_connection_str, autocommit=True) as conn:

@@ -16,12 +16,14 @@ from solala.constants import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, 
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
+from solala.database.measurement import Measurement
 from solala.delegates.power_pricer.power_pricer import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
+from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator, price_chart
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
@@ -131,8 +133,8 @@ class PriceForecastListener(LoopListener):
 
 
 async def _register_listener(listener: LoopListener) -> None:
-    await control_loop.add_listener(listener)
-    ui.context.client.on_disconnect(partial(control_loop.remove_listener, listener))
+    await control_loop.add_control_loop_listener(listener)
+    ui.context.client.on_disconnect(partial(control_loop.remove_control_loop_listener, listener))
 
 
 class InverterButtonUpdater(StatusListener):
@@ -672,6 +674,22 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
         pass
 
 
+async def _css_colours() -> Dict[str, str]:
+    return await ui.run_javascript("""
+        (() => {
+            const style = getComputedStyle(document.documentElement);
+            return {
+                sun: style.getPropertyValue('--solala-sun-color').trim(),
+                house: style.getPropertyValue('--solala-house-color').trim(),
+                grid: style.getPropertyValue('--solala-grid-color').trim(),
+                inverter: style.getPropertyValue('--solala-inverter-color').trim(),
+                battery: style.getPropertyValue('--solala-battery-color').trim(),
+                battery_charge: style.getPropertyValue('--solala-battery-charge-color').trim(),
+            };
+        })()
+    """)
+
+
 # ====================================================================
 #  Pages
 # ====================================================================
@@ -730,8 +748,10 @@ async def root_page():
         with ui.element('div').classes('dashboard-card diagnostics-card'):
             with ui.element('div').classes('diagnostics-title'):
                 ui.label('Diagnostics')
-            with ui.grid(columns=2):
+            with ui.grid(columns=3):
+                _diagnostic_link('Graphs', '/graphs_page')
                 _diagnostic_link('Status', '/status_page')
+                _diagnostic_link('Connection', '/connection_page')
                 _diagnostic_link('Parameters', '/parameters_page')
                 _diagnostic_link('Registers', '/registers_page')
                 _diagnostic_link('Log', '/log_page')
@@ -870,10 +890,39 @@ async def solar_forecast_page():
     await set_day(date.today())
 
 
+@ui.page('/graphs_page')
+async def graphs_page():
+    ui.add_head_html(_HEAD_HTML)
+    colours = await _css_colours()  # must come after adding head html.
+
+    # Get measurement data
+    day = date.today()
+    measurements: Sequence[Measurement] = await control_loop.solala_database_measurements(day)
+    price_forecast: Sequence[Price] = await control_loop.get_price_forecast()
+    interpolator = GraphingInterpolator(day, measurements, price_forecast)
+
+    with ui.element('div').classes('solala-page'):
+        _page_header()
+        with ui.element('div'):
+            # Date
+            with ui.row().classes('items-center gap-2 mb-5'):
+                ui.icon('calendar_today').classes('text-lg text-gray-500')
+                ui.label(day.strftime(GUI_DATE_FORMAT)).classes('text-sm text-gray-500')
+
+            with ui.row().classes('items-center gap-2 mb-5'):
+                power_chart(colours, interpolator)
+
+            with ui.row().classes('items-center gap-2 mb-5'):
+                energy_chart(colours, interpolator)
+
+            with ui.row().classes('items-center gap-2 mb-5'):
+                price_chart(interpolator)
+
+
 @ui.page('/status_page')
 async def status_page():
     """
-    The old status page.
+    Show the system status textually.
     """
     ui.add_head_html(_HEAD_HTML)
     with ui.element('div').classes('solala-page'):
@@ -888,6 +937,16 @@ async def status_page():
                 asyncio.create_task(updater.update())
                 await _register_listener(updater)
 
+
+@ui.page('/connection_page')
+async def connection_page():
+    """
+    Show the connections.
+    """
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page'):
+        _page_header()
+        with ui.element('div').classes('dashboard-grid'):
             # ----------------------------------------------------------
             # Connection card
             # ----------------------------------------------------------
@@ -897,11 +956,6 @@ async def status_page():
                 json_as_str = render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
                 connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
                 connection_element.set_content(json_as_str)
-
-            # ----------------------------------------------------------
-            # BATTERY + INVERTER control buttons
-            # ----------------------------------------------------------
-            await _ui_control_buttons()
 
 
 @ui.page('/log_page')
