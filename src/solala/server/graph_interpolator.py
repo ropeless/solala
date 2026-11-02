@@ -36,6 +36,10 @@ class GraphingInterpolator:
         self._ts_f = np.array([price.start_time.timestamp() for price in price_forecast])
 
     @property
+    def battery_charge(self) -> List[float]:
+        return self._interpolated_measurement_linear('battery_charge')
+
+    @property
     def accumulated_solar_energy(self) -> List[float]:
         return self._accumulated_daily_energy('accumulated_solar_energy')
 

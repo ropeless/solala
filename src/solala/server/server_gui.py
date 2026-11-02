@@ -23,7 +23,8 @@ from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
-from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator, price_chart
+from solala.server.css_colours import Colours, css_colours
+from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator, price_chart, charge_chart
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
@@ -674,22 +675,6 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
         pass
 
 
-async def _css_colours() -> Dict[str, str]:
-    return await ui.run_javascript("""
-        (() => {
-            const style = getComputedStyle(document.documentElement);
-            return {
-                sun: style.getPropertyValue('--solala-sun-color').trim(),
-                house: style.getPropertyValue('--solala-house-color').trim(),
-                grid: style.getPropertyValue('--solala-grid-color').trim(),
-                inverter: style.getPropertyValue('--solala-inverter-color').trim(),
-                battery: style.getPropertyValue('--solala-battery-color').trim(),
-                battery_charge: style.getPropertyValue('--solala-battery-charge-color').trim(),
-            };
-        })()
-    """)
-
-
 # ====================================================================
 #  Pages
 # ====================================================================
@@ -893,7 +878,7 @@ async def solar_forecast_page():
 @ui.page('/graphs_page')
 async def graphs_page():
     ui.add_head_html(_HEAD_HTML)
-    colours = await _css_colours()  # must come after adding head html.
+    colours: Colours = await css_colours()  # must come after adding head html.
 
     # Get measurement data
     day = date.today()
@@ -903,19 +888,22 @@ async def graphs_page():
 
     with ui.element('div').classes('solala-page'):
         _page_header()
-        with ui.element('div'):
+        with ui.element('div').classes('w-full'):
             # Date
             with ui.row().classes('items-center gap-2 mb-5'):
                 ui.icon('calendar_today').classes('text-lg text-gray-500')
                 ui.label(day.strftime(GUI_DATE_FORMAT)).classes('text-sm text-gray-500')
 
-            with ui.row().classes('items-center gap-0 mb-0'):
-                power_chart(colours, interpolator)
+            with ui.row().classes('w-full items-center gap-0 mb-0'):
+                charge_chart(interpolator, colours)
 
-            with ui.row().classes('items-center gap-0 mb-0'):
-                energy_chart(colours, interpolator)
+            with ui.row().classes('w-full items-center gap-0 mb-0'):
+                power_chart(interpolator, colours)
 
-            with ui.row().classes('items-center gap-0 mb-0'):
+            with ui.row().classes('w-full items-center gap-0 mb-0'):
+                energy_chart(interpolator, colours)
+
+            with ui.row().classes('w-full items-center gap-0 mb-0'):
                 price_chart(interpolator)
 
 

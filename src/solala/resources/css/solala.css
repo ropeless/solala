@@ -14,8 +14,8 @@
     --solala-danger: #dc2626;
     --solala-amber: #ff8c00;
 
-    --solala-page-bg: #f5f7f9;
-    --solala-card-bg: #ffffff;
+    --solala-page-bg: #ffffff;
+    --solala-card-bg: #f5f7f9;
     --solala-muted: #687078;
     --solala-border: #e1e6ea;
     --solala-accent: #c58b28;
@@ -23,7 +23,7 @@
 
     --solala-radius: 14px;
     --solala-control-radius: 7px;
-    --solala-page-padding: 16px;
+    --solala-page-padding: 1px;
     --solala-gap: 16px;
 
     --solala-shadow: 0 2px 7px rgb(0 0 0 / 6%);
@@ -396,6 +396,10 @@
     justify-self: center;
 }
 
+/* ==========================================================================================================
+   Specific layout overrides
+   ========================================================================================================== */
+
 /* ---------------------------------------------------------
    Tablet layout
    --------------------------------------------------------- */
@@ -416,12 +420,11 @@
    --------------------------------------------------------- */
 
 @media (max-width: 600px) {
-    .solala-page {
-        padding: 8px;
-    }
 
     .solala-header {
         margin-bottom: 9px;
+        font-size: 0.65rem;
+        letter-spacing: 0.015em;
     }
 
     .solala-brand img {
@@ -479,28 +482,6 @@
     .diagnostic-link {
         min-height: 55px;
         font-size: 11px;
-    }
-
-    .price-row {
-        grid-template-columns: 0.2fr 1fr 1fr 1fr;
-        gap: 8px;
-        font-size: 0.88rem;
-    }
-
-    .price-header {
-        font-size: 0.65rem;
-        letter-spacing: 0.015em;
-    }
-
-    .solar-row {
-        grid-template-columns: 0.2fr 0.2fr 0.2fr 1fr 1fr;
-        gap: 8px;
-        font-size: 0.88rem;
-    }
-
-    .solar-header {
-        font-size: 0.65rem;
-        letter-spacing: 0.015em;
     }
 
 }
