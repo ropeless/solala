@@ -26,10 +26,10 @@ def energy_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
         'series': [
             _create_series('Solar', data.accumulated_solar_energy, colours.sun),
             _create_series('Forecast', data.forecast_accumulated_solar_energy, colours.sun, DASHED, 0),
-            _create_series('Grid Import', data.accumulated_grid_energy_import, colours.grid),
-            _create_series('Grid Export', data.accumulated_grid_energy_export, colours.inverter),
-            _create_series('Battery Charge', data.accumulated_battery_energy_charge, colours.battery_charge),
-            _create_series('Battery Discharge', data.accumulated_battery_energy_discharge, colours.battery),
+            _create_series('Import', data.accumulated_grid_energy_import, colours.grid),
+            _create_series('Export', data.accumulated_grid_energy_export, colours.inverter),
+            _create_series('Charge', data.accumulated_battery_energy_charge, colours.battery_charge),
+            _create_series('Discharge', data.accumulated_battery_energy_discharge, colours.battery),
         ]
     }
     return ui.echart(options).classes('w-full')
