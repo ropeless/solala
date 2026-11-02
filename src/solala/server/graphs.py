@@ -10,8 +10,8 @@ from solala.server.css_colours import Colours
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.utils.json import JSONDict
 
-
 LINE_WIDTH: float = 1.75
+DASHED = [3, 3]
 
 
 def energy_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
@@ -25,7 +25,7 @@ def energy_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
         'yAxis': _y_axis('Energy', units),
         'series': [
             _create_series('Solar', data.accumulated_solar_energy, colours.sun),
-            _create_series('Forecast', data.forecast_accumulated_solar_energy, colours.sun, 'dashed', 0),
+            _create_series('Forecast', data.forecast_accumulated_solar_energy, colours.sun, DASHED, 0),
             _create_series('Grid Import', data.accumulated_grid_energy_import, colours.grid),
             _create_series('Grid Export', data.accumulated_grid_energy_export, colours.inverter),
             _create_series('Battery Charge', data.accumulated_battery_energy_charge, colours.battery_charge),
@@ -50,7 +50,7 @@ def power_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
             # _create_series('Grid', data.average_grid_power, colours['grid']),
 
             _create_series('Solar', data.instantaneous_solar_power, colours.sun),
-            _create_series('Forecast', data.forecast_solar_power, colours.sun, 'dashed', 0),
+            _create_series('Forecast', data.forecast_solar_power, colours.sun, DASHED, 0),
             _create_series('Grid', data.instantaneous_grid_power, colours.grid),
             _create_series('Battery', data.instantaneous_battery_power, colours.battery),
             _create_series('House', data.instantaneous_house_power, colours.house),
@@ -84,8 +84,8 @@ def price_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
         'series': [
             _create_series('Buy', buy_price, colours.grid_import),
             _create_series('Feed-in', feed_in_price, colours.grid_export),
-            _create_series('Buy Forecast', forecast_buy_price, colours.grid_import, 'dashed', 0),
-            _create_series('Feed-in Forecast', forecast_feed_in_price, colours.grid_export, 'dashed', 0),
+            _create_series('Buy Forecast', forecast_buy_price, colours.grid_import, DASHED, 0),
+            _create_series('Feed-in Forecast', forecast_feed_in_price, colours.grid_export, DASHED, 0),
         ]
     }
     return ui.echart(options).classes('w-full')
@@ -122,7 +122,7 @@ def _create_series(
         name: str,
         data: List[float],
         colour: str,
-        line_type: str = 'solid',
+        line_type: str | list = 'solid',
         area_alpha: float = 0.1,
 ) -> JSONDict:
     options: JSONDict = {
@@ -171,9 +171,9 @@ def _grid() -> JSONDict:
     return {
         'left': 30,
         'right': 5,
-        'top': 55,
+        'top': 90,
         'bottom': 40,
-        'containLabel': True
+        'containLabel': True,
     }
 
 
@@ -181,7 +181,7 @@ def _legend() -> JSONDict:
     return {
         'type': 'plain',
         'top': 0,
-        'left': 95,
+        'left': 105,
         'right': 10,
         'orient': 'horizontal',
         'width': 'auto',

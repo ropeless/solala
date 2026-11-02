@@ -132,12 +132,12 @@ class GraphingInterpolator:
 
     @property
     def forecast_solar_power(self) -> List[float]:
-        values = [forecast.power for forecast in self._solar_forecast]
+        values = [forecast.power / 1000 for forecast in self._solar_forecast]
         return self._interpolate_linear(self._ts_s, values, left=0, right=0)
 
     @property
     def forecast_accumulated_solar_energy(self) -> List[float]:
-        values = list(_accumulate(forecast.energy for forecast in self._solar_forecast))
+        values = list(_accumulate(forecast.energy / 1000 for forecast in self._solar_forecast))
         return self._interpolate_linear(self._ts_s, values, left=0, right=None)
 
     # ====================================================================
@@ -189,6 +189,8 @@ class GraphingInterpolator:
             left: Optional[float] = np.nan,
             right: Optional[float] = np.nan,
     ) -> List[float]:
+        if len(values) == 0:
+            return []
         y_values = np.array(values)
         interpolated_values = np.interp(self._ts, timestamps, y_values, left=left, right=right)
         return interpolated_values.tolist()
@@ -200,6 +202,8 @@ class GraphingInterpolator:
             left: Optional[float] = np.nan,
             right: Optional[float] = np.nan,
     ) -> List[float]:
+        if len(values) == 0:
+            return []
         if left is not None:
             values = [left] + values
         if right is not None:
