@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import date
 from enum import Enum
 from typing import Optional, TypeVar, Dict, List, Tuple, Sequence
 
@@ -17,22 +17,64 @@ class SolalaDatabase:
     async def insert_measurement(self, measurement: Measurement) -> None:
         await self._insert('measurement', measurement)
 
-    async def get_measurements(self, day: date) -> Sequence[Measurement]:
-        result = await self._connection.execute(
+    async def get_measurements(
+            self,
+            day: date,
+            include_boundaries: bool = True,
+    ) -> Sequence[Measurement]:
+        """
+        Get the measurements for a given day. Optionally include the boundary
+        measurements of the previous and nest days to support interpolation.
+
+        Args:
+            day: The day of interest; measurements of this day are returned.
+            include_boundaries: Whether to include boundary measurements from the previous and next days.
+
+        Returns:
+            A sequence of measurements for the given day, in order of increasing time.
+        """
+        if include_boundaries:
+            query = """
+            (
+                SELECT *
+                FROM measurement
+                WHERE date (timestamp) < %(day)s
+                ORDER BY timestamp DESC
+                LIMIT 1
+            )
+            UNION ALL
+            (
+                SELECT *
+                FROM measurement
+                WHERE date (timestamp) = %(day)s
+                ORDER BY timestamp ASC
+            )
+            UNION ALL
+            (
+                SELECT *
+                FROM measurement
+                WHERE date (timestamp) > %(day)s
+                ORDER BY timestamp ASC
+                LIMIT 1
+            )
             """
-            SELECT *
-            FROM measurement
-            WHERE date (timestamp) = %(day)s
-            ORDER BY timestamp ASC
-            """,
-            {'day': day}
-        )
+        else:
+            query = """
+                    SELECT *
+                    FROM measurement
+                    WHERE date (timestamp) = %(day)s
+                    ORDER BY timestamp ASC
+                    """
+        result = await self._connection.execute(query, {'day': day})
         return [
             _model_from_row(row, Measurement)
             for row in await result.fetchall()
         ]
 
     async def get_latest_measurement(self) -> Optional[Measurement]:
+        """
+        Get the latest measurement (if there is one).
+        """
         result = await self._connection.execute(
             """
             SELECT *
@@ -40,18 +82,6 @@ class SolalaDatabase:
             ORDER BY timestamp DESC
                 LIMIT 1
             """
-        )
-        row: Optional[dict] = await result.fetchone()
-        return _model_from_row(row, Measurement) if row is not None else None
-
-    async def get_measurement(self, timestamp: datetime) -> Optional[Measurement]:
-        result = await self._connection.execute(
-            """
-            SELECT *
-            FROM measurement
-            WHERE timestamp = %s
-            """,
-            (timestamp,),
         )
         row: Optional[dict] = await result.fetchone()
         return _model_from_row(row, Measurement) if row is not None else None
