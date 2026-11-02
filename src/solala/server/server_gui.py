@@ -16,13 +16,14 @@ from solala.constants import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, 
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
+from solala.database.measurement import Measurement
 from solala.delegates.power_pricer.power_pricer import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
-from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator
+from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator, price_chart
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
@@ -896,9 +897,9 @@ async def graphs_page():
 
     # Get measurement data
     day = date.today()
-    async with control_loop.solala_database() as db:
-        measurements = await db.get_measurements(day)
-    interpolator = GraphingInterpolator(day, measurements)
+    measurements: Sequence[Measurement] = await control_loop.solala_database_measurements(day)
+    price_forecast: Sequence[Price] = await control_loop.get_price_forecast()
+    interpolator = GraphingInterpolator(day, measurements, price_forecast)
 
     with ui.element('div').classes('solala-page'):
         _page_header()
@@ -913,6 +914,9 @@ async def graphs_page():
 
             with ui.row().classes('items-center gap-2 mb-5'):
                 energy_chart(colours, interpolator)
+
+            with ui.row().classes('items-center gap-2 mb-5'):
+                price_chart(interpolator)
 
 
 @ui.page('/status_page')
@@ -932,22 +936,6 @@ async def status_page():
                 updater = StatusUpdater(status_element=ui.code(language='nothing').classes('text-sm w-full grow'))
                 asyncio.create_task(updater.update())
                 await _register_listener(updater)
-
-            # ----------------------------------------------------------
-            # Connection card
-            # ----------------------------------------------------------
-            # with ui.card():
-            #     ui.label('Connection').classes('text-h6')
-            #     connection_json: JSONDict = await control_loop.get_connection_status()
-            #     json_as_str = render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
-            #     connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
-            #     connection_element.set_content(json_as_str)
-
-            # ----------------------------------------------------------
-            # BATTERY + INVERTER control buttons
-            # ----------------------------------------------------------
-            # We used to have the control button on the status page, but no longer.
-            # await _ui_control_buttons()
 
 
 @ui.page('/connection_page')

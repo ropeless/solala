@@ -649,6 +649,11 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
         await database_connections.put_db(db, commit_on_close)
 
 
+async def solala_database_measurements(day: date) -> Sequence[Measurement]:
+    async with solala_database() as db:
+        return await db.get_measurements(day)
+
+
 async def set_control(
         *,
         battery_mode: Optional[BatteryMode] = None,

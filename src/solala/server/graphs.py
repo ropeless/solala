@@ -1,96 +1,13 @@
-from datetime import datetime, date, timedelta
-from typing import Dict, Sequence, List, Iterable
+from datetime import datetime
+from typing import Dict, Sequence, List
 
 import numpy as np
 from nicegui import ui
 from nicegui.elements.echart import EChart
 
-from solala.constants import KILOWATTS, GUI_TIME_FORMAT, KILOWATT_HOURS
-from solala.database.measurement import Measurement
-from solala.utils.datetime_extras import ensure_date, date_to_datetime, local_time_zone
+from solala.constants import KILOWATTS, GUI_TIME_FORMAT, KILOWATT_HOURS, PRICE_CENTS
+from solala.server.graph_interpolator import GraphingInterpolator
 from solala.utils.json import JSONDict
-
-
-class GraphingInterpolator:
-    """
-    Interpolates measurements data to specific 5-minute timepoints for graphing.
-    """
-
-    def __init__(self, day: date, measurements: Sequence[Measurement]):
-        tz = local_time_zone()
-        day = ensure_date(day, tz)
-        day_as_datetime: datetime = date_to_datetime(day, tz)
-
-        self.day: date = day
-        self.timestamps: Sequence[datetime] = [
-            day_as_datetime + timedelta(hours=hour, minutes=minute)
-            for hour in range(24)
-            for minute in range(0, 60, 5)
-        ]
-        self._measurements = measurements
-        self._ts = np.array([dt.timestamp() for dt in self.timestamps])
-        self._ts_m = np.array([measurement.timestamp.timestamp() for measurement in measurements])
-        self._cache: Dict[str, List[float]] = {}
-
-    @property
-    def accumulated_solar_energy(self) -> List[float]:
-        return self._accumulated_daily_energy('accumulated_solar_energy')
-
-    @property
-    def accumulated_grid_energy_import(self) -> List[float]:
-        return self._accumulated_daily_energy('accumulated_grid_energy_import')
-
-    @property
-    def accumulated_grid_energy_export(self) -> List[float]:
-        return self._accumulated_daily_energy('accumulated_grid_energy_export')
-
-    @property
-    def accumulated_battery_energy_charge(self) -> List[float]:
-        return self._accumulated_daily_energy('accumulated_battery_energy_charge')
-
-    @property
-    def accumulated_battery_energy_discharge(self) -> List[float]:
-        return self._accumulated_daily_energy('accumulated_battery_energy_discharge')
-
-    @property
-    def instantaneous_solar_power(self) -> List[float]:
-        return self._instantaneous_power('solar_power')
-
-    @property
-    def instantaneous_grid_power(self) -> List[float]:
-        return self._instantaneous_power('grid_power')
-
-    @property
-    def instantaneous_house_power(self) -> List[float]:
-        return self._instantaneous_power('house_power')
-
-    @property
-    def instantaneous_battery_power(self) -> List[float]:
-        return self._instantaneous_power('battery_power')
-
-    # ----------------------------------------
-    #  Support
-    # ----------------------------------------
-
-    def _accumulated_daily_energy(self, field: str) -> List[float]:
-        return _ensure_monotonic(_zero(x / 1000 for x in self._interpolated_measurement(field)))
-
-    def _instantaneous_power(self, field: str) -> List[float]:
-        return [x / 1000 for x in self._interpolated_measurement(field)]
-
-    def _interpolated_measurement(self, field: str) -> List[float]:
-        result = self._cache.get(field)
-        if result is not None:
-            return result
-        if len(self._measurements) == 0:
-            result = []
-        else:
-            values = [getattr(m, field) for m in self._measurements]
-            y_values = np.array(values)
-            interpolated_values = np.interp(self._ts, self._ts_m, y_values, left=np.nan, right=np.nan)
-            result = interpolated_values.tolist()
-        self._cache[field] = result
-        return result
 
 
 def _rgba(colour: str, alpha: float = 0.1) -> str:
@@ -177,53 +94,8 @@ def _yaxis(name: str, units: str) -> JSONDict:
     }
 
 
-def _ensure_monotonic(data: Iterable[float]) -> List[float]:
-    m = float('-inf')
-    result: List[float] = []
-    for x in data:
-        m = max(x, m)
-        result.append(m)
-    return result
-
-
-def _zero(data: Iterable[float]) -> List[float]:
-    it = iter(data)
-    result: List[float] = []
-    try:
-        first = next(it)
-    except StopIteration:
-        return result
-    while np.isnan(first):
-        result.append(first)
-        first = next(it)
-    result.append(0)
-    result.extend(val - first for val in it)
-    return result
-
-
-def _diff(data: Iterable[float]) -> List[float]:
-    it = iter(data)
-    result: List[float] = []
-    try:
-        prev: float = next(it)
-    except StopIteration:
-        return result
-    while np.isnan(prev):
-        result.append(prev)
-        prev = next(it)
-    result.append(0)
-    for val in it:
-        result.append(val - prev)
-        prev = val
-    return result
-
-
 def energy_chart(colours: Dict[str, str], data: GraphingInterpolator) -> EChart:
-    """
-    Assumes there is at least one measurement provided.
-    """
     units = KILOWATT_HOURS
-
     options: JSONDict = {
         'backgroundColor': 'transparent',
 
@@ -259,11 +131,7 @@ def energy_chart(colours: Dict[str, str], data: GraphingInterpolator) -> EChart:
 
 
 def power_chart(colours: Dict[str, str], data: GraphingInterpolator) -> EChart:
-    """
-    Assumes there is at least one measurement provided.
-    """
     units = KILOWATTS
-
     options: JSONDict = {
         'backgroundColor': 'transparent',
 
@@ -288,10 +156,63 @@ def power_chart(colours: Dict[str, str], data: GraphingInterpolator) -> EChart:
         'xAxis': _xaxis(data.timestamps),
         'yAxis': _yaxis('Power', units),
         'series': [
+            # _create_series('Solar', data.average_solar_power, colours['sun']),
+            # _create_series('Battery', data.average_battery_power, colours['battery']),
+            # _create_series('Grid', data.average_grid_power, colours['grid']),
+
             _create_series('Solar', data.instantaneous_solar_power, colours['sun']),
-            _create_series('House', data.instantaneous_house_power, colours['house']),
-            _create_series('Grid', data.instantaneous_grid_power, colours['grid']),
             _create_series('Battery', data.instantaneous_battery_power, colours['battery']),
+            _create_series('Grid', data.instantaneous_grid_power, colours['grid']),
+            _create_series('House', data.instantaneous_house_power, colours['house']),
         ]
     }
     return ui.echart(options)
+
+
+def price_chart(data: GraphingInterpolator) -> EChart:
+    units = PRICE_CENTS
+
+    buy_price = data.buy_price
+    feed_in_price = data.feed_in_price
+    forecast_buy_price = data.forecast_buy_price
+    forecast_feed_in_price = data.forecast_feed_in_price
+
+    # Ensure forecast does not overlap with actual data
+    for i in range(len(buy_price)):
+        if np.isfinite(buy_price[i]):
+            forecast_buy_price[i] = np.nan
+        if np.isfinite(feed_in_price[i]):
+            forecast_feed_in_price[i] = np.nan
+
+    options: JSONDict = {
+        'backgroundColor': 'transparent',
+
+        'tooltip': _graph_tooltip(units),
+
+        'legend': {
+            'top': 10,
+            'left': 'center',
+            'textStyle': {
+                'color': '#888',
+                'fontSize': 12
+            },
+        },
+
+        'grid': {
+            'left': 55,
+            'right': 20,
+            'top': 55,
+            'bottom': 40,
+            'containLabel': False
+        },
+        'xAxis': _xaxis(data.timestamps),
+        'yAxis': _yaxis('Price', units),
+        'series': [
+            _create_series('Buy', buy_price, '#FF6060'),
+            _create_series('Feed-in', feed_in_price, '#6060FF'),
+            _create_series('Buy forecast', forecast_buy_price, '#FF9090'),
+            _create_series('Feed-in forecast', forecast_feed_in_price, '#9090FF'),
+        ]
+    }
+    return ui.echart(options)
+
