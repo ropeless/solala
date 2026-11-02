@@ -71,8 +71,13 @@ def _grid() -> JSONDict:
 
 def _legend() -> JSONDict:
     return {
-        'top': 10,
-        'left': 'center',
+        'type': 'plain',
+        'top': 0,
+        'left': 95,
+        'right': 10,
+        'orient': 'horizontal',
+        'width': 'auto',
+        'itemGap': 20,
         'textStyle': {
             'color': '#888',
             'fontSize': 12
@@ -177,7 +182,7 @@ def price_chart(data: GraphingInterpolator) -> EChart:
     options: JSONDict = {
         'backgroundColor': 'transparent',
         'tooltip': _graph_tooltip(units),
-        'legend': _legend(),
+        'legend': None,
         'grid': _grid(),
         'xAxis': _x_axis(data.timestamps),
         'yAxis': _y_axis('Price', units),
