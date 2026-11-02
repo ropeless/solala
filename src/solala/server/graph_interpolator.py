@@ -5,6 +5,7 @@ import numpy as np
 
 from solala.database.measurement import Measurement
 from solala.delegates.power_pricer.price import Price
+from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast
 from solala.utils.datetime_extras import local_time_zone, ensure_date, date_to_datetime
 
 
@@ -18,6 +19,7 @@ class GraphingInterpolator:
             day: date,
             measurements: Sequence[Measurement],
             price_forecast: Sequence[Price],
+            solar_forecast: DailySolarForecast,
     ):
         tz = local_time_zone()
         day = ensure_date(day, tz)
@@ -31,9 +33,11 @@ class GraphingInterpolator:
         ]
         self._measurements: Sequence[Measurement] = measurements
         self._price_forecast: Sequence[Price] = price_forecast
+        self._solar_forecast: DailySolarForecast = solar_forecast
         self._ts = np.array([dt.timestamp() for dt in self.timestamps])
         self._ts_m = np.array([measurement.timestamp.timestamp() for measurement in measurements])
         self._ts_f = np.array([price.start_time.timestamp() for price in price_forecast])
+        self._ts_s = np.array([forecast.start_time.timestamp() for forecast in solar_forecast])
 
     @property
     def battery_charge(self) -> List[float]:
@@ -126,9 +130,19 @@ class GraphingInterpolator:
         values = [price.feed_in_price for price in self._price_forecast]
         return self._interpolate_nearest(self._ts_f, values)
 
-    # ----------------------------------------
-    #  Support
-    # ----------------------------------------
+    @property
+    def forecast_solar_power(self) -> List[float]:
+        values = [forecast.power for forecast in self._solar_forecast]
+        return self._interpolate_linear(self._ts_s, values, left=0, right=0)
+
+    @property
+    def forecast_accumulated_solar_energy(self) -> List[float]:
+        values = list(_accumulate(forecast.energy for forecast in self._solar_forecast))
+        return self._interpolate_linear(self._ts_s, values, left=0, right=None)
+
+    # ====================================================================
+    #  Support functions
+    # ====================================================================
 
     def _energy_to_power(self, data, boundary_value: float) -> List[float]:
         """
@@ -237,6 +251,15 @@ def _zero(data: Iterable[float]) -> List[float]:
             return result
     result.append(0)
     result.extend(val - first for val in it)
+    return result
+
+
+def _accumulate(data: Iterable[float]) -> List[float]:
+    result: List[float] = []
+    acc = 0
+    for x in data:
+        acc += x
+        result.append(acc)
     return result
 
 

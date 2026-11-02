@@ -11,6 +11,8 @@ class Colours:
     inverter: str
     battery: str
     battery_charge: str
+    grid_import: str
+    grid_export: str
 
 
 async def css_colours() -> Colours:
@@ -24,6 +26,8 @@ async def css_colours() -> Colours:
                 inverter: style.getPropertyValue('--solala-inverter-color').trim(),
                 battery: style.getPropertyValue('--solala-battery-color').trim(),
                 battery_charge: style.getPropertyValue('--solala-battery-charge-color').trim(),
+                grid_import: style.getPropertyValue('--solala-grid-import-color').trim(),
+                grid_export: style.getPropertyValue('--solala-grid-export-color').trim(),
             };
         })()
     """)

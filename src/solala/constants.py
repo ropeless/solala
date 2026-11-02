@@ -49,7 +49,7 @@ class Constants:
     LOOP_MIN_SLEEP_TIME: int = 1  # number of seconds to sleep for each loop iteration
     CONTROL_DURATION: int = 11  # number of seconds a control remains active
     PRICE_SETTLE_CHECK: int = 9  # check delay to see if the power price has settled
-    PRICE_FORECAST_DURATION: int = 13  # in hours
+    PRICE_FORECAST_DURATION: int = 18  # in hours
     PRICE_FORECAST_AGE: int = 5  # number of minutes a price forecast is valid
     SOLAR_FORECAST_AGE: int = 3 * 60  # number of minutes a solar forecast is valid
     DATABASE_LOG_LOOP_TIME = 5 * 60  # five minutes, in seconds

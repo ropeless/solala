@@ -492,11 +492,13 @@ class ChartUpdater(LoopListener):
         day = self._day
         measurements: Sequence[Measurement]
         price_forecast: Sequence[Price]
-        measurements, price_forecast = await asyncio.gather(
+        solar_forecast: DailySolarForecast
+        measurements, price_forecast, solar_forecast = await asyncio.gather(
             control_loop.solala_database_measurements(day),
             control_loop.get_price_forecast(),
+            control_loop.get_solar_forecast(day),
         )
-        graph_interpolator = GraphingInterpolator(day, measurements, price_forecast)
+        graph_interpolator = GraphingInterpolator(day, measurements, price_forecast, solar_forecast)
         self._update(graph_interpolator)
 
     @property
@@ -518,10 +520,10 @@ class ChartUpdater(LoopListener):
         self._element.clear()
         with self._element:
             with ui.row().classes('w-full items-center gap-0 mb-0'):
-                price_chart(graph_interpolator)
+                charge_chart(graph_interpolator, self._colours)
 
             with ui.row().classes('w-full items-center gap-0 mb-0'):
-                charge_chart(graph_interpolator, self._colours)
+                price_chart(graph_interpolator, self._colours)
 
             with ui.row().classes('w-full items-center gap-0 mb-0'):
                 power_chart(graph_interpolator, self._colours)
