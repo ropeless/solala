@@ -58,7 +58,17 @@ def _graph_tooltip(units: str) -> JSONDict:
     }
 
 
-def _xaxis(timestamps: Sequence[datetime]) -> JSONDict:
+def _grid() -> JSONDict:
+    return {
+        'left': 30,
+        'right': 5,
+        'top': 55,
+        'bottom': 40,
+        'containLabel': True
+    }
+
+
+def _x_axis(timestamps: Sequence[datetime]) -> JSONDict:
     timestamps = [timestamp.strftime(GUI_TIME_FORMAT) for timestamp in timestamps]
     return {
         'type': 'category',
@@ -75,7 +85,7 @@ def _xaxis(timestamps: Sequence[datetime]) -> JSONDict:
     }
 
 
-def _yaxis(name: str, units: str) -> JSONDict:
+def _y_axis(name: str, units: str) -> JSONDict:
     return {
         'type': 'value',
         'name': f'{name} ({units.strip()})',
@@ -110,15 +120,9 @@ def energy_chart(colours: Dict[str, str], data: GraphingInterpolator) -> EChart:
             },
         },
 
-        'grid': {
-            'left': 55,
-            'right': 20,
-            'top': 55,
-            'bottom': 40,
-            'containLabel': False
-        },
-        'xAxis': _xaxis(data.timestamps),
-        'yAxis': _yaxis('Energy', units),
+        'grid': _grid(),
+        'xAxis': _x_axis(data.timestamps),
+        'yAxis': _y_axis('Energy', units),
         'series': [
             _create_series('Solar', data.accumulated_solar_energy, colours['sun']),
             _create_series('Grid import', data.accumulated_grid_energy_import, colours['grid']),
@@ -146,15 +150,9 @@ def power_chart(colours: Dict[str, str], data: GraphingInterpolator) -> EChart:
             },
         },
 
-        'grid': {
-            'left': 55,
-            'right': 20,
-            'top': 55,
-            'bottom': 40,
-            'containLabel': False
-        },
-        'xAxis': _xaxis(data.timestamps),
-        'yAxis': _yaxis('Power', units),
+        'grid': _grid(),
+        'xAxis': _x_axis(data.timestamps),
+        'yAxis': _y_axis('Power', units),
         'series': [
             # _create_series('Solar', data.average_solar_power, colours['sun']),
             # _create_series('Battery', data.average_battery_power, colours['battery']),
@@ -198,15 +196,9 @@ def price_chart(data: GraphingInterpolator) -> EChart:
             },
         },
 
-        'grid': {
-            'left': 55,
-            'right': 20,
-            'top': 55,
-            'bottom': 40,
-            'containLabel': False
-        },
-        'xAxis': _xaxis(data.timestamps),
-        'yAxis': _yaxis('Price', units),
+        'grid': _grid(),
+        'xAxis': _x_axis(data.timestamps),
+        'yAxis': _y_axis('Price', units),
         'series': [
             _create_series('Buy', buy_price, '#FF6060'),
             _create_series('Feed-in', feed_in_price, '#6060FF'),
@@ -215,4 +207,3 @@ def price_chart(data: GraphingInterpolator) -> EChart:
         ]
     }
     return ui.echart(options)
-

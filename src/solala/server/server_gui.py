@@ -909,13 +909,13 @@ async def graphs_page():
                 ui.icon('calendar_today').classes('text-lg text-gray-500')
                 ui.label(day.strftime(GUI_DATE_FORMAT)).classes('text-sm text-gray-500')
 
-            with ui.row().classes('items-center gap-2 mb-5'):
+            with ui.row().classes('items-center gap-0 mb-0'):
                 power_chart(colours, interpolator)
 
-            with ui.row().classes('items-center gap-2 mb-5'):
+            with ui.row().classes('items-center gap-0 mb-0'):
                 energy_chart(colours, interpolator)
 
-            with ui.row().classes('items-center gap-2 mb-5'):
+            with ui.row().classes('items-center gap-0 mb-0'):
                 price_chart(interpolator)
 
 
