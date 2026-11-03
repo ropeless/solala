@@ -170,8 +170,8 @@ def _graph_tooltip(units: str) -> JSONDict:
 def _grid(legend_space: bool) -> JSONDict:
     return {
         'left': 30,
-        'right': 5,
-        'top': 90 if legend_space else 40,
+        'right': 30,
+        'top': 85 if legend_space else 40,
         'bottom': 40,
         'containLabel': True,
     }
