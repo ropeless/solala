@@ -17,6 +17,10 @@ def weather_code_to_icon_url(code: WeatherCode, animated: bool = False) -> Optio
 
 
 def weather_code_to_icon_name(code: WeatherCode) -> Optional[str]:
+    """
+    Given a Solala WeatherCode, return the name of the corresponding weather icon
+    as from https://github.com/Makin-Things/weather-icons.
+    """
     match code:
         case WeatherCode.CLEAR_DAY:
             return 'clear-day'
@@ -51,7 +55,7 @@ def weather_code_to_icon_name(code: WeatherCode) -> Optional[str]:
         case WeatherCode.THUNDERSTORMS_SCATTERED:
             return 'scattered-thunderstorms'
         case WeatherCode.THUNDERSTORM_SEVERE:
-            return 'severe-thunderstorms'
+            return 'severe-thunderstorm'
         case WeatherCode.HURRICANE:
             return 'hurricane'
         case WeatherCode.TORNADO:
