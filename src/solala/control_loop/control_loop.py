@@ -650,8 +650,12 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
-    async with solala_database() as db:
-        return await db.get_measurements(day)
+    try:
+        async with solala_database() as db:
+            return await db.get_measurements(day)
+    except ConnectionError as err:
+        LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
+        return []
 
 
 async def set_control(

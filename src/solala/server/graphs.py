@@ -1,13 +1,115 @@
 from datetime import datetime
-from typing import Dict, Sequence, List
+from typing import Sequence, List
 
 import numpy as np
 from nicegui import ui
 from nicegui.elements.echart import EChart
 
-from solala.constants import KILOWATTS, GUI_TIME_FORMAT, KILOWATT_HOURS, PRICE_CENTS
+from solala.constants import KILOWATTS, GUI_TIME_FORMAT, KILOWATT_HOURS, PRICE_CENTS, PERCENT
+from solala.server.css_colours import Colours
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.utils.json import JSONDict
+
+LINE_WIDTH: float = 1.75
+DASHED = [3, 3]
+
+
+def energy_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
+    units = KILOWATT_HOURS
+    options: JSONDict = {
+        'backgroundColor': 'transparent',
+        'tooltip': _graph_tooltip(units),
+        'legend': _legend(),
+        'grid': _grid(legend_space=True),
+        'xAxis': _x_axis(data.timestamps),
+        'yAxis': _y_axis('Energy', units),
+        'series': [
+            _create_series('Solar', data.accumulated_solar_energy, colours.sun),
+            _create_series('Forecast', data.forecast_accumulated_solar_energy, colours.sun, DASHED, 0),
+            _create_series('Import', data.accumulated_grid_energy_import, colours.grid),
+            _create_series('Export', data.accumulated_grid_energy_export, colours.inverter),
+            _create_series('Charge', data.accumulated_battery_energy_charge, colours.battery_charge),
+            _create_series('Discharge', data.accumulated_battery_energy_discharge, colours.battery),
+        ]
+    }
+    return ui.echart(options).classes('w-full')
+
+
+def power_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
+    units = KILOWATTS
+    options: JSONDict = {
+        'backgroundColor': 'transparent',
+        'tooltip': _graph_tooltip(units),
+        'legend': _legend(),
+        'grid': _grid(legend_space=True),
+        'xAxis': _x_axis(data.timestamps),
+        'yAxis': _y_axis('Power', units),
+        'series': [
+            # _create_series('Solar', data.average_solar_power, colours['sun']),
+            # _create_series('Battery', data.average_battery_power, colours['battery']),
+            # _create_series('Grid', data.average_grid_power, colours['grid']),
+
+            _create_series('Solar', data.instantaneous_solar_power, colours.sun),
+            _create_series('Forecast', data.forecast_solar_power, colours.sun, DASHED, 0),
+            _create_series('Grid', data.instantaneous_grid_power, colours.grid),
+            _create_series('Battery', data.instantaneous_battery_power, colours.battery),
+            _create_series('House', data.instantaneous_house_power, colours.house),
+        ]
+    }
+    return ui.echart(options).classes('w-full')
+
+
+def price_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
+    units = PRICE_CENTS
+
+    buy_price = data.buy_price
+    feed_in_price = data.feed_in_price
+    forecast_buy_price = data.forecast_buy_price
+    forecast_feed_in_price = data.forecast_feed_in_price
+
+    # Ensure forecast does not overlap with actual data
+    for i in range(len(buy_price)):
+        if np.isfinite(buy_price[i]):
+            forecast_buy_price[i] = np.nan
+        if np.isfinite(feed_in_price[i]):
+            forecast_feed_in_price[i] = np.nan
+
+    options: JSONDict = {
+        'backgroundColor': 'transparent',
+        'tooltip': _graph_tooltip(units),
+        'legend': None,
+        'grid': _grid(legend_space=False),
+        'xAxis': _x_axis(data.timestamps),
+        'yAxis': _y_axis('Price', units),
+        'series': [
+            _create_series('Buy', buy_price, colours.grid_import),
+            _create_series('Feed-in', feed_in_price, colours.grid_export),
+            _create_series('Buy Forecast', forecast_buy_price, colours.grid_import, DASHED, 0),
+            _create_series('Feed-in Forecast', forecast_feed_in_price, colours.grid_export, DASHED, 0),
+        ]
+    }
+    return ui.echart(options).classes('w-full')
+
+
+def charge_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
+    units = PERCENT
+    options: JSONDict = {
+        'backgroundColor': 'transparent',
+        'tooltip': _graph_tooltip(units),
+        'legend': None,
+        'grid': _grid(legend_space=False),
+        'xAxis': _x_axis(data.timestamps),
+        'yAxis': _y_axis('Charge', units),
+        'series': [
+            _create_series('Charge', data.battery_charge, colours.battery),
+        ]
+    }
+    return ui.echart(options).classes('w-full')
+
+
+# ====================================================================
+#  Support functions
+# ====================================================================
 
 
 def _rgba(colour: str, alpha: float = 0.1) -> str:
@@ -16,8 +118,14 @@ def _rgba(colour: str, alpha: float = 0.1) -> str:
     return f'rgba({r}, {g}, {b}, {alpha})'
 
 
-def _create_series(name: str, data: List[float], colour: str) -> JSONDict:
-    return {
+def _create_series(
+        name: str,
+        data: List[float],
+        colour: str,
+        line_type: str | list = 'solid',
+        area_alpha: float = 0.1,
+) -> JSONDict:
+    options: JSONDict = {
         'name': name,
         'type': 'line',
         'data': data,
@@ -25,13 +133,14 @@ def _create_series(name: str, data: List[float], colour: str) -> JSONDict:
         'showSymbol': False,
         'color': colour,
         'lineStyle': {
-            'width': 2.5,
+            'width': LINE_WIDTH,
             'color': colour,
-        },
-        'areaStyle': {
-            'color': _rgba(colour, 0.10),
+            'type': line_type,
         },
     }
+    if area_alpha > 0:
+        options['areaStyle'] = {'color': _rgba(colour, area_alpha)}
+    return options
 
 
 def _graph_tooltip(units: str) -> JSONDict:
@@ -58,7 +167,33 @@ def _graph_tooltip(units: str) -> JSONDict:
     }
 
 
-def _xaxis(timestamps: Sequence[datetime]) -> JSONDict:
+def _grid(legend_space: bool) -> JSONDict:
+    return {
+        'left': 30,
+        'right': 30,
+        'top': 85 if legend_space else 40,
+        'bottom': 40,
+        'containLabel': True,
+    }
+
+
+def _legend() -> JSONDict:
+    return {
+        'type': 'plain',
+        'top': 0,
+        'left': 10,
+        'right': 10,
+        'orient': 'horizontal',
+        'width': 'auto',
+        'itemGap': 15,
+        'textStyle': {
+            'color': '#888',
+            'fontSize': 12
+        },
+    }
+
+
+def _x_axis(timestamps: Sequence[datetime]) -> JSONDict:
     timestamps = [timestamp.strftime(GUI_TIME_FORMAT) for timestamp in timestamps]
     return {
         'type': 'category',
@@ -75,7 +210,7 @@ def _xaxis(timestamps: Sequence[datetime]) -> JSONDict:
     }
 
 
-def _yaxis(name: str, units: str) -> JSONDict:
+def _y_axis(name: str, units: str) -> JSONDict:
     return {
         'type': 'value',
         'name': f'{name} ({units.strip()})',
@@ -92,127 +227,3 @@ def _yaxis(name: str, units: str) -> JSONDict:
             }
         }
     }
-
-
-def energy_chart(colours: Dict[str, str], data: GraphingInterpolator) -> EChart:
-    units = KILOWATT_HOURS
-    options: JSONDict = {
-        'backgroundColor': 'transparent',
-
-        'tooltip': _graph_tooltip(units),
-
-        'legend': {
-            'top': 10,
-            'left': 'center',
-            'textStyle': {
-                'color': '#888',
-                'fontSize': 12
-            },
-        },
-
-        'grid': {
-            'left': 55,
-            'right': 20,
-            'top': 55,
-            'bottom': 40,
-            'containLabel': False
-        },
-        'xAxis': _xaxis(data.timestamps),
-        'yAxis': _yaxis('Energy', units),
-        'series': [
-            _create_series('Solar', data.accumulated_solar_energy, colours['sun']),
-            _create_series('Grid import', data.accumulated_grid_energy_import, colours['grid']),
-            _create_series('Grid export', data.accumulated_grid_energy_export, colours['inverter']),
-            _create_series('Battery charge', data.accumulated_battery_energy_charge, colours['battery_charge']),
-            _create_series('Battery discharge', data.accumulated_battery_energy_discharge, colours['battery']),
-        ]
-    }
-    return ui.echart(options)
-
-
-def power_chart(colours: Dict[str, str], data: GraphingInterpolator) -> EChart:
-    units = KILOWATTS
-    options: JSONDict = {
-        'backgroundColor': 'transparent',
-
-        'tooltip': _graph_tooltip(units),
-
-        'legend': {
-            'top': 10,
-            'left': 'center',
-            'textStyle': {
-                'color': '#888',
-                'fontSize': 12
-            },
-        },
-
-        'grid': {
-            'left': 55,
-            'right': 20,
-            'top': 55,
-            'bottom': 40,
-            'containLabel': False
-        },
-        'xAxis': _xaxis(data.timestamps),
-        'yAxis': _yaxis('Power', units),
-        'series': [
-            # _create_series('Solar', data.average_solar_power, colours['sun']),
-            # _create_series('Battery', data.average_battery_power, colours['battery']),
-            # _create_series('Grid', data.average_grid_power, colours['grid']),
-
-            _create_series('Solar', data.instantaneous_solar_power, colours['sun']),
-            _create_series('Battery', data.instantaneous_battery_power, colours['battery']),
-            _create_series('Grid', data.instantaneous_grid_power, colours['grid']),
-            _create_series('House', data.instantaneous_house_power, colours['house']),
-        ]
-    }
-    return ui.echart(options)
-
-
-def price_chart(data: GraphingInterpolator) -> EChart:
-    units = PRICE_CENTS
-
-    buy_price = data.buy_price
-    feed_in_price = data.feed_in_price
-    forecast_buy_price = data.forecast_buy_price
-    forecast_feed_in_price = data.forecast_feed_in_price
-
-    # Ensure forecast does not overlap with actual data
-    for i in range(len(buy_price)):
-        if np.isfinite(buy_price[i]):
-            forecast_buy_price[i] = np.nan
-        if np.isfinite(feed_in_price[i]):
-            forecast_feed_in_price[i] = np.nan
-
-    options: JSONDict = {
-        'backgroundColor': 'transparent',
-
-        'tooltip': _graph_tooltip(units),
-
-        'legend': {
-            'top': 10,
-            'left': 'center',
-            'textStyle': {
-                'color': '#888',
-                'fontSize': 12
-            },
-        },
-
-        'grid': {
-            'left': 55,
-            'right': 20,
-            'top': 55,
-            'bottom': 40,
-            'containLabel': False
-        },
-        'xAxis': _xaxis(data.timestamps),
-        'yAxis': _yaxis('Price', units),
-        'series': [
-            _create_series('Buy', buy_price, '#FF6060'),
-            _create_series('Feed-in', feed_in_price, '#6060FF'),
-            _create_series('Buy forecast', forecast_buy_price, '#FF9090'),
-            _create_series('Feed-in forecast', forecast_feed_in_price, '#9090FF'),
-        ]
-    }
-    return ui.echart(options)
-

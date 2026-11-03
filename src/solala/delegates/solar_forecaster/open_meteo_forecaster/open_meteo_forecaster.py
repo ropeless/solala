@@ -179,6 +179,9 @@ class OpenMeteoForecaster(SolarForecaster):
 
 
 def _weather(code: int, is_day: bool) -> WeatherCode:
+    """
+    Given an Open-Meteo WMO weather code, return a Solala WeatherCode.
+    """
     if not is_day:
         return WeatherCode.NIGHT
 

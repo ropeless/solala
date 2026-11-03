@@ -2,7 +2,7 @@ import asyncio
 from abc import abstractmethod
 from datetime import date, timedelta
 from functools import partial
-from typing import Mapping, final, Optional, Dict, List, Sequence
+from typing import Mapping, final, Optional, Dict, List, Sequence, Callable, Awaitable
 
 from nicegui import ui, app, events
 from nicegui.element import Element
@@ -23,7 +23,8 @@ from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
-from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator, price_chart
+from solala.server.css_colours import Colours, css_colours
+from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator, price_chart, charge_chart
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
@@ -33,6 +34,9 @@ from solala.utils.json import JSONDict, json_dict, render_json, filter_json, jso
 # --------------------------------------------------------------------
 # Main styling
 # --------------------------------------------------------------------
+
+LIVE_COLOUR = 'green-700'
+STALE_COLOUR = 'red-600'
 
 _HEAD_HTML = r'''
 <link rel="manifest" href="/manifest.json">
@@ -132,9 +136,14 @@ class PriceForecastListener(LoopListener):
         ...
 
 
-async def _register_listener(listener: LoopListener) -> None:
+async def _register_control_loop_listener(listener: LoopListener) -> None:
     await control_loop.add_control_loop_listener(listener)
     ui.context.client.on_disconnect(partial(control_loop.remove_control_loop_listener, listener))
+
+
+async def _register_database_loop_listener(listener: LoopListener) -> None:
+    await control_loop.add_database_loop_listener(listener)
+    ui.context.client.on_disconnect(partial(control_loop.remove_database_loop_listener, listener))
 
 
 class InverterButtonUpdater(StatusListener):
@@ -468,6 +477,64 @@ class SolarForecastUpdater(LoopListener):
                                 ui.label(f'{forecast.power / 1000:.2f}{KILOWATTS}').classes('solar-number')
 
 
+class ChartUpdater(LoopListener):
+
+    def __init__(self, element: ui.element, colours: Colours):
+        super().__init__()
+        self._prev: Optional[DailySolarForecast] = None
+        self._day: date = date.today()
+        self._element: ui.element = element
+        self._colours: Colours = colours
+        self._show_loading()
+
+    @final
+    async def update(self) -> None:
+        """
+        Thread safe update.
+        """
+        day = self._day
+        measurements: Sequence[Measurement]
+        price_forecast: Sequence[Price]
+        solar_forecast: DailySolarForecast
+        measurements, price_forecast, solar_forecast = await asyncio.gather(
+            control_loop.solala_database_measurements(day),
+            control_loop.get_price_forecast(),
+            control_loop.get_solar_forecast(day),
+        )
+        graph_interpolator = GraphingInterpolator(day, measurements, price_forecast, solar_forecast)
+        self._update(graph_interpolator)
+
+    @property
+    def day(self) -> date:
+        return self._day
+
+    async def set_day(self, day: date) -> None:
+        self._show_loading()
+        self._day = day
+        asyncio.create_task(self.update())
+
+    def _show_loading(self) -> None:
+        self._element.clear()
+        with self._element:
+            ui.label('loading graphs...').classes('text-center italic')
+
+    def _update(self, graph_interpolator: GraphingInterpolator) -> None:
+        # Recreate the solar forecast table if needed
+        self._element.clear()
+        with self._element:
+            with ui.row().classes('w-full items-center gap-0 mb-0'):
+                charge_chart(graph_interpolator, self._colours)
+
+            with ui.row().classes('w-full items-center gap-0 mb-0'):
+                price_chart(graph_interpolator, self._colours)
+
+            with ui.row().classes('w-full items-center gap-0 mb-0'):
+                power_chart(graph_interpolator, self._colours)
+
+            with ui.row().classes('w-full items-center gap-0 mb-0'):
+                energy_chart(graph_interpolator, self._colours)
+
+
 def _json_page(name: str) -> ContentElement:
     """
     Prepare a page to show JSON data.
@@ -588,7 +655,7 @@ async def _ui_control_buttons() -> None:
                 battery_cheap_force_discharge=battery_cheap_force_discharge,
             )
             await updater.update()  # call synchronously to avoid flicker
-            await _register_listener(updater)
+            await _register_control_loop_listener(updater)
 
         # ======================================================
         # INVERTER
@@ -613,7 +680,7 @@ async def _ui_control_buttons() -> None:
                 inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
             )
             await updater.update()  # call synchronously to avoid flicker
-            await _register_listener(updater)
+            await _register_control_loop_listener(updater)
 
 
 def _infographic_click(element):
@@ -653,171 +720,32 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
     overdue: float = control_loop.loop_check_overdue()
     if overdue > Constants.LOOP_TIME:
         loop_status_light.classes(
-            replace='w-3 h-3 rounded-full bg-red-600'
+            replace=f'w-3 h-3 rounded-full bg-{STALE_COLOUR}'
         )
         loop_status_light.tooltip('Control loop appears to be stalled')
         loop_status_label.set_text('stalled')
         loop_status_label.classes(
-            replace='text-sm text-red-600'
+            replace=f'text-sm text-{STALE_COLOUR}'
         )
     elif overdue == 0:
         loop_status_light.classes(
-            replace='w-3 h-3 rounded-full bg-green-700'
+            replace=f'w-3 h-3 rounded-full bg-{LIVE_COLOUR}'
         )
         loop_status_light.tooltip('Control loop appears to be active')
         loop_status_label.set_text('live')
         loop_status_label.classes(
-            replace='text-sm text-green-700'
+            replace=f'text-sm text-{LIVE_COLOUR}'
         )
     else:
         # Leave it as it is
         pass
 
 
-async def _css_colours() -> Dict[str, str]:
-    return await ui.run_javascript("""
-        (() => {
-            const style = getComputedStyle(document.documentElement);
-            return {
-                sun: style.getPropertyValue('--solala-sun-color').trim(),
-                house: style.getPropertyValue('--solala-house-color').trim(),
-                grid: style.getPropertyValue('--solala-grid-color').trim(),
-                inverter: style.getPropertyValue('--solala-inverter-color').trim(),
-                battery: style.getPropertyValue('--solala-battery-color').trim(),
-                battery_charge: style.getPropertyValue('--solala-battery-charge-color').trim(),
-            };
-        })()
-    """)
-
-
-# ====================================================================
-#  Pages
-# ====================================================================
-
-# Mount static files
-app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
-app.add_static_files(url_path='/css', local_directory=str(CSS_FILES))
-app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manifest.json'))
-
-
-@ui.page('/')
-async def root_page():
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page'):
-        _page_header(link=False)
-
-        with ui.element('div').classes('dashboard-grid'):
-            # ----------------------------------------------------------
-            # LIVE POWER INFOGRAPHIC
-            # ----------------------------------------------------------
-            with ui.element('div').classes('dashboard-card infographic-card'):
-                with ui.row().classes('w-full items-center justify-between'):
-                    ui.label('Power').classes('infographic-title')
-
-                    # Control loop status light
-                    with ui.row().classes('items-center gap-2'):
-                        loop_status_light = ui.element('div').classes(
-                            'w-3 h-3 rounded-full bg-green-500'
-                        )
-                        loop_status_label = ui.label('active').classes(
-                            'text-sm text-green-600'
-                        )
-
-                    _update_loop_status(loop_status_light, loop_status_label)
-                    ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
-
-                with ui.element('div').classes('infographic-container'):
-                    infographic = ui.html()
-                    infographic.on(
-                        'click',
-                        handler=_infographic_click,
-                        js_handler="(e) => emit(e.target.closest('rect')?.id)",
-                    )
-                    updater = InfographicUpdater(infographic_element=infographic)
-                    asyncio.create_task(updater.update())
-                    await _register_listener(updater)
-
-            # ----------------------------------------------------------
-            # BATTERY + INVERTER control buttons
-            # ----------------------------------------------------------
-            await _ui_control_buttons()
-
-        # ==============================================================
-        # DIAGNOSTICS
-        # ==============================================================
-        with ui.element('div').classes('dashboard-card diagnostics-card'):
-            with ui.element('div').classes('diagnostics-title'):
-                ui.label('Diagnostics')
-            with ui.grid(columns=3):
-                _diagnostic_link('Graphs', '/graphs_page')
-                _diagnostic_link('Status', '/status_page')
-                _diagnostic_link('Connection', '/connection_page')
-                _diagnostic_link('Parameters', '/parameters_page')
-                _diagnostic_link('Registers', '/registers_page')
-                _diagnostic_link('Log', '/log_page')
-
-
-@ui.page('/price_forecast_page')
-async def price_forecast_page():
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
-        _page_header(' price forecast')
-        element = ui.element('div')
-        updater = PriceForecastUpdater(element=element)
-        asyncio.create_task(updater.update())
-        await _register_listener(updater)
-
-
-@ui.page('/solar_forecast_page')
-async def solar_forecast_page():
-    ui.add_head_html(_HEAD_HTML)
-
-    swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
-    with swipe_area:
-        with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
-            _page_header(' solar forecast')
-
-            # Date and navigation row
-            with ui.row().classes('items-center gap-2 w-full'):
-                # Date
-                ui.icon('calendar_today').classes('text-lg text-gray-500')
-                date_element = ui.label().classes('text-sm w-30 text-gray-500')
-
-                # Previous day
-                button_classes = '!w-8 !h-8 min-w-0 shrink-0'
-
-                ui.button(
-                    icon='chevron_left',
-                    on_click=lambda: change_day(-1),
-                ).props('flat round color=primary').classes(
-                    button_classes
-                ).tooltip('Previous day')
-
-                # "today" or "back to today"
-                with ui.row().classes(
-                        'items-center justify-center gap-0 h-8 w-23'
-                ):
-                    day_status = ui.label('today').classes('text-sm text-gray-500')
-                    today_button = ui.button(
-                        'back to today',
-                        on_click=lambda: set_day(date.today()),
-                    ).props(
-                        'flat dense no-caps color=primary'
-                    ).classes('text-sm min-h-0 px-0 py-1')
-
-                # Next day
-                ui.button(
-                    icon='chevron_right',
-                    on_click=lambda: change_day(1),
-                ).props('flat round color=primary').classes(
-                    button_classes
-                ).tooltip('Next day')
-
-            # Forecast table will be rendered here
-            forecast_element = ui.element('div').classes('w-full')
-
-    # What follows is rendering and navigation
-
+def _left_right_navigation(
+        swipe_area: ui.Area,
+        change_day: Callable[[int], Awaitable[None]],
+        set_day: Callable[[date], Awaitable[None]],
+):
     # Handler for swipe actions
     async def handle_swipe(event) -> None:
         direction = event.args
@@ -873,9 +801,152 @@ async def solar_forecast_page():
 
     ui.keyboard(on_key=handle_key, repeating=False)
 
+
+# ====================================================================
+#  Pages
+# ====================================================================
+
+# Mount static files
+app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
+app.add_static_files(url_path='/css', local_directory=str(CSS_FILES))
+app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manifest.json'))
+
+
+@ui.page('/')
+async def root_page():
+    ui.add_head_html(_HEAD_HTML)
+
+    with ui.element('div').classes('solala-page'):
+        _page_header(link=False)
+
+        with ui.element('div').classes('dashboard-grid'):
+            # ----------------------------------------------------------
+            # LIVE POWER INFOGRAPHIC
+            # ----------------------------------------------------------
+            with ui.element('div').classes('dashboard-card infographic-card'):
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label('Power').classes('infographic-title')
+
+                    # Control loop status light
+                    with ui.row().classes('items-center gap-2'):
+                        loop_status_light = ui.element('div').classes(
+                            f'w-3 h-3 rounded-full bg-{STALE_COLOUR}'
+                        )
+                        loop_status_label = ui.label('active').classes(
+                            f'text-sm text-{STALE_COLOUR}'
+                        )
+
+                    _update_loop_status(loop_status_light, loop_status_label)
+                    ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
+
+                    _ = ui.run_javascript(f"""
+                        const light = getHtmlElement({loop_status_light.id});
+                        const label = getHtmlElement({loop_status_label.id});
+
+                        window.socket.on('disconnect', () => {{
+                            light.className = 'w-3 h-3 rounded-full bg-{STALE_COLOUR}';
+                            light.title = 'Connection to Solala server lost';
+
+                            label.textContent = 'stale';
+                            label.className = 'text-sm text-{STALE_COLOUR}';
+                        }});
+                    """)
+
+                with ui.element('div').classes('infographic-container'):
+                    infographic = ui.html()
+                    infographic.on(
+                        'click',
+                        handler=_infographic_click,
+                        js_handler="(e) => emit(e.target.closest('rect')?.id)",
+                    )
+                    updater = InfographicUpdater(infographic_element=infographic)
+                    asyncio.create_task(updater.update())
+                    await _register_control_loop_listener(updater)
+
+            # ----------------------------------------------------------
+            # BATTERY + INVERTER control buttons
+            # ----------------------------------------------------------
+            await _ui_control_buttons()
+
+        # ==============================================================
+        # DIAGNOSTICS
+        # ==============================================================
+        with ui.element('div').classes('dashboard-card diagnostics-card'):
+            with ui.element('div').classes('diagnostics-title'):
+                ui.label('Diagnostics')
+            with ui.grid(columns=3):
+                _diagnostic_link('Graphs', '/graphs_page')
+                _diagnostic_link('Status', '/status_page')
+                _diagnostic_link('Connection', '/connection_page')
+                _diagnostic_link('Parameters', '/parameters_page')
+                _diagnostic_link('Registers', '/registers_page')
+                _diagnostic_link('Log', '/log_page')
+
+
+@ui.page('/price_forecast_page')
+async def price_forecast_page():
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+        _page_header(' price forecast')
+        element = ui.element('div')
+        updater = PriceForecastUpdater(element=element)
+        asyncio.create_task(updater.update())
+        await _register_control_loop_listener(updater)
+
+
+@ui.page('/solar_forecast_page')
+async def solar_forecast_page():
+    ui.add_head_html(_HEAD_HTML)
+
+    swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
+    with swipe_area:
+        with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+            _page_header(' solar forecast')
+
+            # Date and navigation row
+            with ui.row().classes('items-center gap-2 w-full'):
+                # Date
+                ui.icon('calendar_today').classes('text-lg text-gray-500')
+                date_element = ui.label().classes('text-sm w-30 text-gray-500')
+
+                # Previous day
+                button_classes = '!w-8 !h-8 min-w-0 shrink-0'
+
+                ui.button(
+                    icon='chevron_left',
+                    on_click=lambda: change_day(-1),
+                ).props('flat round color=primary').classes(
+                    button_classes
+                ).tooltip('Previous day')
+
+                # "today" or "back to today"
+                with ui.row().classes(
+                        'items-center justify-center gap-0 h-8 w-23'
+                ):
+                    day_status = ui.label('today').classes('text-sm text-gray-500')
+                    today_button = ui.button(
+                        'back to today',
+                        on_click=lambda: set_day(date.today()),
+                    ).props(
+                        'flat dense no-caps color=primary'
+                    ).classes('text-sm min-h-0 px-0 py-1')
+
+                # Next day
+                ui.button(
+                    icon='chevron_right',
+                    on_click=lambda: change_day(1),
+                ).props('flat round color=primary').classes(
+                    button_classes
+                ).tooltip('Next day')
+
+            # Forecast table will be rendered here
+            forecast_element = ui.element('div').classes('w-full')
+
+    # What follows is rendering and navigation
+
     updater = SolarForecastUpdater(element=forecast_element)
     # no need to call update on the updater now as that will be done by `set_day` below.
-    await _register_listener(updater)
+    await _register_control_loop_listener(updater)
 
     async def set_day(day: date) -> None:
         await updater.set_day(day)
@@ -887,36 +958,79 @@ async def solar_forecast_page():
     async def change_day(offset: int) -> None:
         await set_day(updater.day + timedelta(days=offset))
 
+    _left_right_navigation(swipe_area, change_day, set_day)
+
     await set_day(date.today())
 
 
 @ui.page('/graphs_page')
 async def graphs_page():
     ui.add_head_html(_HEAD_HTML)
-    colours = await _css_colours()  # must come after adding head html.
+    colours: Colours = await css_colours()  # must come after adding head html.
 
-    # Get measurement data
-    day = date.today()
-    measurements: Sequence[Measurement] = await control_loop.solala_database_measurements(day)
-    price_forecast: Sequence[Price] = await control_loop.get_price_forecast()
-    interpolator = GraphingInterpolator(day, measurements, price_forecast)
+    swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
+    with swipe_area:
+        with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+            _page_header(' solar forecast')
 
-    with ui.element('div').classes('solala-page'):
-        _page_header()
-        with ui.element('div'):
-            # Date
-            with ui.row().classes('items-center gap-2 mb-5'):
+            # Date and navigation row
+            with ui.row().classes('items-center gap-2 w-full'):
+                # Date
                 ui.icon('calendar_today').classes('text-lg text-gray-500')
-                ui.label(day.strftime(GUI_DATE_FORMAT)).classes('text-sm text-gray-500')
+                date_element = ui.label().classes('text-sm w-30 text-gray-500')
 
-            with ui.row().classes('items-center gap-2 mb-5'):
-                power_chart(colours, interpolator)
+                # Previous day
+                button_classes = '!w-8 !h-8 min-w-0 shrink-0'
 
-            with ui.row().classes('items-center gap-2 mb-5'):
-                energy_chart(colours, interpolator)
+                ui.button(
+                    icon='chevron_left',
+                    on_click=lambda: change_day(-1),
+                ).props('flat round color=primary').classes(
+                    button_classes
+                ).tooltip('Previous day')
 
-            with ui.row().classes('items-center gap-2 mb-5'):
-                price_chart(interpolator)
+                # "today" or "back to today"
+                with ui.row().classes(
+                        'items-center justify-center gap-0 h-8 w-23'
+                ):
+                    day_status = ui.label('today').classes('text-sm text-gray-500')
+                    today_button = ui.button(
+                        'back to today',
+                        on_click=lambda: set_day(date.today()),
+                    ).props(
+                        'flat dense no-caps color=primary'
+                    ).classes('text-sm min-h-0 px-0 py-1')
+
+                # Next day
+                ui.button(
+                    icon='chevron_right',
+                    on_click=lambda: change_day(1),
+                ).props('flat round color=primary').classes(
+                    button_classes
+                ).tooltip('Next day')
+
+            # Charts will be rendered here
+            charts_element = ui.element('div').classes('w-full')
+
+    # What follows is rendering and navigation
+
+    updater = ChartUpdater(element=charts_element, colours=colours)
+    # no need to call update on the updater now as that will be done by `set_day` below.
+    await _register_database_loop_listener(updater)
+
+    async def set_day(day: date) -> None:
+        await updater.set_day(day)
+        date_element.set_text(day.strftime(GUI_DATE_FORMAT))
+        today = date.today()
+        day_status.set_visibility(day == today)
+        today_button.set_visibility(day != today)
+
+    async def change_day(offset: int) -> None:
+        await set_day(updater.day + timedelta(days=offset))
+
+    _left_right_navigation(swipe_area, change_day, set_day)
+
+    await set_day(date.today())
 
 
 @ui.page('/status_page')
@@ -935,7 +1049,7 @@ async def status_page():
                 ui.label('Status').classes('text-h6')
                 updater = StatusUpdater(status_element=ui.code(language='nothing').classes('text-sm w-full grow'))
                 asyncio.create_task(updater.update())
-                await _register_listener(updater)
+                await _register_control_loop_listener(updater)
 
 
 @ui.page('/connection_page')
@@ -979,7 +1093,7 @@ async def registers_page(match: Optional[str] = None):
     json_element = _json_page('Registers')
     registers_elements = RegistersUpdater(registers_element=json_element, match=match)
     asyncio.create_task(registers_elements.update())
-    await _register_listener(registers_elements)
+    await _register_control_loop_listener(registers_elements)
 
 
 @ui.page('/parameters_page')
