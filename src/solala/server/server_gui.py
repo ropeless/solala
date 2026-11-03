@@ -1,6 +1,6 @@
 import asyncio
 from abc import abstractmethod
-from datetime import date, timedelta
+from datetime import date
 from functools import partial
 from typing import Mapping, final, Optional, Dict, List, Sequence, Callable, Awaitable
 
@@ -28,6 +28,7 @@ from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
+from solala.server.ui_day_navigator import DayNavigator
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
 
@@ -741,7 +742,7 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
         pass
 
 
-def _left_right_navigation(
+def _day_navigation(
         swipe_area: ui.Area,
         change_day: Callable[[int], Awaitable[None]],
         set_day: Callable[[date], Awaitable[None]],
@@ -903,64 +904,17 @@ async def solar_forecast_page():
         with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
             _page_header(' solar forecast')
 
-            # Date and navigation row
-            with ui.row().classes('items-center gap-2 w-full'):
-                # Date
-                ui.icon('calendar_today').classes('text-lg text-gray-500')
-                date_element = ui.label().classes('text-sm w-30 text-gray-500')
-
-                # Previous day
-                button_classes = '!w-8 !h-8 min-w-0 shrink-0'
-
-                ui.button(
-                    icon='chevron_left',
-                    on_click=lambda: change_day(-1),
-                ).props('flat round color=primary').classes(
-                    button_classes
-                ).tooltip('Previous day')
-
-                # "today" or "back to today"
-                with ui.row().classes(
-                        'items-center justify-center gap-0 h-8 w-23'
-                ):
-                    day_status = ui.label('today').classes('text-sm text-gray-500')
-                    today_button = ui.button(
-                        'back to today',
-                        on_click=lambda: set_day(date.today()),
-                    ).props(
-                        'flat dense no-caps color=primary'
-                    ).classes('text-sm min-h-0 px-0 py-1')
-
-                # Next day
-                ui.button(
-                    icon='chevron_right',
-                    on_click=lambda: change_day(1),
-                ).props('flat round color=primary').classes(
-                    button_classes
-                ).tooltip('Next day')
+            navigator = DayNavigator()
 
             # Forecast table will be rendered here
             forecast_element = ui.element('div').classes('w-full')
 
-    # What follows is rendering and navigation
-
-    updater = SolarForecastUpdater(element=forecast_element)
-    # no need to call update on the updater now as that will be done by `set_day` below.
-    await _register_control_loop_listener(updater)
-
-    async def set_day(day: date) -> None:
-        await updater.set_day(day)
-        date_element.set_text(day.strftime(GUI_DATE_FORMAT))
-        today = date.today()
-        day_status.set_visibility(day == today)
-        today_button.set_visibility(day != today)
-
-    async def change_day(offset: int) -> None:
-        await set_day(updater.day + timedelta(days=offset))
-
-    _left_right_navigation(swipe_area, change_day, set_day)
-
-    await set_day(date.today())
+            # Configure rendering and navigation
+            updater = SolarForecastUpdater(element=forecast_element)
+            navigator.set_listener(updater.set_day)
+            navigator.configure_swipe_area(swipe_area)
+            await _register_control_loop_listener(updater)
+            await navigator.set_day(date.today())
 
 
 @ui.page('/graphs_page')
@@ -973,64 +927,17 @@ async def graphs_page():
         with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
             _page_header(' solar forecast')
 
-            # Date and navigation row
-            with ui.row().classes('items-center gap-2 w-full'):
-                # Date
-                ui.icon('calendar_today').classes('text-lg text-gray-500')
-                date_element = ui.label().classes('text-sm w-30 text-gray-500')
-
-                # Previous day
-                button_classes = '!w-8 !h-8 min-w-0 shrink-0'
-
-                ui.button(
-                    icon='chevron_left',
-                    on_click=lambda: change_day(-1),
-                ).props('flat round color=primary').classes(
-                    button_classes
-                ).tooltip('Previous day')
-
-                # "today" or "back to today"
-                with ui.row().classes(
-                        'items-center justify-center gap-0 h-8 w-23'
-                ):
-                    day_status = ui.label('today').classes('text-sm text-gray-500')
-                    today_button = ui.button(
-                        'back to today',
-                        on_click=lambda: set_day(date.today()),
-                    ).props(
-                        'flat dense no-caps color=primary'
-                    ).classes('text-sm min-h-0 px-0 py-1')
-
-                # Next day
-                ui.button(
-                    icon='chevron_right',
-                    on_click=lambda: change_day(1),
-                ).props('flat round color=primary').classes(
-                    button_classes
-                ).tooltip('Next day')
+            navigator = DayNavigator()
 
             # Charts will be rendered here
             charts_element = ui.element('div').classes('w-full')
 
-    # What follows is rendering and navigation
-
-    updater = ChartUpdater(element=charts_element, colours=colours)
-    # no need to call update on the updater now as that will be done by `set_day` below.
-    await _register_database_loop_listener(updater)
-
-    async def set_day(day: date) -> None:
-        await updater.set_day(day)
-        date_element.set_text(day.strftime(GUI_DATE_FORMAT))
-        today = date.today()
-        day_status.set_visibility(day == today)
-        today_button.set_visibility(day != today)
-
-    async def change_day(offset: int) -> None:
-        await set_day(updater.day + timedelta(days=offset))
-
-    _left_right_navigation(swipe_area, change_day, set_day)
-
-    await set_day(date.today())
+            # Configure rendering and navigation
+            updater = ChartUpdater(element=charts_element, colours=colours)
+            navigator.set_listener(updater.set_day)
+            navigator.configure_swipe_area(swipe_area)
+            await _register_database_loop_listener(updater)
+            await navigator.set_day(date.today())
 
 
 @ui.page('/status_page')
