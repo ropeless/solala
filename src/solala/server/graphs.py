@@ -20,7 +20,7 @@ def energy_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
         'backgroundColor': 'transparent',
         'tooltip': _graph_tooltip(units),
         'legend': _legend(),
-        'grid': _grid(),
+        'grid': _grid(legend_space=True),
         'xAxis': _x_axis(data.timestamps),
         'yAxis': _y_axis('Energy', units),
         'series': [
@@ -41,7 +41,7 @@ def power_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
         'backgroundColor': 'transparent',
         'tooltip': _graph_tooltip(units),
         'legend': _legend(),
-        'grid': _grid(),
+        'grid': _grid(legend_space=True),
         'xAxis': _x_axis(data.timestamps),
         'yAxis': _y_axis('Power', units),
         'series': [
@@ -78,7 +78,7 @@ def price_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
         'backgroundColor': 'transparent',
         'tooltip': _graph_tooltip(units),
         'legend': None,
-        'grid': _grid(),
+        'grid': _grid(legend_space=False),
         'xAxis': _x_axis(data.timestamps),
         'yAxis': _y_axis('Price', units),
         'series': [
@@ -97,7 +97,7 @@ def charge_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
         'backgroundColor': 'transparent',
         'tooltip': _graph_tooltip(units),
         'legend': None,
-        'grid': _grid(),
+        'grid': _grid(legend_space=False),
         'xAxis': _x_axis(data.timestamps),
         'yAxis': _y_axis('Charge', units),
         'series': [
@@ -167,11 +167,11 @@ def _graph_tooltip(units: str) -> JSONDict:
     }
 
 
-def _grid() -> JSONDict:
+def _grid(legend_space: bool) -> JSONDict:
     return {
         'left': 30,
         'right': 5,
-        'top': 90,
+        'top': 90 if legend_space else 40,
         'bottom': 40,
         'containLabel': True,
     }
