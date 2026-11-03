@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 from typing import Sequence, List, Iterable, Optional
 
 import numpy as np
+from scipy.interpolate import CubicSpline
 
 from solala.database.measurement import Measurement
 from solala.delegates.power_pricer.price import Price
@@ -41,7 +42,8 @@ class GraphingInterpolator:
 
     @property
     def battery_charge(self) -> List[float]:
-        return self._interpolated_measurement_linear('battery_charge')
+        values = [m.battery_charge for m in self._measurements]
+        return self._interpolate_linear(self._ts_m, values)
 
     @property
     def accumulated_solar_energy(self) -> List[float]:
@@ -114,11 +116,13 @@ class GraphingInterpolator:
 
     @property
     def buy_price(self) -> List[float]:
-        return self._interpolated_measurement_nearest('buy_price')
+        values = [m.buy_price for m in self._measurements]
+        return self._interpolate_nearest(self._ts_m, values)
 
     @property
     def feed_in_price(self) -> List[float]:
-        return self._interpolated_measurement_nearest('feed_in_price')
+        values = [m.feed_in_price for m in self._measurements]
+        return self._interpolate_nearest(self._ts_m, values)
 
     @property
     def forecast_buy_price(self) -> List[float]:
@@ -133,12 +137,12 @@ class GraphingInterpolator:
     @property
     def forecast_solar_power(self) -> List[float]:
         values = [forecast.power / 1000 for forecast in self._solar_forecast]
-        return self._interpolate_linear(self._ts_s, values, left=0, right=0)
+        return self._interpolate_cubic(self._ts_s, values, left=0, right=0)
 
     @property
     def forecast_accumulated_solar_energy(self) -> List[float]:
-        values = list(_accumulate(forecast.energy / 1000 for forecast in self._solar_forecast))
-        return self._interpolate_linear(self._ts_s, values, left=0, right=None)
+        values = _ensure_monotonic(_accumulate(forecast.energy / 1000 for forecast in self._solar_forecast))
+        return _ensure_monotonic(self._interpolate_cubic(self._ts_s, values, left=0, right=None))
 
     # ====================================================================
     #  Support functions
@@ -169,18 +173,12 @@ class GraphingInterpolator:
         return data
 
     def _accumulated_daily_energy(self, field: str) -> List[float]:
-        return _ensure_monotonic(_zero(x / 1000 for x in self._interpolated_measurement_linear(field)))
+        values = [getattr(m, field) for m in self._measurements]
+        return _ensure_monotonic(_zero(x / 1000 for x in self._interpolate_linear(self._ts_m, values)))
 
     def _instantaneous_power(self, field: str) -> List[float]:
-        return [x / 1000 for x in self._interpolated_measurement_linear(field)]
-
-    def _interpolated_measurement_linear(self, field: str) -> List[float]:
         values = [getattr(m, field) for m in self._measurements]
-        return self._interpolate_linear(self._ts_m, values)
-
-    def _interpolated_measurement_nearest(self, field: str) -> List[float]:
-        values = [getattr(m, field) for m in self._measurements]
-        return self._interpolate_nearest(self._ts_m, values)
+        return [x / 1000 for x in self._interpolate_linear(self._ts_m, values)]
 
     def _interpolate_linear(
             self,
@@ -195,6 +193,37 @@ class GraphingInterpolator:
         interpolated_values = np.interp(self._ts, timestamps, y_values, left=left, right=right)
         return interpolated_values.tolist()
 
+    def _interpolate_cubic(
+            self,
+            timestamps: np.ndarray,
+            values: List[float],
+            left: Optional[float] = np.nan,
+            right: Optional[float] = np.nan,
+    ) -> List[float]:
+        if len(values) == 0:
+            return []
+
+        if left is not None or right is not None:
+            ts = timestamps.tolist()
+            if left is not None:
+                values = [left] + values
+                ts = [timestamps.item(0) - 0.1] + ts
+            if right is not None:
+                values += [right]
+                ts += [timestamps.item(-1) + 0.1]
+            timestamps = np.array(ts)
+        y_values = np.array(values)
+
+        # Extrapolate only if left or right is finite
+        extrapolate: bool = (
+            (left is not None and np.isfinite(left))
+            or (right is not None and np.isfinite(right))
+        )
+
+        cs = CubicSpline(timestamps, y_values, bc_type='not-a-knot', extrapolate=extrapolate)
+        interpolated_values = np.array(cs(self._ts), dtype=np.float64)
+        return interpolated_values.tolist()
+
     def _interpolate_nearest(
             self,
             timestamps: np.ndarray,
@@ -204,19 +233,17 @@ class GraphingInterpolator:
     ) -> List[float]:
         if len(values) == 0:
             return []
-        if left is not None:
-            values = [left] + values
-        if right is not None:
-            values += [right]
-        y_values = np.array(values)
 
         if left is not None or right is not None:
             ts = timestamps.tolist()
             if left is not None:
+                values = [left] + values
                 ts = [timestamps.item(0) - 0.1] + ts
             if right is not None:
+                values += [right]
                 ts += [timestamps.item(-1) + 0.1]
             timestamps = np.array(ts)
+        y_values = np.array(values)
 
         indices = np.searchsorted(timestamps, self._ts)
         left = np.clip(indices - 1, 0, len(timestamps) - 1)

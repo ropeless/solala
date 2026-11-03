@@ -181,11 +181,11 @@ def _legend() -> JSONDict:
     return {
         'type': 'plain',
         'top': 0,
-        'left': 105,
+        'left': 10,
         'right': 10,
         'orient': 'horizontal',
         'width': 'auto',
-        'itemGap': 20,
+        'itemGap': 15,
         'textStyle': {
             'color': '#888',
             'fontSize': 12
