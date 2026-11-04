@@ -13,7 +13,7 @@ Updater: TypeAlias = Callable[[date], Awaitable[None]]
 
 _SENTINEL_DATE: date = date(year=1901, month=12, day=31)  # a valid date but not near today.
 
-_CAROUSEL_PROPS = 'swipeable infinite transition-next="slide-left" transition-prev="slide-right"'
+_CAROUSEL_PROPS = 'infinite transition-next="slide-left" transition-prev="slide-right"'
 
 
 class DayNavigator:
@@ -32,6 +32,7 @@ class DayNavigator:
         self._day: date = _SENTINEL_DATE
         self._focus_slide: int = 0
         self._updaters: Sequence[Updater] = ()  # mapping from slide number to `updater`
+        self._touch_start_x: float | None = None  # for our own swipe detection
 
         # Date and navigation row
         with ui.row().classes('items-center gap-2 w-full'):
@@ -86,6 +87,16 @@ class DayNavigator:
 
         self._carousel.on_value_change(self._on_slide_change)
         self._carousel.on('transition', self._on_carousel_transition)
+        self._carousel.on(
+            'touchstart',
+            self._on_touch_start,
+            js_handler='(e) => emit(e.touches[0]?.clientX ?? null)',
+        )
+        self._carousel.on(
+            'touchend',
+            self._on_touch_end,
+            js_handler='(e) => emit(e.changedTouches[0]?.clientX ?? null)',
+        )
         ui.keyboard(on_key=self._handle_key, repeating=False)
 
         with ui.dialog(value=False) as dialog:
@@ -146,18 +157,18 @@ class DayNavigator:
         if day_shift == -1:
             self._focus_slide = self._left_slide()
             self._set_display_slide(self._focus_slide)
-            # asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+            asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
 
         elif day_shift == 1:
             self._focus_slide = self._right_slide()
             self._set_display_slide(self._focus_slide)
-            # asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
+            asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
 
         else:
             # Just recreate all three slides
             await self._update_element(self._focus_slide, day)
-            # asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
-            # asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+            asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
+            asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
 
     @property
     def _display_slide(self) -> int:
@@ -186,11 +197,11 @@ class DayNavigator:
                 self._carousel_previous()
 
     def _carousel_next(self) -> None:
-        self._carousel.props('swipeable infinite transition-next="slide-left" transition-prev="slide-left"')
+        self._carousel.props('infinite transition-next="slide-left" transition-prev="slide-left"')
         self._carousel.next()
 
     def _carousel_previous(self) -> None:
-        self._carousel.props('swipeable infinite transition-next="slide-right" transition-prev="slide-right"')
+        self._carousel.props('infinite transition-next="slide-right" transition-prev="slide-right"')
         self._carousel.previous()
 
     def _left_slide(self) -> int:
@@ -229,7 +240,27 @@ class DayNavigator:
             # The user changed the slide we need to react.
             await self.change_day(delta)
 
+    def _on_touch_start(self, e: events.GenericEventArguments) -> None:
+        self._touch_start_x = e.args
+
+    def _on_touch_end(self, e: events.GenericEventArguments) -> None:
+        if self._touch_start_x is None or e.args is None:
+            return
+
+        delta = float(e.args) - self._touch_start_x
+        self._touch_start_x = None
+
+        # Ignore short movements
+        if abs(delta) < 50:
+            return
+
+        if delta < 0:
+            self._carousel_next()
+        else:
+            self._carousel_previous()
+
     def _on_carousel_transition(self, e: events.GenericEventArguments) -> None:
+        # Restore default carousel props
         self._carousel.props(_CAROUSEL_PROPS)
 
     async def _show_dialog(self) -> None:
