@@ -1,7 +1,8 @@
 from enum import Enum, auto
-from typing import Iterable, Tuple, Dict
+from typing import Dict
 
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
+from solala.registers import RegisterBank, CallRegister
 from solala.utils.datetime_extras import now
 
 
@@ -57,6 +58,11 @@ class DummyPowerController(PowerController):
         self.accumulated_battery_energy_charge: float = 0
         self.accumulated_battery_energy_discharge: float = 0
 
+        self.registers = RegisterBank({
+            key: CallRegister(lambda: self.get_connection_status()[key])
+            for key in self.get_connection_status().keys()
+        })
+
         self.update_status()
 
     def get_inverter_limit(self) -> float:
@@ -78,8 +84,8 @@ class DummyPowerController(PowerController):
             'max_discharge_param': self.max_discharge_param,
         }
 
-    async def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
-        return self.get_connection_status().items()
+    async def get_registers(self) -> RegisterBank:
+        return self.registers
 
     async def get_status(self) -> PowerStatus:
         self.update_status()

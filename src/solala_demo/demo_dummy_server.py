@@ -1,4 +1,5 @@
 import local_config as config
+from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, DummyControllerConnection, DummyPricerConnection, \
     DummyConsumerConnection, DummySolarForecasterConnection
@@ -13,13 +14,7 @@ def main():
     force_settings: bool = True
     settings = Settings(
         controller=DummyControllerConnection(),
-        pricer=DummyPricerConnection(
-            # buy_price_min=1,
-            # buy_price_max=2,
-            # feed_in_price_discount_min=2,
-            # feed_in_price_discount_max=5,
-            # cur_price_is_estimate=False,
-        ),
+        pricer=DummyPricerConnection(),
         consumers={'example_consumer': DummyConsumerConnection(current=5)},
         forecaster=DummySolarForecasterConnection(
             panel_capacity=config.PANEL_CAPACITY,
@@ -27,6 +22,8 @@ def main():
         ),
 
     )
+
+    Constants.APP_NAME += ' ***DUMMY SERVER***'
 
     server.run_server(
         host=config.SERVER_HOST,

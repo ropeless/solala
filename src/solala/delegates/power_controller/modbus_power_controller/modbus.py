@@ -1,12 +1,14 @@
 from dataclasses import dataclass
-from typing import Mapping, KeysView, Iterator, Set, Dict, Iterable, Sequence
+from typing import Mapping, Set, Dict, Iterable, Sequence
 
 from pymodbus.client import ModbusTcpClient
 
-from solala.logger import LOGGER
-from solala.delegates.power_controller.modbus_power_controller.register_access import RegisterContext, RegisterAccess, \
+from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import RegisterContext, \
+    RegisterAccess, \
     MODBUS_MODEL
-from solala.delegates.power_controller.modbus_power_controller.registers import MODELS, mppt_modules, MPPT_MODEL
+from solala.delegates.power_controller.modbus_power_controller.modbus_registers import MODELS, mppt_modules, MPPT_MODEL
+from solala.logger import LOGGER
+from solala.registers import Register, RegisterValue, RegisterBank
 
 
 @dataclass
@@ -15,7 +17,21 @@ class ModbusDevice:
     device_id: int
 
 
-class Modbus(Mapping[str, str | int | float]):
+class ModbusRegister(Register):
+
+    def __init__(self, access: RegisterAccess, context: RegisterContext):
+        super().__init__(access.register_type, access.writable)
+        self._access: RegisterAccess = access
+        self._context: RegisterContext = context
+
+    def _get(self) -> RegisterValue:
+        return self._access.get(self._context)
+
+    def _set(self, value: RegisterValue) -> None:
+        return self._access.set(self._context, value)
+
+
+class Modbus(RegisterBank):
     """
     This class provides access to Modbus registers for devices (potentially via multiple clients).
     Register access takes into account the data type of each register (string, integer, or scaled integer, etc.).
@@ -87,7 +103,7 @@ class Modbus(Mapping[str, str | int | float]):
 
         # Construct logical devices
         # `device_registers` is logical_device_id => LogicalDevice
-        device_registers: Dict[str, _Register] = {}
+        device_registers: Dict[str, ModbusRegister] = {}
         logical_device_id: str | None
         for logical_device_id, device in devices.items():
             client: ModbusTcpClient = device.client
@@ -118,11 +134,11 @@ class Modbus(Mapping[str, str | int | float]):
                         register_name if logical_device_id is None
                         else f'{logical_device_id}/{register_name}'
                     )
-                    device_registers[full_name] = _Register(register_access, context)
+                    device_registers[full_name] = ModbusRegister(register_access, context)
 
         # Create fields
         self._clients: Sequence[ModbusTcpClient] = list(clients_by_client_id.values())
-        self._registers: Mapping[str, _Register] = device_registers
+        super().__init__(device_registers)
 
     def connect(self) -> None:
         """
@@ -150,34 +166,6 @@ class Modbus(Mapping[str, str | int | float]):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
-
-    def __len__(self) -> int:
-        return len(self._registers)
-
-    def keys(self) -> KeysView[str]:
-        return self._registers.keys()
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._registers)
-
-    def __getitem__(self, item: str) -> str | int | float:
-        """
-        Raises:
-            KeyError if the register does not exist.
-        """
-        reg: _Register = self._registers[item]
-        return reg.access.get(reg.context)
-
-    def __setitem__(self, item: str, value: str | int | float) -> None:
-        """
-        Raises:
-            KeyError if the register does not exist.
-            ReadOnlyError(AttributeError) if the register is not writable.
-            TypeError if the value is not compatible with the register data type.
-            ValueError if the value is out of range for the register.
-        """
-        reg: _Register = self._registers[item]
-        reg.access.set(reg.context, value)
 
 
 def _find_devices(client: ModbusTcpClient) -> Iterable[int]:
@@ -219,9 +207,3 @@ def _find_model_offsets(client: ModbusTcpClient, device_id: int) -> Dict[MODBUS_
         current_address += 2 + block_length
 
     return result
-
-
-@dataclass
-class _Register:
-    access: RegisterAccess
-    context: RegisterContext

@@ -10,7 +10,7 @@ from nicegui.elements.button import Button
 from nicegui.elements.label import Label
 from nicegui.elements.mixins.content_element import ContentElement
 
-from solala.constants import APP_NAME, APP_SUBTITLE, Constants, GUI_DATE_FORMAT, GUI_TIME_FORMAT
+from solala.constants import Constants, GUI_DATE_FORMAT, GUI_TIME_FORMAT
 from solala.constants import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, DEGREES, \
     KILOWATT_HOURS, CELSIUS, KILOWATTS
 from solala.control_loop import control_loop
@@ -585,8 +585,8 @@ def _page_header(ext: str = '', link: bool = True) -> None:
                 ui.image('/images/solala.svg').classes('w-12 h-12 bg-transparent')
 
             with ui.element('div'):
-                ui.label(f'{APP_NAME}{ext}').classes('solala-brand-name')
-                ui.label(APP_SUBTITLE).classes('solala-brand-subtitle')
+                ui.label(f'{Constants.APP_NAME}{ext}').classes('solala-brand-name')
+                ui.label(Constants.APP_SUBTITLE).classes('solala-brand-subtitle')
 
 
 def _control_header(title: str) -> None:
@@ -925,7 +925,7 @@ async def graphs_page():
     swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
     with swipe_area:
         with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
-            _page_header(' solar forecast')
+            _page_header()
 
             navigator = DayNavigator()
 

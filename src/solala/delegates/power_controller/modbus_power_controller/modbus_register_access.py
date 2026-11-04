@@ -5,18 +5,11 @@ from typing import TypeAlias, Sequence
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ModbusPDU
 
+from solala.registers import ReadOnlyError, RegisterType, RegisterValue
+
 NEXT_SF = -1  # The scale factor address to use to mean the next register.
 
 MODBUS_MODEL: TypeAlias = int
-
-
-class ReadOnlyError(AttributeError):
-    """
-    Raised when requesting to write to a read-only Modbus register or field.
-    """
-
-    def __init__(self):
-        super().__init__('Not writable')
 
 
 class ModbusError(IOError):
@@ -63,12 +56,16 @@ class RegisterAccess(ABC):
     including the number of registers to read/write and any scaling factor.
     """
 
+    def __init__(self, register_type: RegisterType, writable: bool):
+        self.register_type = register_type
+        self.writable = writable
+
     @abstractmethod
-    def get(self, context: RegisterContext) -> int | float | str:
+    def get(self, context: RegisterContext) -> RegisterValue:
         ...
 
     @abstractmethod
-    def set(self, context: RegisterContext, value: int | float | str) -> None:
+    def set(self, context: RegisterContext, value: RegisterValue) -> None:
         ...
 
 
@@ -283,6 +280,7 @@ def check_valid_int(value: int, count: int, signed: bool) -> None:
 class RegisterAccessStr(RegisterAccess):
 
     def __init__(self, addr: int, count: int):
+        super().__init__(register_type=str, writable=False)
         self.addr = addr
         self.count = count
 
@@ -290,23 +288,23 @@ class RegisterAccessStr(RegisterAccess):
         byte_array = _read_byte_array(context, self.addr, count=self.count)
         return byte_array.decode('utf-8', errors='ignore').strip('\x00')
 
-    def set(self, context: RegisterContext, value: int | float | str) -> None:
+    def set(self, context: RegisterContext, value: RegisterValue) -> None:
         raise ReadOnlyError()
 
 
 class RegisterAccessInt(RegisterAccess):
 
     def __init__(self, addr: int, count: int, signed: bool, writable: bool):
+        super().__init__(register_type=int, writable=writable)
         self.addr = addr
         self.count = count
         self.signed = signed
-        self.writable = writable
 
     def get(self, context: RegisterContext) -> int:
         byte_array = _read_byte_array(context, self.addr, count=self.count)
         return int.from_bytes(byte_array, byteorder='big', signed=self.signed)
 
-    def set(self, context: RegisterContext, value: int | float | str) -> None:
+    def set(self, context: RegisterContext, value: RegisterValue) -> None:
         if not self.writable:
             raise ReadOnlyError()
         if not isinstance(value, int):
@@ -319,6 +317,7 @@ class RegisterAccessInt(RegisterAccess):
 class RegisterAccessScaled(RegisterAccess):
 
     def __init__(self, addr: int, scale_addr: int, count: int, signed: bool, writable: bool):
+        super().__init__(register_type=float, writable=writable)
         self.addr = addr
         self.scale_addr = (addr + 1) if scale_addr == NEXT_SF else scale_addr
         self.count = count
@@ -326,7 +325,6 @@ class RegisterAccessScaled(RegisterAccess):
         self.start = min(self.addr, self.scale_addr)
         self.end = max(self.addr + count - 1, self.scale_addr)
         self.run_length = self.end - self.start + 1
-        self.writable = writable
 
     def get(self, context: RegisterContext) -> float:
         physical_addr = self.start + context.address_offset
@@ -349,7 +347,7 @@ class RegisterAccessScaled(RegisterAccess):
         scale: int = reg_value(self.scale_addr, 1, True)
         return value * (10 ** scale)
 
-    def set(self, context: RegisterContext, value: int | float | str) -> None:
+    def set(self, context: RegisterContext, value: RegisterValue) -> None:
         if not self.writable:
             raise ReadOnlyError()
         if not isinstance(value, int | float):

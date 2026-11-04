@@ -41,7 +41,9 @@ class DayNavigator:
                     on_click=lambda: self.set_day(date.today()),
                 ).props(
                     'flat dense no-caps color=primary'
-                ).classes('text-sm min-h-0 px-0 py-1')
+                ).classes(
+                    'text-sm min-h-0 px-0 py-1'
+                ).set_visibility(False)
 
             # Next day
             ui.button(
@@ -118,9 +120,10 @@ class DayNavigator:
         await self._dialog.open()
 
     async def _dialog_day_changed(self, event: events.ValueChangeEventArguments) -> None:
-        selected_date = date.fromisoformat(event.value)
-        await self._dialog.close()
-        await self.set_day(selected_date)
+        if event.value is not None:
+            selected_date = date.fromisoformat(event.value)
+            await self._dialog.close()
+            await self.set_day(selected_date)
 
     async def _handle_swipe(self, event) -> None:
         direction = event.args

@@ -246,8 +246,9 @@ class GraphingInterpolator:
         y_values = np.array(values)
 
         indices = np.searchsorted(timestamps, self._ts)
-        left = np.clip(indices - 1, 0, len(timestamps) - 1)
-        right = np.clip(indices, 0, len(timestamps) - 1)
+        indices = np.clip(indices, 0, len(timestamps) - 1)
+        left = indices - 1
+        right = indices
         n = np.where(
             np.abs(self._ts - timestamps[left]) <= np.abs(timestamps[right] - self._ts),
             left,

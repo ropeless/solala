@@ -39,7 +39,7 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     DummySolarForecasterConnection, DatabaseConnection
 from solala.utils.async_rlock import AsyncRLock
 from solala.utils.datetime_extras import now, local_time_zone
-from solala.utils.json import JSONDict, json_num
+from solala.utils.json import JSONDict, json_num, json_dict, JSONPrimitive, flatten
 from solala.utils.network import find_ip_by_mac
 from solala.utils.string_extras import split_addresses
 
@@ -441,19 +441,21 @@ async def get_power_status() -> PowerStatus:
         return state.last_power
 
 
-async def get_registers() -> Dict[str, int | float | str | bool]:
+async def get_registers() -> Dict[str, JSONPrimitive]:
     """
     Get the values of all registers of the power controller.
     """
+    status = await get_status()  # must be before we grab the control lock otherwise it's a deadlock
     async with _control_state() as state:
+        result: Dict[str, JSONPrimitive] = flatten(status, sep='/', prefix='status/')
         if state.controller is None:
             LOGGER.error(f'{_LOG_SRC}Power registers not available. Error: power controller not connected')
-            return {}
         else:
-            return {
-                register: value
-                for register, value in await state.controller.get_registers()
-            }
+            result.update({
+                'controller/' + register: value
+                for register, value in (await state.controller.get_registers()).items()
+            })
+        return result
 
 
 async def get_price_now() -> Price:
@@ -471,15 +473,17 @@ async def get_price_now() -> Price:
         if state.next_price_check <= timestamp:
             try:
                 price: Price = await pricer.get_price()
+                note = ' (estimate)' if price.is_estimate else ''
                 LOGGER.info(
-                    f'{_LOG_SRC}Updated current price: {price.buy_price} {price.feed_in_price} {price.is_estimate}'
+                    f'{_LOG_SRC}Updated current price: {price.buy_price} {price.feed_in_price} {note}'
                 )
                 state.last_price = price
                 if price.is_estimate:
                     # price is unstable - recheck is needed
                     delay = Constants.PRICE_SETTLE_CHECK
                     state.next_price_check = min(timestamp + timedelta(seconds=delay), price.end_time)
-                    LOGGER.info(f'{_LOG_SRC}Current price is an estimate, recheck is scheduled')
+                    time_str = state.next_price_check.astimezone(local_time_zone()).strftime(TIMESTAMP_FORMAT)
+                    LOGGER.info(f'{_LOG_SRC}Current price is an estimate, recheck scheduled {time_str}.')
                 else:
                     # price is stable - no need to recheck for this period
                     state.next_price_check = price.end_time.astimezone(UTC)
@@ -587,16 +591,18 @@ async def get_status() -> JSONDict:
         'power': power_status.to_json(),
         'price': price.to_json(datetime_format=TIMESTAMP_FORMAT, include_time=False),
     }
+
     if len(consumers_status) > 0:
-        result['consumers'] = {
+        where = json_dict(result['power'])  # Where to attach the consumers status
+        where['consumers'] = {
             consumer: status.to_json()
             for consumer, status in consumers_status.items()
         }
         total = sum(json_num(consumer.power) for consumer in consumers_status.values())
-        if total > 0:
-            house_power = power_status.house_power
-            result['consumers_total'] = total
-            result['consumers_remaining'] = house_power - total
+        house_power = power_status.house_power
+        where['consumers_total'] = total
+        where['consumers_remaining'] = house_power - total
+
     return result
 
 
