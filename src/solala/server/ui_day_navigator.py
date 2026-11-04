@@ -75,7 +75,7 @@ class DayNavigator:
                 button_classes
             ).tooltip('Next day')
 
-        with ui.carousel(animated=True, arrows=True, navigation=True).\
+        with ui.carousel(animated=True, arrows=True, navigation=True). \
                 props(_CAROUSEL_PROPS).classes('w-full h-screen') as self._carousel:
             with ui.carousel_slide('0'):
                 element_0 = ui.element('div').classes('w-full h-screen')
@@ -259,7 +259,7 @@ class DayNavigator:
         else:
             self._carousel_previous()
 
-    def _on_carousel_transition(self, e: events.GenericEventArguments) -> None:
+    def _on_carousel_transition(self, _: events.GenericEventArguments) -> None:
         # Restore default carousel props
         self._carousel.props(_CAROUSEL_PROPS)
 
