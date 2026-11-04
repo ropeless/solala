@@ -62,7 +62,10 @@ class DayNavigator:
             ).tooltip('Next day')
 
         with ui.carousel(animated=True, arrows=True, navigation=True).props(
-                'swipeable'
+                'swipeable '
+                'infinite '
+                'transition="slide-left" '
+                'transition-prev="slide-right"'
         ).classes('w-full h-screen') as self._carousel:
             with ui.carousel_slide('0'):
                 element_0 = ui.element('div').classes('w-full h-screen')
