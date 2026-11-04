@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, timedelta
 from typing import Callable, Awaitable, Optional
 
@@ -9,7 +10,10 @@ from solala.constants import GUI_DATE_FORMAT
 class DayNavigator:
 
     def __init__(self):
-        self._day: date = date.today()
+        # Set to a valid date but not near today.
+        # This is so when `self.set_day(today)` is called, it will cause all updates to happen.
+        self._day: date = date(year=1901, month=12, day=31)
+
         self._listener: Optional[Callable[[date], Awaitable[None]]] = None
 
         # Date and navigation row
@@ -35,7 +39,7 @@ class DayNavigator:
             with ui.row().classes(
                     'items-center justify-center gap-0 h-8 w-23'
             ):
-                self.day_status = ui.label('today').classes('text-sm text-gray-500')
+                self.day_status = ui.label('today').classes('text-sm text-gray-500').set_visibility(False)
                 self.today_button = ui.button(
                     'back to today',
                     on_click=lambda: self.set_day(date.today()),
@@ -43,7 +47,7 @@ class DayNavigator:
                     'flat dense no-caps color=primary'
                 ).classes(
                     'text-sm min-h-0 px-0 py-1'
-                ).set_visibility(False)
+                )
 
             # Next day
             ui.button(
@@ -55,7 +59,7 @@ class DayNavigator:
 
         ui.keyboard(on_key=self._handle_key, repeating=False)
 
-        with ui.dialog() as dialog:
+        with ui.dialog(value=False) as dialog:
             with ui.card():
                 self._date_picker = ui.date(
                     value=self._day.isoformat(),
@@ -116,13 +120,24 @@ class DayNavigator:
             await self._listener(day)
 
     async def _show_dialog(self) -> None:
-        self._date_picker.value = self._day.isoformat()
-        await self._dialog.open()
+        cur_date = self._day.isoformat()
+        if cur_date != self._date_picker.value:
+            # This will cause the dialog to open
+            self._date_picker.value = cur_date
+            await asyncio.sleep(0)
+        else:
+            await self._dialog.open()
 
     async def _dialog_day_changed(self, event: events.ValueChangeEventArguments) -> None:
-        if event.value is not None:
+        if event.value:
             selected_date = date.fromisoformat(event.value)
-            await self._dialog.close()
+        else:
+            # The picker has cleared its selection.
+            selected_date = self._day
+
+        await self._dialog.close()
+
+        if selected_date != self._day:
             await self.set_day(selected_date)
 
     async def _handle_swipe(self, event) -> None:
