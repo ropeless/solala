@@ -17,7 +17,7 @@ class DayNavigator:
         # Set to a valid date but not near today.
         # This is so when `self.set_day(today)` is called, it will cause all updates to happen.
         self._day: date = date(year=1901, month=12, day=31)
-
+        self._slide: int = 0
         self._listeners: Dict[int, Listener] = {}
 
         # Date and navigation row
@@ -72,6 +72,7 @@ class DayNavigator:
                 element_2 = ui.element('div').classes('w-full h-screen')
         self._elements: List[Element] = [element_0, element_1, element_2]
 
+        self._carousel.on_value_change(self._on_slide_change)
         ui.keyboard(on_key=self._handle_key, repeating=False)
 
         with ui.dialog(value=False) as dialog:
@@ -109,18 +110,20 @@ class DayNavigator:
         today = date.today()
         self.day_status.set_visibility(day == today)
         self.today_button.set_visibility(day != today)
-        self._day = day
 
         if day_shift == -1:
             self._rotate_slides(-1)
-            await self._update_element(self._left_element, day - _ONE_DAY)
+            asyncio.create_task(self._update_element(self._left_element, day - _ONE_DAY))
         elif day_shift == 1:
             self._rotate_slides(1)
-            await self._update_element(self._right_element, day + _ONE_DAY)
+            asyncio.create_task(self._update_element(self._right_element, day + _ONE_DAY))
         else:
             await self._update_element(self._focus_element, day)
-            await self._update_element(self._left_element, day - _ONE_DAY)
-            await self._update_element(self._right_element, day + _ONE_DAY)
+            asyncio.create_task(self._update_element(self._left_element, day - _ONE_DAY))
+            asyncio.create_task(self._update_element(self._right_element, day + _ONE_DAY))
+
+        self._day = day
+        self._slide = self._slide_num
 
     async def _update_element(self, element: Element, day: date) -> None:
         await self._listeners[id(element)](day)
@@ -143,6 +146,10 @@ class DayNavigator:
     @property
     def _right_element(self) -> Element:
         return self._elements[(self._slide_num + 1) % 3]
+
+    async def _on_slide_change(self):
+        delta: int = self._slide - self._slide_num
+        await self.change_day(delta)
 
     async def _show_dialog(self) -> None:
         cur_date = self._day.isoformat()
