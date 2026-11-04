@@ -106,13 +106,19 @@ class DayNavigator:
 
     async def set_day(self, day: date) -> None:
         day_shift: int = (day - self._day).days
-        if day_shift == 0:
-            return
 
         self.date_element.set_text(day.strftime(GUI_DATE_FORMAT))
         today = date.today()
         self.day_status.set_visibility(day == today)
         self.today_button.set_visibility(day != today)
+
+        # The user may have already changed the slide.
+        visual_delta: int = ((self._visual_slide - self._slide + 1) % 3) - 1
+        await self.change_day(delta)
+
+
+        if day_shift == 0:
+            return
 
         if day_shift == -1:
             self._rotate_slides(-1)
@@ -126,32 +132,32 @@ class DayNavigator:
             asyncio.create_task(self._update_element(self._right_element, day + _ONE_DAY))
 
         self._day = day
-        self._slide = self._slide_num
 
     async def _update_element(self, element: Element, day: date) -> None:
         await self._listeners[id(element)](day)
 
-    @property
-    def _slide_num(self) -> int:
-        return int(str(self._carousel.value))
-
     def _rotate_slides(self, delta: int) -> None:
-        self._carousel.set_value(str((self._slide_num + delta) % 3))
+        self._slide = (self._slide + delta) % 3
+        self._carousel.set_value(str(self._slide))
 
     @property
     def _left_element(self) -> Element:
-        return self._elements[(self._slide_num - 1) % 3]
+        return self._elements[(self._slide - 1) % 3]
 
     @property
     def _focus_element(self) -> Element:
-        return self._elements[self._slide_num]
+        return self._elements[self._slide]
 
     @property
     def _right_element(self) -> Element:
-        return self._elements[(self._slide_num + 1) % 3]
+        return self._elements[(self._slide + 1) % 3]
+
+    @property
+    def _visual_slide(self) -> int:
+        return int(str(self._carousel.value))
 
     async def _on_slide_change(self):
-        delta: int = self._slide - self._slide_num
+        delta: int = ((self._visual_slide - self._slide + 1) % 3) - 1
         await self.change_day(delta)
 
     async def _show_dialog(self) -> None:
@@ -176,10 +182,14 @@ class DayNavigator:
             await self.set_day(selected_date)
 
     async def _handle_key(self, e: events.KeyEventArguments) -> None:
+        visual_slide: int = int(str(self._carousel.value))
+
         if e.action.keydown:
             if e.key.arrow_left:
-                await self.change_day(-1)
+                # await self.change_day(-1)
+                self._carousel.set_value(str(int(visual_slide - 1) % 3)) #DEBUG
             elif e.key.arrow_right:
-                await self.change_day(1)
+                # await self.change_day(1)
+                self._carousel.set_value(str(int(visual_slide + 1) % 3)) #DEBUG
             elif e.key.home:
                 await self.set_day(date.today())
