@@ -28,9 +28,9 @@ from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.server.ui_day_navigator import DayNavigator
+from solala.server.ui_day_navigator import DayNavigator, NewDayNavigator
 from solala.utils.dict_extras import dict_merge
-from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str
+from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str, JSONPrimitive
 
 # --------------------------------------------------------------------
 # Main styling
@@ -109,11 +109,11 @@ class StatusListener(LoopListener):
 class RegistersListener(LoopListener):
 
     @final
-    async def update(self) -> None:
-        register_values: Dict[str, int | float | str | bool] = await control_loop.get_registers()
+    async def update(self, register_values=None) -> None:
+        register_values: Dict[str, JSONPrimitive] = await control_loop.get_registers()
         self._update(register_values)
 
-    def _update(self, registers_json: JSONDict) -> None:
+    def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
         ...
 
 
@@ -334,11 +334,11 @@ class RegistersUpdater(RegistersListener):
         self.registers_element = registers_element
         self.match = match
 
-    def _update(self, registers_json: JSONDict) -> None:
+    def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
         if self.match is not None:
-            registers_json = filter_json(registers_json, self.match)
+            register_values = filter_json(register_values, self.match)
         json_as_str = render_json(
-            registers_json,
+            register_values,
             float_format='.2f',
             remove_key_underscores=False,
             remove_value_underscores=False,
@@ -882,6 +882,15 @@ async def root_page():
                 _diagnostic_link('Parameters', '/parameters_page')
                 _diagnostic_link('Registers', '/registers_page')
                 _diagnostic_link('Log', '/log_page')
+
+
+@ui.page('/test_page')
+async def test_page():
+    ui.add_head_html(_HEAD_HTML)
+    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+        _page_header()
+        navigator = NewDayNavigator()
+        await navigator.set_day(date.today())
 
 
 @ui.page('/price_forecast_page')

@@ -1,8 +1,10 @@
 import local_config as config
+from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
     TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection
 from solala_demo.log import configure_logger
+
 
 def main():
     configure_logger()
@@ -51,6 +53,8 @@ def main():
     # history = HistoryFile(config.HISTORY_FILE)
     # control_loop.add_listener(history)
     # LOGGER.info(f'registered history file: {history}')
+
+    Constants.APP_NAME += config.APP_NAME_POSTFIX
 
     server.run_server(
         host=config.SERVER_HOST,
