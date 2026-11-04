@@ -146,18 +146,18 @@ class DayNavigator:
         if day_shift == -1:
             self._focus_slide = self._left_slide()
             self._set_display_slide(self._focus_slide)
-            asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+            # asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
 
         elif day_shift == 1:
             self._focus_slide = self._right_slide()
             self._set_display_slide(self._focus_slide)
-            asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
+            # asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
 
         else:
             # Just recreate all three slides
             await self._update_element(self._focus_slide, day)
-            asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
-            asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+            # asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
+            # asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
 
     @property
     def _display_slide(self) -> int:
