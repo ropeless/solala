@@ -1,8 +1,10 @@
 from typing import Dict, Tuple, Iterator, Mapping
 
-from solala.delegates.power_controller.modbus_power_controller.register_access import NEXT_SF as _NEXT_SF, uint32, \
+from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import NEXT_SF as _NEXT_SF, \
+    uint32, \
     MODBUS_MODEL, str2, uint64, scaled_uint32
-from solala.delegates.power_controller.modbus_power_controller.register_access import RegisterAccess, str16, str8, uint16, scaled_uint16, \
+from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import RegisterAccess, str16, \
+    str8, uint16, scaled_uint16, \
     scaled_int16
 
 MPPT_MODEL: MODBUS_MODEL = 160  # special model with variable number of registers
@@ -23,13 +25,13 @@ _DCW_SF = 5  # Model 160
 _DCWH_SF = 6  # Model 160
 
 _W_SF = 23  # Model 201
-_TotWh_SF = 55   # Model 201
+_TotWh_SF = 55  # Model 201
 
 MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
 
     # The special zero model, where registers addresses are in Modicon (40xxx) format.
     0: {
-      'SID': str2(40001),  # expect 'SunS'
+        'SID': str2(40001),  # expect 'SunS'
     },
 
     # Common

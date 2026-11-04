@@ -1,8 +1,5 @@
 from solala.utils.json import JSONDict, to_json
 
-APP_NAME: str = 'Solala'
-APP_SUBTITLE: str = 'Home Power Management'
-
 TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timestamps
 GUI_DATE_FORMAT = '%a, %d %b %Y'
 GUI_TIME_FORMAT = '%H:%M'
@@ -44,6 +41,9 @@ class Constants:
     These constants control the behaviour of the control loop and GUI.
     They should only be modified by developers for testing and debugging.
     """
+
+    APP_NAME: str = 'Solala'
+    APP_SUBTITLE: str = 'Home Power Management'
 
     LOOP_TIME: int = 5  # number of seconds for each loop iteration - should be a factor of 60
     LOOP_MIN_SLEEP_TIME: int = 1  # number of seconds to sleep for each loop iteration

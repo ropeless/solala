@@ -1,11 +1,11 @@
 from contextlib import contextmanager
-from itertools import chain
-from typing import Iterable, List, Tuple, Optional, Dict
+from typing import Iterable, List, Optional, Dict
 
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
-from solala.delegates.power_controller.modbus_power_controller.register_access import ModbusError
+from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import ModbusError
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 from solala.logger import LOGGER
+from solala.registers import RegisterBank, Register, ConstantRegister, RegisterValue
 from solala.utils.json import JSONDict
 
 
@@ -106,18 +106,23 @@ class ModbusPowerController(PowerController):
         if unnamed_device is not None:
             self._connection_status['unnamed_device'] = unnamed_device
 
-        # Log all registers and their values
-        for register, value in self._modbus.items():
-            LOGGER.info(f'LOG {register}: {value!r}')
-
         # Calculate the constant inverter limit
-        value: float = 0
+        value: float = 0.0
         for inverter in self._inverters:
             w_max = self._get(f'{inverter}/WMax')
             w_rtg = self._get(f'{inverter}/WRtg')
             value += min(w_max, w_rtg)
-        self._inverter_limit = value
-        LOGGER.info(f'LOG {_INVERTER_LIMIT_NAME}: {value!r}')
+        self._inverter_limit: float = value
+
+        registers: Dict[str, Register] = dict(self._modbus.registers)
+        registers[_INVERTER_LIMIT_NAME] = ConstantRegister(self._inverter_limit)
+        self._registers: RegisterBank = RegisterBank(registers)
+
+        # Log all registers and their values
+        register: str
+        value: RegisterValue
+        for register, value in self._registers.items():
+            LOGGER.info(f'LOG {register}: {value!r}')
 
     def connect(self) -> None:
         """
@@ -137,11 +142,11 @@ class ModbusPowerController(PowerController):
         """
         self._modbus.close()
 
-    async def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
+    async def get_registers(self) -> RegisterBank:
         """
         Get the values of all known registers.
         """
-        return chain(self._modbus.items(), [(_INVERTER_LIMIT_NAME, self._inverter_limit)])
+        return self._registers
 
     async def get_status(self) -> PowerStatus:
         """

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
-from typing import Iterable, Tuple
 
+from solala.registers import RegisterBank
 from solala.utils.json import JSONDict
 
 
@@ -42,7 +42,7 @@ class PowerController(ABC):
     # =================================================
 
     @abstractmethod
-    async def get_registers(self) -> Iterable[Tuple[str, int | float | str]]:
+    async def get_registers(self) -> RegisterBank:
         """
         Get the values of all known registers.
         """

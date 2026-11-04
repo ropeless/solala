@@ -8,7 +8,7 @@ from typing import Optional
 import uvicorn
 from fastapi import FastAPI
 
-from solala.constants import APP_NAME
+from solala.constants import Constants
 from solala.control_loop import control_loop
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES
@@ -45,7 +45,7 @@ def run_server(
     """
     app = FastAPI()
     favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
-    ui.run_with(app, title=APP_NAME, favicon=favicon)
+    ui.run_with(app, title=Constants.APP_NAME, favicon=favicon)
 
     control_loop_thread = _start_control_loop_thread(settings_path, settings, force_settings, database_write)
 

@@ -5,12 +5,15 @@ from datetime import datetime, date
 from enum import Enum
 from itertools import chain
 from types import MappingProxyType, NoneType
-from typing import TypeAlias, Dict, List, Optional, Mapping, Any, Collection
+from typing import TypeAlias, Dict, List, Optional, Mapping, Any, Collection, Iterator, Tuple, Iterable
 
 from pydantic import BaseModel
 
+# Non-container JSON value types
+JSONPrimitive: TypeAlias = str | int | float | bool | None
+
 # Define the recursive JSON value type
-JSONValue: TypeAlias = str | int | float | bool | None | List["JSONValue"] | Dict[str, "JSONValue"]
+JSONValue: TypeAlias = JSONPrimitive | List["JSONValue"] | Dict[str, "JSONValue"]
 
 # The explicit types for JSON containers
 JSONDict: TypeAlias = Dict[str, JSONValue]
@@ -92,6 +95,42 @@ def filter_json(data: JSONDict, match: Optional[str]) -> JSONDict:
             for key, value in data.items()
             if match in key
         }
+
+
+def flatten(data: JSONContainer, sep: str = '/', prefix: str = '') -> Dict[str, JSONPrimitive]:
+    """
+    Flatten keys in nested JSON dictionaries. Lists are treated as dictionaries with
+    integer keys (converted to strings).
+
+    Args:
+        data: either a JSON dict or list.
+        sep: path separator.
+        prefix: prefix to prepend to all keys.
+
+    Returns:
+        a JSON dictionary with flattened keys.
+    """
+    if isinstance(data, (dict, Mapping)):
+        return dict(_flatten(data.items(), sep, prefix))
+    elif isinstance(data, (list, tuple)):
+        return dict(_flatten(enumerate(data), sep, prefix))
+    else:
+        raise TypeError()
+
+
+def _flatten(
+        data: Iterable[Tuple[str | int, JSONValue]],
+        sep: str,
+        prefix: str,
+) -> Iterator[Tuple[str, JSONPrimitive]]:
+    for key, value in data:
+        key = prefix + str(key)
+        if isinstance(value, (dict, Mapping)):
+            yield from _flatten(value.items(), sep, key + sep)
+        elif isinstance(value, (list, tuple)):
+            yield from _flatten(enumerate(value), sep, key + sep)
+        else:
+            yield key, value
 
 
 def render_json(
