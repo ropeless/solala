@@ -114,8 +114,9 @@ class NewDayNavigator:
     async def _update_element(self, element: Element, day: date) -> None:
         element.clear()
         with element:
-            ui.label('Put Data Here')
-            ui.label(day.strftime(GUI_DATE_FORMAT))
+            with ui.card().classes('w-full'):
+                ui.label('Put Data Here')
+                ui.label(day.strftime(GUI_DATE_FORMAT))
 
     @property
     def _slide_num(self) -> int:
