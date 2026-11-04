@@ -13,6 +13,8 @@ Updater: TypeAlias = Callable[[date], Awaitable[None]]
 
 _SENTINEL_DATE: date = date(year=1901, month=12, day=31)  # a valid date but not near today.
 
+_CAROUSEL_PROPS = 'swipeable infinite transition-next="slide-left" transition-prev="slide-right"'
+
 
 class DayNavigator:
     def __init__(self):
@@ -72,9 +74,8 @@ class DayNavigator:
                 button_classes
             ).tooltip('Next day')
 
-        with ui.carousel(animated=True, arrows=True, navigation=True).props(
-                'swipeable infinite'
-        ).classes('w-full h-screen') as self._carousel:
+        with ui.carousel(animated=True, arrows=True, navigation=True).\
+                props(_CAROUSEL_PROPS).classes('w-full h-screen') as self._carousel:
             with ui.carousel_slide('0'):
                 element_0 = ui.element('div').classes('w-full h-screen')
             with ui.carousel_slide('1'):
@@ -84,6 +85,7 @@ class DayNavigator:
         self._elements: List[Element] = [element_0, element_1, element_2]
 
         self._carousel.on_value_change(self._on_slide_change)
+        self._carousel.on('transition', self._on_carousel_transition)
         ui.keyboard(on_key=self._handle_key, repeating=False)
 
         with ui.dialog(value=False) as dialog:
@@ -226,6 +228,9 @@ class DayNavigator:
         if delta != 0:
             # The user changed the slide we need to react.
             await self.change_day(delta)
+
+    def _on_carousel_transition(self, e: events.GenericEventArguments) -> None:
+        self._carousel.props(_CAROUSEL_PROPS)
 
     async def _show_dialog(self) -> None:
         """
