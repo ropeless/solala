@@ -28,7 +28,7 @@ from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator
 from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.server.ui_day_navigator import DayNavigator, NewDayNavigator
+from solala.server.ui_day_navigator import DayNavigator
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str, JSONPrimitive
 
@@ -884,15 +884,6 @@ async def root_page():
                 _diagnostic_link('Log', '/log_page')
 
 
-@ui.page('/test_page')
-async def test_page():
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
-        _page_header()
-        navigator = NewDayNavigator()
-        await navigator.set_day(date.today())
-
-
 @ui.page('/price_forecast_page')
 async def price_forecast_page():
     ui.add_head_html(_HEAD_HTML)
@@ -907,23 +898,17 @@ async def price_forecast_page():
 @ui.page('/solar_forecast_page')
 async def solar_forecast_page():
     ui.add_head_html(_HEAD_HTML)
-
-    swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
-    with swipe_area:
-        with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
-            _page_header(' solar forecast')
-
-            navigator = DayNavigator()
-
-            # Forecast table will be rendered here
-            forecast_element = ui.element('div').classes('w-full')
-
-            # Configure rendering and navigation
-            updater = SolarForecastUpdater(element=forecast_element)
-            navigator.set_listener(updater.set_day)
-            navigator.configure_swipe_area(swipe_area)
+    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+        _page_header()
+        navigator = DayNavigator()
+        updaters = [
+            SolarForecastUpdater(element)
+            for element in navigator.get_elements()
+        ]
+        navigator.set_listeners(*(updater.set_day for updater in updaters))
+        await navigator.set_day(date.today())
+        for updater in updaters:
             await _register_control_loop_listener(updater)
-            await navigator.set_day(date.today())
 
 
 @ui.page('/graphs_page')
@@ -935,18 +920,15 @@ async def graphs_page():
     with swipe_area:
         with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
             _page_header()
-
             navigator = DayNavigator()
-
-            # Charts will be rendered here
-            charts_element = ui.element('div').classes('w-full')
-
-            # Configure rendering and navigation
-            updater = ChartUpdater(element=charts_element, colours=colours)
-            navigator.set_listener(updater.set_day)
-            navigator.configure_swipe_area(swipe_area)
-            await _register_database_loop_listener(updater)
+            updaters = [
+                ChartUpdater(element, colours=colours)
+                for element in navigator.get_elements()
+            ]
+            navigator.set_listeners(*(updater.set_day for updater in updaters))
             await navigator.set_day(date.today())
+            for updater in updaters:
+                await _register_database_loop_listener(updater)
 
 
 @ui.page('/status_page')
