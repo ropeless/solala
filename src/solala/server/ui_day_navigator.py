@@ -97,6 +97,10 @@ class DayNavigator:
             self._on_touch_end,
             js_handler='(e) => emit(e.changedTouches[0]?.clientX ?? null)',
         )
+        self._carousel.on(
+            'touchcancel',
+            lambda _: setattr(self, '_touch_start_x', None),
+        )
         ui.keyboard(on_key=self._handle_key, repeating=False)
 
         with ui.dialog(value=False) as dialog:
