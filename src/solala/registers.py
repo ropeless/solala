@@ -15,6 +15,24 @@ class ReadOnlyError(AttributeError):
         super().__init__('Register not writable')
 
 
+def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
+    """
+    Is the given value acceptable for the given register type.
+
+    Args:
+        value: The value to check.
+        register_type: The register type to check against.
+
+    Returns:
+        True if the value is acceptable for the given register type, False otherwise.
+    """
+    if isinstance(value, register_type):
+        return True
+    if isinstance(value, int) and register_type == float:
+        return True
+    return False
+
+
 class Register(ABC):
 
     def __init__(self, register_type: RegisterType, writable: bool):
@@ -50,9 +68,8 @@ class Register(ABC):
         """
         if not self._writable:
             raise ReadOnlyError()
-        # TODO ints are not floats.
-        # if not isinstance(value, self._register_type):
-        #     raise TypeError(f'Expected {self._register_type}, got {type(value)}')
+        if not value_okay(value, self._register_type):
+            raise TypeError(f'Expected {self._register_type}, got {type(value)}')
         self._set(value)
 
     @abstractmethod
