@@ -50,8 +50,9 @@ class Register(ABC):
         """
         if not self._writable:
             raise ReadOnlyError()
-        if not isinstance(value, self._register_type):
-            raise TypeError(f'Expected {self._register_type}, got {type(value)}')
+        # TODO ints are not floats.
+        # if not isinstance(value, self._register_type):
+        #     raise TypeError(f'Expected {self._register_type}, got {type(value)}')
         self._set(value)
 
     @abstractmethod
