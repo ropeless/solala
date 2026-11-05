@@ -72,8 +72,9 @@
 }
 
 .solala-brand img {
-    width: 42px;
-    height: 42px;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 
 .solala-brand-name {
@@ -427,11 +428,6 @@
         margin-bottom: 9px;
         font-size: 0.65rem;
         letter-spacing: 0.015em;
-    }
-
-    .solala-brand img {
-        width: 35px;
-        height: 35px;
     }
 
     .solala-brand-name {

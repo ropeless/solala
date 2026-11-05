@@ -580,9 +580,10 @@ def _page_header(ext: str = '', link: bool = True) -> None:
         with ui.element('div').classes('solala-brand'):
             if link:
                 with ui.link(target='/'):
-                    ui.image('/images/solala.svg').classes('w-12 h-12 bg-transparent')
+                    image = ui.image('/images/solala.svg')
             else:
-                ui.image('/images/solala.svg').classes('w-12 h-12 bg-transparent')
+                image = ui.image('/images/solala.svg')
+            image.classes('w-12 h-12 bg-transparent')
 
             with ui.element('div'):
                 ui.label(f'{Constants.APP_NAME}{ext}').classes('solala-brand-name')
