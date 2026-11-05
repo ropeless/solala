@@ -79,6 +79,8 @@ class SolalaDatabaseConnections:
             host: str = DEFAULT_DB_HOST,
             port: int = DEFAULT_DB_PORT,
             database_name: str = DEFAULT_DB_NAME,
+            min_pool_size=4,
+            max_pool_size=8,
     ):
         connection_string: str = make_connection_string(
             role=role,
@@ -89,8 +91,8 @@ class SolalaDatabaseConnections:
         )
         self._pool = AsyncConnectionPool(
             conninfo=connection_string,
-            min_size=1,
-            max_size=5,
+            min_size=min_pool_size,
+            max_size=max_pool_size,
             kwargs={'row_factory': dict_row},
             open=False,
         )
@@ -104,6 +106,16 @@ class SolalaDatabaseConnections:
 
     def get_connection_status(self) -> JSONDict:
         return self._connection_status
+
+    def print_pool_stats(self) -> None:
+        """
+        For debugging purposes.
+        """
+        stats = self._pool.get_stats()
+        print(f"Pool size: {stats['pool_size']}")
+        print(f"Available: {stats['pool_available']}")
+        print(f"Waiting: {stats['requests_waiting']}")
+        print(f"Requests waiting: {stats['requests_waiting']}")
 
     @asynccontextmanager
     async def solala_database(

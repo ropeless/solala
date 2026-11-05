@@ -1,20 +1,38 @@
 import asyncio
 from datetime import date, timedelta
-from typing import Callable, Awaitable, Optional
+from typing import Callable, Awaitable, List, TypeAlias, Sequence
 
 from nicegui import ui, events
+from nicegui.element import Element
 
 from solala.constants import GUI_DATE_FORMAT
 
+_ONE_DAY = timedelta(days=1)
+
+Updater: TypeAlias = Callable[[date], Awaitable[None]]
+
+_SENTINEL_DATE: date = date(year=1901, month=12, day=31)  # a valid date but not near today.
+
+_CAROUSEL_PROPS = 'infinite transition-next="slide-left" transition-prev="slide-right"'
+
 
 class DayNavigator:
-
     def __init__(self):
-        # Set to a valid date but not near today.
-        # This is so when `self.set_day(today)` is called, it will cause all updates to happen.
-        self._day: date = date(year=1901, month=12, day=31)
+        # The navigator works by keeping s ring of three carousel slides. At any point of time
+        # one slide is the current display day (focus slide) with the other two being the previous
+        # and next day (left slide and right slide).
+        #
+        # The contents of each slide is maintained by an element "Updater" which is set for a particular
+        # slide content element and called when required to update its content to a particular day.
+        #
+        # The carousel can be operated either via the IU or programmatically so there is a distinction
+        # between the slide we last set to the focus slide (self._focus_slide) and the slide currently
+        # on display (self._display_slide).
 
-        self._listener: Optional[Callable[[date], Awaitable[None]]] = None
+        self._day: date = _SENTINEL_DATE
+        self._focus_slide: int = 0
+        self._updaters: Sequence[Updater] = ()  # mapping from slide number to `updater`
+        self._touch_start_x: float | None = None  # for our own swipe detection
 
         # Date and navigation row
         with ui.row().classes('items-center gap-2 w-full'):
@@ -25,9 +43,9 @@ class DayNavigator:
             ).props('flat round').style('color: #6b7280 !important')
             self.date_element = ui.label().classes('text-sm w-30 text-gray-500')
 
-            # Previous day
             button_classes = '!w-8 !h-8 min-w-0 shrink-0'
 
+            # Previous day
             ui.button(
                 icon='chevron_left',
                 on_click=lambda: self.change_day(-1),
@@ -57,6 +75,32 @@ class DayNavigator:
                 button_classes
             ).tooltip('Next day')
 
+        with ui.carousel(animated=True, arrows=True, navigation=True). \
+                props(_CAROUSEL_PROPS).classes('w-full h-screen') as self._carousel:
+            with ui.carousel_slide('0'):
+                element_0 = ui.element('div').classes('w-full h-screen')
+            with ui.carousel_slide('1'):
+                element_1 = ui.element('div').classes('w-full h-screen')
+            with ui.carousel_slide('2'):
+                element_2 = ui.element('div').classes('w-full h-screen')
+        self._elements: List[Element] = [element_0, element_1, element_2]
+
+        self._carousel.on_value_change(self._on_slide_change)
+        self._carousel.on('transition', self._on_carousel_transition)
+        self._carousel.on(
+            'touchstart',
+            self._on_touch_start,
+            js_handler='(e) => emit(e.touches[0]?.clientX ?? null)',
+        )
+        self._carousel.on(
+            'touchend',
+            self._on_touch_end,
+            js_handler='(e) => emit(e.changedTouches[0]?.clientX ?? null)',
+        )
+        self._carousel.on(
+            'touchcancel',
+            lambda _: setattr(self, '_touch_start_x', None),
+        )
         ui.keyboard(on_key=self._handle_key, repeating=False)
 
         with ui.dialog(value=False) as dialog:
@@ -67,59 +111,166 @@ class DayNavigator:
                 )
         self._dialog = dialog
 
-    def set_listener(self, listener: Callable[[date], Awaitable[None]]):
-        self._listener = listener
+    def get_elements(self) -> Sequence[Element]:
+        """
+        What element need a listener to update them
+        """
+        return tuple(self._elements)
 
-    def configure_swipe_area(self, swipe_area: ui.Area):
-        swipe_area.on(
-            'touchstart',
-            js_handler="""(e) => {
-                if (!e.changedTouches.length) return;
-
-                const touch = e.changedTouches[0];
-                e.currentTarget.dataset.startX = touch.clientX;
-                e.currentTarget.dataset.startY = touch.clientY;
-            }""",
-        )
-
-        swipe_area.on(
-            'touchend',
-            self._handle_swipe,
-            js_handler="""(e) => {
-                if (!e.changedTouches.length) return;
-
-                const touch = e.changedTouches[0];
-                const startX = Number(e.currentTarget.dataset.startX);
-                const startY = Number(e.currentTarget.dataset.startY);
-
-                // Ignore gestures if the starting position was not recorded.
-                if (!Number.isFinite(startX) ||
-                    !Number.isFinite(startY)) return;
-
-                const dx = touch.clientX - startX;
-                const dy = touch.clientY - startY;
-
-                // Require a deliberate horizontal swipe.
-                if (Math.abs(dx) >= 60 &&
-                    Math.abs(dx) > Math.abs(dy) * 1.5) {
-                    emit(dx < 0 ? 'left' : 'right');
-                }
-            }""",
-        )
+    def set_listeners(self, *listeners: Updater) -> None:
+        """
+        Set listeners for each element, coindexed with `self.get_elements`
+        """
+        if len(listeners) != len(self._elements):
+            raise ValueError(f'need {len(listeners)} listeners')
+        self._updaters = tuple(listeners)
 
     async def change_day(self, delta: int) -> None:
         await self.set_day(self._day + timedelta(days=delta))
 
     async def set_day(self, day: date) -> None:
-        self._day = day
+        """
+        Set the day to display
+        """
+        # This is how many days are being requested to change from the current day.
+        # If this is -1, 0, or +1 then there is not much to do. Otherwise, we
+        # will need to change all three slides.
+        day_shift: int = (day - self._day).days
+
+        # The user may have already changed the slide, keep a note of that
+        vis_delta: int = ((self._display_slide - self._focus_slide + 1) % 3) - 1
+
+        # Update the navigator state
         self.date_element.set_text(day.strftime(GUI_DATE_FORMAT))
         today = date.today()
         self.day_status.set_visibility(day == today)
         self.today_button.set_visibility(day != today)
-        if self._listener is not None:
-            await self._listener(day)
+        self._day = day
+
+        # Update the carousel state
+
+        if day_shift == 0:
+            # The focus slide is the day being requested
+            if vis_delta != 0:
+                # Somehow we being requested to keep the current focus slide but
+                # visually there has been a change. We just change the visual slide back.
+                self._set_display_slide(self._focus_slide)
+            # Nothing more to do
+            return
+
+        if day_shift == -1:
+            self._focus_slide = self._left_slide()
+            self._set_display_slide(self._focus_slide)
+            asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+
+        elif day_shift == 1:
+            self._focus_slide = self._right_slide()
+            self._set_display_slide(self._focus_slide)
+            asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
+
+        else:
+            # Just recreate all three slides
+            await self._update_element(self._focus_slide, day)
+            asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
+            asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+
+    @property
+    def _display_slide(self) -> int:
+        """
+        What slide number is currently on display.
+        """
+        return int(str(self._carousel.value))
+
+    def _set_display_slide(self, slide: int) -> None:
+        """
+        Set the slide number to display.
+        This does not update any other state.
+        """
+        match self._display_slide, slide:
+            case 0, 1:
+                self._carousel_next()
+            case 0, 2:
+                self._carousel_previous()
+            case 1, 2:
+                self._carousel_next()
+            case 1, 0:
+                self._carousel_previous()
+            case 2, 0:
+                self._carousel_next()
+            case 2, 1:
+                self._carousel_previous()
+
+    def _carousel_next(self) -> None:
+        self._carousel.props('infinite transition-next="slide-left" transition-prev="slide-left"')
+        self._carousel.next()
+
+    def _carousel_previous(self) -> None:
+        self._carousel.props('infinite transition-next="slide-right" transition-prev="slide-right"')
+        self._carousel.previous()
+
+    def _left_slide(self) -> int:
+        """
+        What slide number is to the left of the focus slide.
+        """
+        return (self._focus_slide - 1) % 3
+
+    def _right_slide(self) -> int:
+        """
+        What slide number is to the right of the focus slide.
+        """
+        return (self._focus_slide + 1) % 3
+
+    async def _update_element(self, slide_number: int, day: date) -> None:
+        """
+        Call the appropriate updater for the given slide element.
+
+        Args:
+            slide_number: The number of the slide element to update.
+            day: what day the slide element needs to display.
+        """
+        if len(self._updaters) == 0:
+            # updaters not yet set
+            return
+        updater: Updater = self._updaters[slide_number]
+        await updater(day)
+
+    async def _on_slide_change(self):
+        """
+        This is the callback for when the carousel slide changes.
+        it may be called either when the user changes the slide or the slide con changed programmatically.
+        """
+        delta: int = ((self._display_slide - self._focus_slide + 1) % 3) - 1
+        if delta != 0:
+            # The user changed the slide we need to react.
+            await self.change_day(delta)
+
+    def _on_touch_start(self, e: events.GenericEventArguments) -> None:
+        self._touch_start_x = e.args
+
+    def _on_touch_end(self, e: events.GenericEventArguments) -> None:
+        if self._touch_start_x is None or e.args is None:
+            return
+
+        delta = float(e.args) - self._touch_start_x
+        self._touch_start_x = None
+
+        # Ignore short movements
+        if abs(delta) < 50:
+            return
+
+        if delta < 0:
+            self._carousel_next()
+        else:
+            self._carousel_previous()
+
+    def _on_carousel_transition(self, _: events.GenericEventArguments) -> None:
+        # Restore default carousel props
+        self._carousel.props(_CAROUSEL_PROPS)
 
     async def _show_dialog(self) -> None:
+        """
+        Present the date picker dialog to the user.
+        """
         cur_date = self._day.isoformat()
         if cur_date != self._date_picker.value:
             # This will cause the dialog to open
@@ -140,18 +291,11 @@ class DayNavigator:
         if selected_date != self._day:
             await self.set_day(selected_date)
 
-    async def _handle_swipe(self, event) -> None:
-        direction = event.args
-        if direction == 'left':
-            await self.change_day(1)
-        elif direction == 'right':
-            await self.change_day(-1)
-
     async def _handle_key(self, e: events.KeyEventArguments) -> None:
         if e.action.keydown:
-            if e.key.arrow_left:
-                await self.change_day(-1)
-            elif e.key.arrow_right:
-                await self.change_day(1)
+            if e.key.arrow_right:
+                self._carousel_next()
+            elif e.key.arrow_left:
+                self._carousel_previous()
             elif e.key.home:
                 await self.set_day(date.today())
