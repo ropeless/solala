@@ -88,7 +88,7 @@ class ConstantRegister(Register):
 
     def __init__(self, value: RegisterValue):
         register_type: RegisterType = type(value)
-        if not isinstance(value, register_type):
+        if not value_okay(value, register_type):
             raise TypeError(f'Expected {register_type}, got {type(value)}')
 
         super().__init__(register_type, writable=False)
