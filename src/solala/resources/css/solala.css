@@ -360,10 +360,10 @@
 
 .solar-row {
     display: grid;
-    grid-template-columns: 0.2fr 0.2fr 0.2fr 1fr 1fr;
+    grid-template-columns: 3.5rem 2.5rem 2.5rem minmax(0, 1fr) minmax(0, 1fr);
     align-items: center;
     gap: 12px;
-    min-height: 22px;
+    min-height: 28px;
     padding: 0 10px;
     border-bottom: 1px solid #edf0f2;
 }
@@ -374,6 +374,10 @@
 
 .solar-row-alt {
     background: #f8f9f8;
+}
+
+.solar-row-now {
+    background: #FFFFFF;
 }
 
 .solar-header {
@@ -397,16 +401,26 @@
     text-align: right;
 }
 
-.solar-weather-icon {
+.solar-weather-cell {
+    display: flex !important;
+    width: 100%;
+    min-width: 0;
+    min-height: 28px;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.solar-weather-image {
     width: 28px;
     height: 28px;
     object-fit: contain;
-    justify-self: center;
 }
 
-.solar-row > :nth-child(2) {
-    justify-self: center;
+/* Centre Sky heading */
+.solar-header > :nth-child(3) {
+    text-align: center;
 }
+
 
 /* ==========================================================================================================
    Specific layout overrides
