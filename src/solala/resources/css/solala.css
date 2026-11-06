@@ -279,6 +279,14 @@
     border-bottom: 1px solid #edf0f2;
 }
 
+.price-row-demand {
+    background-color: color-mix(
+        in srgb,
+        var(--solala-demand-window-color) 10%,
+        transparent
+    );
+}
+
 .price-row:last-child {
     border-bottom: none;
 }

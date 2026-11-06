@@ -6,7 +6,7 @@ from nicegui import ui
 from nicegui.elements.echart import EChart
 
 from solala.constants import KILOWATTS, GUI_TIME_FORMAT, KILOWATT_HOURS, PRICE_CENTS, PERCENT
-from solala.server.css_colours import Colours
+from solala.server.css_colours import Colours, rgba
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.utils.json import JSONDict
 
@@ -121,18 +121,12 @@ def charge_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
 # ====================================================================
 
 
-def _rgba(colour: str, alpha: float = 0.1) -> str:
-    colour = colour.lstrip('#')
-    r, g, b = (int(colour[i:i + 2], 16) for i in (0, 2, 4))
-    return f'rgba({r}, {g}, {b}, {alpha})'
-
-
 def _demand_window(start: datetime, end: datetime, colour: str, title: str = 'demand') -> JSONDict:
     return {
         'silent': True,
         'itemStyle': {
-            'color': _rgba(colour),
-            'borderColor': _rgba(colour, alpha=0.5),
+            'color': rgba(colour),
+            'borderColor': rgba(colour, alpha=0.5),
             'borderWidth': 1,
             'borderType': 'solid',
 
@@ -175,7 +169,7 @@ def _create_series(
         },
     }
     if area_alpha > 0:
-        options['areaStyle'] = {'color': _rgba(colour, area_alpha)}
+        options['areaStyle'] = {'color': rgba(colour, area_alpha)}
 
     # Configure the demand window
     if demand_window is not None:

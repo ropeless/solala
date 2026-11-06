@@ -117,26 +117,6 @@ class RegistersListener(LoopListener):
         ...
 
 
-class PriceForecastListener(LoopListener):
-
-    def __init__(self):
-        super().__init__()
-        self._prev = None
-
-    @final
-    async def update(self) -> None:
-        """
-        Thread safe update.
-        """
-        price_forecast: Sequence[Price] = await control_loop.get_price_forecast()
-        if self._prev is not price_forecast:
-            self._prev = price_forecast
-            self._update(price_forecast)
-
-    def _update(self, price_forecast: Sequence[Price]) -> None:
-        ...
-
-
 async def _register_control_loop_listener(listener: LoopListener) -> None:
     await control_loop.add_control_loop_listener(listener)
     ui.context.client.on_disconnect(partial(control_loop.remove_control_loop_listener, listener))
@@ -336,6 +316,7 @@ class RegistersUpdater(RegistersListener):
 
     def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
         if self.match is not None:
+            # noinspection PyTypeChecker
             register_values = filter_json(register_values, self.match)
         json_as_str = render_json(
             register_values,
@@ -346,12 +327,31 @@ class RegistersUpdater(RegistersListener):
         self.registers_element.set_content(json_as_str)
 
 
-class PriceForecastUpdater(PriceForecastListener):
+class PriceForecastUpdater(LoopListener):
     def __init__(self, element: ui.element):
         super().__init__()
+        self._prev = None
         self._element = element
 
-    def _update(self, price_forecast: Sequence[Price]) -> None:
+    @final
+    async def update(self) -> None:
+        """
+        Thread safe update.
+        """
+        price_forecast: Sequence[Price] = await control_loop.get_price_forecast()
+        if self._prev is not price_forecast:
+            self._prev = price_forecast
+            demand_window: Optional[Tuple[datetime, datetime]] = await control_loop.get_demand_window(date.today())
+            self._update(price_forecast, demand_window)
+
+    def _update(self, price_forecast: Sequence[Price], demand_window: Optional[Tuple[datetime, datetime]]) -> None:
+
+        def _is_demand_window(_price: Price) -> bool:
+            if demand_window is None:
+                return False
+            demand_start, demand_end = demand_window
+            return _price.start_time < demand_end and _price.end_time > demand_start
+
         # Recreate the price forecast table
         self._element.clear()
         with self._element:
@@ -380,7 +380,10 @@ class PriceForecastUpdater(PriceForecastListener):
 
                     for i, price in enumerate(price_forecast):
                         row_classes = 'price-row'
-                        if i % 2 == 1:
+
+                        if _is_demand_window(price):
+                            row_classes += ' price-row-demand'
+                        elif i % 2 == 1:
                             row_classes += ' price-row-alt'
 
                         with ui.element('div').classes(row_classes):
