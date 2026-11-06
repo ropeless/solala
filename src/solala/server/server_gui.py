@@ -1,8 +1,8 @@
 import asyncio
 from abc import abstractmethod
-from datetime import date
+from datetime import date, datetime
 from functools import partial
-from typing import Mapping, final, Optional, Dict, List, Sequence, Callable, Awaitable
+from typing import Mapping, final, Optional, Dict, List, Sequence, Callable, Awaitable, Tuple
 
 from nicegui import ui, app, events
 from nicegui.element import Element
@@ -497,12 +497,15 @@ class ChartUpdater(LoopListener):
         measurements: Sequence[Measurement]
         price_forecast: Sequence[Price]
         solar_forecast: DailySolarForecast
-        measurements, price_forecast, solar_forecast = await asyncio.gather(
+        demand_window: Optional[Tuple[datetime, datetime]]
+        measurements, price_forecast, demand_window, solar_forecast = await asyncio.gather(
             control_loop.solala_database_measurements(day),
             control_loop.get_price_forecast(),
+            control_loop.get_demand_window(day),
             control_loop.get_solar_forecast(day),
         )
-        graph_interpolator = GraphingInterpolator(day, measurements, price_forecast, solar_forecast)
+
+        graph_interpolator = GraphingInterpolator(day, measurements, price_forecast, solar_forecast, demand_window)
         self._update(graph_interpolator)
 
     @property

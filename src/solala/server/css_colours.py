@@ -13,6 +13,7 @@ class Colours:
     battery_charge: str
     grid_import: str
     grid_export: str
+    demand_window: str
 
 
 async def css_colours() -> Colours:
@@ -28,6 +29,7 @@ async def css_colours() -> Colours:
                 battery_charge: style.getPropertyValue('--solala-battery-charge-color').trim(),
                 grid_import: style.getPropertyValue('--solala-grid-import-color').trim(),
                 grid_export: style.getPropertyValue('--solala-grid-export-color').trim(),
+                demand_window: style.getPropertyValue('--solala-demand-window-color').trim(),
             };
         })()
     """)

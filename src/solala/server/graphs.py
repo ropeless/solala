@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Sequence, List
+from typing import Sequence, List, Optional, Tuple
 
 import numpy as np
 from nicegui import ui
@@ -59,7 +59,10 @@ def power_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
     return ui.echart(options).classes('w-full')
 
 
-def price_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
+def price_chart(
+        data: GraphingInterpolator,
+        colours: Colours
+) -> EChart:
     units = PRICE_CENTS
 
     buy_price = data.buy_price
@@ -74,6 +77,12 @@ def price_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
         if np.isfinite(feed_in_price[i]):
             forecast_feed_in_price[i] = np.nan
 
+    demand_window: Optional[Tuple[datetime, datetime]] = data.demand_window
+    if demand_window is not None:
+        demand_window_opts = _demand_window(*demand_window, colour=colours.demand_window)
+    else:
+        demand_window_opts = None
+
     options: JSONDict = {
         'backgroundColor': 'transparent',
         'tooltip': _graph_tooltip(units),
@@ -82,8 +91,8 @@ def price_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
         'xAxis': _x_axis(data.timestamps),
         'yAxis': _y_axis('Price', units),
         'series': [
-            _create_series('Buy', buy_price, colours.grid_import),
-            _create_series('Feed-in', feed_in_price, colours.grid_export),
+            _create_series('Buy', buy_price, colours.grid_import, demand_window=demand_window_opts),
+            _create_series('Feed-in', feed_in_price, colours.grid_export, area_alpha=0),
             _create_series('Buy Forecast', forecast_buy_price, colours.grid_import, DASHED, 0),
             _create_series('Feed-in Forecast', forecast_feed_in_price, colours.grid_export, DASHED, 0),
         ]
@@ -118,12 +127,39 @@ def _rgba(colour: str, alpha: float = 0.1) -> str:
     return f'rgba({r}, {g}, {b}, {alpha})'
 
 
+def _demand_window(start: datetime, end: datetime, colour: str, title: str = 'demand') -> JSONDict:
+    return {
+        'silent': True,
+        'itemStyle': {
+            'color': _rgba(colour),
+            'borderColor': _rgba(colour, alpha=0.5),
+            'borderWidth': 1,
+            'borderType': 'solid',
+
+        },
+        'label': {
+            'show': True,
+            'position': 'insideTop',
+            'color': colour,
+            'fontSize': 12,
+            'formatter': title,
+        },
+        'data': [
+            [
+                {'xAxis': start.strftime(GUI_TIME_FORMAT)},
+                {'xAxis': end.strftime(GUI_TIME_FORMAT)},
+            ],
+        ],
+    }
+
+
 def _create_series(
         name: str,
         data: List[float],
         colour: str,
         line_type: str | list = 'solid',
         area_alpha: float = 0.1,
+        demand_window: Optional[JSONDict] = None,
 ) -> JSONDict:
     options: JSONDict = {
         'name': name,
@@ -140,6 +176,11 @@ def _create_series(
     }
     if area_alpha > 0:
         options['areaStyle'] = {'color': _rgba(colour, area_alpha)}
+
+    # Configure the demand window
+    if demand_window is not None:
+        options['markArea'] = demand_window
+
     return options
 
 

@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta
-from typing import Sequence, List, Iterable, Optional
+from typing import Sequence, List, Iterable, Optional, Tuple
 
 import numpy as np
 from scipy.interpolate import CubicSpline
@@ -21,6 +21,7 @@ class GraphingInterpolator:
             measurements: Sequence[Measurement],
             price_forecast: Sequence[Price],
             solar_forecast: DailySolarForecast,
+            demand_window: Optional[Tuple[datetime, datetime]]
     ):
         tz = local_time_zone()
         day = ensure_date(day, tz)
@@ -39,6 +40,12 @@ class GraphingInterpolator:
         self._ts_m = np.array([measurement.timestamp.timestamp() for measurement in measurements])
         self._ts_f = np.array([price.start_time.timestamp() for price in price_forecast])
         self._ts_s = np.array([forecast.start_time.timestamp() for forecast in solar_forecast])
+
+        self._demand_window = demand_window
+
+    @property
+    def demand_window(self) -> Optional[Tuple[datetime, datetime]]:
+        return self._demand_window
 
     @property
     def battery_charge(self) -> List[float]:

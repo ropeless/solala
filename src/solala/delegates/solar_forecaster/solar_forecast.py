@@ -34,6 +34,7 @@ class DailySolarForecast:
     """
     forecasts: Sequence[SolarForecast]
 
+
     def __iter__(self) -> Iterator[SolarForecast]:
         return iter(self.forecasts)
 

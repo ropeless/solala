@@ -1,8 +1,9 @@
 import random
-from datetime import datetime, UTC, timedelta
-from typing import List, Optional, Dict
+from datetime import datetime, UTC, timedelta, date
+from typing import List, Optional, Dict, Tuple
 
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
+from solala.utils.datetime_extras import date_to_datetime, local_time_zone
 
 
 class DummyPowerPricer(PowerPricer):
@@ -18,6 +19,7 @@ class DummyPowerPricer(PowerPricer):
             feed_in_price_discount_min: float = 2,
             feed_in_price_discount_max: float = 5,
             cur_price_is_estimate: bool = False,
+            demand_window_active: bool = True,
     ):
         self.buy_price_min: float = buy_price_min
         self.buy_price_range: float = buy_price_max - buy_price_min
@@ -25,6 +27,7 @@ class DummyPowerPricer(PowerPricer):
         self.feed_in_price_discount_range: float = feed_in_price_discount_max - feed_in_price_discount_min
         self.cur_price_is_estate: bool = cur_price_is_estimate
         self.prices: List[Price] = []
+        self.demand_window_active: bool = demand_window_active
 
     def get_connection_status(self) -> Dict[str, int | float | str]:
         return {
@@ -104,6 +107,13 @@ class DummyPowerPricer(PowerPricer):
             )
 
         return [_average_price(prices[i:i + prices_per_30]) for i in range(0, needed_prices, prices_per_30)]
+
+    async def get_demand_window(self, day: date) -> Optional[Tuple[datetime, datetime]]:
+        if self.demand_window_active:
+            day: datetime = date_to_datetime(day, local_time_zone())
+            return day + timedelta(hours=15), day + timedelta(hours=21)
+        else:
+            return None
 
     async def close(self) -> None:
         # nothing to do
