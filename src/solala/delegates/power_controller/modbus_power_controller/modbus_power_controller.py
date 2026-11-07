@@ -53,6 +53,7 @@ class ModbusPowerController(PowerController):
         self._inverters = [self._master] + self._slaves
         self._meter = meter
         self._log_set_get: bool = False
+        self._hunt_history: List[float] = []
 
         # Important registers
         self._ChaState: str = f'{master}/ChaState'
@@ -296,10 +297,14 @@ class ModbusPowerController(PowerController):
 
                 new_pct = cur_pct
                 new_power = cur_power
+                self._hunt_history = []
+
             elif abs_grid_power < _SMALL_CHANGE_TOLERANCE:
                 # Small power change - use the hunting method
+                self._hunt_history.append(grid_power)
+
                 delta_pct = (grid_power / max_power) * _GAMMA * 100
-                LOGGER.info('using hunting method: gamma = {_GAMMA}, delta_pct = {delta_pct}')
+                LOGGER.info(f'using hunting method: gamma = {_GAMMA}, delta_pct = {delta_pct}, history = {self._hunt_history}')
 
                 new_pct = round(max(0, min(cur_pct + delta_pct, 100)), 2)
                 new_power = cur_power + grid_power * (cur_pct - new_pct) / 100
@@ -314,6 +319,7 @@ class ModbusPowerController(PowerController):
 
                 new_pct = new_power / max_power * 100
                 new_pct = round(max(0, min(new_pct, 100)), 2)
+                self._hunt_history = []
 
             power_change = new_power - cur_power
             LOGGER.info(f'max power: {max_power:.2f}')
