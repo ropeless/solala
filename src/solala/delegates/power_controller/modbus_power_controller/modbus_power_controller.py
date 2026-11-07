@@ -99,7 +99,7 @@ class ModbusPowerController(PowerController):
                 unnamed_device = device_record
             else:
                 devices_record[device_name] = device_record
-        self._connection_status = {
+        self._connection_status: JSONDict = {
             'connection': 'Modbus',
             'devices': devices_record,
         }
@@ -302,7 +302,7 @@ class ModbusPowerController(PowerController):
                 # Small power change - use the hunting method
                 LOGGER.info('using hunting method')
 
-                gamma = 0.1
+                gamma = 0.2
                 delt_pct = (grid_power / max_power) * gamma * 100
                 LOGGER.info(f'gamma = {gamma}, delt_pct = {delt_pct}')
 
@@ -372,8 +372,12 @@ class ModbusPowerController(PowerController):
                 LOGGER.error(f'Modbus message: {err.modbus_message!r}')
                 return
 
+            failed: bool
             new = self._modbus[name]
-            failed: bool = abs(new - value) > 10e-6
+            if not isinstance(new, (int, float)):
+                failed = True
+            else:
+                failed = abs(new - value) > 10e-6
             if failed:
                 LOGGER.error(f'SET {name}: {old!r} -> {value!r} checked {new!r} FAILED')
             elif force:
