@@ -307,7 +307,8 @@ class ModbusPowerController(PowerController):
                     self._hunt_history.pop(0)
 
                 delta_pct = (grid_power / max_power) * _GAMMA * 100
-                LOGGER.info(f'using hunting method: gamma = {_GAMMA}, delta_pct = {delta_pct}, history = {self._hunt_history}')
+                history_log = ', '.join(f'{h:.0f}%' for h in self._hunt_history)
+                LOGGER.info(f'using hunting method: gamma = {_GAMMA}, delta_pct = {delta_pct}, history = {history_log}')
 
                 new_pct = round(max(0, min(cur_pct + delta_pct, 100)), 2)
                 new_power = cur_power + grid_power * (cur_pct - new_pct) / 100
