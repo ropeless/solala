@@ -24,7 +24,7 @@ _STOP = '<<<'
 # Tolerance for power change.
 _POWER_CHANGE_TOLERANCE = 100  # Watts
 _SMALL_CHANGE_TOLERANCE = 2000  # Watts  Grid power threshold to change to "hunting" method
-_GAMMA = 0.2  # Hunting method parameter
+_GAMMA = 0.1  # Hunting method parameter
 
 _INVERTER_LIMIT_NAME: str = 'inverter_limit'
 
