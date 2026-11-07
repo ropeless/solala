@@ -301,7 +301,10 @@ class ModbusPowerController(PowerController):
 
             elif abs_grid_power < _SMALL_CHANGE_TOLERANCE:
                 # Small power change - use the hunting method
+
                 self._hunt_history.append(grid_power)
+                while len(self._hunt_history) > 10:
+                    self._hunt_history.pop(0)
 
                 delta_pct = (grid_power / max_power) * _GAMMA * 100
                 LOGGER.info(f'using hunting method: gamma = {_GAMMA}, delta_pct = {delta_pct}, history = {self._hunt_history}')
