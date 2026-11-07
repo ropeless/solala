@@ -905,7 +905,7 @@ async def root_page():
             # ----------------------------------------------------------
             # BATTERY + INVERTER control buttons
             # ----------------------------------------------------------
-            with ui.element('div').classes('dashboard-card analytics-card'):
+            with ui.element('div').classes('dashboard-card control-card'):
                 await _ui_control_buttons()
 
 
