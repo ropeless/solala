@@ -26,7 +26,7 @@ _STATUS_TOLERANCE = 100  # Watts
 
 # Tolerance for power change.
 _POWER_CHANGE_TOLERANCE = 100  # Watts
-_SMALL_CHANGE_TOLERANCE = 2000  # Watts
+_SMALL_CHANGE_TOLERANCE = 1000  # Watts
 
 _INVERTER_LIMIT_NAME: str = 'inverter_limit'
 
