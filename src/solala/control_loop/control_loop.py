@@ -583,7 +583,7 @@ async def get_consumers_status() -> Dict[str, ConsumerStatus]:
 
 async def get_connection_status() -> JSONDict:
     async with _control_state() as state:
-        result = {
+        result: JSONDict = {
             'controller': state.controller_connection_status,
             'pricer': state.pricer_connection_status,
             'forecaster': state.forecaster_connection_status,
@@ -1116,6 +1116,7 @@ def _connect_dummy_pricer(pricer_connection: DummyPricerConnection) -> PowerPric
         feed_in_price_discount_min=pricer_connection.feed_in_price_discount_min,
         feed_in_price_discount_max=pricer_connection.feed_in_price_discount_max,
         cur_price_is_estimate=pricer_connection.cur_price_is_estimate,
+        demand_window=pricer_connection.demand_window,
     )
 
 

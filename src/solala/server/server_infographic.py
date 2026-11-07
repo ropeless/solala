@@ -10,27 +10,16 @@ CLICK_ID_HOME = 'click_home'
 CLICK_ID_BATTERY = 'click_battery'
 CLICK_ID_INVERTER = 'click_battery'
 
+LINE_SPACE = 20
+ICON_OFFSET = 50
 
-def _click_area(name: str, x: float, y: float) -> Rectangle:
-    return Rectangle(
-        id=name,
-        x=x, y=y, width=90, height=140,
-        fill='transparent', stroke='transparent',
-        # fill='gray',
-    )
+WIDTH = 300
+HEIGHT = 350 + (LINE_SPACE if Constants.INFOGRAPHIC_INCLUDE_RENEWABLES else 0)
 
 
 class Infographic:
     def __init__(self) -> None:
-        width = 300
-        height = 340
-        icon_offset = 50
-
-        if Constants.INFOGRAPHIC_INCLUDE_RENEWABLES:
-            height += 20
-
-        self.canvas = Drawing(width=width, height=height, origin=(-150, -150))
-        self.icon_offset = icon_offset
+        self.canvas = Drawing(width=WIDTH, height=HEIGHT, origin=(-150, -150))
 
         # Make the static parts (background)
         self.static_background = Group()
@@ -41,16 +30,16 @@ class Infographic:
         #     rx=4,
         # ))
 
-        self.static_background.append(Sun(x=-33 - icon_offset, y=-33 - icon_offset))
-        self.static_background.append(Grid(x=-63 - icon_offset, y=0 + icon_offset))
-        self.static_background.append(House(x=-4 + icon_offset, y=-65 - icon_offset))
+        self.static_background.append(Sun(x=-33 - ICON_OFFSET, y=-33 - ICON_OFFSET))
+        self.static_background.append(Grid(x=-63 - ICON_OFFSET, y=0 + ICON_OFFSET))
+        self.static_background.append(House(x=-4 + ICON_OFFSET, y=-65 - ICON_OFFSET))
         self.static_background.append(Inverter(x=0, y=0))
 
         # Clickable areas
-        self.static_background.append(_click_area(CLICK_ID_SUN, x=-83 - icon_offset, y=-113 - icon_offset))
-        self.static_background.append(_click_area(CLICK_ID_GRID, x=-83 - icon_offset, y=0 + icon_offset))
-        self.static_background.append(_click_area(CLICK_ID_HOME, x=-6 + icon_offset, y=-115 - icon_offset))
-        self.static_background.append(_click_area(CLICK_ID_BATTERY, x=-6 + icon_offset, y=+5 + icon_offset))
+        self.static_background.append(_click_area(CLICK_ID_SUN, x=-83 - ICON_OFFSET, y=-113 - ICON_OFFSET))
+        self.static_background.append(_click_area(CLICK_ID_GRID, x=-83 - ICON_OFFSET, y=0 + ICON_OFFSET))
+        self.static_background.append(_click_area(CLICK_ID_HOME, x=-6 + ICON_OFFSET, y=-115 - ICON_OFFSET))
+        self.static_background.append(_click_area(CLICK_ID_BATTERY, x=-6 + ICON_OFFSET, y=+5 + ICON_OFFSET))
         self.static_background.append(_click_area(CLICK_ID_INVERTER, x=-45, y=-45))
 
         # Make the default drawing
@@ -64,6 +53,7 @@ class Infographic:
             buy_price=0,
             feed_in_price=0,
             renewables=0,
+            is_demand_window=False,
             is_estimate=True,
         )
 
@@ -80,6 +70,7 @@ class Infographic:
             buy_price=json_num(price_dict.get('buy_price', 0)),
             feed_in_price=json_num(price_dict.get('feed_in_price', 0)),
             renewables=json_num(price_dict.get('renewables', 0)),
+            is_demand_window=json_bool(price_dict.get('tariff_demand_window', False)),
             is_estimate=json_bool(price_dict.get('is_estimate', True)),
         )
 
@@ -95,6 +86,7 @@ class Infographic:
             buy_price: float,
             feed_in_price: float,
             renewables: float,
+            is_demand_window: bool,
             is_estimate: bool,
     ) -> None:
         """
@@ -108,10 +100,10 @@ class Infographic:
             buy_price: c/kWh
             feed_in_price: c/kWh
             renewables: %
+            is_demand_window: Boolean flag to indicate whether demand window is active or not.
             is_estimate: Boolean flag to indicate whether the price is an estimate or not.
         """
         canvas = self.canvas
-        icon_offset = self.icon_offset
 
         power_scale = max(power_scale, abs(solar_power), abs(grid_power), abs(house_power), abs(battery_power))
         solar_scale = max(min(solar_power / power_scale, 1), -1)
@@ -122,7 +114,7 @@ class Infographic:
         canvas.clear()
 
         canvas.append(self.static_background)
-        canvas.append(Battery(x=-3 + icon_offset, y=+5 + icon_offset, state_of_charge=state_of_charge))
+        canvas.append(Battery(x=-3 + ICON_OFFSET, y=+5 + ICON_OFFSET, state_of_charge=state_of_charge))
 
         max_chevron_width = 30
         canvas.append(Chevron(x=- 34, y=- 34, rotate=45, width=max_chevron_width * solar_scale))
@@ -134,21 +126,37 @@ class Infographic:
         font_sm = 12
         top = -125
         bot = 130
-        bot2 = bot + 25
-        bot3 = bot2 + 20
-        bot4 = bot3 + 20
         left = -83
         right = 80
+
+        text_line_1 = bot + LINE_SPACE + 5
+        text_line_2 = text_line_1 + LINE_SPACE
+        text_line_3 = text_line_2 + LINE_SPACE
+        text_line_4 = text_line_3 + LINE_SPACE
+
+        state_of_charge_txt_y = text_line_1
+        buy_txt_y = text_line_1
+        feed_in_txt_y = text_line_2
+        renewable_txt_y = text_line_3
+        demand_txt_y = text_line_4 if Constants.INFOGRAPHIC_INCLUDE_RENEWABLES else text_line_3
+
         class_text = 'solala-svg-text'
+        class_test_demand = 'solala-svg-text-demand'
         class_text_amber = 'solala-svg-text-amber'
         class_text_danger = 'solala-svg-text-danger'
         kwargs = {'text_anchor': 'middle'}
 
-        canvas.append(Text(_to_watts(solar_power), x=left, y=top, font_size=font_norm, class_=class_text, **kwargs))
-        canvas.append(Text(_to_watts(grid_power), x=left, y=bot, font_size=font_norm, class_=class_text, **kwargs))
-        canvas.append(Text(_to_watts(house_power), x=right, y=top, font_size=font_norm, class_=class_text, **kwargs))
-        canvas.append(Text(_to_watts(battery_power), x=right, y=bot, font_size=font_norm, class_=class_text, **kwargs))
-        canvas.append(Text(_to_pct(state_of_charge), x=right, y=bot2, font_size=font_sm, class_=class_text, **kwargs))
+        # Icon Captions
+        canvas.append(Text(
+            _to_watts(solar_power), x=left, y=top, font_size=font_norm, class_=class_text, **kwargs))
+        canvas.append(Text(
+            _to_watts(grid_power), x=left, y=bot, font_size=font_norm, class_=class_text, **kwargs))
+        canvas.append(Text(
+            _to_watts(house_power), x=right, y=top, font_size=font_norm, class_=class_text, **kwargs))
+        canvas.append(Text(
+            _to_watts(battery_power), x=right, y=bot, font_size=font_norm, class_=class_text, **kwargs))
+
+        # Additional Info Captions
 
         # price
         prefix: str = '~' if is_estimate else ''
@@ -171,17 +179,29 @@ class Infographic:
         else:
             feed_in_colour = class_text
 
-        buy_text = Text(prefix + 'Buy: ', x=left, y=bot2, font_size=font_sm, class_=class_text, **kwargs)
+        canvas.append(Text(
+            _to_pct(state_of_charge), x=right, y=state_of_charge_txt_y, font_size=font_sm, class_=class_text, **kwargs))
+
+        buy_text = Text(
+            prefix + 'Buy: ', x=left, y=buy_txt_y, font_size=font_sm, class_=class_text, **kwargs)
         buy_text.append(TSpan(buy_str + units, class_=buy_colour))
         canvas.append(buy_text)
 
-        feed_in_text = Text(prefix + 'Feed-in: ', x=left, y=bot3, font_size=font_sm, class_=class_text, **kwargs)
+        feed_in_text = Text(
+            prefix + 'Feed-in: ', x=left, y=feed_in_txt_y, font_size=font_sm, class_=class_text, **kwargs)
         feed_in_text.append(TSpan(feed_in_str + units, class_=feed_in_colour))
         canvas.append(feed_in_text)
 
         if Constants.INFOGRAPHIC_INCLUDE_RENEWABLES:
             renewables_str = f'Renewables: {int(renewables + 0.5)}{PERCENT}'
-            feed_in_text = Text(renewables_str, x=left, y=bot4, font_size=font_sm, class_=class_text, **kwargs)
+            feed_in_text = Text(
+                renewables_str, x=left, y=renewable_txt_y, font_size=font_sm, class_=class_text, **kwargs)
+            canvas.append(feed_in_text)
+
+        if is_demand_window:
+            demand_str = 'Demand Window'
+            feed_in_text = Text(
+                demand_str, x=left, y=demand_txt_y, font_size=font_sm, class_=class_test_demand, **kwargs)
             canvas.append(feed_in_text)
 
     def as_svg(self) -> str:
@@ -213,6 +233,15 @@ def _to_watts(power: float) -> str:
 
 def _to_pct(state_of_charge: float) -> str:
     return f'{int(round(state_of_charge))}{PERCENT}'
+
+
+def _click_area(name: str, x: float, y: float) -> Rectangle:
+    return Rectangle(
+        id=name,
+        x=x, y=y, width=90, height=140,
+        fill='transparent', stroke='transparent',
+        # fill='gray',
+    )
 
 
 class Shape(Group):

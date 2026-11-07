@@ -1,4 +1,5 @@
-from typing import Literal, TypeAlias, Optional, Annotated, Union, ClassVar, Dict
+from datetime import time
+from typing import Literal, TypeAlias, Optional, Annotated, Union, ClassVar, Dict, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +27,7 @@ class DummyPricerConnection(BaseModel):
     feed_in_price_discount_min: float = 2
     feed_in_price_discount_max: float = 5
     cur_price_is_estimate: bool = False
+    demand_window: Optional[Tuple[time, time]] = None
 
 
 class DummyConsumerConnection(BaseModel):

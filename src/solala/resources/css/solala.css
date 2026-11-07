@@ -145,6 +145,11 @@
     fill: var(--solala-text);
 }
 
+.solala-svg-text-demand {
+    font-family: var(--solala-font-family);
+    fill: var(--solala-demand-window-color);
+}
+
 .solala-svg-text-danger {
     font-family: var(--solala-font-family);
     fill: var(--solala-danger);

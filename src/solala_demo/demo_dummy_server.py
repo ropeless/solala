@@ -1,3 +1,5 @@
+from datetime import time
+
 import local_config as config
 from solala.constants import Constants
 from solala.server import server
@@ -11,16 +13,14 @@ def main():
 
     # Optional initial control loop parameters.
     # These will be used if the settings file cannot be loaded or force_settings is True.
-    force_settings: bool = True
     settings = Settings(
         controller=DummyControllerConnection(),
-        pricer=DummyPricerConnection(),
+        pricer=DummyPricerConnection(demand_window=(time(15), time(18))),
         consumers={'example_consumer': DummyConsumerConnection(current=5)},
         forecaster=DummySolarForecasterConnection(
             panel_capacity=config.PANEL_CAPACITY,
             inverter_limit=config.INVERTER_LIMIT,
         ),
-
     )
 
     Constants.APP_NAME += ' ***DUMMY SERVER***'

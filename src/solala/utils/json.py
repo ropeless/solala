@@ -73,11 +73,14 @@ def follow_json(data: JSONDict, path: Optional[str]) -> JSONValue:
          the value (if the path exists).
     Raises:
         KeyError if the path does not exist in `data`.
+        TypeError if a key in the path is not a selector for a dictionary.
     """
-    if path:
-        parts = path.split('/')
+    if path is not None:
+        parts: List[str] = path.split('/')
         for i, part in enumerate(parts):
-            if part not in data:
+            if not isinstance(data, (dict, Mapping)):
+                raise TypeError('/'.join(parts[:i + 1]))
+            if part not in data.keys():
                 raise KeyError('/'.join(parts[:i + 1]))
             data = data[part]
     return data
@@ -211,6 +214,8 @@ def _to_json(
         items = chain(thing.__dict__.items(), thing.__class__.__dict__.items())
     result: JSONDict = {}
     for name, value in items:
+        if name in result.keys():
+            continue
         if name.startswith('_') or name in exclude_names:
             continue
         if isinstance(value, property):

@@ -863,6 +863,7 @@ async def root_page():
                     _update_loop_status(loop_status_light, loop_status_label)
                     ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
 
+                    # Add javascript to mark status light as "stale" if a disconnect is detected.
                     _ = ui.run_javascript(f"""
                         const light = getHtmlElement({loop_status_light.id});
                         const label = getHtmlElement({loop_status_label.id});
