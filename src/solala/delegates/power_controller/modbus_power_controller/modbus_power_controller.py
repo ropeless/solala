@@ -21,12 +21,10 @@ class _DEFAULT:
 _START = '>>>'
 _STOP = '<<<'
 
-# Tolerance for 'idle' status.
-_STATUS_TOLERANCE = 100  # Watts
-
 # Tolerance for power change.
 _POWER_CHANGE_TOLERANCE = 100  # Watts
-_SMALL_CHANGE_TOLERANCE = 2000  # Watts
+_SMALL_CHANGE_TOLERANCE = 2000  # Watts  Grid power threshold to change to "hunting" method
+_GAMMA = 0.1  # Hunting method parameter
 
 _INVERTER_LIMIT_NAME: str = 'inverter_limit'
 
@@ -55,6 +53,8 @@ class ModbusPowerController(PowerController):
         self._inverters = [self._master] + self._slaves
         self._meter = meter
         self._log_set_get: bool = False
+        self._hunt_history: List[float] = []
+        self._is_force_discharge: bool = False
 
         # Important registers
         self._ChaState: str = f'{master}/ChaState'
@@ -99,7 +99,7 @@ class ModbusPowerController(PowerController):
                 unnamed_device = device_record
             else:
                 devices_record[device_name] = device_record
-        self._connection_status = {
+        self._connection_status: JSONDict = {
             'connection': 'Modbus',
             'devices': devices_record,
         }
@@ -200,6 +200,7 @@ class ModbusPowerController(PowerController):
             self._set(self._OutWRte, 100)
             self._set(self._ChaGriSet, 0)
             self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            self._is_force_discharge = False
 
     def disable_battery(self) -> None:
         """
@@ -212,6 +213,7 @@ class ModbusPowerController(PowerController):
             self._set(self._StorCtl_Mod, 3)
             self._set(self._ChaGriSet, 0)
             self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            self._is_force_discharge = False
 
     def force_charge(self) -> None:
         """
@@ -226,6 +228,7 @@ class ModbusPowerController(PowerController):
             self._set(self._StorCtl_Mod, 3)
             self._set(self._ChaGriSet, 1)
             self._set(self._MinRsvPct, 100)
+            self._is_force_discharge = False
 
     def force_discharge(self) -> None:
         """
@@ -239,6 +242,7 @@ class ModbusPowerController(PowerController):
             self._set(self._StorCtl_Mod, 3)
             self._set(self._ChaGriSet, 0)
             self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            self._is_force_discharge = True
 
     def charge_only(self) -> None:
         """
@@ -251,6 +255,7 @@ class ModbusPowerController(PowerController):
             self._set(self._StorCtl_Mod, 3)
             self._set(self._ChaGriSet, 0)
             self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            self._is_force_discharge = False
 
     def discharge_only(self) -> None:
         """
@@ -263,6 +268,7 @@ class ModbusPowerController(PowerController):
             self._set(self._StorCtl_Mod, 3)
             self._set(self._ChaGriSet, 0)
             self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            self._is_force_discharge = False
 
     # =================================================
     #  Grid Export Control
@@ -289,6 +295,12 @@ class ModbusPowerController(PowerController):
             max_power: float = self.get_inverter_limit()
             cur_power: float = self._get_sum(self._inverter_power)
 
+            # If the battery is discharging and it not a forced discharge then
+            # We actually need that power as well.
+            if not self._is_force_discharge:
+                discharge_power = self._get(self._discharge_power)
+                cur_power += discharge_power
+
             abs_grid_power = abs(grid_power)
             max_power = max(max_power, cur_power)  # incase the inverter is oversupplying - simplifies maths
 
@@ -298,24 +310,25 @@ class ModbusPowerController(PowerController):
 
                 new_pct = cur_pct
                 new_power = cur_power
+                self._hunt_history = []
+
             elif abs_grid_power < _SMALL_CHANGE_TOLERANCE:
                 # Small power change - use the hunting method
-                LOGGER.info('using hunting method')
 
-                if grid_power < 0:
-                    # Exporting - reduce power
-                    new_pct = cur_pct - cur_pct * (cur_power / max_power)
-                elif grid_power > 0:
-                    # Importing - increase power
-                    new_pct = cur_pct + (100 - cur_pct) * (cur_power / max_power)
-                else:
-                    new_pct = cur_pct
-                new_pct = round(max(0, min(new_pct, 100)), 2)
+                self._hunt_history.append(grid_power)
+                while len(self._hunt_history) > 10:
+                    self._hunt_history.pop(0)
+
+                delta_pct = (grid_power / max_power) * _GAMMA * 100
+                history_log = ', '.join(f'{h:.0f}' for h in self._hunt_history)
+                LOGGER.info(f'using hunting method: gamma = {_GAMMA}, delta_pct = {delta_pct}, history = {history_log}')
+
+                new_pct = round(max(0, min(cur_pct + delta_pct, 100)), 2)
                 new_power = cur_power + grid_power * (cur_pct - new_pct) / 100
                 new_power = max(0, min(new_power, max_power))
 
             else:
-                # Small power change - use the exact method
+                # Large power change - use the exact method
                 LOGGER.info('using exact method')
 
                 new_power = cur_power + grid_power
@@ -323,6 +336,7 @@ class ModbusPowerController(PowerController):
 
                 new_pct = new_power / max_power * 100
                 new_pct = round(max(0, min(new_pct, 100)), 2)
+                self._hunt_history = []
 
             power_change = new_power - cur_power
             LOGGER.info(f'max power: {max_power:.2f}')
@@ -376,8 +390,12 @@ class ModbusPowerController(PowerController):
                 LOGGER.error(f'Modbus message: {err.modbus_message!r}')
                 return
 
+            failed: bool
             new = self._modbus[name]
-            failed: bool = abs(new - value) > 10e-6
+            if not isinstance(new, (int, float)):
+                failed = True
+            else:
+                failed = abs(new - value) > 10e-6
             if failed:
                 LOGGER.error(f'SET {name}: {old!r} -> {value!r} checked {new!r} FAILED')
             elif force:

@@ -3,8 +3,8 @@ from typing import Optional
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 
 
-def diagnostic_name_to_icon_url(diagnostic_name: str) -> str:
-    return f'/images/diagnostic-icons/{diagnostic_name.lower()}.svg'
+def analytics_name_to_icon_url(analytics_name: str) -> str:
+    return f'/images/analytics-icons/{analytics_name.lower()}.svg'
 
 
 def weather_code_to_icon_url(code: WeatherCode, animated: bool = False) -> Optional[str]:
