@@ -54,6 +54,7 @@ class ModbusPowerController(PowerController):
         self._meter = meter
         self._log_set_get: bool = False
         self._hunt_history: List[float] = []
+        self._is_force_discharge: bool = False
 
         # Important registers
         self._ChaState: str = f'{master}/ChaState'
@@ -199,6 +200,7 @@ class ModbusPowerController(PowerController):
             self._set(self._OutWRte, 100)
             self._set(self._ChaGriSet, 0)
             self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            self._is_force_discharge = False
 
     def disable_battery(self) -> None:
         """
@@ -211,6 +213,7 @@ class ModbusPowerController(PowerController):
             self._set(self._StorCtl_Mod, 3)
             self._set(self._ChaGriSet, 0)
             self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            self._is_force_discharge = False
 
     def force_charge(self) -> None:
         """
@@ -225,6 +228,7 @@ class ModbusPowerController(PowerController):
             self._set(self._StorCtl_Mod, 3)
             self._set(self._ChaGriSet, 1)
             self._set(self._MinRsvPct, 100)
+            self._is_force_discharge = False
 
     def force_discharge(self) -> None:
         """
@@ -238,6 +242,7 @@ class ModbusPowerController(PowerController):
             self._set(self._StorCtl_Mod, 3)
             self._set(self._ChaGriSet, 0)
             self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            self._is_force_discharge = True
 
     def charge_only(self) -> None:
         """
@@ -250,6 +255,7 @@ class ModbusPowerController(PowerController):
             self._set(self._StorCtl_Mod, 3)
             self._set(self._ChaGriSet, 0)
             self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            self._is_force_discharge = False
 
     def discharge_only(self) -> None:
         """
@@ -262,6 +268,7 @@ class ModbusPowerController(PowerController):
             self._set(self._StorCtl_Mod, 3)
             self._set(self._ChaGriSet, 0)
             self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            self._is_force_discharge = False
 
     # =================================================
     #  Grid Export Control
@@ -287,6 +294,12 @@ class ModbusPowerController(PowerController):
             cur_pct: float = self._get(self._WMaxLimPct)
             max_power: float = self.get_inverter_limit()
             cur_power: float = self._get_sum(self._inverter_power)
+
+            # If the battery is discharging and it not a forced discharge then
+            # We actually need that power as well.
+            if not self._is_force_discharge:
+                discharge_power = self._get(self._discharge_power)
+                cur_power += discharge_power
 
             abs_grid_power = abs(grid_power)
             max_power = max(max_power, cur_power)  # incase the inverter is oversupplying - simplifies maths
