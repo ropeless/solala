@@ -23,7 +23,8 @@ _STOP = '<<<'
 
 # Tolerance for power change.
 _POWER_CHANGE_TOLERANCE = 100  # Watts
-_SMALL_CHANGE_TOLERANCE = 1000  # Watts
+_SMALL_CHANGE_TOLERANCE = 2000  # Watts  Grid power threshold to change to "hunting" method
+_GAMMA = 0.2  # Hunting method parameter
 
 _INVERTER_LIMIT_NAME: str = 'inverter_limit'
 
@@ -297,18 +298,15 @@ class ModbusPowerController(PowerController):
                 new_power = cur_power
             elif abs_grid_power < _SMALL_CHANGE_TOLERANCE:
                 # Small power change - use the hunting method
-                LOGGER.info('using hunting method')
+                delta_pct = (grid_power / max_power) * _GAMMA * 100
+                LOGGER.info('using hunting method: gamma = {_GAMMA}, delta_pct = {delta_pct}')
 
-                gamma = 0.2
-                delt_pct = (grid_power / max_power) * gamma * 100
-                LOGGER.info(f'gamma = {gamma}, delt_pct = {delt_pct}')
-
-                new_pct = round(max(0, min(cur_pct + delt_pct, 100)), 2)
+                new_pct = round(max(0, min(cur_pct + delta_pct, 100)), 2)
                 new_power = cur_power + grid_power * (cur_pct - new_pct) / 100
                 new_power = max(0, min(new_power, max_power))
 
             else:
-                # Small power change - use the exact method
+                # Large power change - use the exact method
                 LOGGER.info('using exact method')
 
                 new_power = cur_power + grid_power
