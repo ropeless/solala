@@ -21,9 +21,6 @@ class _DEFAULT:
 _START = '>>>'
 _STOP = '<<<'
 
-# Tolerance for 'idle' status.
-_STATUS_TOLERANCE = 100  # Watts
-
 # Tolerance for power change.
 _POWER_CHANGE_TOLERANCE = 100  # Watts
 _SMALL_CHANGE_TOLERANCE = 1000  # Watts
