@@ -303,10 +303,10 @@ class ModbusPowerController(PowerController):
                 LOGGER.info('using hunting method')
 
                 gamma = 0.1
-                delta = (grid_power / max_power) * gamma
-                LOGGER.info(f'gamma = {gamma}, delta = {delta}')
+                delt_pct = (grid_power / max_power) * gamma * 100
+                LOGGER.info(f'gamma = {gamma}, delt_pct = {delt_pct}')
 
-                new_pct = round(max(0, min(cur_pct + delta, 100)), 2)
+                new_pct = round(max(0, min(cur_pct + delt_pct, 100)), 2)
                 new_power = cur_power + grid_power * (cur_pct - new_pct) / 100
                 new_power = max(0, min(new_power, max_power))
 
