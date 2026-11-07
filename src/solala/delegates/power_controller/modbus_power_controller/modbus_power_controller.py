@@ -304,15 +304,9 @@ class ModbusPowerController(PowerController):
 
                 gamma = 0.1
 
-                if grid_power < -_POWER_CHANGE_TOLERANCE:
-                    # Exporting - reduce power
-                    new_pct = cur_pct * (1 - gamma)
-                elif grid_power > _POWER_CHANGE_TOLERANCE:
-                    # Importing - increase power
-                    new_pct = 100 - (100 - cur_pct) * (1 - gamma)
-                else:
-                    new_pct = cur_pct
-                new_pct = round(max(0, min(new_pct, 100)), 2)
+                delta = (grid_power / max_power) * gamma
+
+                new_pct = round(max(0, min(cur_pct + delta, 100)), 2)
                 new_power = cur_power + grid_power * (cur_pct - new_pct) / 100
                 new_power = max(0, min(new_power, max_power))
 
