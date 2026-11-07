@@ -11,7 +11,6 @@ def main():
 
     # Optional initial control loop parameters.
     # These will be used if the settings file cannot be loaded or force_settings is True.
-    force_settings: bool = config.FORCE_SETTINGS
     settings = Settings(
 
         controller=ModbusControllerConnection(address=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}'),
@@ -61,7 +60,7 @@ def main():
         port=config.SERVER_PORT,
         settings_path=config.SETTINGS_PATH,
         settings=settings,
-        force_settings=force_settings,
+        force_settings=config.FORCE_SETTINGS,
         database_write=config.DATABASE_WRITE,
     )
 

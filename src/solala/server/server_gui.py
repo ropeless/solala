@@ -24,7 +24,8 @@ from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
 from solala.server.css_colours import Colours, css_colours
-from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator, price_chart, charge_chart
+from solala.server.graph_interpolator import GraphingInterpolator
+from solala.server.graphs import EnergyChart, PriceChart, PowerChart, ChargeChart
 from solala.server.icons import analytics_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
@@ -506,12 +507,34 @@ class ChartUpdater(LoopListener):
         super().__init__()
         self._prev: Optional[DailySolarForecast] = None
         self._day: date = date.today()
-        self._element: ui.element = element
-        self._colours: Colours = colours
+
+        with element:
+            self._loading = ui.label('loading graphs...').classes('text-center italic').set_visibility(True)
+            self._graphs = ui.element('div').set_visibility(False)
+
+            with self._graphs:
+                self._charge_chart = ChargeChart(colours)
+                self._price_chart = PriceChart(colours)
+                self._power_chart = PowerChart(colours)
+                self._energy_chart = EnergyChart(colours)
+
+        asyncio.create_task(self.update())
+
+    @property
+    def day(self) -> date:
+        return self._day
+
+    async def set_day(self, day: date) -> None:
         self._show_loading()
+        self._day = day
+        asyncio.create_task(self.update())
 
     @final
     async def update(self) -> None:
+        graph_interpolator = await self._get_data()
+        self._update(graph_interpolator)
+
+    async def _get_data(self) -> GraphingInterpolator:
         day = self._day
         measurements: Sequence[Measurement]
         price_forecast: Sequence[Price]
@@ -523,39 +546,19 @@ class ChartUpdater(LoopListener):
             control_loop.get_demand_window(day),
             control_loop.get_solar_forecast(day),
         )
-
-        graph_interpolator = GraphingInterpolator(day, measurements, price_forecast, solar_forecast, demand_window)
-        self._update(graph_interpolator)
-
-    @property
-    def day(self) -> date:
-        return self._day
-
-    async def set_day(self, day: date) -> None:
-        self._show_loading()
-        self._day = day
-        asyncio.create_task(self.update())
+        return GraphingInterpolator(day, measurements, price_forecast, solar_forecast, demand_window)
 
     def _show_loading(self) -> None:
-        self._element.clear()
-        with self._element:
-            ui.label('loading graphs...').classes('text-center italic')
+        self._graphs.set_visibility(False)
+        self._loading.set_visibility(True)
 
     def _update(self, graph_interpolator: GraphingInterpolator) -> None:
-        # Recreate the solar forecast table if needed
-        self._element.clear()
-        with self._element:
-            with ui.row().classes('w-full items-center gap-0 mb-0'):
-                charge_chart(graph_interpolator, self._colours)
-
-            with ui.row().classes('w-full items-center gap-0 mb-0'):
-                price_chart(graph_interpolator, self._colours)
-
-            with ui.row().classes('w-full items-center gap-0 mb-0'):
-                power_chart(graph_interpolator, self._colours)
-
-            with ui.row().classes('w-full items-center gap-0 mb-0'):
-                energy_chart(graph_interpolator, self._colours)
+        self._loading.set_visibility(False)
+        self._charge_chart.update(graph_interpolator)
+        self._price_chart.update(graph_interpolator)
+        self._power_chart.update(graph_interpolator)
+        self._energy_chart.update(graph_interpolator)
+        self._graphs.set_visibility(True)
 
 
 def _json_page(name: str) -> ContentElement:

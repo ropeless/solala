@@ -1,9 +1,10 @@
+from abc import abstractmethod, ABC
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Sequence, List, Optional, Tuple
 
 import numpy as np
 from nicegui import ui
-from nicegui.elements.echart import EChart
 
 from solala.constants import KILOWATTS, GUI_TIME_FORMAT, KILOWATT_HOURS, PRICE_CENTS, PERCENT
 from solala.server.css_colours import Colours, rgba
@@ -14,106 +15,164 @@ LINE_WIDTH: float = 1.75
 DASHED = [3, 3]
 
 
-def energy_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
-    units = KILOWATT_HOURS
-    options: JSONDict = {
-        'backgroundColor': 'transparent',
-        'tooltip': _graph_tooltip(units),
-        'legend': _legend(),
-        'grid': _grid(legend_space=True),
-        'xAxis': _x_axis(data.timestamps),
-        'yAxis': _y_axis('Energy', units),
-        'series': [
-            _create_series('Solar', data.accumulated_solar_energy, colours.sun),
-            _create_series('Forecast', data.forecast_accumulated_solar_energy, colours.sun, DASHED, 0),
-            _create_series('Import', data.accumulated_grid_energy_import, colours.grid),
-            _create_series('Export', data.accumulated_grid_energy_export, colours.inverter),
-            _create_series('Charge', data.accumulated_battery_energy_charge, colours.battery_charge),
-            _create_series('Discharge', data.accumulated_battery_energy_discharge, colours.battery),
-        ]
-    }
-    return ui.echart(options).classes('w-full')
+@dataclass
+class SeriesData:
+    data: Sequence[List[float] | List[int]]
+    demand_window: Optional[Tuple[datetime, datetime]] = None
 
 
-def power_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
-    units = KILOWATTS
-    options: JSONDict = {
-        'backgroundColor': 'transparent',
-        'tooltip': _graph_tooltip(units),
-        'legend': _legend(),
-        'grid': _grid(legend_space=True),
-        'xAxis': _x_axis(data.timestamps),
-        'yAxis': _y_axis('Power', units),
-        'series': [
-            # _create_series('Solar', data.average_solar_power, colours['sun']),
-            # _create_series('Battery', data.average_battery_power, colours['battery']),
-            # _create_series('Grid', data.average_grid_power, colours['grid']),
+class SolalaChart(ABC):
+    def __init__(
+            self,
+            name: str,
+            units: str,
+            series: List[JSONDict],
+            demand_window_colour: str = '',
+            show_legend: bool = True,
+    ) -> None:
+        options: JSONDict = {
+            'backgroundColor': 'transparent',
+            'tooltip': _graph_tooltip(units),
+            'grid': _grid(legend_space=show_legend),
+            'xAxis': _x_axis(),
+            'yAxis': _y_axis(name, units),
+            'series': series,
+        }
+        if show_legend:
+            options['legend'] = _legend()
+        self.chart = ui.echart(options).classes('w-full')
+        self.demand_window_colour = demand_window_colour
 
-            _create_series('Solar', data.instantaneous_solar_power, colours.sun),
-            _create_series('Forecast', data.forecast_solar_power, colours.sun, DASHED, 0),
-            _create_series('Grid', data.instantaneous_grid_power, colours.grid),
-            _create_series('Battery', data.instantaneous_battery_power, colours.battery),
-            _create_series('House', data.instantaneous_house_power, colours.house),
-        ]
-    }
-    return ui.echart(options).classes('w-full')
+    def update(self, data: GraphingInterpolator) -> None:
+        series = self.chart.options['series']
+        timestamps = [timestamp.strftime(GUI_TIME_FORMAT) for timestamp in data.timestamps]
 
+        self.chart.options['xAxis']['data'] = timestamps
 
-def price_chart(
-        data: GraphingInterpolator,
-        colours: Colours
-) -> EChart:
-    units = PRICE_CENTS
+        series_data: SeriesData = self._get_series_data(data)
+        if len(series_data.data) != len(series):
+            raise RuntimeError('Wrong number of series provided')
 
-    buy_price = data.buy_price
-    feed_in_price = data.feed_in_price
-    forecast_buy_price = data.forecast_buy_price
-    forecast_feed_in_price = data.forecast_feed_in_price
+        for s, d in zip(series, series_data.data):
+            s['data'] = d
 
-    # Ensure forecast does not overlap with actual data
-    for i in range(len(buy_price)):
-        if np.isfinite(buy_price[i]):
-            forecast_buy_price[i] = np.nan
-        if np.isfinite(feed_in_price[i]):
-            forecast_feed_in_price[i] = np.nan
+        # Configure the demand window
+        if series_data.demand_window is not None:
+            series[0]['markArea'] = _demand_window(*series_data.demand_window, colour=self.demand_window_colour)
+        else:
+            series[0]['markArea'] = None
 
-    demand_window: Optional[Tuple[datetime, datetime]] = data.demand_window
-    if demand_window is not None:
-        demand_window_opts = _demand_window(*demand_window, colour=colours.demand_window)
-    else:
-        demand_window_opts = None
+        self.chart.update()
 
-    options: JSONDict = {
-        'backgroundColor': 'transparent',
-        'tooltip': _graph_tooltip(units),
-        'legend': None,
-        'grid': _grid(legend_space=False),
-        'xAxis': _x_axis(data.timestamps),
-        'yAxis': _y_axis('Price', units),
-        'series': [
-            _create_series('Buy', buy_price, colours.grid_import, demand_window=demand_window_opts),
-            _create_series('Feed-in', feed_in_price, colours.grid_export, area_alpha=0),
-            _create_series('Buy Forecast', forecast_buy_price, colours.grid_import, DASHED, 0),
-            _create_series('Feed-in Forecast', forecast_feed_in_price, colours.grid_export, DASHED, 0),
-        ]
-    }
-    return ui.echart(options).classes('w-full')
+    @abstractmethod
+    def _get_series_data(self, data: GraphingInterpolator) -> SeriesData:
+        ...
 
 
-def charge_chart(data: GraphingInterpolator, colours: Colours) -> EChart:
-    units = PERCENT
-    options: JSONDict = {
-        'backgroundColor': 'transparent',
-        'tooltip': _graph_tooltip(units),
-        'legend': None,
-        'grid': _grid(legend_space=False),
-        'xAxis': _x_axis(data.timestamps),
-        'yAxis': _y_axis('Charge', units),
-        'series': [
-            _create_series('Charge', data.battery_charge, colours.battery),
-        ]
-    }
-    return ui.echart(options).classes('w-full')
+class EnergyChart(SolalaChart):
+    def __init__(self, colours: Colours) -> None:
+        super().__init__(
+            'Energy',
+            KILOWATT_HOURS,
+            [
+                _create_series('Solar', colours.sun),
+                _create_series('Forecast', colours.sun, DASHED, 0),
+                _create_series('Import', colours.grid),
+                _create_series('Export', colours.inverter),
+                _create_series('Charge', colours.battery_charge),
+                _create_series('Discharge', colours.battery),
+            ]
+        )
+
+    def _get_series_data(self, data: GraphingInterpolator) -> SeriesData:
+        return SeriesData(
+            data=(
+                data.accumulated_solar_energy,
+                data.forecast_accumulated_solar_energy,
+                data.accumulated_grid_energy_import,
+                data.accumulated_grid_energy_export,
+                data.accumulated_battery_energy_charge,
+                data.accumulated_battery_energy_discharge,
+            )
+        )
+
+
+class PowerChart(SolalaChart):
+    def __init__(self, colours: Colours) -> None:
+        super().__init__(
+            'Power',
+            KILOWATTS,
+            [
+                _create_series('Solar', colours.sun),
+                _create_series('Forecast', colours.sun, DASHED, 0),
+                _create_series('Grid', colours.grid),
+                _create_series('Battery', colours.battery),
+                _create_series('House', colours.house),
+            ]
+        )
+
+    def _get_series_data(self, data: GraphingInterpolator) -> SeriesData:
+        return SeriesData(
+            data=(
+                data.instantaneous_solar_power,
+                data.forecast_solar_power,
+                data.instantaneous_grid_power,
+                data.instantaneous_battery_power,
+                data.instantaneous_house_power,
+            )
+        )
+
+
+class PriceChart(SolalaChart):
+    def __init__(self, colours: Colours) -> None:
+        super().__init__(
+            'Price',
+            PRICE_CENTS,
+            [
+                _create_series('Buy', colours.grid_import),
+                _create_series('Feed-in', colours.grid_export, area_alpha=0),
+                _create_series('Buy Forecast', colours.grid_import, DASHED, 0),
+                _create_series('Feed-in Forecast', colours.grid_export, DASHED, 0),
+            ],
+            demand_window_colour=colours.demand_window,
+            show_legend=False,
+        )
+
+    def _get_series_data(self, data: GraphingInterpolator) -> SeriesData:
+        buy_price = data.buy_price
+        feed_in_price = data.feed_in_price
+        forecast_buy_price = data.forecast_buy_price
+        forecast_feed_in_price = data.forecast_feed_in_price
+
+        # Ensure forecast does not overlap with actual data
+        for i in range(len(buy_price)):
+            if np.isfinite(buy_price[i]):
+                forecast_buy_price[i] = np.nan
+            if np.isfinite(feed_in_price[i]):
+                forecast_feed_in_price[i] = np.nan
+
+        return SeriesData(
+            data=(
+                buy_price,
+                feed_in_price,
+                forecast_buy_price,
+                forecast_feed_in_price,
+            ),
+            demand_window=data.demand_window,
+        )
+
+
+class ChargeChart(SolalaChart):
+    def __init__(self, colours: Colours) -> None:
+        super().__init__(
+            'Charge',
+            PERCENT,
+            [_create_series('Charge', colours.battery)],
+            show_legend=False,
+        )
+
+    def _get_series_data(self, data: GraphingInterpolator) -> SeriesData:
+        return SeriesData(data=(data.battery_charge,))
 
 
 # ====================================================================
@@ -126,7 +185,7 @@ def _demand_window(start: datetime, end: datetime, colour: str, title: str = 'de
         'silent': True,
         'itemStyle': {
             'color': rgba(colour),
-            'borderColor': rgba(colour, alpha=0.5),
+            'borderColor': rgba(colour, alpha=0.2),
             'borderWidth': 1,
             'borderType': 'solid',
 
@@ -149,16 +208,14 @@ def _demand_window(start: datetime, end: datetime, colour: str, title: str = 'de
 
 def _create_series(
         name: str,
-        data: List[float],
         colour: str,
         line_type: str | list = 'solid',
         area_alpha: float = 0.1,
-        demand_window: Optional[JSONDict] = None,
 ) -> JSONDict:
     options: JSONDict = {
         'name': name,
         'type': 'line',
-        'data': data,
+        'data': [],
         'smooth': 0.25,
         'showSymbol': False,
         'color': colour,
@@ -170,10 +227,6 @@ def _create_series(
     }
     if area_alpha > 0:
         options['areaStyle'] = {'color': rgba(colour, area_alpha)}
-
-    # Configure the demand window
-    if demand_window is not None:
-        options['markArea'] = demand_window
 
     return options
 
@@ -228,12 +281,11 @@ def _legend() -> JSONDict:
     }
 
 
-def _x_axis(timestamps: Sequence[datetime]) -> JSONDict:
-    timestamps = [timestamp.strftime(GUI_TIME_FORMAT) for timestamp in timestamps]
+def _x_axis() -> JSONDict:
     return {
         'type': 'category',
         'boundaryGap': False,
-        'data': timestamps,
+        'data': [],
         'axisLine': {
             'lineStyle': {'color': '#888'}
         },
