@@ -302,12 +302,14 @@ class ModbusPowerController(PowerController):
                 # Small power change - use the hunting method
                 LOGGER.info('using hunting method')
 
-                if grid_power < 0:
+                gamma = 0.1
+
+                if grid_power < -_POWER_CHANGE_TOLERANCE:
                     # Exporting - reduce power
-                    new_pct = cur_pct - cur_pct * (cur_power / max_power)
-                elif grid_power > 0:
+                    new_pct = cur_pct * (1 - gamma)
+                elif grid_power > _POWER_CHANGE_TOLERANCE:
                     # Importing - increase power
-                    new_pct = cur_pct + (100 - cur_pct) * (cur_power / max_power)
+                    new_pct = 100 - (100 - cur_pct) * (1 - gamma)
                 else:
                     new_pct = cur_pct
                 new_pct = round(max(0, min(new_pct, 100)), 2)
