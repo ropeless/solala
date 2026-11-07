@@ -1,6 +1,6 @@
 from dataclasses import dataclass
-from datetime import datetime
-from typing import List, Dict, Literal, TypeAlias, Callable
+from datetime import datetime, date
+from typing import List, Dict, Literal, TypeAlias, Callable, Optional, Tuple
 
 import requests
 
@@ -72,6 +72,32 @@ class AmberPowerPricer(PowerPricer):
                 return site
 
         raise ValueError(f'NMI not found in sites')
+
+    async def get_demand_window(self, day: date) -> Optional[Tuple[datetime, datetime]]:
+        day_str: str = f'{day.year:04d}-{day.month:02d}-{day.day:02d}'
+
+        url = f'{API}/sites/{self._site_id}/prices'
+        headers = {
+            'accept': 'application/json',
+            'Authorization': f'Bearer {self._api_token}'
+        }
+        params = {
+            'startDate': day_str,
+            'endDate': day_str,
+            'resolution': '30',
+        }
+        response = await async_get(url, headers=headers, params=params)
+        if response.status_code != requests.codes.ok:
+            raise IOError(f'error accessing Amber prices: {response}')
+
+        prices: List[Price] = [
+            price for price in _parse_response(response.json(), _get_no_price)
+            if price.tariff_demand_window
+        ]
+        if len(prices) == 0:
+            return None
+        else:
+            return prices[0].start_time, prices[-1].end_time
 
     async def _get(self, resolution: Literal[5, 30], forecasts: int) -> JSONDict:
         url = f'{API}/sites/{self._site_id}/prices/current'
@@ -145,6 +171,10 @@ def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _Pric
         tariff_season=json_str(tariff_info['season']),
         tariff_demand_window=json_bool(tariff_info['demandWindow']),
     )
+
+
+def _get_no_price(_: JSONDict) -> float:
+    return 0.0
 
 
 def _get_perKwh(data: JSONDict) -> float:

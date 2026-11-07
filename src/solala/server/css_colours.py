@@ -13,6 +13,7 @@ class Colours:
     battery_charge: str
     grid_import: str
     grid_export: str
+    demand_window: str
 
 
 async def css_colours() -> Colours:
@@ -28,7 +29,16 @@ async def css_colours() -> Colours:
                 battery_charge: style.getPropertyValue('--solala-battery-charge-color').trim(),
                 grid_import: style.getPropertyValue('--solala-grid-import-color').trim(),
                 grid_export: style.getPropertyValue('--solala-grid-export-color').trim(),
+                demand_window: style.getPropertyValue('--solala-demand-window-color').trim(),
             };
         })()
     """)
     return Colours(**colour_dict)
+
+
+def rgba(colour: str, alpha: float = 0.1) -> str:
+    colour = colour.lstrip('#')
+    r, g, b = (int(colour[i:i + 2], 16) for i in (0, 2, 4))
+    return f'rgba({r}, {g}, {b}, {alpha})'
+
+

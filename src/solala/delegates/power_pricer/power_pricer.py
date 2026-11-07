@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List
+from datetime import date, datetime
+from typing import List, Optional, Tuple
 
 from solala.delegates.power_pricer.price import Price
 from solala.utils.json import JSONDict
@@ -27,6 +28,13 @@ class PowerPricer(ABC):
 
         Returns:
             `count` prices, in ascending time order.
+        """
+        ...
+
+    @abstractmethod
+    async def get_demand_window(self, day: date) -> Optional[Tuple[datetime, datetime]]:
+        """
+        Get the demand window for the given day, if active.
         """
         ...
 

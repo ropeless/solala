@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, UTC, timedelta, date
 from pathlib import Path
-from typing import Optional, List, Dict, Sequence, Iterable, AsyncIterator
+from typing import Optional, List, Dict, Sequence, Iterable, AsyncIterator, Tuple
 
 from pymodbus.client import ModbusTcpClient
 
@@ -134,6 +134,7 @@ class _ControlState:
     next_price_check: datetime = _MIN_DATE
 
     last_price_forecast: Sequence[Price] = ()
+    last_price_demand_window: Dict[_DateKey, Optional[Tuple[datetime, datetime]]] = field(default_factory=dict)
     next_price_forecast_check: datetime = _MIN_DATE
 
     last_solar_forecast: Dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
@@ -509,6 +510,29 @@ async def get_price_now_no_estimate(max_tries: int = 10) -> Price:
     return price
 
 
+async def get_demand_window(day: date) -> Optional[Tuple[datetime, datetime]]:
+    """
+    Get the demand window for the given day.
+
+    Returns None if the demand window is not active on the given day.
+    """
+    async with _control_state() as state:
+        pricer = state.pricer
+        if pricer is None:
+            LOGGER.error(f'{_LOG_SRC}Demand window not available. Error: power pricer not connected')
+            return None
+
+        key = _DateKey(day.year, day.month, day.day)
+        demand_window: Optional[Tuple[datetime, datetime]]
+        if key in state.last_price_demand_window:
+            demand_window = state.last_price_demand_window[key]
+        else:
+            demand_window = await pricer.get_demand_window(day)
+            state.last_price_demand_window[key] = demand_window
+
+        return demand_window
+
+
 async def get_price_forecast() -> Sequence[Price]:
     """
     Get the forecast prices from the power pricer.
@@ -559,7 +583,7 @@ async def get_consumers_status() -> Dict[str, ConsumerStatus]:
 
 async def get_connection_status() -> JSONDict:
     async with _control_state() as state:
-        result = {
+        result: JSONDict = {
             'controller': state.controller_connection_status,
             'pricer': state.pricer_connection_status,
             'forecaster': state.forecaster_connection_status,
@@ -1092,6 +1116,7 @@ def _connect_dummy_pricer(pricer_connection: DummyPricerConnection) -> PowerPric
         feed_in_price_discount_min=pricer_connection.feed_in_price_discount_min,
         feed_in_price_discount_max=pricer_connection.feed_in_price_discount_max,
         cur_price_is_estimate=pricer_connection.cur_price_is_estimate,
+        demand_window=pricer_connection.demand_window,
     )
 
 

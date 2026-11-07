@@ -1,8 +1,8 @@
 import asyncio
 from abc import abstractmethod
-from datetime import date
+from datetime import date, datetime
 from functools import partial
-from typing import Mapping, final, Optional, Dict, List, Sequence, Callable, Awaitable
+from typing import Mapping, final, Optional, Dict, List, Sequence, Callable, Awaitable, Tuple
 
 from nicegui import ui, app, events
 from nicegui.element import Element
@@ -29,6 +29,7 @@ from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_ico
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
 from solala.server.ui_day_navigator import DayNavigator
+from solala.utils.datetime_extras import now
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str, JSONPrimitive
 
@@ -114,26 +115,6 @@ class RegistersListener(LoopListener):
         self._update(register_values)
 
     def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
-        ...
-
-
-class PriceForecastListener(LoopListener):
-
-    def __init__(self):
-        super().__init__()
-        self._prev = None
-
-    @final
-    async def update(self) -> None:
-        """
-        Thread safe update.
-        """
-        price_forecast: Sequence[Price] = await control_loop.get_price_forecast()
-        if self._prev is not price_forecast:
-            self._prev = price_forecast
-            self._update(price_forecast)
-
-    def _update(self, price_forecast: Sequence[Price]) -> None:
         ...
 
 
@@ -336,6 +317,7 @@ class RegistersUpdater(RegistersListener):
 
     def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
         if self.match is not None:
+            # noinspection PyTypeChecker
             register_values = filter_json(register_values, self.match)
         json_as_str = render_json(
             register_values,
@@ -346,12 +328,33 @@ class RegistersUpdater(RegistersListener):
         self.registers_element.set_content(json_as_str)
 
 
-class PriceForecastUpdater(PriceForecastListener):
+class PriceForecastUpdater(LoopListener):
     def __init__(self, element: ui.element):
         super().__init__()
+        self._prev = None
         self._element = element
 
-    def _update(self, price_forecast: Sequence[Price]) -> None:
+    @final
+    async def update(self) -> None:
+        price_forecast: Sequence[Price]
+        demand_window: Optional[Tuple[datetime, datetime]]
+
+        price_forecast, demand_window = await asyncio.gather(
+            control_loop.get_price_forecast(),
+            control_loop.get_demand_window(date.today())
+        )
+        if self._prev is not price_forecast:
+            self._prev = price_forecast
+            self._update(price_forecast, demand_window)
+
+    def _update(self, price_forecast: Sequence[Price], demand_window: Optional[Tuple[datetime, datetime]]) -> None:
+
+        def _is_demand_window(_price: Price) -> bool:
+            if demand_window is None:
+                return False
+            demand_start, demand_end = demand_window
+            return _price.start_time < demand_end and _price.end_time > demand_start
+
         # Recreate the price forecast table
         self._element.clear()
         with self._element:
@@ -380,7 +383,10 @@ class PriceForecastUpdater(PriceForecastListener):
 
                     for i, price in enumerate(price_forecast):
                         row_classes = 'price-row'
-                        if i % 2 == 1:
+
+                        if _is_demand_window(price):
+                            row_classes += ' price-row-demand'
+                        elif i % 2 == 1:
                             row_classes += ' price-row-alt'
 
                         with ui.element('div').classes(row_classes):
@@ -406,9 +412,6 @@ class SolarForecastUpdater(LoopListener):
 
     @final
     async def update(self) -> None:
-        """
-        Thread safe update.
-        """
         solar_forecast: DailySolarForecast = await control_loop.get_solar_forecast(self._day)
         if self._prev is not solar_forecast:
             self._prev = solar_forecast
@@ -429,6 +432,11 @@ class SolarForecastUpdater(LoopListener):
             ui.label('loading solar forecast...').classes('text-center italic')
 
     def _update(self, solar_forecast: DailySolarForecast) -> None:
+        _now = now()
+
+        def _forecast_for_now(_forecast: SolarForecast) -> bool:
+            return _forecast.start_time <= _now < _forecast.end_time
+
         # Recreate the solar forecast table if needed
         self._element.clear()
         with self._element:
@@ -457,25 +465,39 @@ class SolarForecastUpdater(LoopListener):
                     forecast: SolarForecast
                     for i, forecast in enumerate(solar_forecast):
                         row_classes = 'solar-row'
-                        if i % 2 == 1:
+                        if _forecast_for_now(forecast):
+                            row_classes += ' solar-row-now'
+                        elif i % 2 == 1:
                             row_classes += ' solar-row-alt'
+
                         icon: Optional[str] = weather_code_to_icon_url(
                             forecast.weather, Constants.ANIMATE_WEATHER_ICONS
                         )
 
                         with ui.element('div').classes(row_classes):
-                            ui.label(forecast.start_time.strftime(GUI_TIME_FORMAT)).classes('solar-time')
-                            ui.label(f'{int(forecast.temperature + 0.5)}{CELSIUS}').classes(f'solar-number')
-                            if icon is None:
-                                ui.label('').classes('solar-weather-icon')
-                            else:
-                                ui.image(icon).classes('solar-weather-icon')
+                            ui.label(
+                                forecast.start_time.strftime(GUI_TIME_FORMAT)
+                            ).classes('solar-time')
+
+                            ui.label(
+                                f'{int(forecast.temperature + 0.5)}{CELSIUS}'
+                            ).classes('solar-number')
+
+                            with ui.element('div').classes('solar-weather-cell'):
+                                if icon is not None:
+                                    ui.image(icon).classes('solar-weather-image')
+
                             if forecast.weather == WeatherCode.NIGHT:
-                                ui.label('.').classes(f'solar-number')
+                                ui.label('.').classes('solar-number')
                                 ui.label('.').classes('solar-number')
                             else:
-                                ui.label(f'{int(forecast.irradiance + 0.5)}').classes(f'solar-number')
-                                ui.label(f'{forecast.power / 1000:.2f}{KILOWATTS}').classes('solar-number')
+                                ui.label(
+                                    f'{int(forecast.irradiance + 0.5)}'
+                                ).classes('solar-number')
+
+                                ui.label(
+                                    f'{forecast.power / 1000:.2f}{KILOWATTS}'
+                                ).classes('solar-number')
 
 
 class ChartUpdater(LoopListener):
@@ -490,19 +512,19 @@ class ChartUpdater(LoopListener):
 
     @final
     async def update(self) -> None:
-        """
-        Thread safe update.
-        """
         day = self._day
         measurements: Sequence[Measurement]
         price_forecast: Sequence[Price]
         solar_forecast: DailySolarForecast
-        measurements, price_forecast, solar_forecast = await asyncio.gather(
+        demand_window: Optional[Tuple[datetime, datetime]]
+        measurements, price_forecast, demand_window, solar_forecast = await asyncio.gather(
             control_loop.solala_database_measurements(day),
             control_loop.get_price_forecast(),
+            control_loop.get_demand_window(day),
             control_loop.get_solar_forecast(day),
         )
-        graph_interpolator = GraphingInterpolator(day, measurements, price_forecast, solar_forecast)
+
+        graph_interpolator = GraphingInterpolator(day, measurements, price_forecast, solar_forecast, demand_window)
         self._update(graph_interpolator)
 
     @property
@@ -580,9 +602,10 @@ def _page_header(ext: str = '', link: bool = True) -> None:
         with ui.element('div').classes('solala-brand'):
             if link:
                 with ui.link(target='/'):
-                    ui.image('/images/solala.svg').classes('w-12 h-12 bg-transparent')
+                    image = ui.image('/images/solala.svg')
             else:
-                ui.image('/images/solala.svg').classes('w-12 h-12 bg-transparent')
+                image = ui.image('/images/solala.svg')
+            image.classes('w-12 h-12 bg-transparent')
 
             with ui.element('div'):
                 ui.label(f'{Constants.APP_NAME}{ext}').classes('solala-brand-name')
@@ -840,6 +863,7 @@ async def root_page():
                     _update_loop_status(loop_status_light, loop_status_label)
                     ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
 
+                    # Add javascript to mark status light as "stale" if a disconnect is detected.
                     _ = ui.run_javascript(f"""
                         const light = getHtmlElement({loop_status_light.id});
                         const label = getHtmlElement({loop_status_label.id});
