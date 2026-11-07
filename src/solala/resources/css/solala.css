@@ -24,7 +24,8 @@
     --solala-radius: 14px;
     --solala-control-radius: 7px;
     --solala-page-padding: 1px;
-    --solala-gap: 16px;
+    --solala-gap: 12px;
+    --solala-gap-mobile: 7px;
 
     --solala-shadow: 0 2px 7px rgb(0 0 0 / 6%);
 
@@ -116,7 +117,7 @@
    --------------------------------------------------------- */
 
 .infographic-card {
-    padding: 12px;
+    padding: var(--solala-gap);
 }
 
 .infographic-title {
@@ -166,14 +167,14 @@
    Battery and inverter controls
    --------------------------------------------------------- */
 
+.control-card {
+    padding: var(--solala-gap);
+}
+
 .control-column {
     display: flex;
     flex-direction: column;
     gap: var(--solala-gap);
-}
-
-.control-card {
-    padding: var(--solala-gap);
 }
 
 .control-header {
@@ -211,15 +212,14 @@
 }
 
 /* ---------------------------------------------------------
-   Diagnostics
+   Analytics
    --------------------------------------------------------- */
 
-.diagnostics-card {
-    margin-top: var(--solala-gap);
+.analytics-card {
     padding: var(--solala-gap);
 }
 
-.diagnostics-title {
+.analytics-title {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -228,7 +228,7 @@
     font-weight: 650;
 }
 
-.diagnostic-link {
+.analytics-link {
     display: flex;
     min-height: 60px;
     flex-direction: column;
@@ -244,12 +244,12 @@
     font-weight: 600;
 }
 
-.diagnostic-link:hover {
+.analytics-link:hover {
     border-color: #90caf9;
     background: #eaf3fb;
 }
 
-.diagnostic-icon {
+.analytics-icon {
     width: 28px;
     height: 28px;
     object-fit: contain;
@@ -471,7 +471,7 @@
     }
 
     .infographic-card {
-        padding: 7px;
+        padding: var(--solala-gap-mobile);
     }
 
     .infographic-title {
@@ -484,7 +484,7 @@
     }
 
     .control-card {
-        padding: 12px;
+        padding: var(--solala-gap-mobile);
     }
 
     .control-title {
@@ -500,12 +500,11 @@
         font-size: 12px;
     }
 
-    .diagnostics-card {
-        margin-top: 9px;
-        padding: 12px;
+    .analytics-card {
+        padding: var(--solala-gap-mobile);
     }
 
-    .diagnostic-link {
+    .analytics-link {
         min-height: 55px;
         font-size: 11px;
     }

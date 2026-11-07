@@ -25,7 +25,7 @@ from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
 from solala.server.css_colours import Colours, css_colours
 from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator, price_chart, charge_chart
-from solala.server.icons import diagnostic_name_to_icon_url, weather_code_to_icon_url
+from solala.server.icons import analytics_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
 from solala.server.ui_day_navigator import DayNavigator
@@ -634,9 +634,9 @@ def _button_classes(button, primary=False, wide=False) -> None:
     return button
 
 
-def _diagnostic_link(name: str, target: str) -> None:
-    with ui.link(target=target).classes('diagnostic-link'):
-        ui.image(diagnostic_name_to_icon_url(name)).classes('diagnostic-icon')
+def _analytics_link(name: str, target: str) -> None:
+    with ui.link(target=target).classes('analytics-link'):
+        ui.image(analytics_name_to_icon_url(name)).classes('analytics-icon')
         ui.label(name)
 
 
@@ -888,24 +888,25 @@ async def root_page():
                     asyncio.create_task(updater.update())
                     await _register_control_loop_listener(updater)
 
+            # ==============================================================
+            # Analytics
+            # ==============================================================
+            with ui.element('div').classes('dashboard-card analytics-card'):
+                with ui.element('div').classes('analytics-title'):
+                    ui.label('Analytics')
+                with ui.grid(columns=3):
+                    _analytics_link('Graphs', '/graphs_page')
+                    _analytics_link('Status', '/status_page')
+                    _analytics_link('Connection', '/connection_page')
+                    _analytics_link('Parameters', '/parameters_page')
+                    _analytics_link('Registers', '/registers_page')
+                    _analytics_link('Log', '/log_page')
+
             # ----------------------------------------------------------
             # BATTERY + INVERTER control buttons
             # ----------------------------------------------------------
-            await _ui_control_buttons()
-
-        # ==============================================================
-        # DIAGNOSTICS
-        # ==============================================================
-        with ui.element('div').classes('dashboard-card diagnostics-card'):
-            with ui.element('div').classes('diagnostics-title'):
-                ui.label('Diagnostics')
-            with ui.grid(columns=3):
-                _diagnostic_link('Graphs', '/graphs_page')
-                _diagnostic_link('Status', '/status_page')
-                _diagnostic_link('Connection', '/connection_page')
-                _diagnostic_link('Parameters', '/parameters_page')
-                _diagnostic_link('Registers', '/registers_page')
-                _diagnostic_link('Log', '/log_page')
+            with ui.element('div').classes('dashboard-card analytics-card'):
+                await _ui_control_buttons()
 
 
 @ui.page('/price_forecast_page')
