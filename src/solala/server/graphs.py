@@ -257,8 +257,8 @@ def _graph_tooltip(units: str) -> JSONDict:
 
 def _grid(legend_space: bool) -> JSONDict:
     return {
-        'left': 30,
-        'right': 30,
+        'left': 0,
+        'right': 0,
         'top': 85 if legend_space else 40,
         'bottom': 40,
         'containLabel': True,
@@ -270,7 +270,7 @@ def _legend() -> JSONDict:
         'type': 'plain',
         'top': 0,
         'left': 10,
-        'right': 10,
+        'right': 0,
         'orient': 'horizontal',
         'width': 'auto',
         'itemGap': 15,
@@ -301,7 +301,10 @@ def _y_axis(name: str, units: str) -> JSONDict:
     return {
         'type': 'value',
         'name': f'{name} ({units.strip()})',
-        'nameTextStyle': {'color': '#888'},
+        'nameTextStyle': {
+            'color': '#888',
+            'align': 'left'
+        },
         'axisLabel': {
             'color': '#888',
             'fontSize': 11

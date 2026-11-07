@@ -946,7 +946,7 @@ async def graphs_page():
 
     swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
     with swipe_area:
-        with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+        with ui.element('div').classes('solala-page w-full max-w-6xl mx-auto px-2 md:px-3 py-4'):
             _page_header()
             navigator = DayNavigator()
             updaters = [
