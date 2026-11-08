@@ -1,7 +1,7 @@
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Sequence, List, Optional, Tuple
+from typing import Sequence, List, Optional, Tuple, Dict
 
 import numpy as np
 from nicegui import ui
@@ -9,7 +9,7 @@ from nicegui import ui
 from solala.constants import KILOWATTS, GUI_TIME_FORMAT, KILOWATT_HOURS, PRICE_CENTS, PERCENT
 from solala.server.css_colours import Colours, rgba
 from solala.server.graph_interpolator import GraphingInterpolator
-from solala.utils.json import JSONDict
+from solala.utils.json import JSONDict, JSONValue
 
 LINE_WIDTH: float = 1.75
 DASHED = [3, 3]
@@ -30,7 +30,7 @@ class SolalaChart(ABC):
             demand_window_colour: str = '',
             show_legend: bool = True,
     ) -> None:
-        options: JSONDict = {
+        options: Dict[str, JSONValue] = {
             'backgroundColor': 'transparent',
             'tooltip': _graph_tooltip(units),
             'grid': _grid(legend_space=show_legend),
@@ -53,16 +53,17 @@ class SolalaChart(ABC):
         if len(series_data.data) != len(series):
             raise RuntimeError('Wrong number of series provided')
 
-        for s, d in zip(series, series_data.data):
-            s['data'] = d
+        with self.chart.client:
+            for s, d in zip(series, series_data.data):
+                s['data'] = d
 
-        # Configure the demand window
-        if series_data.demand_window is not None:
-            series[0]['markArea'] = _demand_window(*series_data.demand_window, colour=self.demand_window_colour)
-        else:
-            series[0]['markArea'] = None
+            # Configure the demand window
+            if series_data.demand_window is not None:
+                series[0]['markArea'] = _demand_window(*series_data.demand_window, colour=self.demand_window_colour)
+            else:
+                series[0]['markArea'] = None
 
-        self.chart.update()
+            self.chart.update()
 
     @abstractmethod
     def _get_series_data(self, data: GraphingInterpolator) -> SeriesData:
@@ -212,7 +213,7 @@ def _create_series(
         line_type: str | list = 'solid',
         area_alpha: float = 0.1,
 ) -> JSONDict:
-    options: JSONDict = {
+    options: Dict[str, JSONValue] = {
         'name': name,
         'type': 'line',
         'data': [],
