@@ -4,8 +4,8 @@ import re
 from datetime import datetime, date
 from enum import Enum
 from itertools import chain
-from types import MappingProxyType, NoneType
-from typing import TypeAlias, Dict, List, Optional, Mapping, Any, Collection, Iterator, Tuple, Iterable
+from types import NoneType
+from typing import TypeAlias, Dict, List, Optional, Mapping, Any, Collection, Iterator, Tuple, Iterable, Sequence
 
 from pydantic import BaseModel
 
@@ -13,11 +13,11 @@ from pydantic import BaseModel
 JSONPrimitive: TypeAlias = str | int | float | bool | None
 
 # Define the recursive JSON value type
-JSONValue: TypeAlias = JSONPrimitive | List["JSONValue"] | Dict[str, "JSONValue"]
+JSONValue: TypeAlias = JSONPrimitive | Sequence["JSONValue"] | Mapping[str, "JSONValue"]
 
 # The explicit types for JSON containers
-JSONDict: TypeAlias = Dict[str, JSONValue]
-JSONList: TypeAlias = List[JSONValue]
+JSONDict: TypeAlias = Mapping[str, JSONValue]
+JSONList: TypeAlias = Sequence[JSONValue]
 JSONContainer: TypeAlias = JSONDict | JSONList
 
 _LINE_ENDINGS_PATTERN = re.compile(r'[,{} \t]*\s*(?=\n|$)')
@@ -59,7 +59,7 @@ def json_dict(value: JSONValue) -> JSONDict:
     """
     Get a JSON value that is a dict.
     """
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return value
     else:
         raise TypeError(f"Expected a dictionary, got {type(value)}")
@@ -128,12 +128,12 @@ def _flatten(
 ) -> Iterator[Tuple[str, JSONPrimitive]]:
     for key, value in data:
         key = prefix + str(key)
-        if isinstance(value, (dict, Mapping)):
+        if isinstance(value, Mapping):
             yield from _flatten(value.items(), sep, key + sep)
-        elif isinstance(value, (list, tuple)):
+        elif isinstance(value, Sequence):
             yield from _flatten(enumerate(value), sep, key + sep)
         else:
-            yield key, value
+            yield str(key), value
 
 
 def render_json(
@@ -212,7 +212,7 @@ def _to_json(
         items = thing.__dict__.items()
     else:
         items = chain(thing.__dict__.items(), thing.__class__.__dict__.items())
-    result: JSONDict = {}
+    result: Dict[str, JSONValue] = {}
     for name, value in items:
         if name in result.keys():
             continue
@@ -233,12 +233,12 @@ def _to_json(
             result[name] = value.strftime(datetime_format)
         elif isinstance(value, date):
             result[name] = value.strftime(date_format)
-        elif isinstance(value, (list, tuple, set, frozenset)):
+        elif isinstance(value, (Sequence, set, frozenset)):
             result[name] = [
                 _to_json(item, exclude_names, exclude_values, datetime_format, date_format)
                 for item in value
             ]
-        elif isinstance(value, (dict, MappingProxyType)):
+        elif isinstance(value, Mapping):
             result[name] = {
                 key: _to_json(value, exclude_names, exclude_values, datetime_format, date_format)
                 for key, value in value.items()

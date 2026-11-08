@@ -7,6 +7,7 @@ from datetime import datetime, UTC, timedelta, date
 from pathlib import Path
 from typing import Optional, List, Dict, Sequence, Iterable, AsyncIterator, Tuple
 
+from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
 
 from solala.constants import Constants, TIMESTAMP_FORMAT
@@ -39,7 +40,7 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     DummySolarForecasterConnection, DatabaseConnection
 from solala.utils.async_rlock import AsyncRLock
 from solala.utils.datetime_extras import now, local_time_zone
-from solala.utils.json import JSONDict, json_num, json_dict, JSONPrimitive, flatten
+from solala.utils.json import JSONDict, json_num, JSONPrimitive, flatten, JSONValue
 from solala.utils.network import find_ip_by_mac
 from solala.utils.string_extras import split_addresses
 
@@ -583,7 +584,7 @@ async def get_consumers_status() -> Dict[str, ConsumerStatus]:
 
 async def get_connection_status() -> JSONDict:
     async with _control_state() as state:
-        result: JSONDict = {
+        result: Dict[str, JSONValue] = {
             'controller': state.controller_connection_status,
             'pricer': state.pricer_connection_status,
             'forecaster': state.forecaster_connection_status,
@@ -610,24 +611,23 @@ async def get_status() -> JSONDict:
         get_consumers_status(),
     )
 
-    result: JSONDict = {
-        'control': control_mode.to_json(),
-        'power': power_status.to_json(),
-        'price': price.to_json(datetime_format=TIMESTAMP_FORMAT, include_time=False),
-    }
-
+    power_json: JSONDict = power_status.to_json()
     if len(consumers_status) > 0:
-        where = json_dict(result['power'])  # Where to attach the consumers status
-        where['consumers'] = {
+        power_json: Dict[str, JSONValue] = dict(power_json)
+        power_json['consumers'] = {
             consumer: status.to_json()
             for consumer, status in consumers_status.items()
         }
         total = sum(json_num(consumer.power) for consumer in consumers_status.values())
         house_power = power_status.house_power
-        where['consumers_total'] = total
-        where['consumers_remaining'] = house_power - total
+        power_json['consumers_total'] = total
+        power_json['consumers_remaining'] = house_power - total
 
-    return result
+    return {
+        'control': control_mode.to_json(),
+        'power': power_json,
+        'price': price.to_json(datetime_format=TIMESTAMP_FORMAT, include_time=False),
+    }
 
 
 async def get_solar_forecast(day: date) -> DailySolarForecast:
@@ -670,20 +670,21 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
         db: SolalaDatabase = await database_connections.get_db()
 
     # Release the control state lock, then provide the database connection
-    yield db
-
-    # Release the database connection
-    async with _control_state() as state:
-        if database_connections is not state.database_connections:
-            raise ConnectionError('Database pool closed with in use')
-        await database_connections.put_db(db, commit_on_close)
+    try:
+        yield db
+    finally:
+        # Release the database connection
+        async with _control_state() as state:
+            if database_connections is not state.database_connections:
+                raise ConnectionError('Database pool closed with in use')
+            await database_connections.put_db(db, commit_on_close)
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
     try:
         async with solala_database() as db:
             return await db.get_measurements(day)
-    except ConnectionError as err:
+    except (ConnectionError, DatabaseError) as err:
         LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
         return []
 
@@ -1168,7 +1169,7 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
     # Configure power controller
     master_client: ModbusTcpClient = clients[0]
     slave_clients: List[ModbusTcpClient] = clients[1:]
-    devices: Dict[str, ModbusDevice] = {
+    devices: Dict[str | None, ModbusDevice] = {
         'master': ModbusDevice(master_client, controller_connection.master_device_id),
     }
     slave_names: List[str]
