@@ -28,7 +28,7 @@ def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
     """
     if isinstance(value, register_type):
         return True
-    if isinstance(value, int) and register_type == float:
+    if type(value) is int and register_type is float:
         return True
     return False
 

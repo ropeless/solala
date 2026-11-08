@@ -157,3 +157,10 @@ class Settings(BaseModel):
     # CHEAP_CHARGE parameters
     start_charge_price_threshold: Optional[float] = None
     stop_charge_price_threshold: Optional[float] = None
+
+
+def consumers(**kwargs: ConsumerConnection) -> Dict[str, ConsumerConnection]:
+    """
+    Helper to keep type inference tidy.
+    """
+    return kwargs

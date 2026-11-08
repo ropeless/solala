@@ -1,26 +1,5 @@
 from solala.utils.json import JSONDict, to_json
 
-TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timestamps
-GUI_DATE_FORMAT = '%a, %d %b %Y'
-GUI_TIME_FORMAT = '%H:%M'
-GUI_LOG_FORMAT: str = '%(asctime)s %(levelname)s: %(name)s %(message)s'
-
-# Units for pretty printing status
-PRICE_CENTS = ' ¢/kWh'
-PRICE_DOLLARS = ' $/kWh'
-VOLTS = ' V'
-AMPS = ' A'
-WATTS = ' W'
-KILOWATTS = ' kW'
-WATT_HOURS = ' Wh'
-KILOWATT_HOURS = ' kWh'
-SECONDS = ' seconds'
-MINUTES = ' minutes'
-HOURS = ' hours'
-PERCENT = '%'
-DEGREES = '°'
-CELSIUS = '°C'
-
 DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.1  # disable export below this price
 DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD: float = 0.1  # re-enable export above this price
 DEFAULT_START_CHARGE_PRICE_THRESHOLD: float = 10  # start force charging below this price
@@ -34,9 +13,31 @@ DEFAULT_DB_HOST: str = 'localhost'
 DEFAULT_DB_PORT: int = 5432
 DEFAULT_DB_NAME: str = 'solala'
 
+GUI_TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S (%Z)'  # format for human-readable timestamps
+GUI_DATE_FORMAT = '%a, %d %b %Y'
+GUI_TIME_FORMAT = '%H:%M'
+GUI_LOG_FORMAT: str = '%(asctime)s %(levelname)s: %(name)s %(message)s'
+
+
+class Units:
+    # Units for displaying quantities
+    PRICE_CENTS = ' ¢/kWh'
+    PRICE_DOLLARS = ' $/kWh'
+    VOLTS = ' V'
+    AMPS = ' A'
+    WATTS = ' W'
+    KILOWATTS = ' kW'
+    WATT_HOURS = ' Wh'
+    KILOWATT_HOURS = ' kWh'
+    SECONDS = ' seconds'
+    MINUTES = ' minutes'
+    HOURS = ' hours'
+    PERCENT = '%'
+    DEGREES = '°'
+    CELSIUS = '°C'
+
 
 class Constants:
-
     """
     These constants control the behaviour of the control loop and GUI.
     They should only be modified by developers for testing and debugging.
@@ -51,6 +52,7 @@ class Constants:
     PRICE_SETTLE_CHECK: int = 9  # check delay to see if the power price has settled
     PRICE_FORECAST_DURATION: int = 18  # in hours
     PRICE_FORECAST_AGE: int = 5  # number of minutes a price forecast is valid
+    PRICE_DEMAND_WINDOW_AGE: int = 60  # number of minutes a price demand window cache is valid
     SOLAR_FORECAST_AGE: int = 3 * 60  # number of minutes a solar forecast is valid
     DATABASE_LOG_LOOP_TIME = 5 * 60  # five minutes, in seconds
 

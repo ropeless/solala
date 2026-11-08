@@ -3,7 +3,6 @@ from typing import AsyncIterator, Optional
 
 import psycopg
 from psycopg import AsyncConnection
-from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from solala.constants import DEFAULT_DB_HOST, DEFAULT_DB_PORT, DEFAULT_DB_NAME
@@ -52,10 +51,7 @@ async def solala_database(
         port=port,
         database_name=database_name,
     )
-    async with await psycopg.AsyncConnection.connect(
-            conninfo=connection_string,
-            row_factory=dict_row,
-    ) as conn:
+    async with await psycopg.AsyncConnection.connect(conninfo=connection_string) as conn:
         yield SolalaDatabase(conn)
         if commit_on_close:
             await conn.commit()
@@ -93,7 +89,6 @@ class SolalaDatabaseConnections:
             conninfo=connection_string,
             min_size=min_pool_size,
             max_size=max_pool_size,
-            kwargs={'row_factory': dict_row},
             open=False,
         )
         self._pool_open: bool = False

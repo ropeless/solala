@@ -6,7 +6,7 @@ from typing import Sequence, List, Optional, Tuple, Dict
 import numpy as np
 from nicegui import ui
 
-from solala.constants import KILOWATTS, GUI_TIME_FORMAT, KILOWATT_HOURS, PRICE_CENTS, PERCENT
+from solala.constants import Units, GUI_TIME_FORMAT
 from solala.server.css_colours import Colours, rgba
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.utils.json import JSONDict, JSONValue
@@ -74,7 +74,7 @@ class EnergyChart(SolalaChart):
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Energy',
-            KILOWATT_HOURS,
+            Units.KILOWATT_HOURS,
             [
                 _create_series('Solar', colours.sun),
                 _create_series('Forecast', colours.sun, DASHED, 0),
@@ -102,7 +102,7 @@ class PowerChart(SolalaChart):
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Power',
-            KILOWATTS,
+            Units.KILOWATTS,
             [
                 _create_series('Solar', colours.sun),
                 _create_series('Forecast', colours.sun, DASHED, 0),
@@ -128,7 +128,7 @@ class PriceChart(SolalaChart):
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Price',
-            PRICE_CENTS,
+            Units.PRICE_CENTS,
             [
                 _create_series('Buy', colours.grid_import),
                 _create_series('Feed-in', colours.grid_export, area_alpha=0),
@@ -167,7 +167,7 @@ class ChargeChart(SolalaChart):
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Charge',
-            PERCENT,
+            Units.PERCENT,
             [_create_series('Charge', colours.battery)],
             show_legend=False,
         )

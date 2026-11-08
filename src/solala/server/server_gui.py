@@ -11,8 +11,7 @@ from nicegui.elements.label import Label
 from nicegui.elements.mixins.content_element import ContentElement
 
 from solala.constants import Constants, GUI_DATE_FORMAT, GUI_TIME_FORMAT
-from solala.constants import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, DEGREES, \
-    KILOWATT_HOURS, CELSIUS, KILOWATTS
+from solala.constants import Units
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
@@ -49,50 +48,50 @@ _HEAD_HTML = r'''
 
 # Units for pretty printing status
 _PARAMETERS_UNITS: Mapping[str, str] = {
-    'start_charge_price_threshold': PRICE_CENTS,
-    'stop_charge_price_threshold': PRICE_CENTS,
-    'disable_export_price_threshold': PRICE_CENTS,
-    'enable_export_price_threshold': PRICE_CENTS,
+    'start_charge_price_threshold': Units.PRICE_CENTS,
+    'stop_charge_price_threshold': Units.PRICE_CENTS,
+    'disable_export_price_threshold': Units.PRICE_CENTS,
+    'enable_export_price_threshold': Units.PRICE_CENTS,
 }
 _STATUS_UNITS: Mapping[str, str] = dict_merge(
     {
-        'buy_price': PRICE_CENTS,
-        'feed_in_price': PRICE_CENTS,
-        'renewables': PERCENT,
-        'state_of_charge': PERCENT,
-        'power_limit': PERCENT,
-        'grid_power': WATTS,
-        'solar_power': WATTS,
-        'battery_power': WATTS,
-        'house_power': WATTS,
-        'consumers_total': WATTS,
-        'consumers_remaining': WATTS,
-        'power': WATTS,
-        'voltage': VOLTS,
-        'current': AMPS,
-        'capacity': WATTS,
-        'forecast_generation': KILOWATT_HOURS,
+        'buy_price': Units.PRICE_CENTS,
+        'feed_in_price': Units.PRICE_CENTS,
+        'renewables': Units.PERCENT,
+        'state_of_charge': Units.PERCENT,
+        'power_limit': Units.PERCENT,
+        'grid_power': Units.WATTS,
+        'solar_power': Units.WATTS,
+        'battery_power': Units.WATTS,
+        'house_power': Units.WATTS,
+        'consumers_total': Units.WATTS,
+        'consumers_remaining': Units.WATTS,
+        'power': Units.WATTS,
+        'voltage': Units.VOLTS,
+        'current': Units.AMPS,
+        'capacity': Units.WATTS,
+        'forecast_generation': Units.KILOWATT_HOURS,
     },
     _PARAMETERS_UNITS,
 )
 _CONSTANTS_UNITS: Mapping[str, str] = {
-    'LOOP_TIME': SECONDS,
-    'LOOP_MIN_SLEEP_TIME': SECONDS,
-    'CONTROL_DURATION': SECONDS,
-    'PRICE_LOOK_AHEAD': MINUTES,
-    'PRICE_SETTLE_CHECK': SECONDS,
-    'PRICE_FORECAST_DURATION': HOURS,
-    'PRICE_FORECAST_AGE': MINUTES,
-    'SOLAR_FORECAST_AGE': MINUTES,
+    'LOOP_TIME': Units.SECONDS,
+    'LOOP_MIN_SLEEP_TIME': Units.SECONDS,
+    'CONTROL_DURATION': Units.SECONDS,
+    'PRICE_LOOK_AHEAD': Units.MINUTES,
+    'PRICE_SETTLE_CHECK': Units.SECONDS,
+    'PRICE_FORECAST_DURATION': Units.HOURS,
+    'PRICE_FORECAST_AGE': Units.MINUTES,
+    'SOLAR_FORECAST_AGE': Units.MINUTES,
 }
 _CONNECTION_UNITS: Mapping[str, str] = {
-    'latitude': DEGREES,
-    'longitude': DEGREES,
-    'panel_orientation': DEGREES,
-    'panel_tilt': DEGREES,
-    'panel_capacity': WATTS,
-    'panel_temperature_coefficient': CELSIUS,
-    'inverter_limit': WATTS,
+    'latitude': Units.DEGREES,
+    'longitude': Units.DEGREES,
+    'panel_orientation': Units.DEGREES,
+    'panel_tilt': Units.DEGREES,
+    'panel_capacity': Units.WATTS,
+    'panel_temperature_coefficient': Units.CELSIUS,
+    'inverter_limit': Units.WATTS,
 }
 
 
@@ -318,7 +317,6 @@ class RegistersUpdater(RegistersListener):
 
     def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
         if self.match is not None:
-            # noinspection PyTypeChecker
             register_values = filter_json(register_values, self.match)
         json_as_str = render_json(
             register_values,
@@ -399,7 +397,7 @@ class PriceForecastUpdater(LoopListener):
                             feed_class = _feed_in_price_class(price.feed_in_price)
                             ui.label(f'{price.feed_in_price:.1f}').classes(f'price-number {feed_class}')
 
-                            ui.label(f'{price.renewables:.1f}{PERCENT}').classes('price-number')
+                            ui.label(f'{price.renewables:.1f}{Units.PERCENT}').classes('price-number')
 
 
 class SolarForecastUpdater(LoopListener):
@@ -451,7 +449,7 @@ class SolarForecastUpdater(LoopListener):
             with ui.row().classes('items-center gap-2 mb-5'):
                 ui.label('Daily generation estimate:').classes('text-sm text-gray-500')
                 total = f'{solar_forecast.total_forecast_energy() / 1000:.2f}'
-                ui.label(f'{total}{KILOWATT_HOURS}').classes('solar-number')
+                ui.label(f'{total}{Units.KILOWATT_HOURS}').classes('solar-number')
 
             # Forecast table
             with ui.column().classes('w-full gap-3'):
@@ -481,7 +479,7 @@ class SolarForecastUpdater(LoopListener):
                             ).classes('solar-time')
 
                             ui.label(
-                                f'{int(forecast.temperature + 0.5)}{CELSIUS}'
+                                f'{int(forecast.temperature + 0.5)}{Units.CELSIUS}'
                             ).classes('solar-number')
 
                             with ui.element('div').classes('solar-weather-cell'):
@@ -497,7 +495,7 @@ class SolarForecastUpdater(LoopListener):
                                 ).classes('solar-number')
 
                                 ui.label(
-                                    f'{forecast.power / 1000:.2f}{KILOWATTS}'
+                                    f'{forecast.power / 1000:.2f}{Units.KILOWATTS}'
                                 ).classes('solar-number')
 
 

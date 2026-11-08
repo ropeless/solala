@@ -269,11 +269,11 @@ class DayNavigator:
 
     async def _show_dialog(self) -> None:
         """
-        Present the date picker dialog to the user.
+        Present the date picker dialogue to the user.
         """
         cur_date = self._day.isoformat()
         if cur_date != self._date_picker.value:
-            # This will cause the dialog to open
+            # This will cause the dialogue to open
             self._date_picker.value = cur_date
             await asyncio.sleep(0)
         else:

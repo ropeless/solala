@@ -2,7 +2,7 @@ import local_config as config
 from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
-    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection
+    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, consumers
 from solala_demo.log import configure_logger
 
 
@@ -15,7 +15,7 @@ def main():
 
         controller=ModbusControllerConnection(address=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}'),
         pricer=AmberPricerConnection(api_token=config.AMBER_API_TOKEN, nmi=config.NMI),
-        consumers={'car_charger': TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR)},
+        consumers=consumers(car_charger=TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR)),
 
         forecaster=OpenMeteoConnection(
             latitude=config.LATITUDE,

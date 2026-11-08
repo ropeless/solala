@@ -6,7 +6,7 @@ from solala.delegates.power_controller.modbus_power_controller.modbus_register_a
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 from solala.logger import LOGGER
 from solala.registers import RegisterBank, Register, ConstantRegister, RegisterValue
-from solala.utils.json import JSONDict
+from solala.utils.json import JSONDict, JSONValue
 
 
 class _DEFAULT:
@@ -83,13 +83,13 @@ class ModbusPowerController(PowerController):
         self._ChaGriSet: str = f'{master}/ChaGriSet'
 
         # Save the connection status
-        devices_record: JSONDict = {}
+        devices_record: Dict[str, JSONValue] = {}
         unnamed_device: Optional[JSONDict] = None
         device_name: Optional[str]
         device: ModbusDevice
         for device_name, device in modbus.devices().items():
             host: str = device.client.comm_params.host
-            device_record: JSONDict = {'host': host}
+            device_record: Dict[str, JSONValue] = {'host': host}
             if mac_addr_lookup is not None:
                 mac_address: Optional[str] = mac_addr_lookup.get(host)
                 if mac_address is not None and mac_address != '':
@@ -99,7 +99,7 @@ class ModbusPowerController(PowerController):
                 unnamed_device = device_record
             else:
                 devices_record[device_name] = device_record
-        self._connection_status: JSONDict = {
+        self._connection_status: Dict[str, JSONValue] = {
             'connection': 'Modbus',
             'devices': devices_record,
         }

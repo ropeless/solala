@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Mapping, Set, Dict, Iterable, Sequence
+from typing import Mapping, Set, Dict, Iterable, Sequence, TypeAlias
 
 from pymodbus.client import ModbusTcpClient
 
@@ -31,6 +31,13 @@ class ModbusRegister(Register):
         return self._access.set(self._context, value)
 
 
+ModbusDevices: TypeAlias = (
+    Mapping[str, ModbusDevice]
+    | Mapping[str | None, ModbusDevice]
+    | Mapping[None, ModbusDevice]
+)
+
+
 class Modbus(RegisterBank):
     """
     This class provides access to Modbus registers for devices (potentially via multiple clients).
@@ -40,7 +47,7 @@ class Modbus(RegisterBank):
     registers are named `register_name`.
     """
 
-    def __init__(self, devices: Mapping[str | None, ModbusDevice] | ModbusTcpClient | ModbusDevice):
+    def __init__(self, devices: ModbusDevices | ModbusDevice | ModbusTcpClient):
         """
         Wraps a ModbusTcpClient to provide access to Modbus registers.
 
@@ -63,15 +70,17 @@ class Modbus(RegisterBank):
             devices: A mapping of logical device IDs to ModbusDevice objects, or a ModbusTcpClient
                 object, or a single ModbusDevice.
         """
+
         if isinstance(devices, ModbusTcpClient):
             client: ModbusTcpClient = devices
-            devices: Mapping[str, ModbusDevice] = {
+            devices: ModbusDevices = {
                 str(device_id): ModbusDevice(client, device_id)
                 for device_id in _find_devices(devices)
             }
         elif isinstance(devices, ModbusDevice):
-            devices: Mapping[str | None, ModbusDevice] = {None: devices}
-        self._devices: Mapping[str | None, ModbusDevice] = devices
+            devices: ModbusDevices = {None: devices}
+
+        self._devices: ModbusDevices = devices
 
         # Get unique clients
         # `clients_by_client_id` is client_id => ModbusTcpClient
@@ -147,7 +156,7 @@ class Modbus(RegisterBank):
         for client in self._clients:
             client.connect()
 
-    def devices(self) -> Mapping[str | None, ModbusDevice]:
+    def devices(self) -> ModbusDevices:
         """
         Return the Modbus devices.
         """

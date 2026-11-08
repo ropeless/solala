@@ -1,12 +1,15 @@
 from datetime import date
 from enum import Enum
-from typing import Optional, TypeVar, Dict, List, Tuple, Sequence
+from typing import Optional, TypeVar, Dict, List, Tuple, Sequence, Any, TypeAlias
 
-from psycopg import sql, AsyncConnection
+from psycopg import sql, AsyncConnection, AsyncCursor
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
 from solala.database.measurement import Measurement
+
+Row: TypeAlias = Tuple[Any, ...]
+Cursor: TypeAlias = AsyncCursor[Row]
 
 
 class SolalaDatabase:
@@ -65,10 +68,11 @@ class SolalaDatabase:
                     WHERE date (timestamp) = %(day)s
                     ORDER BY timestamp ASC
                     """
-        result = await self._connection.execute(query, {'day': day})
+        result: Cursor = await self._connection.execute(query, {'day': day})
+        rows: List[Row] = await result.fetchall()
         return [
-            _model_from_row(row, Measurement)
-            for row in await result.fetchall()
+            _model_from_row(row, result, Measurement)
+            for row in rows
         ]
 
     async def get_latest_measurement(self) -> Optional[Measurement]:
@@ -83,10 +87,10 @@ class SolalaDatabase:
                 LIMIT 1
             """
         )
-        row: Optional[dict] = await result.fetchone()
-        return _model_from_row(row, Measurement) if row is not None else None
+        row: Optional[Row] = await result.fetchone()
+        return _model_from_row(row, result, Measurement) if row is not None else None
 
-    async def _insert(self, table: str, data: BaseModel):
+    async def _insert(self, table: str, data: BaseModel) -> None:
         data = data.model_dump()
         columns = list(data.keys())
         query = sql.SQL(
@@ -102,14 +106,21 @@ class SolalaDatabase:
 _ModelType = TypeVar('_ModelType', covariant=True, bound=BaseModel)
 
 
-def _model_from_row(row: Dict, model_type: type[_ModelType]) -> _ModelType:
+def _model_from_row(row: Row, cursor: Cursor, model_type: type[_ModelType]) -> _ModelType:
     """
     Convert a database row to a Pydantic object of type `model_type`.
     Correctly deals with enum fields (stored using member names).
     """
+    columns_description = cursor.description
+    if columns_description is None:
+        raise ValueError('cursor has no result-set description')
+
+    columns = [column.name for column in columns_description]
+    row_as_dict = dict(zip(columns, row, strict=True))
+
     for field_name, enum_type in _get_enum_fields(model_type):
-        row[field_name] = enum_type[row[field_name]]
-    return model_type.model_validate(row)
+        row_as_dict[field_name] = enum_type[row_as_dict[field_name]]
+    return model_type.model_validate(row_as_dict)
 
 
 # -------------------------------------------------------------------------
@@ -120,6 +131,11 @@ _ENUM_FIELDS: Dict[type, List[Tuple[str, type[Enum]]]] = {}
 
 
 def _get_enum_fields(model_type: type[_ModelType]) -> List[Tuple[str, type[Enum]]]:
+    """
+    Get a list of all enum fields in the given Pydantic type.
+
+    Warning: This does not deal with `Optional` types.
+    """
     got = _ENUM_FIELDS.get(model_type)
     if got is not None:
         return got

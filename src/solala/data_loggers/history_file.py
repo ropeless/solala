@@ -7,6 +7,7 @@ from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import ControlMode
 from solala.delegates.power_pricer.power_pricer import Price
+from solala.utils.json import JSONPrimitive
 
 
 class HistoryFile(LoopListener):
@@ -51,7 +52,7 @@ class HistoryFile(LoopListener):
     async def update(self) -> None:
         now: str = datetime.now().strftime(self._datetime_format)
 
-        register_values: Dict[str, int | float | str | bool]
+        register_values: Dict[str, JSONPrimitive]
         control_mode: ControlMode
         price: Price
         register_values, control_mode, price = await asyncio.gather(
@@ -84,7 +85,7 @@ class HistoryFile(LoopListener):
             )
             _print(*header)
 
-        row: List[int | float | str | bool] = [
+        row: List[JSONPrimitive] = [
             now,
             control_mode.battery_mode.name,
             control_mode.battery_policy.name,

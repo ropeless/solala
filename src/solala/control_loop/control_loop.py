@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Sequence, Iterable, AsyncIterator, Tupl
 from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
 
-from solala.constants import Constants, TIMESTAMP_FORMAT
+from solala.constants import Constants, GUI_TIMESTAMP_FORMAT
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
@@ -20,7 +20,7 @@ from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer i
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 from solala.delegates.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
-from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
+from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice, ModbusDevices
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
 from solala.delegates.power_controller.power_controller import PowerController
 from solala.delegates.power_controller.power_controller import PowerStatus
@@ -135,8 +135,10 @@ class _ControlState:
     next_price_check: datetime = _MIN_DATE
 
     last_price_forecast: Sequence[Price] = ()
-    last_price_demand_window: Dict[_DateKey, Optional[Tuple[datetime, datetime]]] = field(default_factory=dict)
     next_price_forecast_check: datetime = _MIN_DATE
+
+    last_price_demand_window: Dict[_DateKey, Optional[Tuple[datetime, datetime]]] = field(default_factory=dict)
+    next_price_demand_window_check: datetime = _MIN_DATE
 
     last_solar_forecast: Dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
     next_solar_forecast_check: datetime = _MIN_DATE
@@ -484,7 +486,7 @@ async def get_price_now() -> Price:
                     # price is unstable - recheck is needed
                     delay = Constants.PRICE_SETTLE_CHECK
                     state.next_price_check = min(timestamp + timedelta(seconds=delay), price.end_time)
-                    time_str = state.next_price_check.astimezone(local_time_zone()).strftime(TIMESTAMP_FORMAT)
+                    time_str = state.next_price_check.astimezone(local_time_zone()).strftime(GUI_TIMESTAMP_FORMAT)
                     LOGGER.info(f'{_LOG_SRC}Current price is an estimate, recheck scheduled {time_str}.')
                 else:
                     # price is stable - no need to recheck for this period
@@ -518,16 +520,23 @@ async def get_demand_window(day: date) -> Optional[Tuple[datetime, datetime]]:
     Returns None if the demand window is not active on the given day.
     """
     async with _control_state() as state:
-        pricer = state.pricer
-        if pricer is None:
-            LOGGER.error(f'{_LOG_SRC}Demand window not available. Error: power pricer not connected')
-            return None
-
         key = _DateKey(day.year, day.month, day.day)
         demand_window: Optional[Tuple[datetime, datetime]]
+        timestamp = now()
+        if state.next_price_demand_window_check <= timestamp:
+            # Invalidate the cache
+            state.last_price_demand_window.clear()
+            state.next_price_demand_window_check = timestamp + timedelta(minutes=Constants.PRICE_DEMAND_WINDOW_AGE)
+
         if key in state.last_price_demand_window:
             demand_window = state.last_price_demand_window[key]
         else:
+            # Need to go to the pricer to get the demand window
+            pricer = state.pricer
+            if pricer is None:
+                LOGGER.error(f'{_LOG_SRC}Demand window not available. Error: power pricer not connected')
+                return None
+
             demand_window = await pricer.get_demand_window(day)
             state.last_price_demand_window[key] = demand_window
 
@@ -545,15 +554,16 @@ async def get_price_forecast() -> Sequence[Price]:
     Errors will be logged but should not raise an exception.
     """
     async with _control_state() as state:
-        pricer = state.pricer
-        if pricer is None:
-            LOGGER.error(f'{_LOG_SRC}Price forecast not available. Error: power pricer not connected')
-            return ()
-
         prices: Sequence[Price] = state.last_price_forecast
         needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
         timestamp = now()
         if state.next_price_forecast_check <= timestamp or len(prices) == 0 or prices[0].end_time < timestamp:
+            # Need to go to the pricer to get a price forecast
+            pricer = state.pricer
+            if pricer is None:
+                LOGGER.error(f'{_LOG_SRC}Price forecast not available. Error: power pricer not connected')
+                return ()
+
             try:
                 # Plus one to account for possible race condition (see below).
                 prices: List[Price] = await pricer.get_price_forecast(needed_forecasts + 1)
@@ -626,7 +636,7 @@ async def get_status() -> JSONDict:
     return {
         'control': control_mode.to_json(),
         'power': power_json,
-        'price': price.to_json(datetime_format=TIMESTAMP_FORMAT, include_time=False),
+        'price': price.to_json(datetime_format=GUI_TIMESTAMP_FORMAT, include_time=False),
     }
 
 
@@ -1169,7 +1179,7 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
     # Configure power controller
     master_client: ModbusTcpClient = clients[0]
     slave_clients: List[ModbusTcpClient] = clients[1:]
-    devices: Dict[str | None, ModbusDevice] = {
+    devices: ModbusDevices = {
         'master': ModbusDevice(master_client, controller_connection.master_device_id),
     }
     slave_names: List[str]

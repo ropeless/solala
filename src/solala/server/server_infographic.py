@@ -1,7 +1,7 @@
 from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text, TSpan
 
 from solala.constants import Constants
-from solala.constants import WATTS, KILOWATTS, PERCENT, PRICE_DOLLARS, PRICE_CENTS
+from solala.constants import Units
 from solala.utils.json import JSONDict, json_dict, json_num, json_bool
 
 CLICK_ID_SUN = 'click_sun'
@@ -163,11 +163,11 @@ class Infographic:
         if buy_price >= 100:
             buy_str = _to_dollars(buy_price)
             feed_in_str = _to_dollars(feed_in_price)
-            units = PRICE_DOLLARS
+            units = Units.PRICE_DOLLARS
         else:
             buy_str = _to_cents(buy_price)
             feed_in_str = _to_cents(feed_in_price)
-            units = PRICE_CENTS
+            units = Units.PRICE_CENTS
         if buy_price >= Constants.BUY_PRICE_RED:
             buy_colour = class_text_danger
         elif buy_price >= Constants.BUY_PRICE_AMBER:
@@ -193,7 +193,7 @@ class Infographic:
         canvas.append(feed_in_text)
 
         if Constants.INFOGRAPHIC_INCLUDE_RENEWABLES:
-            renewables_str = f'Renewables: {int(renewables + 0.5)}{PERCENT}'
+            renewables_str = f'Renewables: {int(renewables + 0.5)}{Units.PERCENT}'
             feed_in_text = Text(
                 renewables_str, x=left, y=renewable_txt_y, font_size=font_sm, class_=class_text, **kwargs)
             canvas.append(feed_in_text)
@@ -226,13 +226,13 @@ def _to_cents(price: float) -> str:
 def _to_watts(power: float) -> str:
     power = abs(power)
     if power < 1000:
-        return f'{int(round(power))}{WATTS}'
+        return f'{int(round(power))}{Units.WATTS}'
     else:
-        return f"{power / 1000:.2f}{KILOWATTS}"
+        return f"{power / 1000:.2f}{Units.KILOWATTS}"
 
 
 def _to_pct(state_of_charge: float) -> str:
-    return f'{int(round(state_of_charge))}{PERCENT}'
+    return f'{int(round(state_of_charge))}{Units.PERCENT}'
 
 
 def _click_area(name: str, x: float, y: float) -> Rectangle:

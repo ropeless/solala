@@ -3,7 +3,9 @@ from typing import Dict
 
 import httpx
 from httpx import URL
+# noinspection PyProtectedMember
 from httpx._client import UseClientDefault, USE_CLIENT_DEFAULT
+# noinspection PyProtectedMember
 from httpx._types import QueryParamTypes, HeaderTypes, CookieTypes, AuthTypes, TimeoutTypes, RequestExtensions
 
 
