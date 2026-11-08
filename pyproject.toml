@@ -19,6 +19,7 @@ drawsvg = "*"
 psycopg = { version = "^3.2", extras = ["binary", "pool"] }
 numpy = "*"
 scipy = "*"
+httpx = "*"
 
 [build-system]
 requires = ["setuptools"]
