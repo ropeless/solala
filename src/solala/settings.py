@@ -158,6 +158,8 @@ class Settings(BaseModel):
     start_charge_price_threshold: Optional[float] = None
     stop_charge_price_threshold: Optional[float] = None
 
+    registers_to_log: Optional[str] = None
+
 
 def consumers(**kwargs: ConsumerConnection) -> Dict[str, ConsumerConnection]:
     """

@@ -25,9 +25,6 @@ class DummyPowerConsumer(PowerConsumer):
             'current': self.status.current,
         }
 
-    async def get_registers(self) -> Iterable[Tuple[str, int | float | str | bool]]:
-        return self.get_connection_status().items()
-
     async def close(self) -> None:
         # nothing to do
         pass

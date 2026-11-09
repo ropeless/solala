@@ -48,11 +48,6 @@ def main():
         # stop_charge_price_threshold = 2,
     )
 
-    # Create and register a history file
-    # history = HistoryFile(config.HISTORY_FILE)
-    # control_loop.add_listener(history)
-    # LOGGER.info(f'registered history file: {history}')
-
     Constants.APP_NAME += config.APP_NAME_POSTFIX
 
     server.run_server(

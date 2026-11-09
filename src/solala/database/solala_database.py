@@ -1,12 +1,13 @@
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
-from typing import Optional, TypeVar, Dict, List, Tuple, Sequence, Any, TypeAlias
+from typing import Optional, TypeVar, Dict, List, Tuple, Sequence, Any, TypeAlias, Mapping
 
 from psycopg import sql, AsyncConnection, AsyncCursor
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
 from solala.database.measurement import Measurement
+from solala.registers import RegisterValue
 
 Row: TypeAlias = Tuple[Any, ...]
 Cursor: TypeAlias = AsyncCursor[Row]
@@ -19,6 +20,29 @@ class SolalaDatabase:
 
     async def insert_measurement(self, measurement: Measurement) -> None:
         await self._insert('measurement', measurement)
+
+    async def insert_registers(
+            self, timestamp: datetime,
+            registers: Mapping[str, int|float]
+    ) -> None:
+        """
+        Insert register values into the database
+        """
+        params = [
+            {"timestamp": timestamp, "name": name, "value": value}
+            for name, value in registers.items()
+        ]
+        if len(params) == 0:
+            return
+
+        query = """
+                INSERT INTO registers (timestamp, name, value)
+                VALUES (%(timestamp)s, %(name)s, %(value)s) \
+                """
+
+        async with self._connection.transaction():
+            async with self._connection.cursor() as cur:
+                await cur.executemany(query, params)
 
     async def get_measurements(
             self,

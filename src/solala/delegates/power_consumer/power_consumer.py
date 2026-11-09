@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Iterable, Tuple
 
 from solala.utils.json import JSONDict, to_json
 
@@ -34,13 +33,6 @@ class PowerConsumer(ABC):
     def get_connection_status(self) -> JSONDict:
         """
         Get the status of the connection.
-        """
-        ...
-
-    @abstractmethod
-    async def get_registers(self) -> Iterable[Tuple[str, int | float | str | bool]]:
-        """
-        Get the values of all known registers.
         """
         ...
 

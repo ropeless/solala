@@ -20,6 +20,7 @@ from solala.delegates.power_pricer.power_pricer import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
+from solala.registers import RegisterValue
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
 from solala.server.css_colours import Colours, css_colours
@@ -31,7 +32,7 @@ from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_I
 from solala.server.ui_day_navigator import DayNavigator
 from solala.utils.datetime_extras import now
 from solala.utils.dict_extras import dict_merge
-from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str, JSONPrimitive
+from solala.utils.json import JSONDict, json_dict, render_json, json_str, JSONPrimitive
 
 # --------------------------------------------------------------------
 # Main styling
@@ -104,17 +105,6 @@ class StatusListener(LoopListener):
 
     @abstractmethod
     def _update(self, status_json: JSONDict) -> None:
-        ...
-
-
-class RegistersListener(LoopListener):
-
-    @final
-    async def update(self, register_values=None) -> None:
-        register_values: Dict[str, JSONPrimitive] = await control_loop.get_registers()
-        self._update(register_values)
-
-    def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
         ...
 
 
@@ -304,27 +294,25 @@ class InfographicUpdater(StatusListener):
         self.infographic_element.set_content(self.infographic.as_svg())
 
 
-class RegistersUpdater(RegistersListener):
+class RegistersUpdater(LoopListener):
 
-    def __init__(
-            self,
-            registers_element: ContentElement,
-            match: Optional[str],
-    ):
+    def __init__(self, registers_element: ContentElement):
         super().__init__()
-        self.registers_element = registers_element
-        self.match = match
+        self._registers_element: ContentElement = registers_element
+
+    @final
+    async def update(self, register_values=None) -> None:
+        register_values: Dict[str, Optional[RegisterValue]] = await control_loop.get_registers()
+        self._update(register_values)
 
     def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
-        if self.match is not None:
-            register_values = filter_json(register_values, self.match)
         json_as_str = render_json(
             register_values,
             float_format='.2f',
             remove_key_underscores=False,
             remove_value_underscores=False,
         )
-        self.registers_element.set_content(json_as_str)
+        self._registers_element.set_content(json_as_str)
 
 
 class PriceForecastUpdater(LoopListener):
@@ -1010,12 +998,12 @@ async def log_page():
 
 
 @ui.page('/registers_page')
-async def registers_page(match: Optional[str] = None):
+async def registers_page():
     """
     Show the inverter registers.
     """
     json_element = _json_page('Registers')
-    registers_elements = RegistersUpdater(registers_element=json_element, match=match)
+    registers_elements = RegistersUpdater(json_element)
     asyncio.create_task(registers_elements.update())
     await _register_control_loop_listener(registers_elements)
 

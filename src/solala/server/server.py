@@ -3,13 +3,14 @@ import selectors
 import threading
 from functools import partial
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Iterable
 
 import uvicorn
 from fastapi import FastAPI
 
 from solala.constants import Constants
 from solala.control_loop import control_loop
+from solala.control_loop.loop_listener import LoopListener
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES
 from solala.server.server_gui import ui

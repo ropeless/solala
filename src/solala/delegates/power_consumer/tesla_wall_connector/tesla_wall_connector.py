@@ -23,19 +23,6 @@ class TeslaWallConnector(PowerConsumer):
         if mac_address != '':
             self._connection_status['mac_address'] = mac_address
 
-    async def get_registers(self) -> List[Tuple[str, int | float | str | bool]]:
-        """
-        Get the values of all known registers.
-        """
-        data: JSONDict = await self._get_vitals()
-        result: List[Tuple[str, int | float | str | bool]] = []
-        for key, value in data.items():
-            if not isinstance(value, (int, float, str, bool)):
-                LOGGER.info(f'[{NAME}] unexpected vitals entry: {key} = {value!r}')
-                continue
-            result.append((key, value))
-        return result
-
     async def get_status(self) -> ConsumerStatus:
         data: JSONDict = await self._get_vitals()
         return ConsumerStatus(

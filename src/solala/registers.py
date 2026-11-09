@@ -1,6 +1,8 @@
+import asyncio
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from typing import TypeAlias, Type, Mapping, Iterator, Iterable, Tuple, KeysView, Optional, Hashable, \
-    MutableMapping, Callable
+    MutableMapping, Callable, final, Any
 
 RegisterValue: TypeAlias = str | int | float | bool
 RegisterType: TypeAlias = Type[str] | Type[int] | Type[float] | Type[bool]
@@ -13,6 +15,22 @@ class ReadOnlyError(AttributeError):
 
     def __init__(self):
         super().__init__('Register not writable')
+
+
+def check_type(t: Any) -> RegisterType:
+    """
+    Is the given type a valid register type.
+
+    Args:
+        t: The type to check.
+
+    Returns:
+        True if the type is a valid register type, False otherwise.
+    """
+    if t in (str, int, float, bool):
+        return t
+    else:
+        raise TypeError(f'not a valid register type: {t}')
 
 
 def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
@@ -81,7 +99,20 @@ class Register(ABC):
         ...
 
 
-class ConstantRegister(Register):
+class ReadOnlyRegister(Register):
+    def __init__(self, register_type: RegisterType):
+        super().__init__(register_type, writable=False)
+
+    @abstractmethod
+    def _get(self) -> RegisterValue:
+        ...
+
+    @final
+    def _set(self, value: RegisterValue) -> None:
+        assert False
+
+
+class ConstantRegister(ReadOnlyRegister):
     """
     A register with a constant value.
     """
@@ -91,31 +122,44 @@ class ConstantRegister(Register):
         if not value_okay(value, register_type):
             raise TypeError(f'Expected {register_type}, got {type(value)}')
 
-        super().__init__(register_type, writable=False)
+        super().__init__(register_type)
         self._value = value
 
     def _get(self) -> RegisterValue:
         return self._value
 
-    def _set(self, value: RegisterValue) -> None:
-        pass
 
-
-class CallRegister(Register):
+class CallRegister(ReadOnlyRegister):
     """
     A register that calls a function to get its value.
     """
 
-    def __init__(self, f: Callable[[], RegisterValue]):
-        check_value = f()
-        super().__init__(type(check_value), writable=False)
+    def __init__(self, f: Callable[[], RegisterValue], register_type: Optional[RegisterType] = None) -> None:
+        if register_type is None:
+            check_value = f()
+            register_type = type(check_value)
+        super().__init__(register_type)
         self._f = f
 
     def _get(self) -> RegisterValue:
         return self._f()
 
-    def _set(self, value: RegisterValue) -> None:
-        pass
+
+class AsyncRegister(ReadOnlyRegister):
+    """
+    A register that calls an async method in a separate thread to get its value.
+    """
+
+    def __init__(self, register_type: RegisterType) -> None:
+        super().__init__(register_type)
+
+    def _get(self) -> RegisterValue:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(asyncio.run, self._async_get()).result()
+
+    @abstractmethod
+    async def _async_get(self) -> RegisterValue:
+        ...
 
 
 class DictRegister(Register):
@@ -141,12 +185,17 @@ class DictRegister(Register):
         return self._mapping[self._key]
 
     def _set(self, value: RegisterValue) -> None:
+        assert self.writable
         self._mapping[self._key] = value  # type: ignore
 
 
 class RegisterBank(Mapping[str, RegisterValue]):
     """
     A collection of named registers.
+
+    Note that it is not possible to change the registers
+    of a register bank (i.e. the keys), but the register
+    values may change.
     """
 
     def __init__(
