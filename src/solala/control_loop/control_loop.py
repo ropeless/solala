@@ -719,9 +719,16 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
     finally:
         # Release the database connection
         async with _control_state() as state:
+            LOGGER.debug('{_LOG_SRC}Returning DB connection to pool')
             if database_connections is not state.database_connections:
-                raise ConnectionError('Database pool closed with in use')
+                raise ConnectionError('Database pool closed while in use')
             await database_connections.put_db(db, commit_on_close)
+        LOGGER.debug('{_LOG_SRC}Returned DB connection to pool')
+        stats = database_connections.pool.get_stats()
+        LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
+        LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
+        LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
+        LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:

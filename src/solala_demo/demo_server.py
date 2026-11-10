@@ -1,5 +1,3 @@
-import logging
-
 from local_config_help import config
 from solala.constants import Constants
 from solala.server import server
@@ -9,7 +7,7 @@ from solala_demo.log import configure_logger
 
 
 def main():
-    configure_logger(level=logging.DEBUG)
+    configure_logger(level=config.APP_LOG_LEVEL)
 
     # Optional initial control loop parameters.
     # These will be used if the settings file cannot be loaded or force_settings is True.
