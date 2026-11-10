@@ -3,7 +3,7 @@ from datetime import date, datetime
 from typing import List, Optional, Tuple
 
 from solala.delegates.power_pricer.price import Price
-from solala.utils.json import JSONDict
+from solala.utils.json_extras import JSONDict
 
 
 class PowerPricer(ABC):

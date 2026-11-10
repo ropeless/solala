@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from solala.utils.json import JSONDict, to_json
+from solala.utils.json_extras import JSONDict, to_json
 
 
 @dataclass(frozen=True)

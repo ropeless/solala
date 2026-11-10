@@ -32,7 +32,7 @@ from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_I
 from solala.server.ui_day_navigator import DayNavigator
 from solala.utils.datetime_extras import now
 from solala.utils.dict_extras import dict_merge
-from solala.utils.json import JSONDict, json_dict, render_json, json_str, JSONPrimitive
+from solala.utils.json_extras import JSONDict, json_dict, render_json, json_str, JSONPrimitive
 
 # --------------------------------------------------------------------
 # Main styling

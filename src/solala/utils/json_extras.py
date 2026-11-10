@@ -178,6 +178,7 @@ def render_json(
     text = _BLANK_LINES_PATTERN.sub('', text).rstrip()
     text = _DICT_ENTRY_SEPARATOR_PATTERN.sub(r'\1 = ', text)
 
+    text = text.replace('""', "''")  # empty string ->  ''
     text = text.replace('"', '')
 
     return text

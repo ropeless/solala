@@ -4,12 +4,12 @@ import selectors
 from datetime import datetime
 from typing import Optional
 
-import local_config as config
+from local_config_help import config
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.database.solala_database import Measurement, SolalaDatabase
 from solala.database.solala_database_connections import solala_database
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
-from solala.utils.json import to_json
+from solala.utils.json_extras import to_json
 
 
 async def insert_measurement(db: SolalaDatabase) -> None:

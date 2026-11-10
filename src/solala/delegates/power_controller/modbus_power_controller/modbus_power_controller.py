@@ -6,7 +6,7 @@ from solala.delegates.power_controller.modbus_power_controller.modbus_register_a
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 from solala.logger import LOGGER
 from solala.registers import RegisterBank, Register, ConstantRegister, RegisterValue
-from solala.utils.json import JSONDict, JSONValue
+from solala.utils.json_extras import JSONDict, JSONValue
 
 
 class _DEFAULT:

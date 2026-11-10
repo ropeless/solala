@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from solala.utils.json import JSONDict, to_json
+from solala.registers import RegisterBank
+from solala.utils.json_extras import JSONDict, to_json
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,13 @@ class PowerConsumer(ABC):
     """
     High-level interface to query an instrumented power consumption device.
     """
+
+    @abstractmethod
+    async def get_registers(self) -> RegisterBank:
+        """
+        Get the values of all known registers.
+        """
+        ...
 
     @abstractmethod
     async def get_status(self) -> ConsumerStatus:

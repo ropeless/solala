@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import date
 
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast
-from solala.utils.json import JSONDict
+from solala.utils.json_extras import JSONDict
 
 
 class SolarForecaster(ABC):

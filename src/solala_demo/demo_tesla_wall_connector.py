@@ -1,14 +1,13 @@
 import asyncio
-import json
 
-from local_config import TESLA_WALL_CONNECTOR_ADDR
+from local_config_help import config
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 
 
 async def main() -> None:
-    async with TeslaWallConnector(TESLA_WALL_CONNECTOR_ADDR) as charger:
-        # print(json.dumps(charger.get_vitals(), indent=4))
-        print(json.dumps(charger.get_status().to_json(), indent=4))
+    async with TeslaWallConnector(config.TESLA_WALL_CONNECTOR_ADDR) as device:
+        for name, value in (await device.get_registers()).items():
+            print(f'{name} =  {value!r}')
 
 
 if __name__ == '__main__':

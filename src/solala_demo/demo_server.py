@@ -1,13 +1,15 @@
-import local_config as config
+import logging
+
+from local_config_help import config
 from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
-    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, consumers
+    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, consumers, TuyaConnection
 from solala_demo.log import configure_logger
 
 
 def main():
-    configure_logger()
+    configure_logger(level=logging.DEBUG)
 
     # Optional initial control loop parameters.
     # These will be used if the settings file cannot be loaded or force_settings is True.
@@ -15,7 +17,14 @@ def main():
 
         controller=ModbusControllerConnection(address=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}'),
         pricer=AmberPricerConnection(api_token=config.AMBER_API_TOKEN, nmi=config.NMI),
-        consumers=consumers(car_charger=TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR)),
+        consumers=consumers(
+            tesla_charger=TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR),
+            outlet_charger=TuyaConnection(
+                access_id=config.POWER_POINT_ACCESS_ID,
+                access_secret=config.POWER_POINT_ACCESS_SECRET,
+                device_id=config.POWER_POINT_DEVICE,
+            ),
+        ),
 
         forecaster=OpenMeteoConnection(
             latitude=config.LATITUDE,

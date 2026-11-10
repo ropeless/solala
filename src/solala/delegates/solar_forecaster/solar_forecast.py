@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Sequence, Iterator, Optional
 
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
-from solala.utils.json import to_json, JSONDict
+from solala.utils.json_extras import to_json, JSONDict
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from typing import TypeAlias, Type, Mapping, Iterator, Iterable, Tuple, KeysView, Optional, Hashable, \
-    MutableMapping, Callable, final, Any
+    MutableMapping, Callable, final, Any, Awaitable
 
 RegisterValue: TypeAlias = str | int | float | bool
 RegisterType: TypeAlias = Type[str] | Type[int] | Type[float] | Type[bool]
@@ -25,12 +25,35 @@ def check_type(t: Any) -> RegisterType:
         t: The type to check.
 
     Returns:
-        True if the type is a valid register type, False otherwise.
+        The register type.
+
+    Raises:
+        TypeError: If the type is not a valid register type.
     """
     if t in (str, int, float, bool):
         return t
     else:
         raise TypeError(f'not a valid register type: {t}')
+
+
+def check_value(v: Any) -> RegisterValue:
+    """
+    Is the given value a valid register value.
+
+    Args:
+        v: The value to check.
+
+    Returns:
+        The value.
+
+    Raises:
+        TypeError: If the type of value is not a valid register type.
+
+    """
+    if isinstance(v, (str, int, float, bool)):
+        return v
+    else:
+        raise TypeError(f'not a valid register type: {type(v)}')
 
 
 def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
@@ -139,10 +162,24 @@ class CallRegister(ReadOnlyRegister):
             check_value = f()
             register_type = type(check_value)
         super().__init__(register_type)
-        self._f = f
+        self._f: Callable[[], RegisterValue] = f
 
     def _get(self) -> RegisterValue:
         return self._f()
+
+
+class AsyncCallRegister(ReadOnlyRegister):
+    """
+    A register that calls a function to get its value.
+    """
+
+    def __init__(self, f: Callable[[], Awaitable[RegisterValue]], register_type: RegisterType) -> None:
+        super().__init__(register_type)
+        self._f: Callable[[], Awaitable[RegisterValue]] = f
+
+    def _get(self) -> RegisterValue:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(asyncio.run, self._f()).result()
 
 
 class AsyncRegister(ReadOnlyRegister):

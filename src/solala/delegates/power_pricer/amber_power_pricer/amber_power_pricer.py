@@ -6,7 +6,7 @@ import requests
 
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
 from solala.utils.httpx_extras import async_get
-from solala.utils.json import JSONDict, json_str, json_num, json_bool, json_dict
+from solala.utils.json_extras import JSONDict, json_str, json_num, json_bool, json_dict
 
 API = 'https://api.amber.com.au/v1'
 

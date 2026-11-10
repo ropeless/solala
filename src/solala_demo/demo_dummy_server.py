@@ -1,6 +1,6 @@
 from datetime import time
 
-import local_config as config
+from local_config_help import config
 from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, DummyControllerConnection, DummyPricerConnection, \

@@ -1,4 +1,4 @@
-from solala.utils.json import JSONDict, to_json
+from solala.utils.json_extras import JSONDict, to_json
 
 DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.1  # disable export below this price
 DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD: float = 0.1  # re-enable export above this price

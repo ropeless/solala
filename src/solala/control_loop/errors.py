@@ -1,6 +1,6 @@
 from typing import Optional
 
-from solala.utils.json import JSONContainer
+from solala.utils.json_extras import JSONContainer
 
 
 class ControlLoopError(RuntimeError):

@@ -21,6 +21,7 @@ from solala.database.solala_database_connections import SolalaDatabaseConnection
 from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
+from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
 from solala.delegates.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
@@ -41,10 +42,10 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
     DummyControllerConnection, \
     DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
-    DummySolarForecasterConnection, DatabaseConnection
+    DummySolarForecasterConnection, DatabaseConnection, TuyaConnection
 from solala.utils.async_rlock import AsyncRLock
 from solala.utils.datetime_extras import now, local_time_zone
-from solala.utils.json import JSONDict, json_num, JSONValue
+from solala.utils.json_extras import JSONDict, json_num, JSONValue
 from solala.utils.network import find_ip_by_mac
 from solala.utils.string_extras import split_addresses
 
@@ -687,11 +688,30 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
 @asynccontextmanager
 async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaDatabase]:
     async with _control_state() as state:
+        LOGGER.debug('{_LOG_SRC}Requesting DB connection from pool')
         database_connections = state.database_connections
         if database_connections is None:
             raise ConnectionError('Database pool not connected')
         database_connections: SolalaDatabaseConnections
+
+        # DEBUG
+        LOGGER.debug(f'{_LOG_SRC}Pool open: {database_connections.pool_open}')
+        await database_connections.ensure_open()
+        stats = database_connections.pool.get_stats()
+        LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
+        LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
+        LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
+        LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
+
         db: SolalaDatabase = await database_connections.get_db()
+
+        # DEBUG
+        LOGGER.debug('{_LOG_SRC}Obtained DB connection from pool')
+        stats = database_connections.pool.get_stats()
+        LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
+        LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
+        LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
+        LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
 
     # Release the control state lock, then provide the database connection
     try:
@@ -863,6 +883,9 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
         elif consumer_connection.type == TeslaWallConnectorConnection.TYPE:
             assert isinstance(consumer_connection, TeslaWallConnectorConnection)
             consumer = _connect_tesla_wall_connector(consumer_connection)
+        elif consumer_connection.type == TuyaConnection.TYPE:
+            assert isinstance(consumer_connection, TuyaConnection)
+            consumer = _connect_tuya(consumer_connection)
         else:
             raise ControlLoopError(
                 'unknown consumer connection type',
@@ -1302,6 +1325,25 @@ def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnect
         raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
 
 
+def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
+    """
+    Establish a power consumer connection using Tuya.
+
+    Does not change the control state in any way.
+
+    Raises:
+        ControlLoopError: a connection cannot be established.
+    """
+    try:
+        return TuyaPowerConsumer(
+            access_id=consumer_connection.access_id,
+            access_secret=consumer_connection.access_secret,
+            device_id=consumer_connection.device_id,
+        )
+    except Exception as err:
+        raise ControlLoopError('could not connect to the Tuya device', errors=[str(err)])
+
+
 def _connect_open_meteo_forecaster(forecaster_connection: OpenMeteoConnection) -> SolarForecaster:
     try:
         return OpenMeteoForecaster(
@@ -1431,6 +1473,8 @@ async def _reconfigure_registers(state: _ControlState) -> None:
     Updates the control loop register bank as per currently available delegates.
     Assumes the control state lock is held.
     """
+
+    # Add status/battery and status/inverter registers
     registers: Dict[str, Register] = {
         'status/battery/mode': CallRegister(lambda: _CONTROL_STATE.control_mode.battery_mode.name),
         'status/battery/policy': CallRegister(lambda: _CONTROL_STATE.control_mode.battery_policy.name),
@@ -1447,36 +1491,43 @@ async def _reconfigure_registers(state: _ControlState) -> None:
             lambda: _CONTROL_STATE.control_mode.disable_export_price_threshold),
     }
 
+    # Add status/power registers
     f: Field
-
     for f in fields(PowerStatus):
         f_type: RegisterType = check_type(f.type)
         registers[f'status/power/{f.name}'] = PowerRegister(f.name, f_type)
-
     for consumer_name, consumer in state.consumers.items():
         for f in fields(ConsumerStatus):
             try:
                 reg_type: RegisterType = check_type(f.type)
             except TypeError:
                 continue
-            registers[f'status/power/consumers/{consumer_name}/{f.name}'] = ConsumerRegister(consumer, f.name, reg_type)
+            registers[f'status/power/consumers/{consumer_name}/{f.name}'] = \
+                ConsumerRegister(consumer, f.name, reg_type)
         for prop_name, prop_type in get_dataclass_properties(ConsumerStatus):
             try:
                 reg_type: RegisterType = check_type(prop_type)
             except TypeError:
                 continue
-            registers[f'status/power/consumers/{consumer_name}/{prop_name}'] = ConsumerRegister(consumer, prop_name, reg_type)
-
+            registers[f'status/power/consumers/{consumer_name}/{prop_name}'] = \
+                ConsumerRegister(consumer, prop_name, reg_type)
     for f in fields(Price):
         if f.name in ('start_time', 'end_time'):
             continue
         f_type: RegisterType = check_type(f.type)
         registers[f'status/power/{f.name}'] = PriceRegister(f.name, f_type)
 
+    # Add controller registers
     if state.controller is not None:
         controller_registers: RegisterBank = await state.controller.get_registers()
         for name, register in controller_registers.registers.items():
             registers[f'controller/{name}'] = register
+
+    # Add power consumer registers
+    for consumer_name, consumer in state.consumers.items():
+        consumer_registers: RegisterBank = await consumer.get_registers()
+        for name, register in consumer_registers.registers.items():
+            registers[f'consumer/{consumer_name}/{name}'] = register
 
     state.registers = RegisterBank(registers)
 

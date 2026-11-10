@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 from solala.constants import GUI_TIME_FORMAT
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
 from solala.utils.datetime_extras import ensure_date, local_time_zone
-from solala.utils.json import JSONDict
+from solala.utils.json_extras import JSONDict
 
 _FIVE_MINUTES: timedelta = timedelta(minutes=5)
 

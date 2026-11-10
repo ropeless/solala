@@ -9,7 +9,7 @@ from nicegui import ui
 from solala.constants import Units, GUI_TIME_FORMAT
 from solala.server.css_colours import Colours, rgba
 from solala.server.graph_interpolator import GraphingInterpolator
-from solala.utils.json import JSONDict, JSONValue
+from solala.utils.json_extras import JSONDict, JSONValue
 
 LINE_WIDTH: float = 1.75
 DASHED = [3, 3]

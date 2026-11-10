@@ -71,6 +71,15 @@ class TeslaWallConnectorConnection(BaseModel):
     address: str  # MAC or IP address
 
 
+class TuyaConnection(BaseModel):
+    TYPE: ClassVar[Literal['tuya']] = 'tuya'
+    type: Literal['tuya'] = 'tuya'
+
+    access_id: str
+    access_secret: str
+    device_id: str
+
+
 class OpenMeteoConnection(BaseModel):
     TYPE: ClassVar[Literal['open_meteo']] = 'open_meteo'
     type: Literal['open_meteo'] = 'open_meteo'
@@ -119,6 +128,7 @@ ConsumerConnection: TypeAlias = Annotated[
     Union[
         DummyConsumerConnection,
         TeslaWallConnectorConnection,
+        TuyaConnection,
         # Add others as needed
     ],
     Field(discriminator='type')

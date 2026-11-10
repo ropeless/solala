@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 
 from solala.registers import RegisterBank
-from solala.utils.json import JSONDict
+from solala.utils.json_extras import JSONDict
 
 
 @dataclass

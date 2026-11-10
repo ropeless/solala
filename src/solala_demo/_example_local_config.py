@@ -4,6 +4,11 @@ MASTER_INVERTER_ADDR = '192.168.0.200'
 SLAVE_INVERTER_ADDR = '192.168.0.201'
 TESLA_WALL_CONNECTOR_ADDR = '192.168.0.202'
 
+POWER_POINT_DEVICE = 'kjhasgdfkjhgaskdjhfgkashdgf'
+POWER_POINT_ACCESS_ID = 'jfkaskdjfh87193456ka8g'
+POWER_POINT_ACCESS_SECRET = 'aflsknotarealsecretdsafjpa127859'
+
+
 AMBER_API_TOKEN = 'psk_k56thisisnotarealapitokenlm5t0adf0f'
 NMI = '4109999999'
 

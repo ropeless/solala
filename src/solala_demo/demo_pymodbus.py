@@ -1,11 +1,11 @@
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ModbusPDU
 
-from local_config import MASTER_INVERTER_ADDR
+from local_config_help import config
 
 
 def main() -> None:
-    client = ModbusTcpClient(MASTER_INVERTER_ADDR, port=502)
+    client = ModbusTcpClient(config.MASTER_INVERTER_ADDR)
     client.connect()
     print()
 

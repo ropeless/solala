@@ -2,7 +2,7 @@ from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text, 
 
 from solala.constants import Constants
 from solala.constants import Units
-from solala.utils.json import JSONDict, json_dict, json_num, json_bool
+from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
 
 CLICK_ID_SUN = 'click_sun'
 CLICK_ID_GRID = 'click_grid'

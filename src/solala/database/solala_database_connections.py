@@ -7,7 +7,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from solala.constants import DEFAULT_DB_HOST, DEFAULT_DB_PORT, DEFAULT_DB_NAME
 from solala.database.solala_database import SolalaDatabase
-from solala.utils.json import JSONDict
+from solala.utils.json_extras import JSONDict
 
 
 def make_connection_string(
@@ -102,16 +102,6 @@ class SolalaDatabaseConnections:
     def get_connection_status(self) -> JSONDict:
         return self._connection_status
 
-    def print_pool_stats(self) -> None:
-        """
-        For debugging purposes.
-        """
-        stats = self._pool.get_stats()
-        print(f"Pool size: {stats['pool_size']}")
-        print(f"Available: {stats['pool_available']}")
-        print(f"Waiting: {stats['requests_waiting']}")
-        print(f"Requests waiting: {stats['requests_waiting']}")
-
     @asynccontextmanager
     async def solala_database(
             self,
@@ -136,9 +126,7 @@ class SolalaDatabaseConnections:
                 await conn.commit()
 
     async def get_db(self, timeout: float | None = None) -> SolalaDatabase:
-        if not self._pool_open:
-            await self._pool.open()
-            self._pool_open = True
+        await self.ensure_open()
         conn: AsyncConnection = await self._pool.getconn(timeout=timeout)
         return SolalaDatabase(conn)
 
@@ -150,6 +138,19 @@ class SolalaDatabaseConnections:
         # noinspection PyTypeChecker
         db._connection = None
         await self._pool.putconn(conn)
+
+    async def ensure_open(self) -> None:
+        if not self._pool_open:
+            await self._pool.open()
+            self._pool_open = True
+
+    @property
+    def pool_open(self) -> bool:
+        return self._pool_open
+
+    @property
+    def pool(self) -> AsyncConnectionPool:
+        return self._pool
 
     async def open(self) -> None:
         if not self._pool_open:

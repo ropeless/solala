@@ -6,7 +6,7 @@ from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast,
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.datetime_extras import ensure_date, date_to_datetime
-from solala.utils.json import JSONDict
+from solala.utils.json_extras import JSONDict
 
 
 class DummySolarForecaster(SolarForecaster):
