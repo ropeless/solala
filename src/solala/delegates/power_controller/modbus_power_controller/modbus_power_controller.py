@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Iterable, List, Optional, Dict
+from typing import Iterable, List, Optional, Dict, Tuple
 
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import ModbusError
@@ -43,9 +43,19 @@ class ModbusPowerController(PowerController):
             meter: str = 'meter',
             slaves: Iterable[str] = (),
             mac_addr_lookup: Optional[Dict[str, str]] = None,
+            power_control_slaves: bool = False,
     ):
         """
         Make a power controller from a Modbus connection.
+
+        Args:
+            modbus: Modbus connections.
+            master: the name of the master inverter device in `modbus`.
+            slaves: the names of any slave inverter devices in `modbus`.
+            meter: the name of the grid meter device in `modbus`.
+            mac_addr_lookup: optional mac addresses for recording in the connection status.
+            power_control_slaves: shoul;d power limit controls be sent to the slaves or not; if not then
+                power control is sent only to the master.
         """
         self._modbus: Modbus = modbus
         self._master = master
@@ -72,9 +82,13 @@ class ModbusPowerController(PowerController):
         self._accumulated_discharge_energy: str = f'{master}/module/4/DCWH'
         # self._accumulated_inverter_power: List[str] = [f'{inverter}/ActWh' for inverter in self._inverters]
 
-        self._WMaxLim_Ena: str = f'{master}/WMaxLim_Ena'
-        self._WMaxLimPct: str = f'{master}/WMaxLimPct'
-        self._WMaxLimPct_RvrtTms: str = f'{master}/WMaxLimPct_RvrtTms'
+        if power_control_slaves:
+            self._power_controllers: List[str] = self._inverters
+        else:
+            self._power_controllers: List[str] = [master]
+        self._WMaxLim_Ena: List[str] = [f'{inverter}/WMaxLim_Ena' for inverter in self._power_controllers]
+        self._WMaxLimPct: List[str] = [f'{inverter}/WMaxLimPct' for inverter in self._power_controllers]
+        self._WMaxLimPct_RvrtTms: List[str] = [f'{inverter}/WMaxLimPct_RvrtTms' for inverter in self._power_controllers]
 
         self._InWRte: str = f'{master}/InWRte'
         self._OutWRte: str = f'{master}/OutWRte'
@@ -107,12 +121,19 @@ class ModbusPowerController(PowerController):
             self._connection_status['unnamed_device'] = unnamed_device
 
         # Calculate the constant inverter limit
-        value: float = 0.0
+        self._inverters_limit: List[float] = []
+        total_limit: float = 0.0
         for inverter in self._inverters:
             w_max = self._get(f'{inverter}/WMax')
             w_rtg = self._get(f'{inverter}/WRtg')
-            value += min(w_max, w_rtg)
-        self._inverter_limit: float = value
+            limit = min(w_max, w_rtg)
+            self._inverters_limit.append(limit)
+            total_limit += limit
+        self._inverter_limit: float = total_limit
+        self._inverters_limit_proportion: List[float] = [
+            limit / self._inverter_limit
+            for limit in self._inverters_limit
+        ]
 
         registers: Dict[str, Register] = dict(self._modbus.registers)
         registers[_INVERTER_LIMIT_NAME] = ConstantRegister(self._inverter_limit)
@@ -168,8 +189,7 @@ class ModbusPowerController(PowerController):
         battery_power = charge_power - discharge_power
         house_power = grid_power + solar_power - battery_power
 
-        power_limit_enabled: bool = (self._get(self._WMaxLim_Ena) != 0)
-        power_limit: float = self._get(self._WMaxLimPct) if power_limit_enabled else 100.0
+        power_limit, power_limit_enabled = self._get_power_limit()
 
         return PowerStatus(
             state_of_charge=state_of_charge,
@@ -290,8 +310,9 @@ class ModbusPowerController(PowerController):
         or the change duration expires.
         """
         with self._logit('zero_export'):
+            cur_pct: float
+            cur_pct, _ = self._get_power_limit()
             grid_power: float = self._get(self._grid_power)
-            cur_pct: float = self._get(self._WMaxLimPct)
             max_power: float = self.get_inverter_limit()
             cur_power: float = self._get_sum(self._inverter_power)
 
@@ -350,6 +371,30 @@ class ModbusPowerController(PowerController):
     #  Support
     # =================================================
 
+    def _get_power_limit(self) -> Tuple[float, bool]:
+        """
+        Get the power limit set on the controlling inverters.
+
+        Returns:
+            (avg(_WMaxLimPct), any(WMaxLim_Ena != 0))
+        """
+        power_limits: List[float] = self._get_all(self._WMaxLimPct)
+        power_limits_enabled: List[bool] = [x != 0 for x in self._get_all(self._WMaxLim_Ena)]
+        if len(power_limits) == 1:
+            limit_enabled = power_limits_enabled[0]
+            limit = power_limits[0] if limit_enabled else 100.0
+            return limit, limit_enabled
+
+        else:
+            # all controlling inverters
+            assert len(power_limits) == len(self._inverters_limit_proportion)
+            avg_limit: float = 0.0
+            for limit, limit_enabled, pr in zip(power_limits, power_limits_enabled, self._inverters_limit_proportion):
+                if not limit_enabled:
+                    limit = 100.0
+                avg_limit += limit * pr
+            return avg_limit, any(power_limits_enabled)
+
     @contextmanager
     def _logit(self, name: str):
         self._log_set_get = True
@@ -364,13 +409,13 @@ class ModbusPowerController(PowerController):
 
     def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
         if pct >= 100:
-            self._set(self._WMaxLimPct, 100)
-            self._set(self._WMaxLimPct_RvrtTms, change_duration)
-            self._set(self._WMaxLim_Ena, 0)
+            self._set_all(self._WMaxLimPct, 100)
+            self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
+            self._set_all(self._WMaxLim_Ena, 0)
         else:
-            self._set(self._WMaxLimPct, pct)
-            self._set(self._WMaxLimPct_RvrtTms, change_duration)
-            self._set(self._WMaxLim_Ena, 1, force=True)  # force to keep alive
+            self._set_all(self._WMaxLimPct, pct)
+            self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
+            self._set_all(self._WMaxLim_Ena, 1, force=True)  # force to keep alive
 
     def _set(self, name: str, value: int | float, *, force: bool = False) -> None:
         """
@@ -416,8 +461,17 @@ class ModbusPowerController(PowerController):
             raise TypeError(msg)
         return value
 
+    def _set_all(self, names: List[str], value: int | float, *, force: bool = False) -> None:
+        for name in names:
+            self._set(name, value, force=force)
+
+    def _get_all(self, names: List[str]) -> List[int | float]:
+        return [
+            self._get(name) for name in names
+        ]
+
     def _get_sum(self, names: List[str]) -> int | float:
         self._logger_get_set(f'SUM {names}')
-        result = sum(self._get(name) for name in names)
+        result = sum(self._get_all(names))
         self._logger_get_set(f'SUM = {result}')
         return result
