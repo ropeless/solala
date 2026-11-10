@@ -3,7 +3,7 @@
 project="$HOME/Development/solala"
 python="$project/.venv314/bin/python"
 
-export PYTHONPATH="$project/src:$project/private/config:${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$project/src:$project/src/solala_demo:$project/private/config:${PYTHONPATH:+:$PYTHONPATH}"
 
 # Try to automatically upgrade (is this okay?)
 cd "$project"
