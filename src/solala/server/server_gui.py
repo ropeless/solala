@@ -155,12 +155,6 @@ class PageSession:
                 LOGGER.exception('Error cleaning up page resource')
 
 
-async def _new_page_session() -> PageSession:
-    session = PageSession()
-    ui.context.client.on_disconnect(session.close)
-    return session
-
-
 async def _register_control_loop_listener(session: PageSession, listener: LoopListener) -> None:
     await session.add_control_listener(listener)
 
