@@ -1,7 +1,7 @@
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ModbusPDU
 
-from local_config_help import config
+from solala.utils.local_config_help import config
 
 
 def main() -> None:

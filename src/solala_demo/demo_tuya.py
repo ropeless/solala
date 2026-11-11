@@ -3,7 +3,7 @@ from pprint import pprint
 
 from tuya_connector import TuyaOpenAPI
 
-from local_config_help import config
+from solala.utils.local_config_help import config
 from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
 
 
@@ -11,7 +11,7 @@ API_ENDPOINT = "https://openapi.tuyaeu.com"
 
 
 def check_cloud_api() -> None:
-    DEVICE_ID = config.POWER_POINT_DEVICE
+    device_id = config.POWER_POINT_DEVICE
 
     # Connect to Tuya Cloud
     api = TuyaOpenAPI(
@@ -26,7 +26,7 @@ def check_cloud_api() -> None:
 
     # Retrieve device status
     response = api.get(
-        f"/v1.0/iot-03/devices/{DEVICE_ID}/status"
+        f"/v1.0/iot-03/devices/{device_id}/status"
     )
 
     print("\nDevice status:")
@@ -34,7 +34,7 @@ def check_cloud_api() -> None:
 
     # Retrieve supported device functions
     response = api.get(
-        f"/v1.0/iot-03/devices/{DEVICE_ID}/functions"
+        f"/v1.0/iot-03/devices/{device_id}/functions"
     )
 
     print("\nDevice functions:")

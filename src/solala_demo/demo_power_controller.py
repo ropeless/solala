@@ -3,7 +3,7 @@ import json
 
 from pymodbus.client import ModbusTcpClient
 
-from local_config_help import config
+from solala.utils.local_config_help import config
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice, ModbusDevices
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
 from solala.delegates.power_controller.power_controller import PowerStatus

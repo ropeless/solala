@@ -1,7 +1,7 @@
 import asyncio
 from pprint import pprint
 
-from local_config_help import config
+from solala.utils.local_config_help import config
 from solala.delegates.power_pricer.amber_power_pricer.amber_power_pricer import AmberPowerPricer
 from solala.delegates.power_pricer.power_pricer import Price
 

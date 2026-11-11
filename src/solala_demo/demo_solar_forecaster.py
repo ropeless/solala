@@ -1,7 +1,7 @@
 import asyncio
 from datetime import date
 
-from local_config_help import config
+from solala.utils.local_config_help import config
 from solala.delegates.solar_forecaster.open_meteo_forecaster.open_meteo_forecaster import OpenMeteoForecaster
 from solala.delegates.solar_forecaster.solar_forecaster import DailySolarForecast
 

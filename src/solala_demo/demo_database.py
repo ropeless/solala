@@ -4,7 +4,7 @@ import selectors
 from datetime import datetime
 from typing import Optional
 
-from local_config_help import config
+from solala.utils.local_config_help import config
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.database.solala_database import Measurement, SolalaDatabase
 from solala.database.solala_database_connections import SolalaDatabaseConnections

@@ -2,7 +2,7 @@ import asyncio
 import selectors
 from datetime import date
 
-from local_config_help import config
+from solala.utils.local_config_help import config
 from solala.control_loop import control_loop
 from solala.database.measurement import Measurement
 from solala.settings import Settings, DatabaseConnection, DummyControllerConnection, DummyPricerConnection, \
