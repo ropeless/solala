@@ -24,16 +24,27 @@ class DayNavigator:
             enable_swipe_navigator: bool = True,
             enable_arrow_keys: bool = True,
     ):
-        # The navigator works by keeping s ring of three carousel slides. At any point of time
-        # one slide is the current display day (focus slide) with the other two being the previous
-        # and next day (left slide and right slide).
-        #
-        # The contents of each slide is maintained by an element "Updater" which is set for a particular
-        # slide content element and called when required to update its content to a particular day.
-        #
-        # The carousel can be operated either via the IU or programmatically so there is a distinction
-        # between the slide we last set to the focus slide (self._focus_slide) and the slide currently
-        # on display (self._display_slide).
+        """
+        Create a carousel of infinite cards, where each card represents a date.
+
+        The navigator consists of a date navigation bar with a content slide below that.
+
+        The navigator works by keeping s ring of three carousel slides. At any point of time
+        one slide is the current display day (focus slide) with the other two being the previous
+        and next day (left slide and right slide).
+
+        The contents of each slide is maintained by an element "Updater" which is set for a particular
+        slide content element and called when required to update its content to a particular day.
+
+        The carousel can be operated either via the IU or programmatically so there is a distinction
+        between the slide we last set to the focus slide (self._focus_slide) and the slide currently
+        on display (self._display_slide).
+
+        Args:
+            enable_swipe_content: if true then the content cards respond to left-right swipe gestures.
+            enable_swipe_navigator: if true then the navigator bar respond to left-right swipe gestures.
+            enable_arrow_keys: if true then the carousel responds to the left and right arrow keys.
+        """
 
         self._day: date = _SENTINEL_DATE
         self._focus_slide: int = 0
