@@ -11,8 +11,7 @@ from nicegui.elements.label import Label
 from nicegui.elements.mixins.content_element import ContentElement
 
 from solala.constants import Constants, GUI_DATE_FORMAT, GUI_TIME_FORMAT
-from solala.constants import PRICE_CENTS, PERCENT, WATTS, VOLTS, AMPS, SECONDS, MINUTES, HOURS, DEGREES, \
-    KILOWATT_HOURS, CELSIUS, KILOWATTS
+from solala.constants import Units
 from solala.control_loop import control_loop
 from solala.control_loop.control_loop import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
@@ -21,17 +20,19 @@ from solala.delegates.power_pricer.power_pricer import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
+from solala.registers import RegisterValue
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
 from solala.server.css_colours import Colours, css_colours
-from solala.server.graphs import power_chart, energy_chart, GraphingInterpolator, price_chart, charge_chart
+from solala.server.graph_interpolator import GraphingInterpolator
+from solala.server.graphs import EnergyChart, PriceChart, PowerChart, ChargeChart
 from solala.server.icons import analytics_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.server.ui_day_navigator import DayNavigator
+from solala.server.day_navigator import DayNavigator
 from solala.utils.datetime_extras import now
 from solala.utils.dict_extras import dict_merge
-from solala.utils.json import JSONDict, json_dict, render_json, filter_json, json_str, JSONPrimitive
+from solala.utils.json_extras import JSONDict, json_dict, render_json, json_str, JSONPrimitive
 
 # --------------------------------------------------------------------
 # Main styling
@@ -48,50 +49,50 @@ _HEAD_HTML = r'''
 
 # Units for pretty printing status
 _PARAMETERS_UNITS: Mapping[str, str] = {
-    'start_charge_price_threshold': PRICE_CENTS,
-    'stop_charge_price_threshold': PRICE_CENTS,
-    'disable_export_price_threshold': PRICE_CENTS,
-    'enable_export_price_threshold': PRICE_CENTS,
+    'start_charge_price_threshold': Units.PRICE_CENTS,
+    'stop_charge_price_threshold': Units.PRICE_CENTS,
+    'disable_export_price_threshold': Units.PRICE_CENTS,
+    'enable_export_price_threshold': Units.PRICE_CENTS,
 }
 _STATUS_UNITS: Mapping[str, str] = dict_merge(
     {
-        'buy_price': PRICE_CENTS,
-        'feed_in_price': PRICE_CENTS,
-        'renewables': PERCENT,
-        'state_of_charge': PERCENT,
-        'power_limit': PERCENT,
-        'grid_power': WATTS,
-        'solar_power': WATTS,
-        'battery_power': WATTS,
-        'house_power': WATTS,
-        'consumers_total': WATTS,
-        'consumers_remaining': WATTS,
-        'power': WATTS,
-        'voltage': VOLTS,
-        'current': AMPS,
-        'capacity': WATTS,
-        'forecast_generation': KILOWATT_HOURS,
+        'buy_price': Units.PRICE_CENTS,
+        'feed_in_price': Units.PRICE_CENTS,
+        'renewables': Units.PERCENT,
+        'state_of_charge': Units.PERCENT,
+        'power_limit': Units.PERCENT,
+        'grid_power': Units.WATTS,
+        'solar_power': Units.WATTS,
+        'battery_power': Units.WATTS,
+        'house_power': Units.WATTS,
+        'consumers_total': Units.WATTS,
+        'consumers_remaining': Units.WATTS,
+        'power': Units.WATTS,
+        'voltage': Units.VOLTS,
+        'current': Units.AMPS,
+        'capacity': Units.WATTS,
+        'forecast_generation': Units.KILOWATT_HOURS,
     },
     _PARAMETERS_UNITS,
 )
 _CONSTANTS_UNITS: Mapping[str, str] = {
-    'LOOP_TIME': SECONDS,
-    'LOOP_MIN_SLEEP_TIME': SECONDS,
-    'CONTROL_DURATION': SECONDS,
-    'PRICE_LOOK_AHEAD': MINUTES,
-    'PRICE_SETTLE_CHECK': SECONDS,
-    'PRICE_FORECAST_DURATION': HOURS,
-    'PRICE_FORECAST_AGE': MINUTES,
-    'SOLAR_FORECAST_AGE': MINUTES,
+    'LOOP_TIME': Units.SECONDS,
+    'LOOP_MIN_SLEEP_TIME': Units.SECONDS,
+    'CONTROL_DURATION': Units.SECONDS,
+    'PRICE_LOOK_AHEAD': Units.MINUTES,
+    'PRICE_SETTLE_CHECK': Units.SECONDS,
+    'PRICE_FORECAST_DURATION': Units.HOURS,
+    'PRICE_FORECAST_AGE': Units.MINUTES,
+    'SOLAR_FORECAST_AGE': Units.MINUTES,
 }
 _CONNECTION_UNITS: Mapping[str, str] = {
-    'latitude': DEGREES,
-    'longitude': DEGREES,
-    'panel_orientation': DEGREES,
-    'panel_tilt': DEGREES,
-    'panel_capacity': WATTS,
-    'panel_temperature_coefficient': CELSIUS,
-    'inverter_limit': WATTS,
+    'latitude': Units.DEGREES,
+    'longitude': Units.DEGREES,
+    'panel_orientation': Units.DEGREES,
+    'panel_tilt': Units.DEGREES,
+    'panel_capacity': Units.WATTS,
+    'panel_temperature_coefficient': Units.CELSIUS,
+    'inverter_limit': Units.WATTS,
 }
 
 
@@ -104,17 +105,6 @@ class StatusListener(LoopListener):
 
     @abstractmethod
     def _update(self, status_json: JSONDict) -> None:
-        ...
-
-
-class RegistersListener(LoopListener):
-
-    @final
-    async def update(self, register_values=None) -> None:
-        register_values: Dict[str, JSONPrimitive] = await control_loop.get_registers()
-        self._update(register_values)
-
-    def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
         ...
 
 
@@ -304,28 +294,25 @@ class InfographicUpdater(StatusListener):
         self.infographic_element.set_content(self.infographic.as_svg())
 
 
-class RegistersUpdater(RegistersListener):
+class RegistersUpdater(LoopListener):
 
-    def __init__(
-            self,
-            registers_element: ContentElement,
-            match: Optional[str],
-    ):
+    def __init__(self, registers_element: ContentElement):
         super().__init__()
-        self.registers_element = registers_element
-        self.match = match
+        self._registers_element: ContentElement = registers_element
+
+    @final
+    async def update(self, register_values=None) -> None:
+        register_values: Dict[str, Optional[RegisterValue]] = await control_loop.get_registers()
+        self._update(register_values)
 
     def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
-        if self.match is not None:
-            # noinspection PyTypeChecker
-            register_values = filter_json(register_values, self.match)
         json_as_str = render_json(
             register_values,
             float_format='.2f',
             remove_key_underscores=False,
             remove_value_underscores=False,
         )
-        self.registers_element.set_content(json_as_str)
+        self._registers_element.set_content(json_as_str)
 
 
 class PriceForecastUpdater(LoopListener):
@@ -398,7 +385,7 @@ class PriceForecastUpdater(LoopListener):
                             feed_class = _feed_in_price_class(price.feed_in_price)
                             ui.label(f'{price.feed_in_price:.1f}').classes(f'price-number {feed_class}')
 
-                            ui.label(f'{price.renewables:.1f}{PERCENT}').classes('price-number')
+                            ui.label(f'{price.renewables:.1f}{Units.PERCENT}').classes('price-number')
 
 
 class SolarForecastUpdater(LoopListener):
@@ -450,7 +437,7 @@ class SolarForecastUpdater(LoopListener):
             with ui.row().classes('items-center gap-2 mb-5'):
                 ui.label('Daily generation estimate:').classes('text-sm text-gray-500')
                 total = f'{solar_forecast.total_forecast_energy() / 1000:.2f}'
-                ui.label(f'{total}{KILOWATT_HOURS}').classes('solar-number')
+                ui.label(f'{total}{Units.KILOWATT_HOURS}').classes('solar-number')
 
             # Forecast table
             with ui.column().classes('w-full gap-3'):
@@ -480,7 +467,7 @@ class SolarForecastUpdater(LoopListener):
                             ).classes('solar-time')
 
                             ui.label(
-                                f'{int(forecast.temperature + 0.5)}{CELSIUS}'
+                                f'{int(forecast.temperature + 0.5)}{Units.CELSIUS}'
                             ).classes('solar-number')
 
                             with ui.element('div').classes('solar-weather-cell'):
@@ -496,7 +483,7 @@ class SolarForecastUpdater(LoopListener):
                                 ).classes('solar-number')
 
                                 ui.label(
-                                    f'{forecast.power / 1000:.2f}{KILOWATTS}'
+                                    f'{forecast.power / 1000:.2f}{Units.KILOWATTS}'
                                 ).classes('solar-number')
 
 
@@ -506,12 +493,34 @@ class ChartUpdater(LoopListener):
         super().__init__()
         self._prev: Optional[DailySolarForecast] = None
         self._day: date = date.today()
-        self._element: ui.element = element
-        self._colours: Colours = colours
+
+        with element:
+            self._loading = ui.label('loading graphs...').classes('text-center italic').set_visibility(True)
+            self._graphs = ui.element('div').set_visibility(False)
+
+            with self._graphs:
+                self._charge_chart = ChargeChart(colours)
+                self._price_chart = PriceChart(colours)
+                self._power_chart = PowerChart(colours)
+                self._energy_chart = EnergyChart(colours)
+
+        asyncio.create_task(self.update())
+
+    @property
+    def day(self) -> date:
+        return self._day
+
+    async def set_day(self, day: date) -> None:
         self._show_loading()
+        self._day = day
+        asyncio.create_task(self.update())
 
     @final
     async def update(self) -> None:
+        graph_interpolator = await self._get_data()
+        self._update(graph_interpolator)
+
+    async def _get_data(self) -> GraphingInterpolator:
         day = self._day
         measurements: Sequence[Measurement]
         price_forecast: Sequence[Price]
@@ -523,39 +532,19 @@ class ChartUpdater(LoopListener):
             control_loop.get_demand_window(day),
             control_loop.get_solar_forecast(day),
         )
-
-        graph_interpolator = GraphingInterpolator(day, measurements, price_forecast, solar_forecast, demand_window)
-        self._update(graph_interpolator)
-
-    @property
-    def day(self) -> date:
-        return self._day
-
-    async def set_day(self, day: date) -> None:
-        self._show_loading()
-        self._day = day
-        asyncio.create_task(self.update())
+        return GraphingInterpolator(day, measurements, price_forecast, solar_forecast, demand_window)
 
     def _show_loading(self) -> None:
-        self._element.clear()
-        with self._element:
-            ui.label('loading graphs...').classes('text-center italic')
+        self._graphs.set_visibility(False)
+        self._loading.set_visibility(True)
 
     def _update(self, graph_interpolator: GraphingInterpolator) -> None:
-        # Recreate the solar forecast table if needed
-        self._element.clear()
-        with self._element:
-            with ui.row().classes('w-full items-center gap-0 mb-0'):
-                charge_chart(graph_interpolator, self._colours)
-
-            with ui.row().classes('w-full items-center gap-0 mb-0'):
-                price_chart(graph_interpolator, self._colours)
-
-            with ui.row().classes('w-full items-center gap-0 mb-0'):
-                power_chart(graph_interpolator, self._colours)
-
-            with ui.row().classes('w-full items-center gap-0 mb-0'):
-                energy_chart(graph_interpolator, self._colours)
+        self._loading.set_visibility(False)
+        self._charge_chart.update(graph_interpolator)
+        self._price_chart.update(graph_interpolator)
+        self._power_chart.update(graph_interpolator)
+        self._energy_chart.update(graph_interpolator)
+        self._graphs.set_visibility(True)
 
 
 def _json_page(name: str) -> ContentElement:
@@ -943,7 +932,7 @@ async def graphs_page():
 
     swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
     with swipe_area:
-        with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
+        with ui.element('div').classes('solala-page w-full max-w-6xl mx-auto px-2 md:px-3 py-4'):
             _page_header()
             navigator = DayNavigator()
             updaters = [
@@ -989,8 +978,8 @@ async def connection_page():
             # ----------------------------------------------------------
             with ui.card():
                 ui.label('Connection').classes('text-h6')
-                connection_json: JSONDict = await control_loop.get_connection_status()
-                json_as_str = render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
+                connection_info: JSONDict = await control_loop.get_connection_info()
+                json_as_str = render_json(connection_info, float_format='.2f', units=_CONNECTION_UNITS)
                 connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
                 connection_element.set_content(json_as_str)
 
@@ -1009,12 +998,12 @@ async def log_page():
 
 
 @ui.page('/registers_page')
-async def registers_page(match: Optional[str] = None):
+async def registers_page():
     """
     Show the inverter registers.
     """
     json_element = _json_page('Registers')
-    registers_elements = RegistersUpdater(registers_element=json_element, match=match)
+    registers_elements = RegistersUpdater(json_element)
     asyncio.create_task(registers_elements.update())
     await _register_control_loop_listener(registers_elements)
 

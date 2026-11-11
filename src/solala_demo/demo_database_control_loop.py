@@ -1,7 +1,8 @@
 import asyncio
 import selectors
+from datetime import date
 
-import local_config as config
+from solala.utils.local_config_help import config
 from solala.control_loop import control_loop
 from solala.database.measurement import Measurement
 from solala.settings import Settings, DatabaseConnection, DummyControllerConnection, DummyPricerConnection, \
@@ -28,7 +29,7 @@ async def main() -> None:
 
     async with control_loop.solala_database() as db:
         measurement: Measurement
-        for measurement in await db.get_measurements():
+        for measurement in await db.get_measurements(date.today()):
             print(measurement)
         print('done.')
 

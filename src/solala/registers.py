@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import TypeAlias, Type, Mapping, Iterator, Iterable, Tuple, KeysView, Optional, Hashable, \
-    MutableMapping, Callable
+from typing import TypeAlias, Type, Mapping, Iterable, Tuple, KeysView, Optional, \
+    Callable, final, Any, Awaitable, AsyncIterator
 
 RegisterValue: TypeAlias = str | int | float | bool
 RegisterType: TypeAlias = Type[str] | Type[int] | Type[float] | Type[bool]
@@ -13,6 +13,45 @@ class ReadOnlyError(AttributeError):
 
     def __init__(self):
         super().__init__('Register not writable')
+
+
+def check_type(t: Any) -> RegisterType:
+    """
+    Is the given type a valid register type.
+
+    Args:
+        t: The type to check.
+
+    Returns:
+        The register type.
+
+    Raises:
+        TypeError: If the type is not a valid register type.
+    """
+    if t in (str, int, float, bool):
+        return t
+    else:
+        raise TypeError(f'not a valid register type: {t}')
+
+
+def check_value(v: Any) -> RegisterValue:
+    """
+    Is the given value a valid register value.
+
+    Args:
+        v: The value to check.
+
+    Returns:
+        The value.
+
+    Raises:
+        TypeError: If the type of value is not a valid register type.
+
+    """
+    if isinstance(v, (str, int, float, bool)):
+        return v
+    else:
+        raise TypeError(f'not a valid register type: {type(v)}')
 
 
 def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
@@ -28,7 +67,7 @@ def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
     """
     if isinstance(value, register_type):
         return True
-    if isinstance(value, int) and register_type == float:
+    if type(value) is int and register_type is float:
         return True
     return False
 
@@ -49,13 +88,13 @@ class Register(ABC):
     def writable(self) -> bool:
         return self._writable
 
-    def get(self) -> RegisterValue:
+    async def get(self) -> RegisterValue:
         """
         Get the register value.
         """
-        return self._get()
+        return await self._get()
 
-    def set(self, value: RegisterValue) -> None:
+    async def set(self, value: RegisterValue) -> None:
         """
         Set the register value.
 
@@ -70,18 +109,31 @@ class Register(ABC):
             raise ReadOnlyError()
         if not value_okay(value, self._register_type):
             raise TypeError(f'Expected {self._register_type}, got {type(value)}')
-        self._set(value)
+        await self._set(value)
 
     @abstractmethod
-    def _get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         ...
 
     @abstractmethod
-    def _set(self, value: RegisterValue) -> None:
+    async def _set(self, value: RegisterValue) -> None:
         ...
 
 
-class ConstantRegister(Register):
+class ReadOnlyRegister(Register):
+    def __init__(self, register_type: RegisterType):
+        super().__init__(register_type, writable=False)
+
+    @abstractmethod
+    async def _get(self) -> RegisterValue:
+        ...
+
+    @final
+    async def _set(self, value: RegisterValue) -> None:
+        assert False
+
+
+class ConstantRegister(ReadOnlyRegister):
     """
     A register with a constant value.
     """
@@ -91,62 +143,48 @@ class ConstantRegister(Register):
         if not value_okay(value, register_type):
             raise TypeError(f'Expected {register_type}, got {type(value)}')
 
-        super().__init__(register_type, writable=False)
+        super().__init__(register_type)
         self._value = value
 
-    def _get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         return self._value
 
-    def _set(self, value: RegisterValue) -> None:
-        pass
 
-
-class CallRegister(Register):
+class CallRegister(ReadOnlyRegister):
     """
     A register that calls a function to get its value.
     """
 
-    def __init__(self, f: Callable[[], RegisterValue]):
-        check_value = f()
-        super().__init__(type(check_value), writable=False)
-        self._f = f
+    def __init__(self, f: Callable[[], RegisterValue], register_type: Optional[RegisterType] = None) -> None:
+        if register_type is None:
+            register_type = type(f())
+        super().__init__(register_type)
+        self._f: Callable[[], RegisterValue] = f
 
-    def _get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         return self._f()
 
-    def _set(self, value: RegisterValue) -> None:
-        pass
 
-
-class DictRegister(Register):
+class AsyncCallRegister(ReadOnlyRegister):
     """
-    A register that gets its value from a mapping.
+    A register that calls a function to get its value.
     """
 
-    def __init__(
-            self,
-            mapping: Mapping[Hashable, RegisterValue],
-            key: Hashable,
-            writable: bool = False,
-    ):
-        if writable and not isinstance(mapping, MutableMapping):
-            raise TypeError('Mapping must be mutable for a writable register')
+    def __init__(self, f: Callable[[], Awaitable[RegisterValue]], register_type: RegisterType) -> None:
+        super().__init__(register_type)
+        self._f: Callable[[], Awaitable[RegisterValue]] = f
 
-        check_value = mapping[key]
-        super().__init__(type(check_value), writable=writable)
-        self._mapping = mapping
-        self._key = key
-
-    def _get(self) -> RegisterValue:
-        return self._mapping[self._key]
-
-    def _set(self, value: RegisterValue) -> None:
-        self._mapping[self._key] = value  # type: ignore
+    async def _get(self) -> RegisterValue:
+        return await self._f()
 
 
-class RegisterBank(Mapping[str, RegisterValue]):
+class RegisterBank:
     """
     A collection of named registers.
+
+    Note that it is not possible to change the registers
+    of a register bank (i.e. the keys), but the register
+    values may change.
     """
 
     def __init__(
@@ -172,18 +210,20 @@ class RegisterBank(Mapping[str, RegisterValue]):
     def keys(self) -> KeysView[str]:
         return self._registers.keys()
 
-    def get(self, key: str, default: Optional[RegisterValue] = None) -> Optional[RegisterValue]:
+    async def items(self) -> AsyncIterator[Tuple[str, RegisterValue]]:
+        for key in self._registers.keys():
+            yield key, await self._registers[key].get()
+
+    async def get(self, key: str, default: Optional[RegisterValue] = None) -> Optional[RegisterValue]:
         got: Optional[Register] = self._registers.get(key, None)
         if got is None:
-            return None
+            return default
         else:
-            return got.get()
+            return await got.get()
 
-    def __getitem__(self, key: str, /) -> RegisterValue:
-        return self._registers[key].get()
-
-    def __setitem__(self, key: str, value: RegisterValue) -> None:
-        self._registers[key].set(value)
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._registers)
+    async def set(self, key: str, value: RegisterValue) -> None:
+        got: Optional[Register] = self._registers.get(key, None)
+        if got is None:
+            raise KeyError(key)
+        else:
+            await got.set(value)

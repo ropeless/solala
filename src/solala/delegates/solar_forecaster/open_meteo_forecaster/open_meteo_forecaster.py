@@ -7,7 +7,7 @@ from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.datetime_extras import ensure_date
 from solala.utils.httpx_extras import async_get
-from solala.utils.json import JSONDict
+from solala.utils.json_extras import JSONDict
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
 
@@ -122,7 +122,7 @@ class OpenMeteoForecaster(SolarForecaster):
 
         return DailySolarForecast(forecasts)
 
-    def get_connection_status(self) -> JSONDict:
+    def get_connection_info(self) -> JSONDict:
         return {
             'connection': 'Open-Meteo',
             'latitude': self._latitude,

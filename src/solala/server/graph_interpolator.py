@@ -144,12 +144,12 @@ class GraphingInterpolator:
     @property
     def forecast_solar_power(self) -> List[float]:
         values = [forecast.power / 1000 for forecast in self._solar_forecast]
-        return self._interpolate_cubic(self._ts_s, values, left=0, right=0)
+        return _ensure_non_negative(self._interpolate_cubic(self._ts_s, values, left=0, right=0))
 
     @property
     def forecast_accumulated_solar_energy(self) -> List[float]:
         values = _ensure_monotonic(_accumulate(forecast.energy / 1000 for forecast in self._solar_forecast))
-        return _ensure_monotonic(self._interpolate_cubic(self._ts_s, values, left=0, right=None))
+        return _ensure_monotonic(_ensure_non_negative(self._interpolate_cubic(self._ts_s, values, left=0, right=None)))
 
     # ====================================================================
     #  Support functions
@@ -223,8 +223,8 @@ class GraphingInterpolator:
 
         # Extrapolate only if left or right is finite
         extrapolate: bool = (
-            (left is not None and np.isfinite(left))
-            or (right is not None and np.isfinite(right))
+                (left is not None and np.isfinite(left))
+                or (right is not None and np.isfinite(right))
         )
 
         cs = CubicSpline(timestamps, y_values, bc_type='not-a-knot', extrapolate=extrapolate)
@@ -273,6 +273,13 @@ def _ensure_monotonic(data: Iterable[float]) -> List[float]:
         m = max(x, m)
         result.append(m)
     return result
+
+
+def _ensure_non_negative(data: Iterable[float]) -> List[float]:
+    return [
+        max(0, x)
+        for x in data
+    ]
 
 
 def _zero(data: Iterable[float]) -> List[float]:

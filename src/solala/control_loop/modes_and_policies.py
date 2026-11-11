@@ -3,7 +3,7 @@ from enum import Enum, auto
 
 from solala.constants import DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD, DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD, \
     DEFAULT_START_CHARGE_PRICE_THRESHOLD, DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
-from solala.utils.json import JSONDict
+from solala.utils.json_extras import JSONDict
 
 
 class BatteryMode(Enum):

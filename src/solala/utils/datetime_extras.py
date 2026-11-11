@@ -31,7 +31,6 @@ def ensure_date(obj: date, tz: Optional[tzinfo] = None) -> date:
         return obj.date()  # Extracts the date portion only
     elif isinstance(obj, date):
         return obj
-    raise TypeError('Expected date or datetime object')
 
 
 def date_to_datetime(obj: date, tz: Optional[tzinfo] = None) -> datetime:

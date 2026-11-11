@@ -1,7 +1,5 @@
 import asyncio
 import selectors
-import threading
-from functools import partial
 from pathlib import Path
 from typing import Optional
 
@@ -43,28 +41,24 @@ def run_server(
 
         database_write: If False, the control loop will not write to the database. This is useful for testing.
     """
+    try:
+        with asyncio.Runner(loop_factory=_loop_factory) as runner:
+            runner.run(_async_run_server(host, port, settings_path, settings, force_settings, database_write))
+    except KeyboardInterrupt:
+        LOGGER.info(f'killed by keyboard interrupt')
+
+async def _async_run_server(
+        host: str,
+        port: int,
+        settings_path: Optional[Path | str] = None,
+        settings: Optional[Settings] = None,
+        force_settings: bool = False,
+        database_write: bool = True,
+) -> None:
     app = FastAPI()
     favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
     ui.run_with(app, title=Constants.APP_NAME, favicon=favicon)
 
-    control_loop_thread = _start_control_loop_thread(settings_path, settings, force_settings, database_write)
-
-    try:
-        _start_server(app, host, port)
-    except KeyboardInterrupt:
-        LOGGER.info('keyboard interrupt')
-    finally:
-        # Cleanly stop the control loop thread
-        control_loop.exit_control_loop()
-        LOGGER.info('waiting for the control loop to terminate')
-        control_loop_thread.join()
-
-
-def _start_server(
-        app: FastAPI,
-        host: str,
-        port: int,
-) -> None:
     config = uvicorn.Config(
         app,
         host=host,
@@ -73,50 +67,11 @@ def _start_server(
         log_level='info',
     )
     server = uvicorn.Server(config)
-    with asyncio.Runner(loop_factory=_loop_factory) as runner:
-        runner.run(server.serve())
 
-
-def _start_control_loop_thread(
-        settings_path: Optional[Path | str] = None,
-        settings: Optional[Settings] = None,
-        force_settings: bool = False,
-        database_write: bool = True,
-) -> threading.Thread:
-    """
-    Start the control loop in a separate thread.
-
-    The control loop needs to be in its own thread as it must continue to interact with the
-    inverters, even while the GUI is doing something else.
-
-    Multiple thread-safe functions are provided to manage the behaviour of the control loop.
-
-    Call `exit_control_loop()` to gracefully terminate the control loop, then join the thread
-    (returned by this function).
-
-    Args:
-        settings_path: Path to the settings file, if settings are to be persisted. If provided, the control
-            loop will attempt to load settings from the file.
-
-        settings: Settings object to use if the settings file cannot be loaded.
-
-        force_settings: If True, the given settings object will always override any settings loaded from the file.
-            Note that if settings are provided, they will override any settings loaded from the file. This includes
-            modes and policies if the power controller is reloaded.
-
-        database_write: If False, the control loop will not write to the database. This is useful for testing.
-
-    Returns:
-        The control loop thread.
-    """
-    target = partial(
-        asyncio.run,
+    await asyncio.gather(
         control_loop.control_loop(settings_path, settings, force_settings, database_write),
-        loop_factory=_loop_factory,
+        server.serve(),
     )
-    control_loop_thread = threading.Thread(target=target, daemon=True)
-    control_loop_thread.start()
-    return control_loop_thread
 
 
 def _loop_factory():

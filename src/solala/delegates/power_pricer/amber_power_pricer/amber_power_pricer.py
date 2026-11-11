@@ -6,7 +6,7 @@ import requests
 
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
 from solala.utils.httpx_extras import async_get
-from solala.utils.json import JSONDict, json_str, json_num, json_bool, json_dict
+from solala.utils.json_extras import JSONDict, json_str, json_num, json_bool, json_dict
 
 API = 'https://api.amber.com.au/v1'
 
@@ -36,7 +36,7 @@ class AmberPowerPricer(PowerPricer):
     def site_id(self) -> str:
         return self._site_id
 
-    def get_connection_status(self) -> JSONDict:
+    def get_connection_info(self) -> JSONDict:
         return {
             'connection': 'Amber',
             'nmi': self._nmi,
@@ -188,5 +188,5 @@ def _get_predicted(data: JSONDict) -> float:
         return _get_perKwh(data)
 
 
-def _get_datetime(date: str) -> datetime:
-    return datetime.fromisoformat(date).astimezone()
+def _get_datetime(date_str: str) -> datetime:
+    return datetime.fromisoformat(date_str).astimezone()

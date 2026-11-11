@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 from solala.constants import GUI_TIME_FORMAT
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
 from solala.utils.datetime_extras import ensure_date, local_time_zone
-from solala.utils.json import JSONDict
+from solala.utils.json_extras import JSONDict
 
 _FIVE_MINUTES: timedelta = timedelta(minutes=5)
 
@@ -46,7 +46,7 @@ class DummyPowerPricer(PowerPricer):
         self.prices: List[Price] = []
         self.demand_window: Optional[Tuple[time, time]] = demand_window
 
-    def get_connection_status(self) -> JSONDict:
+    def get_connection_info(self) -> JSONDict:
         demand_window = (
             None if self.demand_window is None else
             [

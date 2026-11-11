@@ -1,15 +1,18 @@
 import asyncio
 import copy
 import json
+import re
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, Field
 from datetime import datetime, UTC, timedelta, date
+from inspect import getmembers
 from pathlib import Path
-from typing import Optional, List, Dict, Sequence, Iterable, AsyncIterator, Tuple
+from typing import Optional, List, Dict, Sequence, Iterable, AsyncIterator, Tuple, Type, Iterator, get_type_hints
 
+from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
 
-from solala.constants import Constants, TIMESTAMP_FORMAT
+from solala.constants import Constants, GUI_TIMESTAMP_FORMAT
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
@@ -18,6 +21,7 @@ from solala.database.solala_database_connections import SolalaDatabaseConnection
 from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
+from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
 from solala.delegates.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
@@ -32,14 +36,16 @@ from solala.delegates.solar_forecaster.solar_forecast import SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
+from solala.registers import RegisterBank, Register, RegisterType, RegisterValue, CallRegister, \
+    ReadOnlyRegister, check_type
 from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
     TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
     DummyControllerConnection, \
     DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
-    DummySolarForecasterConnection, DatabaseConnection
+    DummySolarForecasterConnection, DatabaseConnection, TuyaConnection
 from solala.utils.async_rlock import AsyncRLock
 from solala.utils.datetime_extras import now, local_time_zone
-from solala.utils.json import JSONDict, json_num, json_dict, JSONPrimitive, flatten
+from solala.utils.json_extras import JSONDict, json_num, JSONValue
 from solala.utils.network import find_ip_by_mac
 from solala.utils.string_extras import split_addresses
 
@@ -77,6 +83,9 @@ _NO_FORECAST = SolarForecast(
 )
 _DISCONNECTED: JSONDict = {'connection': 'disconnected'}
 _NO_SOLAR_FORECAST = DailySolarForecast([])
+_NO_REGISTERS: RegisterBank = RegisterBank({})
+
+MATCH_ALL: re.Pattern = re.compile('.*')  # regular expression to match anything
 
 
 @dataclass(frozen=True)
@@ -134,8 +143,10 @@ class _ControlState:
     next_price_check: datetime = _MIN_DATE
 
     last_price_forecast: Sequence[Price] = ()
-    last_price_demand_window: Dict[_DateKey, Optional[Tuple[datetime, datetime]]] = field(default_factory=dict)
     next_price_forecast_check: datetime = _MIN_DATE
+
+    last_price_demand_window: Dict[_DateKey, Optional[Tuple[datetime, datetime]]] = field(default_factory=dict)
+    next_price_demand_window_check: datetime = _MIN_DATE
 
     last_solar_forecast: Dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
     next_solar_forecast_check: datetime = _MIN_DATE
@@ -149,41 +160,44 @@ class _ControlState:
     database_write: bool = True
     settings_path: Optional[Path] = None  # for using persisted settings.
     iteration_start: datetime = field(default_factory=now)  # used to confirm the control loop is running
+    registers: RegisterBank = field(default_factory=lambda: RegisterBank(()))
+    registers_to_log: re.Pattern | None = None
+    registers_to_log_str: str | None = None
 
     @property
-    def controller_connection_status(self) -> JSONDict:
+    def controller_connection_info(self) -> JSONDict:
         if self.controller is None:
             return _DISCONNECTED
         else:
-            return self.controller.get_connection_status()
+            return self.controller.get_connection_info()
 
     @property
-    def pricer_connection_status(self) -> JSONDict:
+    def pricer_connection_info(self) -> JSONDict:
         if self.pricer is None:
             return _DISCONNECTED
         else:
-            return self.pricer.get_connection_status()
+            return self.pricer.get_connection_info()
 
     @property
-    def forecaster_connection_status(self) -> JSONDict:
+    def forecaster_connection_info(self) -> JSONDict:
         if self.forecaster is None:
             return _DISCONNECTED
         else:
-            return self.forecaster.get_connection_status()
+            return self.forecaster.get_connection_info()
 
     @property
-    def consumers_connection_status(self) -> Dict[str, JSONDict]:
+    def consumers_connection_info(self) -> Dict[str, JSONDict]:
         return {
-            name: consumer.get_connection_status()
+            name: consumer.get_connection_info()
             for name, consumer in self.consumers.items()
         }
 
     @property
-    def database_connection_status(self) -> JSONDict:
+    def database_connection_info(self) -> JSONDict:
         if self.database_connections is None:
             return _DISCONNECTED
         else:
-            return self.database_connections.get_connection_status()
+            return self.database_connections.get_connection_info()
 
     def reset_controller(self, controller: Optional[PowerController], settings: Optional[ControllerConnection]) -> None:
         assert (controller is None) == (settings is None)
@@ -362,6 +376,9 @@ async def configure_from_settings(settings: Settings) -> None:
     if settings.database is not None:
         await connect_database(settings.database)
 
+    if settings.registers_to_log is not None:
+        await log_registers(settings.registers_to_log)
+
     # Initialise control modes
     await set_control(
         battery_mode=settings.battery_mode,
@@ -442,21 +459,22 @@ async def get_power_status() -> PowerStatus:
         return state.last_power
 
 
-async def get_registers() -> Dict[str, JSONPrimitive]:
+async def get_registers(match: re.Pattern | Iterable[str] = MATCH_ALL) -> Dict[str, Optional[RegisterValue]]:
     """
-    Get the values of all registers of the power controller.
+    Get the values of registers, optionally limited to names that match a pattern.
     """
-    status = await get_status()  # must be before we grab the control lock otherwise it's a deadlock
-    async with _control_state() as state:
-        result: Dict[str, JSONPrimitive] = flatten(status, sep='/', prefix='status/')
-        if state.controller is None:
-            LOGGER.error(f'{_LOG_SRC}Power registers not available. Error: power controller not connected')
-        else:
-            result.update({
-                'controller/' + register: value
-                for register, value in (await state.controller.get_registers()).items()
-            })
-        return result
+    registers: RegisterBank = _CONTROL_STATE.registers  # no need to lock as RegisterBank is stable.
+    if isinstance(match, re.Pattern):
+        return {
+            name: await registers.get(name)
+            for name in registers.keys()
+            if match.match(name)
+        }
+    else:
+        return {
+            name: await registers.get(name)
+            for name in match
+        }
 
 
 async def get_price_now() -> Price:
@@ -483,7 +501,7 @@ async def get_price_now() -> Price:
                     # price is unstable - recheck is needed
                     delay = Constants.PRICE_SETTLE_CHECK
                     state.next_price_check = min(timestamp + timedelta(seconds=delay), price.end_time)
-                    time_str = state.next_price_check.astimezone(local_time_zone()).strftime(TIMESTAMP_FORMAT)
+                    time_str = state.next_price_check.astimezone(local_time_zone()).strftime(GUI_TIMESTAMP_FORMAT)
                     LOGGER.info(f'{_LOG_SRC}Current price is an estimate, recheck scheduled {time_str}.')
                 else:
                     # price is stable - no need to recheck for this period
@@ -517,16 +535,23 @@ async def get_demand_window(day: date) -> Optional[Tuple[datetime, datetime]]:
     Returns None if the demand window is not active on the given day.
     """
     async with _control_state() as state:
-        pricer = state.pricer
-        if pricer is None:
-            LOGGER.error(f'{_LOG_SRC}Demand window not available. Error: power pricer not connected')
-            return None
-
         key = _DateKey(day.year, day.month, day.day)
         demand_window: Optional[Tuple[datetime, datetime]]
+        timestamp = now()
+        if state.next_price_demand_window_check <= timestamp:
+            # Invalidate the cache
+            state.last_price_demand_window.clear()
+            state.next_price_demand_window_check = timestamp + timedelta(minutes=Constants.PRICE_DEMAND_WINDOW_AGE)
+
         if key in state.last_price_demand_window:
             demand_window = state.last_price_demand_window[key]
         else:
+            # Need to go to the pricer to get the demand window
+            pricer = state.pricer
+            if pricer is None:
+                LOGGER.error(f'{_LOG_SRC}Demand window not available. Error: power pricer not connected')
+                return None
+
             demand_window = await pricer.get_demand_window(day)
             state.last_price_demand_window[key] = demand_window
 
@@ -544,15 +569,16 @@ async def get_price_forecast() -> Sequence[Price]:
     Errors will be logged but should not raise an exception.
     """
     async with _control_state() as state:
-        pricer = state.pricer
-        if pricer is None:
-            LOGGER.error(f'{_LOG_SRC}Price forecast not available. Error: power pricer not connected')
-            return ()
-
         prices: Sequence[Price] = state.last_price_forecast
         needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
         timestamp = now()
         if state.next_price_forecast_check <= timestamp or len(prices) == 0 or prices[0].end_time < timestamp:
+            # Need to go to the pricer to get a price forecast
+            pricer = state.pricer
+            if pricer is None:
+                LOGGER.error(f'{_LOG_SRC}Price forecast not available. Error: power pricer not connected')
+                return ()
+
             try:
                 # Plus one to account for possible race condition (see below).
                 prices: List[Price] = await pricer.get_price_forecast(needed_forecasts + 1)
@@ -581,16 +607,16 @@ async def get_consumers_status() -> Dict[str, ConsumerStatus]:
     return {name: status for name, status in zip(names, statuses)}
 
 
-async def get_connection_status() -> JSONDict:
+async def get_connection_info() -> JSONDict:
     async with _control_state() as state:
-        result: JSONDict = {
-            'controller': state.controller_connection_status,
-            'pricer': state.pricer_connection_status,
-            'forecaster': state.forecaster_connection_status,
-            'database': state.database_connection_status,
+        result: Dict[str, JSONValue] = {
+            'controller': state.controller_connection_info,
+            'pricer': state.pricer_connection_info,
+            'forecaster': state.forecaster_connection_info,
+            'database': state.database_connection_info,
         }
         if len(state.consumers) > 0:
-            result['consumers'] = state.consumers_connection_status
+            result['consumers'] = state.consumers_connection_info
         return result
 
 
@@ -610,24 +636,23 @@ async def get_status() -> JSONDict:
         get_consumers_status(),
     )
 
-    result: JSONDict = {
-        'control': control_mode.to_json(),
-        'power': power_status.to_json(),
-        'price': price.to_json(datetime_format=TIMESTAMP_FORMAT, include_time=False),
-    }
-
+    power_json: JSONDict = power_status.to_json()
     if len(consumers_status) > 0:
-        where = json_dict(result['power'])  # Where to attach the consumers status
-        where['consumers'] = {
+        power_json: Dict[str, JSONValue] = dict(power_json)
+        power_json['consumers'] = {
             consumer: status.to_json()
             for consumer, status in consumers_status.items()
         }
         total = sum(json_num(consumer.power) for consumer in consumers_status.values())
         house_power = power_status.house_power
-        where['consumers_total'] = total
-        where['consumers_remaining'] = house_power - total
+        power_json['consumers_total'] = total
+        power_json['consumers_remaining'] = house_power - total
 
-    return result
+    return {
+        'control': control_mode.to_json(),
+        'power': power_json,
+        'price': price.to_json(datetime_format=GUI_TIMESTAMP_FORMAT, include_time=False),
+    }
 
 
 async def get_solar_forecast(day: date) -> DailySolarForecast:
@@ -663,27 +688,53 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
 @asynccontextmanager
 async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaDatabase]:
     async with _control_state() as state:
+        LOGGER.debug('{_LOG_SRC}Requesting DB connection from pool')
         database_connections = state.database_connections
         if database_connections is None:
             raise ConnectionError('Database pool not connected')
         database_connections: SolalaDatabaseConnections
-        db: SolalaDatabase = await database_connections.get_db()
+
+        # DEBUG
+        stats = database_connections.get_stats()
+        LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
+        LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
+        LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
+        LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
+
+    await database_connections.open(wait=False)
+    db: SolalaDatabase = await database_connections.get_db()
+
+    # DEBUG
+    LOGGER.debug('{_LOG_SRC}Obtained DB connection from pool')
+    stats = database_connections.get_stats()
+    LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
+    LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
+    LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
+    LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
 
     # Release the control state lock, then provide the database connection
-    yield db
-
-    # Release the database connection
-    async with _control_state() as state:
-        if database_connections is not state.database_connections:
-            raise ConnectionError('Database pool closed with in use')
-        await database_connections.put_db(db, commit_on_close)
+    try:
+        yield db
+    finally:
+        # Release the database connection
+        async with _control_state() as state:
+            LOGGER.debug('{_LOG_SRC}Returning DB connection to pool')
+            if database_connections is not state.database_connections:
+                raise ConnectionError('Database pool closed while in use')
+            await database_connections.put_db(db, commit_on_close)
+        LOGGER.debug('{_LOG_SRC}Returned DB connection to pool')
+        stats = database_connections.get_stats()
+        LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
+        LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
+        LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
+        LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
     try:
         async with solala_database() as db:
             return await db.get_measurements(day)
-    except ConnectionError as err:
+    except (ConnectionError, DatabaseError) as err:
         LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
         return []
 
@@ -739,6 +790,19 @@ async def set_control(
         LOGGER.info(f'{_LOG_SRC}Control: {json.dumps(state.control_mode.to_json())}')
 
 
+async def log_registers(match: Optional[str]) -> None:
+    """
+    Set what registers to log to the database
+    """
+    async with _control_state() as state:
+        if match is None:
+            state.registers_to_log = None
+            state.registers_to_log_str = None
+        else:
+            state.registers_to_log = re.compile(match)
+            state.registers_to_log_str = match
+
+
 # =============================================================================
 #  Connection management for power control and price
 # =============================================================================
@@ -761,9 +825,10 @@ async def connect_controller(controller_connection: ControllerConnection) -> Non
 
         await disconnect_controller()
         state.reset_controller(controller, controller_connection)
-        connection_status = controller.get_connection_status()
-        LOGGER.info(f'{_LOG_SRC}Power controller connection: {json.dumps(connection_status)}')
+        connection_info = controller.get_connection_info()
+        LOGGER.info(f'{_LOG_SRC}Power controller connection: {json.dumps(connection_info)}')
         await _save_settings()
+        await _reconfigure_registers(state)
 
 
 async def disconnect_controller() -> None:
@@ -776,6 +841,7 @@ async def disconnect_controller() -> None:
             state.reset_controller(None, None)
             LOGGER.info(f'{_LOG_SRC}Power controller disconnected')
         await _save_settings()
+        await _reconfigure_registers(state)
 
 
 async def connect_pricer(pricer_connection: PricerConnection) -> None:
@@ -794,9 +860,10 @@ async def connect_pricer(pricer_connection: PricerConnection) -> None:
 
         await disconnect_pricer()
         state.reset_pricer(pricer, pricer_connection)
-        connection_status = pricer.get_connection_status()
-        LOGGER.info(f'{_LOG_SRC}Power pricer connection: {json.dumps(connection_status)}')
+        connection_info = pricer.get_connection_info()
+        LOGGER.info(f'{_LOG_SRC}Power pricer connection: {json.dumps(connection_info)}')
         await _save_settings()
+        await _reconfigure_registers(state)
 
 
 async def disconnect_pricer() -> None:
@@ -809,6 +876,7 @@ async def disconnect_pricer() -> None:
             state.reset_pricer(None, None)
             LOGGER.info(f'{_LOG_SRC}Pricer disconnected')
         await _save_settings()
+        await _reconfigure_registers(state)
 
 
 async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> None:
@@ -821,6 +889,9 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
         elif consumer_connection.type == TeslaWallConnectorConnection.TYPE:
             assert isinstance(consumer_connection, TeslaWallConnectorConnection)
             consumer = _connect_tesla_wall_connector(consumer_connection)
+        elif consumer_connection.type == TuyaConnection.TYPE:
+            assert isinstance(consumer_connection, TuyaConnection)
+            consumer = _connect_tuya(consumer_connection)
         else:
             raise ControlLoopError(
                 'unknown consumer connection type',
@@ -829,9 +900,10 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
 
         await disconnect_consumer(name)
         state.reset_consumer(name, consumer, consumer_connection)
-        connection_status = consumer.get_connection_status()
-        LOGGER.info(f'{_LOG_SRC}Power consumer {name!r} connection: {json.dumps(connection_status)}')
+        connection_info = consumer.get_connection_info()
+        LOGGER.info(f'{_LOG_SRC}Power consumer {name!r} connection: {json.dumps(connection_info)}')
         await _save_settings()
+        await _reconfigure_registers(state)
 
 
 async def disconnect_consumer(name: str) -> None:
@@ -845,6 +917,7 @@ async def disconnect_consumer(name: str) -> None:
             state.reset_consumer(name, None, None)
             LOGGER.info(f'{_LOG_SRC}Power consumer {name!r} disconnected')
         await _save_settings()
+        await _reconfigure_registers(state)
 
 
 async def connect_forecaster(forecaster_connection: ForecasterConnection) -> None:
@@ -865,9 +938,10 @@ async def connect_forecaster(forecaster_connection: ForecasterConnection) -> Non
 
         await disconnect_forecaster()
         state.reset_forecaster(forecaster, forecaster_connection)
-        connection_status = forecaster.get_connection_status()
-        LOGGER.info(f'{_LOG_SRC}Solar forecaster connection: {json.dumps(connection_status)}')
+        connection_info = forecaster.get_connection_info()
+        LOGGER.info(f'{_LOG_SRC}Solar forecaster connection: {json.dumps(connection_info)}')
         await _save_settings()
+        await _reconfigure_registers(state)
 
 
 async def disconnect_forecaster() -> None:
@@ -880,6 +954,7 @@ async def disconnect_forecaster() -> None:
             state.reset_forecaster(None, None)
             LOGGER.info(f'{_LOG_SRC}Solar forecaster disconnected')
         await _save_settings()
+        await _reconfigure_registers(state)
 
 
 async def connect_database(database_connection: DatabaseConnection) -> None:
@@ -893,9 +968,10 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
         )
         await disconnect_database()
         state.reset_database(database_connections, database_connection)
-        connection_status = database_connections.get_connection_status()
-        LOGGER.info(f'{_LOG_SRC}Database connection: {json.dumps(connection_status)}')
+        connection_info = database_connections.get_connection_info()
+        LOGGER.info(f'{_LOG_SRC}Database connection: {json.dumps(connection_info)}')
         await _save_settings()
+        # no need to _reconfigure_registers(state)
 
 
 async def disconnect_database() -> None:
@@ -908,6 +984,7 @@ async def disconnect_database() -> None:
             state.reset_database(None, None)
             LOGGER.info(f'{_LOG_SRC}Database disconnected')
         await _save_settings()
+        # no need to _reconfigure_registers(state)
 
 
 # =============================================================================
@@ -999,30 +1076,60 @@ async def _control_loop() -> None:
     Execute the main control loop.
     """
     LOGGER.info(f'{_LOG_SRC}Running control loop')
+
+    # Sleep to start the loop on a preferred time boundary.
+    # Also gives some time to queued async tasks.
+    await asyncio.sleep(_get_sleep_time())
+
     while _CONTROL_STATE.control_loop_running:
         async with _control_state() as state:
-            state.iteration_start = now()  # timestamp to calculate loop sleep time
+            state.iteration_start = iteration_start = now()  # timestamp to calculate loop sleep time
             await _control_step(state)
             listeners = state.control_loop_listeners.copy()
             state.last_power_valid = False
+            cur_log_registers: re.Pattern | None = state.registers_to_log
 
         # Update the listeners while not holding the control state lock.
+        await _cur_log_registers(cur_log_registers)
         _update_listeners(listeners)
 
         # Sleep for the remaining time until the next loop iteration.
-        # Make adjustment so that iterations tend to fall at whole minutes
-        # (assuming `Constants.LOOP_TIME` is a factor of 60).
-        # The adjustment is limited to -1 to +1 second away from `Constants.LOOP_TIME`.
-        next_start_timestamp = state.iteration_start.timestamp() + Constants.LOOP_TIME
-        ideal_start_timestamp = round(next_start_timestamp / Constants.LOOP_TIME) * Constants.LOOP_TIME
-        next_start_timestamp += max(-1, min(ideal_start_timestamp - next_start_timestamp, 1))  # limited adjustment
-        sleeptime: float = next_start_timestamp - now().timestamp()
-        if sleeptime < Constants.LOOP_MIN_SLEEP_TIME:
-            LOGGER.warn(f'{_LOG_SRC}Low sleep time: {sleeptime} < {Constants.LOOP_MIN_SLEEP_TIME}')
-            sleeptime = Constants.LOOP_MIN_SLEEP_TIME
-        await asyncio.sleep(sleeptime)
+        sleep_time = _get_sleep_time()
+        loop_time_multiple = (now().timestamp() - iteration_start.timestamp() + sleep_time) / Constants.LOOP_TIME
+        if loop_time_multiple > 1:
+            LOGGER.warn(f'{_LOG_SRC}Loop time multiple > 1 ({loop_time_multiple})')
+        await asyncio.sleep(sleep_time)
 
     LOGGER.info(f'{_LOG_SRC}Stopped control loop')
+
+
+def _get_sleep_time() -> float:
+    """
+    Return the sleep time required to wake up on a Constants.LOOP_TIME multiple.
+    The result is > Constants.LOOP_MIN_SLEEP_TIME.
+    """
+    ts: float = now().timestamp()
+    start_timestamp = (int(ts / Constants.LOOP_TIME) + 1) * Constants.LOOP_TIME
+    sleep_time = start_timestamp - ts
+    while sleep_time < Constants.LOOP_MIN_SLEEP_TIME:
+        start_timestamp += Constants.LOOP_TIME
+        sleep_time = start_timestamp - ts
+    return sleep_time
+
+
+async def _cur_log_registers(cur_log_registers: Optional[re.Pattern]) -> None:
+    if cur_log_registers is not None:
+        timestamp = now()
+        registers = await get_registers(cur_log_registers)
+        to_log: Dict[str, int | float] = {}
+        for name, value in registers.items():
+            if isinstance(value, (int, float)):
+                to_log[name] = value
+        try:
+            async with solala_database() as db:
+                await db.insert_registers_numeric(timestamp, to_log)
+        except (ConnectionError, DatabaseError) as err:
+            LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
 
 
 async def _control_step(state: _ControlState) -> None:
@@ -1059,17 +1166,17 @@ async def _control_step(state: _ControlState) -> None:
     if state.control_mode.battery_mode != prev_state.control_mode.battery_mode:
         match state.control_mode.battery_mode:
             case BatteryMode.ENABLE:
-                power_controller.enable_battery()
+                await power_controller.enable_battery()
             case BatteryMode.DISABLE:
-                power_controller.disable_battery()
+                await power_controller.disable_battery()
             case BatteryMode.FORCE_CHARGE:
-                power_controller.force_charge()
+                await power_controller.force_charge()
             case BatteryMode.FORCE_DISCHARGE:
-                power_controller.force_discharge()
+                await power_controller.force_discharge()
             case BatteryMode.CHARGE_ONLY:
-                power_controller.charge_only()
+                await power_controller.charge_only()
             case BatteryMode.DISCHARGE_ONLY:
-                power_controller.discharge_only()
+                await power_controller.discharge_only()
 
     # Inverter Policy - may change Inverter Mode
     if state.pricer is not None:
@@ -1084,15 +1191,15 @@ async def _control_step(state: _ControlState) -> None:
     # Inverter Mode
     if state.control_mode.inverter_mode != prev_state.control_mode.inverter_mode:
         if state.control_mode.inverter_mode == InverterMode.ENABLE:
-            power_controller.enable_inverter()
+            await power_controller.enable_inverter()
         # All other cases are managed below as they have a reversion time limit
     # Inverter modes requiring keep-alive pulse
     try:
         match state.control_mode.inverter_mode:
             case InverterMode.DISABLE:
-                power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
+                await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
             case InverterMode.ZERO_EXPORT:
-                power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
+                await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
     except Exception as e:
         LOGGER.error(f'{_LOG_SRC}Error processing command: {state.control_mode.inverter_mode}. Error: {e}')
 
@@ -1152,7 +1259,7 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
     errors: List[JSONDict] = []
     for address in addresses:
         try:
-            client = ModbusTcpClient(address.ip_address, port=502)
+            client = ModbusTcpClient(address.ip_address)
             client.connect()
             clients.append(client)
         except Exception as err:
@@ -1235,6 +1342,25 @@ def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnect
         return TeslaWallConnector(address.ip_address, address.mac_address)
     except Exception as err:
         raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
+
+
+def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
+    """
+    Establish a power consumer connection using Tuya.
+
+    Does not change the control state in any way.
+
+    Raises:
+        ControlLoopError: a connection cannot be established.
+    """
+    try:
+        return TuyaPowerConsumer(
+            access_id=consumer_connection.access_id,
+            access_secret=consumer_connection.access_secret,
+            device_id=consumer_connection.device_id,
+        )
+    except Exception as err:
+        raise ControlLoopError('could not connect to the Tuya device', errors=[str(err)])
 
 
 def _connect_open_meteo_forecaster(forecaster_connection: OpenMeteoConnection) -> SolarForecaster:
@@ -1327,6 +1453,109 @@ def _update_listeners(listeners: Iterable[LoopListener]) -> None:
         asyncio.run_coroutine_threadsafe(listener.update(), event_loop)
 
 
+class PowerRegister(ReadOnlyRegister):
+
+    def __init__(self, field_name: str, register_type: RegisterType) -> None:
+        self._field_name = field_name
+        super().__init__(register_type)
+
+    async def _get(self) -> RegisterValue:
+        return getattr(await get_power_status(), self._field_name)
+
+
+class PriceRegister(ReadOnlyRegister):
+
+    def __init__(self, field_name: str, register_type: RegisterType) -> None:
+        self._field_name = field_name
+        super().__init__(register_type)
+
+    async def _get(self) -> RegisterValue:
+        return getattr(await get_price_now(), self._field_name)
+
+
+class ConsumerRegister(ReadOnlyRegister):
+
+    def __init__(self, consumer: PowerConsumer, field_name: str, register_type: RegisterType) -> None:
+        self._field_name = field_name
+        self._consumer = consumer
+        super().__init__(register_type)
+
+    async def _get(self) -> RegisterValue:
+        return getattr(await self._consumer.get_status(), self._field_name)
+
+
+async def _reconfigure_registers(state: _ControlState) -> None:
+    """
+    Updates the control loop register bank as per currently available delegates.
+    Assumes the control state lock is held.
+    """
+
+    # Add status/battery and status/inverter registers
+    registers: Dict[str, Register] = {
+        'status/battery/mode': CallRegister(lambda: _CONTROL_STATE.control_mode.battery_mode.name),
+        'status/battery/policy': CallRegister(lambda: _CONTROL_STATE.control_mode.battery_policy.name),
+        'status/battery/start_charge_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control_mode.start_charge_price_threshold),
+        'status/battery/stop_charge_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control_mode.stop_charge_price_threshold),
+
+        'status/inverter/mode': CallRegister(lambda: _CONTROL_STATE.control_mode.inverter_mode.name),
+        'status/inverter/policy': CallRegister(lambda: _CONTROL_STATE.control_mode.inverter_policy.name),
+        'status/inverter/enable_export_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control_mode.enable_export_price_threshold),
+        'status/inverter/disable_export_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control_mode.disable_export_price_threshold),
+    }
+
+    # Add status/power registers
+    f: Field
+    for f in fields(PowerStatus):
+        f_type: RegisterType = check_type(f.type)
+        registers[f'status/power/{f.name}'] = PowerRegister(f.name, f_type)
+    for consumer_name, consumer in state.consumers.items():
+        for f in fields(ConsumerStatus):
+            try:
+                reg_type: RegisterType = check_type(f.type)
+            except TypeError:
+                continue
+            registers[f'status/power/consumers/{consumer_name}/{f.name}'] = \
+                ConsumerRegister(consumer, f.name, reg_type)
+        for prop_name, prop_type in get_dataclass_properties(ConsumerStatus):
+            try:
+                reg_type: RegisterType = check_type(prop_type)
+            except TypeError:
+                continue
+            registers[f'status/power/consumers/{consumer_name}/{prop_name}'] = \
+                ConsumerRegister(consumer, prop_name, reg_type)
+    for f in fields(Price):
+        if f.name in ('start_time', 'end_time'):
+            continue
+        f_type: RegisterType = check_type(f.type)
+        registers[f'status/power/{f.name}'] = PriceRegister(f.name, f_type)
+
+    # Add controller registers
+    if state.controller is not None:
+        controller_registers: RegisterBank = await state.controller.get_registers()
+        for name, register in controller_registers.registers.items():
+            registers[f'controller/{name}'] = register
+
+    # Add power consumer registers
+    for consumer_name, consumer in state.consumers.items():
+        consumer_registers: RegisterBank = await consumer.get_registers()
+        for name, register in consumer_registers.registers.items():
+            registers[f'consumer/{consumer_name}/{name}'] = register
+
+    state.registers = RegisterBank(registers)
+
+
+def get_dataclass_properties(cls: Type) -> Iterator[Tuple[str, type]]:
+    for name, member in getmembers(cls):
+        if isinstance(member, property):
+            prop = getattr(cls, name)
+            prop_type = get_type_hints(prop.fget)['return']
+            yield name, prop_type
+
+
 def _get_settings(state: _ControlState) -> Settings:
     """
     Take a snapshot of the current settings.
@@ -1350,6 +1579,8 @@ def _get_settings(state: _ControlState) -> Settings:
 
         start_charge_price_threshold=control_mode.start_charge_price_threshold,
         stop_charge_price_threshold=control_mode.stop_charge_price_threshold,
+
+        registers_to_log=state.registers_to_log_str,
     )
 
 

@@ -3,8 +3,8 @@ import json
 
 from pymodbus.client import ModbusTcpClient
 
-from local_config import MASTER_INVERTER_ADDR, SLAVE_INVERTER_ADDR
-from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
+from solala.utils.local_config_help import config
+from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice, ModbusDevices
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
 from solala.delegates.power_controller.power_controller import PowerStatus
 from solala_demo.log import configure_logger
@@ -16,10 +16,10 @@ METER_INVERTER_DEVICE_ID = 200
 
 async def main():
     configure_logger()
-    master = ModbusTcpClient(MASTER_INVERTER_ADDR)
-    slave = ModbusTcpClient(SLAVE_INVERTER_ADDR)
+    master = ModbusTcpClient(config.MASTER_INVERTER_ADDR)
+    slave = ModbusTcpClient(config.SLAVE_INVERTER_ADDR)
 
-    devices = {
+    devices: ModbusDevices = {
         'master': ModbusDevice(master, MASTER_INVERTER_DEVICE_ID),
         'slave': ModbusDevice(slave, SLAVE_INVERTER_DEVICE_ID),
         'meter': ModbusDevice(master, METER_INVERTER_DEVICE_ID),

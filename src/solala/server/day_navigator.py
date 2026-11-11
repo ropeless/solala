@@ -17,17 +17,34 @@ _CAROUSEL_PROPS = 'infinite transition-next="slide-left" transition-prev="slide-
 
 
 class DayNavigator:
-    def __init__(self):
-        # The navigator works by keeping s ring of three carousel slides. At any point of time
-        # one slide is the current display day (focus slide) with the other two being the previous
-        # and next day (left slide and right slide).
-        #
-        # The contents of each slide is maintained by an element "Updater" which is set for a particular
-        # slide content element and called when required to update its content to a particular day.
-        #
-        # The carousel can be operated either via the IU or programmatically so there is a distinction
-        # between the slide we last set to the focus slide (self._focus_slide) and the slide currently
-        # on display (self._display_slide).
+    def __init__(
+            self,
+            *,
+            enable_swipe_content: bool = False,
+            enable_swipe_navigator: bool = True,
+            enable_arrow_keys: bool = True,
+    ):
+        """
+        Create a carousel of infinite cards, where each card represents a date.
+
+        The navigator consists of a date navigation bar with a content slide below that.
+
+        The navigator works by keeping s ring of three carousel slides. At any point of time
+        one slide is the current display day (focus slide) with the other two being the previous
+        and next day (left slide and right slide).
+
+        The contents of each slide is maintained by an element "Updater" which is set for a particular
+        slide content element and called when required to update its content to a particular day.
+
+        The carousel can be operated either via the IU or programmatically so there is a distinction
+        between the slide we last set to the focus slide (self._focus_slide) and the slide currently
+        on display (self._display_slide).
+
+        Args:
+            enable_swipe_content: if true then the content cards respond to left-right swipe gestures.
+            enable_swipe_navigator: if true then the navigator bar respond to left-right swipe gestures.
+            enable_arrow_keys: if true then the carousel responds to the left and right arrow keys.
+        """
 
         self._day: date = _SENTINEL_DATE
         self._focus_slide: int = 0
@@ -35,7 +52,8 @@ class DayNavigator:
         self._touch_start_x: float | None = None  # for our own swipe detection
 
         # Date and navigation row
-        with ui.row().classes('items-center gap-2 w-full'):
+        navigator_row = ui.row().classes('items-center gap-2 w-full')
+        with navigator_row:
             # Date
             ui.button(
                 icon='calendar_today',
@@ -87,21 +105,6 @@ class DayNavigator:
 
         self._carousel.on_value_change(self._on_slide_change)
         self._carousel.on('transition', self._on_carousel_transition)
-        self._carousel.on(
-            'touchstart',
-            self._on_touch_start,
-            js_handler='(e) => emit(e.touches[0]?.clientX ?? null)',
-        )
-        self._carousel.on(
-            'touchend',
-            self._on_touch_end,
-            js_handler='(e) => emit(e.changedTouches[0]?.clientX ?? null)',
-        )
-        self._carousel.on(
-            'touchcancel',
-            lambda _: setattr(self, '_touch_start_x', None),
-        )
-        ui.keyboard(on_key=self._handle_key, repeating=False)
 
         with ui.dialog(value=False) as dialog:
             with ui.card():
@@ -110,6 +113,14 @@ class DayNavigator:
                     on_change=self._dialog_day_changed,
                 )
         self._dialog = dialog
+
+        if enable_swipe_content:
+            self._add_swipe_handler(self._carousel)
+        if enable_swipe_navigator:
+            self._add_swipe_handler(navigator_row)
+
+        if enable_arrow_keys:
+            ui.keyboard(on_key=self._handle_key, repeating=False)
 
     def get_elements(self) -> Sequence[Element]:
         """
@@ -173,6 +184,22 @@ class DayNavigator:
             await self._update_element(self._focus_slide, day)
             asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
             asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+
+    def _add_swipe_handler(self, element: Element) -> None:
+        element.on(
+            'touchstart',
+            self._on_touch_start,
+            js_handler='(e) => emit(e.touches[0]?.clientX ?? null)',
+        )
+        element.on(
+            'touchend',
+            self._on_touch_end,
+            js_handler='(e) => emit(e.changedTouches[0]?.clientX ?? null)',
+        )
+        element.on(
+            'touchcancel',
+            lambda _: setattr(self, '_touch_start_x', None),
+        )
 
     @property
     def _display_slide(self) -> int:
@@ -269,11 +296,11 @@ class DayNavigator:
 
     async def _show_dialog(self) -> None:
         """
-        Present the date picker dialog to the user.
+        Present the date picker dialogue to the user.
         """
         cur_date = self._day.isoformat()
         if cur_date != self._date_picker.value:
-            # This will cause the dialog to open
+            # This will cause the dialogue to open
             self._date_picker.value = cur_date
             await asyncio.sleep(0)
         else:

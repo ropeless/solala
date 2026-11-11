@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from local_config import OUT
+from solala.utils.local_config_help import config
 from solala.server.server_infographic import Infographic
 
 
@@ -17,9 +17,10 @@ def main() -> None:
         feed_in_price=12.5,
         renewables=12,
         is_estimate=False,
+        is_demand_window=False,
     )
 
-    file_path: Path = OUT / 'infographic.svg'
+    file_path: Path = config.OUT / 'infographic.svg'
     infographic.canvas.save_svg(file_path)
 
 

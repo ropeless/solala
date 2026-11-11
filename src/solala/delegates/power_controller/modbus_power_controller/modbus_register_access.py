@@ -5,11 +5,16 @@ from typing import TypeAlias, Sequence
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ModbusPDU
 
+from solala.logger import LOGGER
 from solala.registers import ReadOnlyError, RegisterType, RegisterValue
 
-NEXT_SF = -1  # The scale factor address to use to mean the next register.
+NEXT_SF = -1  # The scale factor address to use to nominate the next register.
 
 MODBUS_MODEL: TypeAlias = int
+
+_LOG_SRC = '[modbus] '  # prefix for log messages
+
+_DEBUG_LOG = False
 
 
 class ModbusError(IOError):
@@ -194,9 +199,13 @@ def _read_byte_array(
         count=count,
         device_id=context.device_id,
     )
+
     if result.isError():
         raise ModbusError(context.device_id, context.modbus_model, addr, physical_addr, count, 'read', result)
-    return _registers_to_bytearray(result.registers)
+    the_bytes = _registers_to_bytearray(result.registers)
+
+    _log(f'read byte array: physical_addr={physical_addr} count={count} result=0x{the_bytes.hex()}')
+    return the_bytes
 
 
 def _registers_to_bytearray(registers: Sequence[int]) -> bytearray:
@@ -230,11 +239,13 @@ def _write_int(
     match count:
         case 1:
             value &= 0xFFFF
+            _log(f'write int: physical_addr={physical_addr} count={count} value={value}')
             result: ModbusPDU = context.client.write_registers(
                 physical_addr,
                 values=[value],
                 device_id=context.device_id
             )
+
             if result.isError():
                 raise ModbusError(context.device_id, context.modbus_model, addr, physical_addr, count, 'write', result)
         case _:
@@ -345,6 +356,10 @@ class RegisterAccessScaled(RegisterAccess):
 
         value: int = reg_value(self.addr, self.count, self.signed)
         scale: int = reg_value(self.scale_addr, 1, True)
+
+        _log(f'read scaled int: physical_addr={self.addr + context.address_offset} value={value}')
+        _log(f'read scaled int: physical_addr={self.scale_addr + context.address_offset} scale={scale}')
+
         return value * (10 ** scale)
 
     def set(self, context: RegisterContext, value: RegisterValue) -> None:
@@ -355,9 +370,13 @@ class RegisterAccessScaled(RegisterAccess):
         if value < 0 and not self.signed:
             raise ValueError('Value is negative but register is unsigned')
 
+        _log(f'write scale int: value={value}')
+
         # We keep the same scaling factor
         byte_array = _read_byte_array(context, self.scale_addr, count=1)
         scale: int = int.from_bytes(byte_array, byteorder='big', signed=True)
+
+        _log(f'write scale int: read scale={scale}')
 
         if isinstance(value, float):
             scaled_value = int(value * (10 ** -scale) + 0.5)  # add 0.5 for rounding
@@ -377,3 +396,8 @@ class RegisterAccessScaled(RegisterAccess):
             )
         else:
             assert False, 'unexpected type'
+
+
+def _log(msg: str) -> None:
+    if _DEBUG_LOG:
+        LOGGER.debug(f'{_LOG_SRC}{msg}')  # type: ignore[PyUnreachableCode]
