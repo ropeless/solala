@@ -550,7 +550,7 @@ class ChartUpdater(LoopListener):
                 self._power_chart = PowerChart(colours)
                 self._energy_chart = EnergyChart(colours)
 
-        asyncio.create_task(self.update())
+        self._session.add_task(asyncio.create_task(self.update()))
 
     @property
     def day(self) -> date:
@@ -559,7 +559,7 @@ class ChartUpdater(LoopListener):
     async def set_day(self, day: date) -> None:
         self._show_loading()
         self._day = day
-        asyncio.create_task(self.update())
+        self._session.add_task(asyncio.create_task(self.update()))
 
     @final
     async def update(self) -> None:
@@ -921,7 +921,7 @@ async def root_page():
                         js_handler="(e) => emit(e.target.closest('rect')?.id)",
                     )
                     updater = InfographicUpdater(infographic_element=infographic)
-                    session.add_task(session.add_task(asyncio.create_task(updater.update())))
+                    session.add_task(asyncio.create_task(updater.update())))
                     await _register_control_loop_listener(session, updater)
 
             # ==============================================================
@@ -1058,7 +1058,7 @@ async def registers_page():
     """
     json_element = _json_page('Registers')
     registers_elements = RegistersUpdater(json_element)
-    session.add_task(session.add_task(asyncio.create_task(registers_elements.update())))
+    session.add_task(asyncio.create_task(registers_elements.update())))
     await _register_control_loop_listener(session, registers_elements)
 
 
