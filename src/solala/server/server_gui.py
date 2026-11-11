@@ -372,13 +372,12 @@ async def _build_grid_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_graphs_page(container: Element, session: PageSession) -> None:
-    colours: Colours = await css_colours()
     with container:
         swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
         with swipe_area:
             navigator = DayNavigator()
             updaters = [
-                ChartUpdater(element, colours=colours, session=session)
+                ChartUpdater(element, session=session)
                 for element in navigator.get_elements()
             ]
             navigator.set_listeners(*(updater.set_day for updater in updaters))
@@ -468,11 +467,13 @@ class TabSelector:
             self,
             content_container: Element,
             tab_buttons: Dict[str, Button],
+            colours: Colours,
     ) -> None:
         self.content_container: Element = content_container
         self.tab_buttons: Dict[str, Button] = tab_buttons
         self.active_tab: Optional[str] = None
         self.active_session: Optional[PageSession] = None
+        self.colours: Colours = colours
         self._build_task: Optional[asyncio.Task] = None
         self._transition_lock = asyncio.Lock()
 
@@ -537,7 +538,7 @@ class TabSelector:
                     remove='' if name == tab_name else 'solala-tab-button-active',
                 )
 
-            session = PageSession()
+            session = PageSession(self.colours)
             self.active_session = session
             self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
 
@@ -545,6 +546,7 @@ class TabSelector:
 @ui.page('/')
 async def root_page():
     ui.add_head_html(_HEAD_HTML)
+    colours: Colours = await css_colours()  # must come directly after add_head_html.
 
     with ui.element('div').classes('solala-page'):
         _page_header(link=False)
@@ -562,7 +564,7 @@ async def root_page():
 
         content_container = ui.element('div').classes('tab-content w-full')
 
-        tab_selector = TabSelector(content_container, tab_buttons)
+        tab_selector = TabSelector(content_container, tab_buttons, colours)
 
     ui.context.client.on_disconnect(tab_selector.close_active_session)
     first_tab_name: str = _TAB_DEFINITIONS[0][0]

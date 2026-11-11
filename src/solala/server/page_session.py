@@ -5,6 +5,7 @@ from typing import List, Callable, Awaitable
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
 from solala.logger import LOGGER
+from solala.server.css_colours import Colours
 
 
 class PageSession:
@@ -12,9 +13,14 @@ class PageSession:
     Own resources that should exist only while a page is active.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, colours: Colours) -> None:
         self._cleanup: List[Callable[[], Awaitable[None] | None]] = []
         self._closed = False
+        self._colours = colours
+
+    @property
+    def colours(self) -> Colours:
+        return self._colours
 
     def add_cleanup(self, cleanup: Callable[[], Awaitable[None] | None]) -> None:
         if self._closed:

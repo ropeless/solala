@@ -18,7 +18,6 @@ from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast,
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
 from solala.registers import RegisterValue
-from solala.server.css_colours import Colours
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.server.graphs import ChargeChart, PriceChart, PowerChart, EnergyChart
 from solala.server.icons import weather_code_to_icon_url
@@ -413,7 +412,7 @@ class SolarForecastUpdater(LoopListener):
 
 class ChartUpdater(LoopListener):
 
-    def __init__(self, element: ui.element, colours: Colours, session: PageSession):
+    def __init__(self, element: ui.element, session: PageSession):
         super().__init__()
         self._session = session
         self._prev: Optional[DailySolarForecast] = None
@@ -424,10 +423,10 @@ class ChartUpdater(LoopListener):
             self._graphs = ui.element('div').set_visibility(False)
 
             with self._graphs:
-                self._charge_chart = ChargeChart(colours)
-                self._price_chart = PriceChart(colours)
-                self._power_chart = PowerChart(colours)
-                self._energy_chart = EnergyChart(colours)
+                self._charge_chart = ChargeChart(session.colours)
+                self._price_chart = PriceChart(session.colours)
+                self._power_chart = PowerChart(session.colours)
+                self._energy_chart = EnergyChart(session.colours)
 
         self._session.add_task(asyncio.create_task(self.update()))
 
@@ -486,5 +485,3 @@ def _feed_in_price_class(price: float) -> str:
         return 'price-feed-in-okay'
     else:
         return 'price-feed-in-bad'
-
-
