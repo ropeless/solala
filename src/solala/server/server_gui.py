@@ -14,7 +14,7 @@ from solala.control_loop import control_loop
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
-from solala.server.css_colours import Colours, css_colours
+from solala.server.css_colours import Colours, css_colours, rgba
 from solala.server.day_navigator import DayNavigator
 from solala.server.icons import analytics_name_to_icon_url
 from solala.server.page_session import PageSession
@@ -461,10 +461,6 @@ _TAB_BUILDERS = {
     'Log': _build_log_page,
 }
 
-ACTIVE_PROPS = 'color=blue text-color=black'
-INACTIVE_PROPS = 'color=white text-color=black'
-
-
 class TabSelector:
     def __init__(
             self,
@@ -481,7 +477,7 @@ class TabSelector:
         self._transition_lock = asyncio.Lock()
 
         for tab_name, button in self.tab_buttons.items():
-            button.on_click(partial(self.select_tab, tab_name)).props(INACTIVE_PROPS)
+            button.on_click(partial(self.select_tab, tab_name)).props('color=white text-color=black')
 
     async def select_tab(self, tab_name: str) -> None:
         async with self._transition_lock:
@@ -494,9 +490,12 @@ class TabSelector:
 
             for name, button in self.tab_buttons.items():
                 if name == tab_name:
-                    button.props(ACTIVE_PROPS)
+                    background = rgba(self.colours.house, alpha=0.10)
+                    button.props(f'color="{background}" text-color=black')
+                    button.classes(add='solala-tab-button-active')
                 else:
-                    button.props(INACTIVE_PROPS)
+                    button.props('color=white text-color=black')
+                    button.classes(remove='solala-tab-button-active')
 
             session = PageSession(self.colours)
             self.active_session = session
