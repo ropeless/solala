@@ -414,7 +414,7 @@ class ModbusPowerController(PowerController):
         Set the value of the named register, logging its old and new value, and
         verifying the change.
         """
-        old = self._modbus.get(name)
+        old = await self._modbus.get(name)
         if not force and old == value:
             # No change needed
             self._logger_get_set(f'SET {name}: {old!r} -> {value!r} UNCHANGED')
