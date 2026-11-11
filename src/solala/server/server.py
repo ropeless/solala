@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from solala.constants import Constants
 from solala.control_loop import control_loop
+from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES
 from solala.server.server_gui import ui
 from solala.settings import Settings
@@ -40,9 +41,11 @@ def run_server(
 
         database_write: If False, the control loop will not write to the database. This is useful for testing.
     """
-    with asyncio.Runner(loop_factory=_loop_factory) as runner:
-        runner.run(_async_run_server(host, port, settings_path, settings, force_settings, database_write))
-
+    try:
+        with asyncio.Runner(loop_factory=_loop_factory) as runner:
+            runner.run(_async_run_server(host, port, settings_path, settings, force_settings, database_write))
+    except KeyboardInterrupt:
+        LOGGER.info(f'killed by keyboard interrupt')
 
 async def _async_run_server(
         host: str,

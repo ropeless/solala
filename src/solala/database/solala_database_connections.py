@@ -41,7 +41,7 @@ class SolalaDatabaseConnections:
         host: str = DEFAULT_DB_HOST,
         port: int = DEFAULT_DB_PORT,
         database_name: str = DEFAULT_DB_NAME,
-        min_pool_size: int = 1,
+        min_pool_size: int = 2,
         max_pool_size: int = 8,
     ) -> None:
         connection_string = make_connection_string(

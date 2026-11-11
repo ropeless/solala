@@ -4,7 +4,7 @@ from typing import cast, LiteralString
 import psycopg
 from psycopg import sql
 
-import config as config
+from solala.utils.local_config_help import config
 from solala.database.solala_database_connections import make_connection_string
 
 

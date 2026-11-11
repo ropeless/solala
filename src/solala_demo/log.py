@@ -1,7 +1,7 @@
 import logging
 import sys
 
-from local_config_help import config
+from solala.utils.local_config_help import config
 from solala.logger import LOGGER
 
 

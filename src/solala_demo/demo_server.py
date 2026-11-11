@@ -1,4 +1,4 @@
-from local_config_help import config
+from solala.utils.local_config_help import config
 from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
