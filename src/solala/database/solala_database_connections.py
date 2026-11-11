@@ -11,11 +11,11 @@ from solala.utils.json_extras import JSONDict
 
 
 def make_connection_string(
-    role: str,
-    password: str,
-    host: str,
-    port: int,
-    database_name: str | None = None,
+        role: str,
+        password: str,
+        host: str,
+        port: int,
+        database_name: str | None = None,
 ) -> str:
     safe_role = quote_plus(role)
     safe_password = quote_plus(password)
@@ -35,14 +35,14 @@ class SolalaDatabaseConnections:
     """
 
     def __init__(
-        self,
-        role: str,
-        password: str,
-        host: str = DEFAULT_DB_HOST,
-        port: int = DEFAULT_DB_PORT,
-        database_name: str = DEFAULT_DB_NAME,
-        min_pool_size: int = 2,
-        max_pool_size: int = 8,
+            self,
+            role: str,
+            password: str,
+            host: str = DEFAULT_DB_HOST,
+            port: int = DEFAULT_DB_PORT,
+            database_name: str = DEFAULT_DB_NAME,
+            min_pool_size: int = 2,
+            max_pool_size: int = 8,
     ) -> None:
         connection_string = make_connection_string(
             role=role,
@@ -69,9 +69,9 @@ class SolalaDatabaseConnections:
 
     @asynccontextmanager
     async def solala_database(
-        self,
-        commit_on_close: bool = True,
-        timeout: float | None = None,
+            self,
+            commit_on_close: bool = True,
+            timeout: float | None = None,
     ) -> AsyncIterator[SolalaDatabase]:
         """
         Yields a SolalaDatabase instance backed by a pooled connection.
@@ -85,7 +85,9 @@ class SolalaDatabaseConnections:
         """
         async with self._pool.connection(timeout=timeout) as conn:
             yield SolalaDatabase(conn)
-            if not commit_on_close:
+            if commit_on_close:
+                await conn.commit()
+            else:
                 await conn.rollback()
 
     async def get_db(self, timeout: float | None = None) -> SolalaDatabase:
@@ -108,8 +110,8 @@ class SolalaDatabaseConnections:
     def get_stats(self) -> dict[str, int]:
         return self._pool.get_stats()
 
-    async def open(self, wait: bool = False) -> None:
-        await self._pool.open(wait=wait)
+    async def open(self, wait: bool = False, timeout: float = 30.0) -> None:
+        await self._pool.open(wait=wait, timeout=timeout)
 
     async def close(self) -> None:
         await self._pool.close()

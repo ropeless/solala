@@ -702,8 +702,6 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
         LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
 
     await database_connections.open(wait=False)
-    await asyncio.sleep(1)
-
     db: SolalaDatabase = await database_connections.get_db()
 
     # DEBUG
