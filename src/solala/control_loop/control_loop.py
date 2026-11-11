@@ -37,7 +37,7 @@ from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, 
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
 from solala.registers import RegisterBank, Register, RegisterType, RegisterValue, CallRegister, \
-    AsyncRegister, check_type
+    ReadOnlyRegister, check_type
 from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
     TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
     DummyControllerConnection, \
@@ -466,13 +466,13 @@ async def get_registers(match: re.Pattern | Iterable[str] = MATCH_ALL) -> Dict[s
     registers: RegisterBank = _CONTROL_STATE.registers  # no need to lock as RegisterBank is stable.
     if isinstance(match, re.Pattern):
         return {
-            name: registers.get(name)
+            name: await registers.get(name)
             for name in registers.keys()
             if match.match(name)
         }
     else:
         return {
-            name: registers.get(name)
+            name: await registers.get(name)
             for name in match
         }
 
@@ -1166,17 +1166,17 @@ async def _control_step(state: _ControlState) -> None:
     if state.control_mode.battery_mode != prev_state.control_mode.battery_mode:
         match state.control_mode.battery_mode:
             case BatteryMode.ENABLE:
-                power_controller.enable_battery()
+                await power_controller.enable_battery()
             case BatteryMode.DISABLE:
-                power_controller.disable_battery()
+                await power_controller.disable_battery()
             case BatteryMode.FORCE_CHARGE:
-                power_controller.force_charge()
+                await power_controller.force_charge()
             case BatteryMode.FORCE_DISCHARGE:
-                power_controller.force_discharge()
+                await power_controller.force_discharge()
             case BatteryMode.CHARGE_ONLY:
-                power_controller.charge_only()
+                await power_controller.charge_only()
             case BatteryMode.DISCHARGE_ONLY:
-                power_controller.discharge_only()
+                await power_controller.discharge_only()
 
     # Inverter Policy - may change Inverter Mode
     if state.pricer is not None:
@@ -1191,15 +1191,15 @@ async def _control_step(state: _ControlState) -> None:
     # Inverter Mode
     if state.control_mode.inverter_mode != prev_state.control_mode.inverter_mode:
         if state.control_mode.inverter_mode == InverterMode.ENABLE:
-            power_controller.enable_inverter()
+            await power_controller.enable_inverter()
         # All other cases are managed below as they have a reversion time limit
     # Inverter modes requiring keep-alive pulse
     try:
         match state.control_mode.inverter_mode:
             case InverterMode.DISABLE:
-                power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
+                await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
             case InverterMode.ZERO_EXPORT:
-                power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
+                await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
     except Exception as e:
         LOGGER.error(f'{_LOG_SRC}Error processing command: {state.control_mode.inverter_mode}. Error: {e}')
 
@@ -1453,34 +1453,34 @@ def _update_listeners(listeners: Iterable[LoopListener]) -> None:
         asyncio.run_coroutine_threadsafe(listener.update(), event_loop)
 
 
-class PowerRegister(AsyncRegister):
+class PowerRegister(ReadOnlyRegister):
 
     def __init__(self, field_name: str, register_type: RegisterType) -> None:
         self._field_name = field_name
         super().__init__(register_type)
 
-    async def _async_get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         return getattr(await get_power_status(), self._field_name)
 
 
-class PriceRegister(AsyncRegister):
+class PriceRegister(ReadOnlyRegister):
 
     def __init__(self, field_name: str, register_type: RegisterType) -> None:
         self._field_name = field_name
         super().__init__(register_type)
 
-    async def _async_get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         return getattr(await get_price_now(), self._field_name)
 
 
-class ConsumerRegister(AsyncRegister):
+class ConsumerRegister(ReadOnlyRegister):
 
     def __init__(self, consumer: PowerConsumer, field_name: str, register_type: RegisterType) -> None:
         self._field_name = field_name
         self._consumer = consumer
         super().__init__(register_type)
 
-    async def _async_get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         return getattr(await self._consumer.get_status(), self._field_name)
 
 

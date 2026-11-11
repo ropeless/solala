@@ -24,10 +24,10 @@ class ModbusRegister(Register):
         self._access: RegisterAccess = access
         self._context: RegisterContext = context
 
-    def _get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         return self._access.get(self._context)
 
-    def _set(self, value: RegisterValue) -> None:
+    async def _set(self, value: RegisterValue) -> None:
         return self._access.set(self._context, value)
 
 

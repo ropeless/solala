@@ -63,7 +63,7 @@ class PowerController(ABC):
         ...
 
     @abstractmethod
-    def get_inverter_limit(self) -> float:
+    async def get_inverter_limit(self) -> float:
         """
         Get the reported power limit on inverter AC output.
         This is expected to stay constant for the lifetime of the connection.
@@ -75,7 +75,7 @@ class PowerController(ABC):
     # =================================================
 
     @abstractmethod
-    def enable_battery(self) -> None:
+    async def enable_battery(self) -> None:
         """
         Allow the battery to charge and discharge.
         This is the normal state.
@@ -83,14 +83,14 @@ class PowerController(ABC):
         ...
 
     @abstractmethod
-    def disable_battery(self) -> None:
+    async def disable_battery(self) -> None:
         """
         Stop the battery from charging and discharging.
         """
         ...
 
     @abstractmethod
-    def force_charge(self) -> None:
+    async def force_charge(self) -> None:
         """
         Force the battery to charge.
         This will aim to charge the battery to its maximum capacity,
@@ -99,7 +99,7 @@ class PowerController(ABC):
         ...
 
     @abstractmethod
-    def force_discharge(self) -> None:
+    async def force_discharge(self) -> None:
         """
         Force the battery to discharge.
         This is a way to force stored power to the grid.
@@ -107,7 +107,7 @@ class PowerController(ABC):
         ...
 
     @abstractmethod
-    def charge_only(self) -> None:
+    async def charge_only(self) -> None:
         """
         Allow the battery to charge (when there is excess solar power)
         but do not allow the battery to discharge (when there is insufficient solar power).
@@ -116,7 +116,7 @@ class PowerController(ABC):
         ...
 
     @abstractmethod
-    def discharge_only(self) -> None:
+    async def discharge_only(self) -> None:
         """
         Allow the battery to discharge (when there is insufficient solar power)
         but do not allow the battery to charge (when there is an oversupply of solar power).
@@ -129,7 +129,7 @@ class PowerController(ABC):
     # =================================================
 
     @abstractmethod
-    def enable_inverter(self) -> None:
+    async def enable_inverter(self) -> None:
         """
         Don't put any limit on inverter output power, so there is no limit on exports.
         This is the normal state.
@@ -137,7 +137,7 @@ class PowerController(ABC):
         ...
 
     @abstractmethod
-    def disable_inverter(self, *, change_duration: int) -> None:
+    async def disable_inverter(self, *, change_duration: int) -> None:
         """
         Stop the inverter providing output power.
 
@@ -150,7 +150,7 @@ class PowerController(ABC):
         ...
 
     @abstractmethod
-    def zero_export(self, *, change_duration: int) -> None:
+    async def zero_export(self, *, change_duration: int) -> None:
         """
         Limit inverter output power to balance consumption, so there is no export.
         Will still allow drawing from the grid if insufficient solar supply for demand.

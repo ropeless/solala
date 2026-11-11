@@ -65,7 +65,7 @@ class DummyPowerController(PowerController):
 
         self.update_status()
 
-    def get_inverter_limit(self) -> float:
+    async def get_inverter_limit(self) -> float:
         return self.inverter_limit
 
     def get_connection_info(self) -> Dict[str, int | float | str]:
@@ -103,39 +103,39 @@ class DummyPowerController(PowerController):
             accumulated_battery_energy_discharge=self.accumulated_battery_energy_discharge,
         )
 
-    def enable_battery(self) -> None:
+    async def enable_battery(self) -> None:
         self.battery_mode = BatteryMode.ENABLE
         self.update_status()
 
-    def disable_battery(self) -> None:
+    async def disable_battery(self) -> None:
         self.battery_mode = BatteryMode.DISABLE
         self.update_status()
 
-    def charge_only(self) -> None:
+    async def charge_only(self) -> None:
         self.battery_mode = BatteryMode.CHARGE_ONLY
         self.update_status()
 
-    def discharge_only(self) -> None:
+    async def discharge_only(self) -> None:
         self.battery_mode = BatteryMode.DISCHARGE_ONLY
         self.update_status()
 
-    def force_charge(self) -> None:
+    async def force_charge(self) -> None:
         self.battery_mode = BatteryMode.FORCE_CHARGE
         self.update_status()
 
-    def force_discharge(self) -> None:
+    async def force_discharge(self) -> None:
         self.battery_mode = BatteryMode.FORCE_DISCHARGE
         self.update_status()
 
-    def enable_inverter(self) -> None:
+    async def enable_inverter(self) -> None:
         self.inverter_mode = InverterMode.ENABLE
         self.update_status()
 
-    def disable_inverter(self, *, change_duration: int) -> None:
+    async def disable_inverter(self, *, change_duration: int) -> None:
         self.inverter_mode = InverterMode.DISABLE
         self.update_status()
 
-    def zero_export(self, *, change_duration: int) -> None:
+    async def zero_export(self, *, change_duration: int) -> None:
         self.inverter_mode = InverterMode.ZERO_EXPORT
         self.update_status()
 

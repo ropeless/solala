@@ -1,8 +1,6 @@
-import asyncio
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
-from typing import TypeAlias, Type, Mapping, Iterator, Iterable, Tuple, KeysView, Optional, \
-    Callable, final, Any, Awaitable
+from typing import TypeAlias, Type, Mapping, Iterable, Tuple, KeysView, Optional, \
+    Callable, final, Any, Awaitable, AsyncIterator
 
 RegisterValue: TypeAlias = str | int | float | bool
 RegisterType: TypeAlias = Type[str] | Type[int] | Type[float] | Type[bool]
@@ -90,13 +88,13 @@ class Register(ABC):
     def writable(self) -> bool:
         return self._writable
 
-    def get(self) -> RegisterValue:
+    async def get(self) -> RegisterValue:
         """
         Get the register value.
         """
-        return self._get()
+        return await self._get()
 
-    def set(self, value: RegisterValue) -> None:
+    async def set(self, value: RegisterValue) -> None:
         """
         Set the register value.
 
@@ -111,14 +109,14 @@ class Register(ABC):
             raise ReadOnlyError()
         if not value_okay(value, self._register_type):
             raise TypeError(f'Expected {self._register_type}, got {type(value)}')
-        self._set(value)
+        await self._set(value)
 
     @abstractmethod
-    def _get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         ...
 
     @abstractmethod
-    def _set(self, value: RegisterValue) -> None:
+    async def _set(self, value: RegisterValue) -> None:
         ...
 
 
@@ -127,11 +125,11 @@ class ReadOnlyRegister(Register):
         super().__init__(register_type, writable=False)
 
     @abstractmethod
-    def _get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         ...
 
     @final
-    def _set(self, value: RegisterValue) -> None:
+    async def _set(self, value: RegisterValue) -> None:
         assert False
 
 
@@ -148,7 +146,7 @@ class ConstantRegister(ReadOnlyRegister):
         super().__init__(register_type)
         self._value = value
 
-    def _get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         return self._value
 
 
@@ -163,7 +161,7 @@ class CallRegister(ReadOnlyRegister):
         super().__init__(register_type)
         self._f: Callable[[], RegisterValue] = f
 
-    def _get(self) -> RegisterValue:
+    async def _get(self) -> RegisterValue:
         return self._f()
 
 
@@ -176,29 +174,11 @@ class AsyncCallRegister(ReadOnlyRegister):
         super().__init__(register_type)
         self._f: Callable[[], Awaitable[RegisterValue]] = f
 
-    def _get(self) -> RegisterValue:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            return executor.submit(asyncio.run, self._f()).result()
+    async def _get(self) -> RegisterValue:
+        return await self._f()
 
 
-class AsyncRegister(ReadOnlyRegister):
-    """
-    A register that calls an async method in a separate thread to get its value.
-    """
-
-    def __init__(self, register_type: RegisterType) -> None:
-        super().__init__(register_type)
-
-    def _get(self) -> RegisterValue:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            return executor.submit(asyncio.run, self._async_get()).result()
-
-    @abstractmethod
-    async def _async_get(self) -> RegisterValue:
-        ...
-
-
-class RegisterBank(Mapping[str, RegisterValue]):
+class RegisterBank:
     """
     A collection of named registers.
 
@@ -230,18 +210,20 @@ class RegisterBank(Mapping[str, RegisterValue]):
     def keys(self) -> KeysView[str]:
         return self._registers.keys()
 
-    def get(self, key: str, default: Optional[RegisterValue] = None) -> Optional[RegisterValue]:
+    async def items(self) -> AsyncIterator[Tuple[str, RegisterValue]]:
+        for key in self._registers.keys():
+            yield key, await self._registers[key].get()
+
+    async def get(self, key: str, default: Optional[RegisterValue] = None) -> Optional[RegisterValue]:
         got: Optional[Register] = self._registers.get(key, None)
         if got is None:
-            return None
+            return default
         else:
-            return got.get()
+            return await got.get()
 
-    def __getitem__(self, key: str, /) -> RegisterValue:
-        return self._registers[key].get()
-
-    def __setitem__(self, key: str, value: RegisterValue) -> None:
-        self._registers[key].set(value)
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._registers)
+    async def set(self, key: str, value: RegisterValue) -> None:
+        got: Optional[Register] = self._registers.get(key, None)
+        if got is None:
+            raise KeyError(key)
+        else:
+            await got.set(value)

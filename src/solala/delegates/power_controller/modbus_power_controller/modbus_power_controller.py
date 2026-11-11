@@ -5,7 +5,7 @@ from solala.delegates.power_controller.modbus_power_controller.modbus import Mod
 from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import ModbusError
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 from solala.logger import LOGGER
-from solala.registers import RegisterBank, Register, ConstantRegister, RegisterValue
+from solala.registers import RegisterBank, Register, AsyncCallRegister
 from solala.utils.json_extras import JSONDict, JSONValue
 
 
@@ -120,30 +120,9 @@ class ModbusPowerController(PowerController):
         if unnamed_device is not None:
             self._connection_info['unnamed_device'] = unnamed_device
 
-        # Calculate the constant inverter limit
-        self._inverters_limit: List[float] = []
-        total_limit: float = 0.0
-        for inverter in self._inverters:
-            w_max = self._get(f'{inverter}/WMax')
-            w_rtg = self._get(f'{inverter}/WRtg')
-            limit = min(w_max, w_rtg)
-            self._inverters_limit.append(limit)
-            total_limit += limit
-        self._inverter_limit: float = total_limit
-        self._inverters_limit_proportion: List[float] = [
-            limit / self._inverter_limit
-            for limit in self._inverters_limit
-        ]
-
         registers: Dict[str, Register] = dict(self._modbus.registers)
-        registers[_INVERTER_LIMIT_NAME] = ConstantRegister(self._inverter_limit)
+        registers[_INVERTER_LIMIT_NAME] = AsyncCallRegister(self.get_inverter_limit, float)
         self._registers: RegisterBank = RegisterBank(registers)
-
-        # Log all registers and their values
-        register: str
-        value: RegisterValue
-        for register, value in self._registers.items():
-            LOGGER.info(f'LOG {register}: {value!r}')
 
     def connect(self) -> None:
         """
@@ -151,11 +130,11 @@ class ModbusPowerController(PowerController):
         """
         self._modbus.connect()
 
-    def get_inverter_limit(self) -> float:
-        return self._inverter_limit
-
     def get_connection_info(self) -> JSONDict:
         return self._connection_info
+
+    async def get_inverter_limit(self) -> float:
+        return sum(await self._get_inverter_limit_array())
 
     async def close(self) -> None:
         """
@@ -173,23 +152,23 @@ class ModbusPowerController(PowerController):
         """
         Get a high-level status of the system.
         """
-        state_of_charge = self._get(self._ChaState)
-        charge_power = self._get(self._charge_power)
-        discharge_power = self._get(self._discharge_power)
-        solar_power = self._get_sum(self._solar_power)
-        grid_power = self._get(self._grid_power)
+        state_of_charge = await self._get(self._ChaState)
+        charge_power = await self._get(self._charge_power)
+        discharge_power = await self._get(self._discharge_power)
+        solar_power = await self._get_sum(self._solar_power)
+        grid_power = await self._get(self._grid_power)
 
-        accumulated_grid_import = self._get(self._accumulated_grid_import)
-        accumulated_grid_export = self._get(self._accumulated_grid_export)
-        accumulated_solar_energy = self._get_sum(self._accumulated_solar_energy)
-        accumulated_charge_energy = self._get(self._accumulated_charge_energy)
-        accumulated_discharge_energy = self._get(self._accumulated_discharge_energy)
-        # accumulated_inverter_power = self._get_sum(self._accumulated_inverter_power)
+        accumulated_grid_import = await self._get(self._accumulated_grid_import)
+        accumulated_grid_export = await self._get(self._accumulated_grid_export)
+        accumulated_solar_energy = await self._get_sum(self._accumulated_solar_energy)
+        accumulated_charge_energy = await self._get(self._accumulated_charge_energy)
+        accumulated_discharge_energy = await self._get(self._accumulated_discharge_energy)
+        # accumulated_inverter_power = await self._get_sum(self._accumulated_inverter_power)
 
         battery_power = charge_power - discharge_power
         house_power = grid_power + solar_power - battery_power
 
-        power_limit, power_limit_enabled = self._get_power_limit()
+        power_limit, power_limit_enabled = await self._get_power_limit()
 
         return PowerStatus(
             state_of_charge=state_of_charge,
@@ -209,100 +188,109 @@ class ModbusPowerController(PowerController):
     #  Battery Control
     # =================================================
 
-    def enable_battery(self) -> None:
+    async def enable_battery(self) -> None:
         """
         Allow the battery to charge and discharge.
         This is the normal state.
         """
         with self._logit('enable_battery'):
-            self._set(self._StorCtl_Mod, 0)
-            self._set(self._InWRte, 100)
-            self._set(self._OutWRte, 100)
-            self._set(self._ChaGriSet, 0)
-            self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._StorCtl_Mod, 0)
+            await self._set(self._InWRte, 100)
+            await self._set(self._OutWRte, 100)
+            await self._set(self._ChaGriSet, 0)
+            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
             self._is_force_discharge = False
 
-    def disable_battery(self) -> None:
+    async def disable_battery(self) -> None:
         """
         Stop the battery from charging and discharging.
         """
         with self._logit('disable_battery'):
-            self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
-            self._set(self._InWRte, 0)
-            self._set(self._OutWRte, 0)
-            self._set(self._StorCtl_Mod, 3)
-            self._set(self._ChaGriSet, 0)
-            self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            await self._set(self._InWRte, 0)
+            await self._set(self._OutWRte, 0)
+            await self._set(self._StorCtl_Mod, 3)
+            await self._set(self._ChaGriSet, 0)
+            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
             self._is_force_discharge = False
 
-    def force_charge(self) -> None:
+    async def force_charge(self) -> None:
         """
         Force the battery to charge.
         This will aim to charge the battery to its maximum capacity,
         even if it means drawing from the grid.
         """
         with self._logit('force_charge'):
-            self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
-            self._set(self._InWRte, 100)
-            self._set(self._OutWRte, 0)  # Don't try to discharge at the same time as charging
-            self._set(self._StorCtl_Mod, 3)
-            self._set(self._ChaGriSet, 1)
-            self._set(self._MinRsvPct, 100)
+            await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            await self._set(self._InWRte, 100)
+            await self._set(self._OutWRte, 0)  # Don't try to discharge at the same time as charging
+            await self._set(self._StorCtl_Mod, 3)
+            await self._set(self._ChaGriSet, 1)
+            await self._set(self._MinRsvPct, 100)
             self._is_force_discharge = False
 
-    def force_discharge(self) -> None:
+    async def force_discharge(self) -> None:
         """
         Force the battery to discharge.
         This is a way to force stored power to the grid.
         """
         with self._logit('force_discharge'):
-            self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
-            self._set(self._InWRte, -100)  # negative flow
-            self._set(self._OutWRte, 100)
-            self._set(self._StorCtl_Mod, 3)
-            self._set(self._ChaGriSet, 0)
-            self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            await self._set(self._InWRte, -100)  # negative flow
+            await self._set(self._OutWRte, 100)
+            await self._set(self._StorCtl_Mod, 3)
+            await self._set(self._ChaGriSet, 0)
+            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
             self._is_force_discharge = True
 
-    def charge_only(self) -> None:
+    async def charge_only(self) -> None:
         """
         Allow charging but not discharging.
         """
         with self._logit('charge_only'):
-            self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
-            self._set(self._InWRte, 100)
-            self._set(self._OutWRte, 0)
-            self._set(self._StorCtl_Mod, 3)
-            self._set(self._ChaGriSet, 0)
-            self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            await self._set(self._InWRte, 100)
+            await self._set(self._OutWRte, 0)
+            await self._set(self._StorCtl_Mod, 3)
+            await self._set(self._ChaGriSet, 0)
+            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
             self._is_force_discharge = False
 
-    def discharge_only(self) -> None:
+    async def discharge_only(self) -> None:
         """
         Allow discharging but not charging.
         """
         with self._logit('discharge_only'):
-            self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
-            self._set(self._InWRte, 0)
-            self._set(self._OutWRte, 100)
-            self._set(self._StorCtl_Mod, 3)
-            self._set(self._ChaGriSet, 0)
-            self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            await self._set(self._InWRte, 0)
+            await self._set(self._OutWRte, 100)
+            await self._set(self._StorCtl_Mod, 3)
+            await self._set(self._ChaGriSet, 0)
+            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
             self._is_force_discharge = False
 
     # =================================================
     #  Grid Export Control
     # =================================================
 
-    def enable_inverter(self) -> None:
+    async def _get_inverter_limit_array(self) -> List[float]:
+        return [
+            min(
+                await self._get(f'{inverter}/WMax'),
+                await self._get(f'{inverter}/WRtg'),
+            )
+            for inverter in self._inverters
+        ]
+
+    async def enable_inverter(self) -> None:
         with self._logit('enable_inverter'):
-            self._set_power_pct(100)
+            await self._set_power_pct(100)
 
-    def disable_inverter(self, *, change_duration: int) -> None:
+    async def disable_inverter(self, *, change_duration: int) -> None:
         with self._logit('disable_inverter'):
-            self._set_power_pct(0, change_duration)
+            await self._set_power_pct(0, change_duration)
 
-    def zero_export(self, *, change_duration: int) -> None:
+    async def zero_export(self, *, change_duration: int) -> None:
         """
         Limit inverter output power to balance consumption, so there is no export.
         Will still allow drawing from the grid if insufficient solar supply for demand.
@@ -311,15 +299,15 @@ class ModbusPowerController(PowerController):
         """
         with self._logit('zero_export'):
             cur_pct: float
-            cur_pct, _ = self._get_power_limit()
-            grid_power: float = self._get(self._grid_power)
-            max_power: float = self.get_inverter_limit()
-            cur_power: float = self._get_sum(self._inverter_power)
+            cur_pct, _ = await self._get_power_limit()
+            grid_power: float = await self._get(self._grid_power)
+            max_power: float = await self.get_inverter_limit()
+            cur_power: float = await self._get_sum(self._inverter_power)
 
             # If the battery is discharging and it not a forced discharge then
             # We actually need that power as well.
             if not self._is_force_discharge:
-                discharge_power = self._get(self._discharge_power)
+                discharge_power = await self._get(self._discharge_power)
                 cur_power += discharge_power
 
             abs_grid_power = abs(grid_power)
@@ -365,21 +353,21 @@ class ModbusPowerController(PowerController):
             LOGGER.info(f'grid change: {grid_power:.2f} -> {grid_power - power_change:.2f} ({power_change:.2f})')
             LOGGER.info(f'percent change: {cur_pct:.2f} -> {new_pct:.2f}')
 
-            self._set_power_pct(new_pct, change_duration)
+            await self._set_power_pct(new_pct, change_duration)
 
     # =================================================
     #  Support
     # =================================================
 
-    def _get_power_limit(self) -> Tuple[float, bool]:
+    async def _get_power_limit(self) -> Tuple[float, bool]:
         """
         Get the power limit set on the controlling inverters.
 
         Returns:
             (avg(_WMaxLimPct), any(WMaxLim_Ena != 0))
         """
-        power_limits: List[float] = self._get_all(self._WMaxLimPct)
-        power_limits_enabled: List[bool] = [x != 0 for x in self._get_all(self._WMaxLim_Ena)]
+        power_limits: List[float] = await self._get_all(self._WMaxLimPct)
+        power_limits_enabled: List[bool] = [x != 0 for x in await self._get_all(self._WMaxLim_Ena)]
         if len(power_limits) == 1:
             limit_enabled = power_limits_enabled[0]
             limit = power_limits[0] if limit_enabled else 100.0
@@ -387,11 +375,15 @@ class ModbusPowerController(PowerController):
 
         else:
             # all controlling inverters
-            assert len(power_limits) == len(self._inverters_limit_proportion)
+            inverter_limits: List[float] = await self._get_inverter_limit_array()
+            assert len(power_limits) == len(inverter_limits)
+
+            total_limit: float = sum(inverter_limits)
             avg_limit: float = 0.0
-            for limit, limit_enabled, pr in zip(power_limits, power_limits_enabled, self._inverters_limit_proportion):
+            for limit, limit_enabled, inverter_limit in zip(power_limits, power_limits_enabled, inverter_limits):
                 if not limit_enabled:
                     limit = 100.0
+                pr = inverter_limit / total_limit
                 avg_limit += limit * pr
             return avg_limit, any(power_limits_enabled)
 
@@ -407,36 +399,36 @@ class ModbusPowerController(PowerController):
         if self._log_set_get:
             LOGGER.info(message)
 
-    def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
+    async def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
         if pct >= 100:
-            self._set_all(self._WMaxLimPct, 100)
-            self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
-            self._set_all(self._WMaxLim_Ena, 0)
+            await self._set_all(self._WMaxLimPct, 100)
+            await self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
+            await self._set_all(self._WMaxLim_Ena, 0)
         else:
-            self._set_all(self._WMaxLimPct, pct)
-            self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
-            self._set_all(self._WMaxLim_Ena, 1, force=True)  # force to keep alive
+            await self._set_all(self._WMaxLimPct, pct)
+            await self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
+            await self._set_all(self._WMaxLim_Ena, 1, force=True)  # force to keep alive
 
-    def _set(self, name: str, value: int | float, *, force: bool = False) -> None:
+    async def _set(self, name: str, value: int | float, *, force: bool = False) -> None:
         """
         Set the value of the named register, logging its old and new value, and
         verifying the change.
         """
-        old = self._modbus[name]
+        old = self._modbus.get(name)
         if not force and old == value:
             # No change needed
             self._logger_get_set(f'SET {name}: {old!r} -> {value!r} UNCHANGED')
         else:
             # Make the change
             try:
-                self._modbus[name] = value
+                await self._modbus.set(name, value)
             except ModbusError as err:
                 LOGGER.error(f'SET {name}: {old!r} -> {value!r} ERROR: {err}')
                 LOGGER.error(f'Modbus message: {err.modbus_message!r}')
                 return
 
             failed: bool
-            new = self._modbus[name]
+            new = await self._modbus.get(name)
             if not isinstance(new, (int, float)):
                 failed = True
             else:
@@ -448,12 +440,12 @@ class ModbusPowerController(PowerController):
             else:
                 self._logger_get_set(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK')
 
-    def _get(self, name: str) -> int | float:
+    async def _get(self, name: str) -> int | float:
         """
         Get the value of the named register, logging its value, and
         ensuring it is an int or float.
         """
-        value = self._modbus[name]
+        value = await self._modbus.get(name)
         self._logger_get_set(f'GET {name}: {value!r}')
         if not isinstance(value, (int, float)):
             msg = f'getting register {name!r}: Expected int or float, got {type(value)}'
@@ -461,17 +453,17 @@ class ModbusPowerController(PowerController):
             raise TypeError(msg)
         return value
 
-    def _set_all(self, names: List[str], value: int | float, *, force: bool = False) -> None:
+    async def _set_all(self, names: List[str], value: int | float, *, force: bool = False) -> None:
         for name in names:
-            self._set(name, value, force=force)
+            await self._set(name, value, force=force)
 
-    def _get_all(self, names: List[str]) -> List[int | float]:
+    async def _get_all(self, names: List[str]) -> List[int | float]:
         return [
-            self._get(name) for name in names
+            await self._get(name) for name in names
         ]
 
-    def _get_sum(self, names: List[str]) -> int | float:
+    async def _get_sum(self, names: List[str]) -> int | float:
         self._logger_get_set(f'SUM {names}')
-        result = sum(self._get_all(names))
+        result = sum(await self._get_all(names))
         self._logger_get_set(f'SUM = {result}')
         return result
