@@ -7,6 +7,7 @@ from nicegui import ui
 class Colours:
     sun: str
     house: str
+    tab: str
     grid: str
     inverter: str
     battery: str
@@ -23,6 +24,7 @@ async def css_colours() -> Colours:
             return {
                 sun: style.getPropertyValue('--solala-sun-color').trim(),
                 house: style.getPropertyValue('--solala-house-color').trim(),
+                tab: style.getPropertyValue('--solala-tab-color').trim(),
                 grid: style.getPropertyValue('--solala-grid-color').trim(),
                 inverter: style.getPropertyValue('--solala-inverter-color').trim(),
                 battery: style.getPropertyValue('--solala-battery-color').trim(),
