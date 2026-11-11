@@ -132,13 +132,18 @@
     justify-content: center;
     gap: 1px;
     padding: 3px 5px;
-    border: 1px solid var(--solala-grid-color);
+    border: 1px solid var(--solala-border);
     border-radius: 9px;
-    background: #ffffff;
-    color: var(--solala-text);
+    background-color: #ffffff !important;
+    color: var(--solala-text) !important;
     box-shadow: none;
     text-transform: none;
     line-height: 1.1;
+}
+
+.tab-navigation .q-btn.solala-tab-button .q-btn__content,
+.tab-navigation .q-btn.solala-tab-button .q-icon {
+    color: var(--solala-text) !important;
 }
 
 .tab-navigation .q-btn.solala-tab-button .q-btn__content {
@@ -153,7 +158,8 @@
 .tab-navigation .q-btn.solala-tab-button-active {
     border: 2px solid var(--solala-house-color);
     padding: 2px 4px;
-    background: color-mix(in srgb, var(--solala-house-color) 12%, transparent);
+    background-color: color-mix(in srgb, var(--solala-house-color) 12%, white) !important;
+    color: var(--solala-text) !important;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--solala-house-color) 8%, transparent);
 }
 
