@@ -129,7 +129,14 @@ class PageSession:
         self.add_cleanup(partial(control_loop.remove_database_loop_listener, listener))
 
     def add_task(self, task: asyncio.Task) -> None:
-        self.add_cleanup(task.cancel)
+        async def cancel_task() -> None:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self.add_cleanup(cancel_task)
 
     def add_timer(self, timer) -> None:
         self.add_cleanup(timer.cancel)
@@ -1085,8 +1092,10 @@ async def root_page():
             active_session = PageSession()
             builder = _TAB_BUILDERS[tab]
             try:
-                await builder(content_container, active_session, select_tab) \
-                    if tab == 'Power' else await builder(content_container, active_session)
+                if tab == 'Power':
+                    await builder(content_container, active_session, select_tab)
+                else:
+                    await builder(content_container, active_session)
             except Exception:
                 await active_session.close()
                 active_session = None
