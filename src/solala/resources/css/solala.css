@@ -194,13 +194,19 @@
     font-size: 0.875rem;
 }
 
-.solala-loop-status-live {
+.solala-loop-status-light.solala-loop-status-live {
     background-color: var(--solala-live-color);
+}
+
+.solala-loop-status-light.solala-loop-status-stale {
+    background-color: var(--solala-stale-color);
+}
+
+.solala-loop-status-label.solala-loop-status-live {
     color: var(--solala-live-color);
 }
 
-.solala-loop-status-stale {
-    background-color: var(--solala-stale-color);
+.solala-loop-status-label.solala-loop-status-stale {
     color: var(--solala-stale-color);
 }
 
