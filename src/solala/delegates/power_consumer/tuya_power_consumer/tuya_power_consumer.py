@@ -4,6 +4,7 @@ from typing import Callable, Awaitable, Optional, Tuple, AsyncIterator
 from tuya_connector import TuyaOpenAPI
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
+from solala.logger import LOGGER
 from solala.registers import RegisterBank, RegisterType, check_type, AsyncCallRegister, check_value, \
     RegisterValue
 from solala.utils.json_extras import JSONDict, json_num
@@ -36,8 +37,8 @@ class TuyaPowerConsumer(PowerConsumer):
             'device_id': device_id,
         }
 
-        # Cache `__get_device_status` for 0.5s each call.
-        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_device_status, 0.5)
+        # Cache `__get_device_status` for 0.01s each call.
+        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_device_status, 0.01)
 
         # Created on first call to `get_registers`
         self._register_bank: Optional[RegisterBank] = None
@@ -80,10 +81,18 @@ class TuyaPowerConsumer(PowerConsumer):
         return check_value(value)
 
     async def __get_device_status(self) -> JSONDict:
-        response = self._tuya.get(self._status_url)
-        if not response.get('success', False):
-            raise ConnectionError(response)
-        return {
-            item['code']: item['value']
-            for item in response['result']
-        }
+        try:
+            response = self._tuya.get(self._status_url)
+            if not response.get('success', False):
+                raise ConnectionError(response)
+            return {
+                item['code']: item['value']
+                for item in response['result']
+            }
+        except Exception as err:
+            LOGGER.error(f'{self.__class__.__name__} {self._connection_status["device_id"]!r}: {err!r}')
+            return {
+                'error': str(err),
+                'cur_voltage': float('nan'),
+                'cur_current': float('nan'),
+            }

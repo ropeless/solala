@@ -1,10 +1,26 @@
-from datetime import datetime
-from typing import Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from time import monotonic
 
 
-class MicroCache[T]:
+class _BaseMicroCache:
     """
-    An object that caches a value for a short duration of time.
+    Common implementation for synchronous and asynchronous micro-caches.
+    """
+
+    def __init__(self, cache_time: float):
+        self._cache_time: float = cache_time
+        self._cache_timestamp: float = float('-inf')
+
+    def _is_expired(self) -> bool:
+        return monotonic() >= self._cache_timestamp
+
+    def _update_timestamp(self) -> None:
+        self._cache_timestamp = monotonic() + self._cache_time
+
+
+class MicroCache[T](_BaseMicroCache):
+    """
+    Cache the result of a synchronous function for a short duration.
     """
 
     def __init__(
@@ -12,30 +28,21 @@ class MicroCache[T]:
             f: Callable[[], T],
             cache_time: float,
     ):
-        """
-        Initialise a MicroCache object.
-
-        Args:
-            f (Callable[[], T]): function that gives the object to be cached.
-            cache_time (float): time in seconds to cache the object.
-        """
+        super().__init__(cache_time)
         self._f = f
-        self._cache_time: float = cache_time
         self._cache: T
-        self._cache_timestamp: float = 0
 
     def __call__(self) -> T:
-        timestamp: float = datetime.now().timestamp()
-        if timestamp >= self._cache_timestamp:
+        if self._is_expired():
             self._cache = self._f()
-            self._cache_timestamp = timestamp + self._cache_time
+            self._update_timestamp()
 
         return self._cache
 
 
-class AsyncMicroCache[T]:
+class AsyncMicroCache[T](_BaseMicroCache):
     """
-    An object that caches a value for a short duration of time.
+    Cache the result of an asynchronous function for a short duration.
     """
 
     def __init__(
@@ -43,22 +50,13 @@ class AsyncMicroCache[T]:
             f: Callable[[], Awaitable[T]],
             cache_time: float,
     ):
-        """
-        Initialise a MicroCache object.
-
-        Args:
-            f (Callable[[], T]): awaitable function that gives the object to be cached.
-            cache_time (float): time in seconds to cache the object.
-        """
+        super().__init__(cache_time)
         self._f = f
-        self._cache_time: float = cache_time
         self._cache: T
-        self._cache_timestamp: float = 0
 
     async def __call__(self) -> T:
-        timestamp: float = datetime.now().timestamp()
-        if timestamp >= self._cache_timestamp:
+        if self._is_expired():
             self._cache = await self._f()
-            self._cache_timestamp = timestamp + self._cache_time
+            self._update_timestamp()
 
         return self._cache

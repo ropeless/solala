@@ -1,8 +1,9 @@
 from functools import partial
-from typing import Optional, Dict, Callable, Awaitable, AsyncIterator, Tuple, Iterable
+from typing import Optional, Callable, Awaitable, AsyncIterator, Tuple
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
-from solala.registers import RegisterBank, Register, check_type, RegisterType, \
+from solala.logger import LOGGER
+from solala.registers import RegisterBank, check_type, RegisterType, \
     AsyncCallRegister, RegisterValue, check_value
 from solala.utils.httpx_extras import async_get
 from solala.utils.json_extras import JSONDict, json_dict, json_num
@@ -19,7 +20,6 @@ class TeslaWallConnector(PowerConsumer):
     def __init__(self, host: str, mac_address: str = ''):
         # noinspection HttpUrlsUsage
         self._api = f'http://{host}/api/1/'
-
         self._connection_status = {
             'connection': 'Tesla Wall Connector',
             'host': host,
@@ -27,8 +27,8 @@ class TeslaWallConnector(PowerConsumer):
         if mac_address != '':
             self._connection_status['mac_address'] = mac_address
 
-        # Cache `__get_vitals` for 0.1s each call
-        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_vitals, 0.1)
+        # Cache `__get_vitals` for 0.01s each call
+        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_vitals, 0.01)
 
         # Created on first call to `get_registers`
         self._register_bank: Optional[RegisterBank] = None
@@ -71,6 +71,14 @@ class TeslaWallConnector(PowerConsumer):
         return check_value(value)
 
     async def __get_vitals(self) -> JSONDict:
-        url = self._api + 'vitals'
-        response = await async_get(url)
-        return json_dict(response.json())
+        try:
+            url = self._api + 'vitals'
+            response = await async_get(url)
+            return json_dict(response.json())
+        except Exception as err:
+            LOGGER.error(f'{self.__class__.__name__} {self._connection_status["host"]!r}: {err!r}')
+            return {
+                'error': str(err),
+                'voltageA_v': float('nan'),
+                'currentA_a': float('nan'),
+            }

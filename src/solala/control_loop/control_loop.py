@@ -967,6 +967,7 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
             port=database_connection.port,
             database_name=database_connection.database_name,
         )
+        await database_connections.ensure_open()
         await disconnect_database()
         state.reset_database(database_connections, database_connection)
         connection_status = database_connections.get_connection_status()

@@ -117,9 +117,7 @@ class SolalaDatabaseConnections:
         Returns:
             a SolalaDatabase instance.
         """
-        if not self._pool_open:
-            await self._pool.open()
-            self._pool_open = True
+        await self.ensure_open()
         async with self._pool.connection(timeout=timeout) as conn:
             yield SolalaDatabase(conn)
             if commit_on_close:
