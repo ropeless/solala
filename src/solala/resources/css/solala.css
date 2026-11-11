@@ -113,6 +113,72 @@
 }
 
 /* ---------------------------------------------------------
+   Tab navigation
+   --------------------------------------------------------- */
+
+.tab-navigation {
+    display: block;
+    padding: 10px;
+    margin-bottom: var(--solala-gap);
+}
+
+.tab-navigation .q-btn.solala-tab-button {
+    display: flex;
+    width: 100%;
+    min-height: 50px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    padding: 3px 5px;
+    border: 1px solid var(--solala-border);
+    border-radius: 9px;
+    background: var(--solala-page-bg);
+    color: var(--solala-text);
+    box-shadow: none;
+    text-transform: none;
+    line-height: 1.1;
+}
+
+.tab-navigation .q-btn.solala-tab-button .q-btn__content {
+    flex-direction: column;
+    gap: 1px;
+}
+
+.tab-navigation .q-btn.solala-tab-button .q-icon {
+    font-size: 23px;
+}
+
+.tab-navigation .q-btn.solala-tab-button-active {
+    border: 2px solid #4299eF;
+    padding: 2px 4px;
+    box-shadow: 0 0 0 1px rgb(66 153 239 / 8%);
+}
+
+.tab-content {
+    min-width: 0;
+}
+
+.tab-content > .dashboard-card,
+.tab-content > .q-card {
+    margin-bottom: var(--solala-gap);
+}
+
+@media (max-width: 600px) {
+    .tab-navigation {
+        padding: 7px;
+        margin-bottom: 8px;
+    }
+
+    .tab-navigation .q-btn.solala-tab-button {
+        min-height: 49px;
+    }
+
+    .tab-navigation .q-btn.solala-tab-button .q-icon {
+        font-size: 22px;
+    }
+}
+
+/* ---------------------------------------------------------
    Power infographic
    --------------------------------------------------------- */
 
