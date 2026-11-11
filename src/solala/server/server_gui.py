@@ -742,21 +742,14 @@ async def _ui_control_buttons(session: PageSession) -> None:
             await _register_control_loop_listener(session, updater)
 
 
-def _infographic_click(element):
+def _infographic_click(element, select_tab) -> None:
     click_id: Optional[str] = element.args
     if click_id == CLICK_ID_GRID:
-        ui.navigate.to('/price_forecast_page')
+        asyncio.create_task(select_tab('Grid'))
     elif click_id == CLICK_ID_SUN:
-        ui.navigate.to('/solar_forecast_page')
-    elif click_id == CLICK_ID_INVERTER:
+        asyncio.create_task(select_tab('Solar'))
+    elif click_id in (CLICK_ID_INVERTER, CLICK_ID_HOME, CLICK_ID_BATTERY):
         pass
-        # ui.notify('clicked inverter')
-    elif click_id == CLICK_ID_HOME:
-        pass
-        # ui.notify('clicked home')
-    elif click_id == CLICK_ID_BATTERY:
-        pass
-        # ui.notify('clicked the battery')
 
 
 def _buy_price_class(price: float) -> str:
@@ -862,7 +855,7 @@ def _day_navigation(
 
 
 # ====================================================================
-#  Pages
+#  Tabbed application
 # ====================================================================
 
 # Mount static files
@@ -871,98 +864,66 @@ app.add_static_files(url_path='/css', local_directory=str(CSS_FILES))
 app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manifest.json'))
 
 
-@ui.page('/')
-async def root_page():
-    session = await _new_page_session()
-    ui.add_head_html(_HEAD_HTML)
+_TAB_DEFINITIONS = (
+    ('Power', 'monitoring'),
+    ('Solar', 'wb_sunny'),
+    ('Grid', 'electrical_services'),
+    ('Graphs', 'query_stats'),
+    ('Status', 'check_circle_outline'),
+    ('Connection', 'swap_horiz'),
+    ('Parameters', 'tune'),
+    ('Registers', 'memory'),
+    ('Log', 'description'),
+)
 
-    with ui.element('div').classes('solala-page'):
-        _page_header(link=False)
 
-        with ui.element('div').classes('dashboard-grid'):
-            # ----------------------------------------------------------
-            # LIVE POWER INFOGRAPHIC
-            # ----------------------------------------------------------
-            with ui.element('div').classes('dashboard-card infographic-card'):
-                with ui.row().classes('w-full items-center justify-between'):
-                    ui.label('Power').classes('infographic-title')
-
-                    # Control loop status light
-                    with ui.row().classes('items-center gap-2'):
-                        loop_status_light = ui.element('div').classes(
-                            f'w-3 h-3 rounded-full bg-{STALE_COLOUR}'
-                        )
-                        loop_status_label = ui.label('active').classes(
-                            f'text-sm text-{STALE_COLOUR}'
-                        )
-
-                    _update_loop_status(loop_status_light, loop_status_label)
-                    session.add_timer(ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label)))
-
-                    # Add javascript to mark status light as "stale" if a disconnect is detected.
-                    _ = ui.run_javascript(f"""
-                        const light = getHtmlElement({loop_status_light.id});
-                        const label = getHtmlElement({loop_status_label.id});
-
-                        window.socket.on('disconnect', () => {{
-                            light.className = 'w-3 h-3 rounded-full bg-{STALE_COLOUR}';
-                            light.title = 'Connection to Solala server lost';
-
-                            label.textContent = 'stale';
-                            label.className = 'text-sm text-{STALE_COLOUR}';
-                        }});
-                    """)
-
-                with ui.element('div').classes('infographic-container'):
-                    infographic = ui.html()
-                    infographic.on(
-                        'click',
-                        handler=_infographic_click,
-                        js_handler="(e) => emit(e.target.closest('rect')?.id)",
+async def _build_power_page(container: Element, session: PageSession, select_tab) -> None:
+    with container:
+        with ui.element('div').classes('dashboard-card infographic-card'):
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Power').classes('infographic-title')
+                with ui.row().classes('items-center gap-2'):
+                    loop_status_light = ui.element('div').classes(
+                        f'w-3 h-3 rounded-full bg-{STALE_COLOUR}'
                     )
-                    updater = InfographicUpdater(infographic_element=infographic)
-                    session.add_task(asyncio.create_task(updater.update()))
-                    await _register_control_loop_listener(session, updater)
+                    loop_status_label = ui.label('active').classes(
+                        f'text-sm text-{STALE_COLOUR}'
+                    )
 
-            # ==============================================================
-            # Analytics
-            # ==============================================================
-            with ui.element('div').classes('dashboard-card analytics-card'):
-                with ui.element('div').classes('analytics-title'):
-                    ui.label('Analytics')
-                with ui.grid(columns=3):
-                    _analytics_link('Graphs', '/graphs_page')
-                    _analytics_link('Status', '/status_page')
-                    _analytics_link('Connection', '/connection_page')
-                    _analytics_link('Parameters', '/parameters_page')
-                    _analytics_link('Registers', '/registers_page')
-                    _analytics_link('Log', '/log_page')
+                _update_loop_status(loop_status_light, loop_status_label)
+                session.add_timer(
+                    ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
+                )
 
-            # ----------------------------------------------------------
-            # BATTERY + INVERTER control buttons
-            # ----------------------------------------------------------
+                ui.run_javascript(f"""
+                    const light = getHtmlElement({loop_status_light.id});
+                    const label = getHtmlElement({loop_status_label.id});
+                    window.socket.on('disconnect', () => {{
+                        light.className = 'w-3 h-3 rounded-full bg-{STALE_COLOUR}';
+                        light.title = 'Connection to Solala server lost';
+                        label.textContent = 'stale';
+                        label.className = 'text-sm text-{STALE_COLOUR}';
+                    }});
+                """)
+
+            with ui.element('div').classes('infographic-container'):
+                infographic = ui.html()
+                infographic.on(
+                    'click',
+                    handler=partial(_infographic_click, select_tab=select_tab),
+                    js_handler="(e) => emit(e.target.closest('rect')?.id)",
+                )
+                updater = InfographicUpdater(infographic_element=infographic)
+                session.add_task(asyncio.create_task(updater.update()))
+                await _register_control_loop_listener(session, updater)
+
+        if Constants.CONTROLS_ENABLED:
             with ui.element('div').classes('dashboard-card control-card'):
                 await _ui_control_buttons(session)
 
 
-@ui.page('/price_forecast_page')
-async def price_forecast_page():
-    session = await _new_page_session()
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
-        _page_header(' price forecast')
-        element = ui.element('div')
-        updater = PriceForecastUpdater(element=element)
-        session.add_task(asyncio.create_task(updater.update()))
-        await _register_control_loop_listener(session, updater)
-
-
-@ui.page('/solar_forecast_page')
-async def solar_forecast_page():
-    session = await _new_page_session()
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
-        _page_header()
+async def _build_solar_page(container: Element, session: PageSession) -> None:
+    with container:
         navigator = DayNavigator()
         updaters = [
             SolarForecastUpdater(element, session)
@@ -974,16 +935,19 @@ async def solar_forecast_page():
             await _register_control_loop_listener(session, updater)
 
 
-@ui.page('/graphs_page')
-async def graphs_page():
-    session = await _new_page_session()
-    ui.add_head_html(_HEAD_HTML)
-    colours: Colours = await css_colours()  # must come after adding head html.
+async def _build_grid_page(container: Element, session: PageSession) -> None:
+    with container:
+        element = ui.element('div')
+        updater = PriceForecastUpdater(element=element)
+        session.add_task(asyncio.create_task(updater.update()))
+        await _register_control_loop_listener(session, updater)
 
-    swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
-    with swipe_area:
-        with ui.element('div').classes('solala-page w-full max-w-6xl mx-auto px-2 md:px-3 py-4'):
-            _page_header()
+
+async def _build_graphs_page(container: Element, session: PageSession) -> None:
+    colours: Colours = await css_colours()
+    with container:
+        swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
+        with swipe_area:
             navigator = DayNavigator()
             updaters = [
                 ChartUpdater(element, colours=colours, session=session)
@@ -995,87 +959,144 @@ async def graphs_page():
                 await _register_database_loop_listener(session, updater)
 
 
-@ui.page('/status_page')
-async def status_page():
-    session = await _new_page_session()
-    """
-    Show the system status textually.
-    """
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page'):
-        _page_header()
-        with ui.element('div').classes('dashboard-grid'):
-            # ----------------------------------------------------------
-            # Status card
-            # ----------------------------------------------------------
-            with ui.card():
-                ui.label('Status').classes('text-h6')
-                updater = StatusUpdater(status_element=ui.code(language='nothing').classes('text-sm w-full grow'))
-                session.add_task(asyncio.create_task(updater.update()))
-                await _register_control_loop_listener(session, updater)
+async def _build_status_page(container: Element, session: PageSession) -> None:
+    with container:
+        with ui.card().classes('w-full'):
+            ui.label('Status').classes('text-h6')
+            updater = StatusUpdater(
+                status_element=ui.code(language='nothing').classes('text-sm w-full grow')
+            )
+            session.add_task(asyncio.create_task(updater.update()))
+            await _register_control_loop_listener(session, updater)
 
 
-@ui.page('/connection_page')
-async def connection_page():
-    session = await _new_page_session()
-    """
-    Show the connections.
-    """
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page'):
-        _page_header()
-        with ui.element('div').classes('dashboard-grid'):
-            # ----------------------------------------------------------
-            # Connection card
-            # ----------------------------------------------------------
-            with ui.card():
-                ui.label('Connection').classes('text-h6')
-                connection_info: JSONDict = await control_loop.get_connection_info()
-                json_as_str = render_json(connection_info, float_format='.2f', units=_CONNECTION_UNITS)
-                connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
-                connection_element.set_content(json_as_str)
+async def _build_connection_page(container: Element, session: PageSession) -> None:
+    with container:
+        with ui.card().classes('w-full'):
+            ui.label('Connection').classes('text-h6')
+            connection_info: JSONDict = await control_loop.get_connection_info()
+            json_as_str = render_json(
+                connection_info, float_format='.2f', units=_CONNECTION_UNITS
+            )
+            connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
+            connection_element.set_content(json_as_str)
 
 
-@ui.page('/log_page')
-async def log_page():
-    session = await _new_page_session()
-    """
-    Listen to the Solala logger and display log messages.
-    """
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page'):
-        _page_header(' log console')
-        log_ui = ui.log(max_lines=Constants.MAX_LOG_HISTORY).style('height: 100vh')
+async def _build_parameters_page(container: Element, session: PageSession) -> None:
+    with container:
+        with ui.column().classes('w-full'):
+            with ui.card().classes('w-full'):
+                ui.label('Policy').classes('text-h6')
+                policy = ui.code(language='nothing').classes('text-sm w-full grow')
+                policy_json: JSONDict = (await control_loop.get_control_mode()).to_json()
+                policy.set_content(render_json(policy_json, units=_PARAMETERS_UNITS))
+            with ui.card().classes('w-full'):
+                ui.label('Constants').classes('text-h6')
+                consts = ui.code(language='nothing').classes('text-sm w-full grow')
+                constants_json: JSONDict = control_loop.Constants.to_json()
+                consts.set_content(
+                    render_json(
+                        constants_json,
+                        remove_key_underscores=False,
+                        units=_CONSTANTS_UNITS,
+                    )
+                )
+
+
+async def _build_registers_page(container: Element, session: PageSession) -> None:
+    with container:
+        with ui.card().classes('w-full'):
+            ui.label('Registers').classes('text-h6')
+            registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
+            updater = RegistersUpdater(registers_element)
+            session.add_task(asyncio.create_task(updater.update()))
+            await _register_control_loop_listener(session, updater)
+
+
+async def _build_log_page(container: Element, session: PageSession) -> None:
+    with container:
+        log_ui = ui.log(max_lines=Constants.MAX_LOG_HISTORY).classes('w-full').style(
+            'height: calc(100vh - 300px); min-height: 240px;'
+        )
     server_log.add(log_ui)
     session.add_cleanup(partial(server_log.remove, log_ui))
 
 
-@ui.page('/registers_page')
-async def registers_page():
-    session = await _new_page_session()
-    """
-    Show the inverter registers.
-    """
-    json_element = _json_page('Registers')
-    registers_elements = RegistersUpdater(json_element)
-    session.add_task(asyncio.create_task(registers_elements.update()))
-    await _register_control_loop_listener(session, registers_elements)
+_TAB_BUILDERS = {
+    'Power': _build_power_page,
+    'Solar': _build_solar_page,
+    'Grid': _build_grid_page,
+    'Graphs': _build_graphs_page,
+    'Status': _build_status_page,
+    'Connection': _build_connection_page,
+    'Parameters': _build_parameters_page,
+    'Registers': _build_registers_page,
+    'Log': _build_log_page,
+}
 
 
-@ui.page('/parameters_page')
-async def parameters_page():
-    session = await _new_page_session()
-    """
-    Show the policy parameters and control constants.
-    """
-    policy, consts = _json_multi_page('Policy', 'Constants')
+@ui.page('/')
+async def root_page():
+    ui.add_head_html(_HEAD_HTML)
 
-    constants_json: JSONDict = control_loop.Constants.to_json()
-    consts.set_content(
-        render_json(constants_json, remove_key_underscores=False, units=_CONSTANTS_UNITS)
-    )
+    with ui.element('div').classes('solala-page'):
+        _page_header(link=False)
 
-    policy_json: JSONDict = (await control_loop.get_control_mode()).to_json()
-    policy.set_content(
-        render_json(policy_json, units=_PARAMETERS_UNITS)
-    )
+        with ui.element('div').classes('dashboard-card tab-navigation'):
+            with ui.grid(columns=3).classes('w-full gap-2'):
+                tab_buttons = {}
+                for tab, icon_name in _TAB_DEFINITIONS:
+                    with ui.button(on_click=lambda tab=tab: select_tab(tab)).classes(
+                        'solala-tab-button'
+                    ) as button:
+                        ui.icon(icon_name).classes('text-2xl')
+                        ui.label(tab).classes('text-xs')
+                    tab_buttons[tab] = button
+
+        content_container = ui.element('div').classes('tab-content w-full')
+
+    active_tab: Optional[str] = None
+    active_session: Optional[PageSession] = None
+    switching = False
+
+    async def close_active_session() -> None:
+        nonlocal active_session
+        if active_session is not None:
+            await active_session.close()
+            active_session = None
+
+    async def select_tab(tab: str) -> None:
+        nonlocal active_tab, active_session, switching
+
+        if switching or tab == active_tab:
+            return
+        switching = True
+        try:
+            await close_active_session()
+            content_container.clear()
+            active_tab = tab
+
+            for name, button in tab_buttons.items():
+                button.classes(
+                    add='solala-tab-button-active' if name == tab else '',
+                    remove='' if name == tab else 'solala-tab-button-active',
+                )
+
+            active_session = PageSession()
+            builder = _TAB_BUILDERS[tab]
+            try:
+                await builder(content_container, active_session, select_tab) \
+                    if tab == 'Power' else await builder(content_container, active_session)
+            except Exception:
+                await active_session.close()
+                active_session = None
+                LOGGER.exception('Error building %s tab', tab)
+                with content_container:
+                    with ui.card().classes('w-full'):
+                        ui.label(f'Unable to display {tab}').classes('text-h6')
+                        ui.label('See the Solala log for details.').classes('text-sm text-gray-500')
+        finally:
+            switching = False
+
+    ui.context.client.on_disconnect(close_active_session)
+    await select_tab('Power')
