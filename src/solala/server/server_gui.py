@@ -352,7 +352,7 @@ async def _build_power_page(container: Element, session: PageSession, select_tab
 
 async def _build_solar_page(container: Element, session: PageSession) -> None:
     with container:
-        navigator = DayNavigator()
+        navigator = DayNavigator(enable_swipe_content=True)
         updaters = [
             SolarForecastUpdater(element, session)
             for element in navigator.get_elements()
