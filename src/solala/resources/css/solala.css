@@ -134,8 +134,8 @@
     padding: 3px 5px;
     border: 1px solid var(--solala-border);
     border-radius: 9px;
-    background-color: #ffffff !important;
-    color: var(--solala-text) !important;
+    background: #ffffff !important;
+    color: var(--solala-text);
     box-shadow: none;
     text-transform: none;
     line-height: 1.1;
@@ -163,13 +163,14 @@
     font-size: 23px;
 }
 
+
 .tab-navigation .q-btn.solala-tab-button-active {
     border: 2px solid var(--solala-house-color);
-    padding: 2px 4px;
-    background: color-mix(in srgb, var(--solala-house-color) 12%, white) !important;
-    color: var(--solala-text) !important;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--solala-house-color) 8%, transparent);
+    background: color-mix(in srgb, var(--solala-house-color) 5%, white) !important;
 }
+
+
+
 
 .tab-content {
     min-width: 0;

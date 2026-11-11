@@ -461,6 +461,9 @@ _TAB_BUILDERS = {
     'Log': _build_log_page,
 }
 
+ACTIVE_PROPS = 'color=blue text-color=black'
+INACTIVE_PROPS = 'color=white text-color=black'
+
 
 class TabSelector:
     def __init__(
@@ -478,7 +481,30 @@ class TabSelector:
         self._transition_lock = asyncio.Lock()
 
         for tab_name, button in self.tab_buttons.items():
-            button.on_click(partial(self.select_tab, tab_name))
+            button.on_click(partial(self.select_tab, tab_name)).props(INACTIVE_PROPS)
+
+    async def select_tab(self, tab_name: str) -> None:
+        async with self._transition_lock:
+            if tab_name == self.active_tab:
+                return
+
+            await self._close_active_session()
+            self.content_container.clear()
+            self.active_tab = tab_name
+
+            for name, button in self.tab_buttons.items():
+                if name == tab_name:
+                    button.props(ACTIVE_PROPS)
+                else:
+                    button.props(INACTIVE_PROPS)
+
+            session = PageSession(self.colours)
+            self.active_session = session
+            self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
+
+    async def close_active_session(self) -> None:
+        async with self._transition_lock:
+            await self._close_active_session()
 
     async def _cancel_active_build(self) -> None:
         task = self._build_task
@@ -498,10 +524,6 @@ class TabSelector:
             session = self.active_session
             self.active_session = None
             await session.close()
-
-    async def close_active_session(self) -> None:
-        async with self._transition_lock:
-            await self._close_active_session()
 
     async def _build_tab(self, tab_name: str, session: PageSession) -> None:
         builder = _TAB_BUILDERS[tab_name]
@@ -523,25 +545,6 @@ class TabSelector:
                         ui.label(f'Unable to display {tab_name}').classes('text-h6')
                         ui.label('See the Solala log for details.').classes('text-sm text-gray-500')
 
-    async def select_tab(self, tab_name: str) -> None:
-        async with self._transition_lock:
-            if tab_name == self.active_tab:
-                return
-
-            await self._close_active_session()
-            self.content_container.clear()
-            self.active_tab = tab_name
-
-            for name, button in self.tab_buttons.items():
-                button.classes(
-                    add='solala-tab-button-active' if name == tab_name else '',
-                    remove='' if name == tab_name else 'solala-tab-button-active',
-                )
-
-            session = PageSession(self.colours)
-            self.active_session = session
-            self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
-
 
 @ui.page('/')
 async def root_page():
@@ -555,9 +558,7 @@ async def root_page():
             with ui.grid(columns=3).classes('w-full gap-2'):
                 tab_buttons: Dict[str, Button] = {}
                 for tab_name, icon_name in _TAB_DEFINITIONS:
-                    with ui.button().classes(
-                            'solala-tab-button'
-                    ) as button:
+                    with ui.button().classes('solala-tab-button') as button:
                         ui.icon(icon_name).classes('text-2xl')
                         ui.label(tab_name).classes('text-xs')
                     tab_buttons[tab_name] = button
