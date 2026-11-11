@@ -29,9 +29,6 @@ from solala.utils.json_extras import JSONDict, render_json
 # Main styling
 # --------------------------------------------------------------------
 
-LIVE_COLOUR = 'green-700'
-STALE_COLOUR = 'red-600'
-
 _HEAD_HTML = r'''
 <link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/css/solala.css">
@@ -202,21 +199,21 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
     overdue: float = control_loop.loop_check_overdue()
     if overdue > Constants.LOOP_TIME:
         loop_status_light.classes(
-            replace=f'w-3 h-3 rounded-full bg-{STALE_COLOUR}'
+            replace='solala-loop-status-light solala-loop-status-stale'
         )
         loop_status_light.tooltip('Control loop appears to be stalled')
         loop_status_label.set_text('stalled')
         loop_status_label.classes(
-            replace=f'text-sm text-{STALE_COLOUR}'
+            replace='solala-loop-status-label solala-loop-status-stale'
         )
     elif overdue == 0:
         loop_status_light.classes(
-            replace=f'w-3 h-3 rounded-full bg-{LIVE_COLOUR}'
+            replace='solala-loop-status-light solala-loop-status-live'
         )
         loop_status_light.tooltip('Control loop appears to be active')
         loop_status_label.set_text('live')
         loop_status_label.classes(
-            replace=f'text-sm text-{LIVE_COLOUR}'
+            replace='solala-loop-status-label solala-loop-status-live'
         )
     else:
         # Leave it as it is
@@ -313,10 +310,10 @@ async def _build_power_page(container: Element, session: PageSession, select_tab
                 ui.label('Power').classes('infographic-title')
                 with ui.row().classes('items-center gap-2'):
                     loop_status_light = ui.element('div').classes(
-                        f'w-3 h-3 rounded-full bg-{STALE_COLOUR}'
+                        'solala-loop-status-light solala-loop-status-stale'
                     )
                     loop_status_label = ui.label('active').classes(
-                        f'text-sm text-{STALE_COLOUR}'
+                        'solala-loop-status-label solala-loop-status-stale'
                     )
 
                 _update_loop_status(loop_status_light, loop_status_label)
@@ -330,10 +327,10 @@ async def _build_power_page(container: Element, session: PageSession, select_tab
                     const light = getHtmlElement({loop_status_light.id});
                     const label = getHtmlElement({loop_status_label.id});
                     window.socket.on('disconnect', () => {{
-                        light.className = 'w-3 h-3 rounded-full bg-{STALE_COLOUR}';
+                        light.className = 'solala-loop-status-light solala-loop-status-stale';
                         light.title = 'Connection to Solala server lost';
                         label.textContent = 'stale';
-                        label.className = 'text-sm text-{STALE_COLOUR}';
+                        label.className = 'solala-loop-status-label solala-loop-status-stale';
                     }});
                 """)
 
