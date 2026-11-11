@@ -78,6 +78,7 @@ class SolalaDatabaseConnections:
             min_pool_size=4,
             max_pool_size=8,
     ):
+        print(f'DEBUG {min_pool_size=} {max_pool_size=}')
         connection_string: str = make_connection_string(
             role=role,
             password=password,
