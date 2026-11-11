@@ -7,7 +7,7 @@ from typing import Optional
 from local_config_help import config
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.database.solala_database import Measurement, SolalaDatabase
-from solala.database.solala_database_connections import solala_database
+from solala.database.solala_database_connections import SolalaDatabaseConnections
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.json_extras import to_json
 
@@ -47,21 +47,22 @@ async def insert_measurement(db: SolalaDatabase) -> None:
 
 
 async def main() -> None:
-    async with solala_database(
-            role=config.DATABASE_APP_ROLE,
-            password=config.DATABASE_APP_PASSWORD,
-            host=config.DATABASE_HOST,
-            port=config.DATABASE_PORT,
-            database_name=config.DATABASE_NAME,
-    ) as db:
-        await insert_measurement(db)
-        got: Optional[Measurement] = await db.get_latest_measurement()
+    async with SolalaDatabaseConnections(
+        role=config.DATABASE_APP_ROLE,
+        password=config.DATABASE_APP_PASSWORD,
+        host=config.DATABASE_HOST,
+        port=config.DATABASE_PORT,
+        database_name=config.DATABASE_NAME,
+    ) as pool:
+        async with pool.solala_database() as db:
+            await insert_measurement(db)
+            got: Optional[Measurement] = await db.get_latest_measurement()
 
-        if got is not None:
-            to_print = json.dumps(to_json(got), indent=4)
-            print(to_print)
-        else:
-            print('No measurement in database')
+            if got is not None:
+                to_print = json.dumps(to_json(got), indent=4)
+                print(to_print)
+            else:
+                print('No measurement in database')
 
 
 if __name__ == "__main__":

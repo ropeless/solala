@@ -59,8 +59,8 @@ class DummyPowerController(PowerController):
         self.accumulated_battery_energy_discharge: float = 0
 
         self.registers = RegisterBank({
-            key: CallRegister(lambda: self.get_connection_status()[key])
-            for key in self.get_connection_status().keys()
+            key: CallRegister(lambda: self.get_connection_info()[key])
+            for key in self.get_connection_info().keys()
         })
 
         self.update_status()
@@ -68,7 +68,7 @@ class DummyPowerController(PowerController):
     def get_inverter_limit(self) -> float:
         return self.inverter_limit
 
-    def get_connection_status(self) -> Dict[str, int | float | str]:
+    def get_connection_info(self) -> Dict[str, int | float | str]:
         return {
             'connection': self.__class__.__name__,
             'battery_mode': self.battery_mode.name,

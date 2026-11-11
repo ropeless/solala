@@ -57,7 +57,7 @@ class DummySolarForecaster(SolarForecaster):
         ]
         return DailySolarForecast(forecasts)
 
-    def get_connection_status(self) -> JSONDict:
+    def get_connection_info(self) -> JSONDict:
         return {
             'connection': self.__class__.__name__,
             'panel_capacity': self.panel_capacity,

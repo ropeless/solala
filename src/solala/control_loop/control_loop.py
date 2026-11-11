@@ -165,39 +165,39 @@ class _ControlState:
     registers_to_log_str: str | None = None
 
     @property
-    def controller_connection_status(self) -> JSONDict:
+    def controller_connection_info(self) -> JSONDict:
         if self.controller is None:
             return _DISCONNECTED
         else:
-            return self.controller.get_connection_status()
+            return self.controller.get_connection_info()
 
     @property
-    def pricer_connection_status(self) -> JSONDict:
+    def pricer_connection_info(self) -> JSONDict:
         if self.pricer is None:
             return _DISCONNECTED
         else:
-            return self.pricer.get_connection_status()
+            return self.pricer.get_connection_info()
 
     @property
-    def forecaster_connection_status(self) -> JSONDict:
+    def forecaster_connection_info(self) -> JSONDict:
         if self.forecaster is None:
             return _DISCONNECTED
         else:
-            return self.forecaster.get_connection_status()
+            return self.forecaster.get_connection_info()
 
     @property
-    def consumers_connection_status(self) -> Dict[str, JSONDict]:
+    def consumers_connection_info(self) -> Dict[str, JSONDict]:
         return {
-            name: consumer.get_connection_status()
+            name: consumer.get_connection_info()
             for name, consumer in self.consumers.items()
         }
 
     @property
-    def database_connection_status(self) -> JSONDict:
+    def database_connection_info(self) -> JSONDict:
         if self.database_connections is None:
             return _DISCONNECTED
         else:
-            return self.database_connections.get_connection_status()
+            return self.database_connections.get_connection_info()
 
     def reset_controller(self, controller: Optional[PowerController], settings: Optional[ControllerConnection]) -> None:
         assert (controller is None) == (settings is None)
@@ -607,16 +607,16 @@ async def get_consumers_status() -> Dict[str, ConsumerStatus]:
     return {name: status for name, status in zip(names, statuses)}
 
 
-async def get_connection_status() -> JSONDict:
+async def get_connection_info() -> JSONDict:
     async with _control_state() as state:
         result: Dict[str, JSONValue] = {
-            'controller': state.controller_connection_status,
-            'pricer': state.pricer_connection_status,
-            'forecaster': state.forecaster_connection_status,
-            'database': state.database_connection_status,
+            'controller': state.controller_connection_info,
+            'pricer': state.pricer_connection_info,
+            'forecaster': state.forecaster_connection_info,
+            'database': state.database_connection_info,
         }
         if len(state.consumers) > 0:
-            result['consumers'] = state.consumers_connection_status
+            result['consumers'] = state.consumers_connection_info
         return result
 
 
@@ -695,23 +695,24 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
         database_connections: SolalaDatabaseConnections
 
         # DEBUG
-        LOGGER.debug(f'{_LOG_SRC}Pool open: {database_connections.pool_open}')
-        await database_connections.ensure_open()
-        stats = database_connections.pool.get_stats()
+        stats = database_connections.get_stats()
         LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
         LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
         LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
         LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
 
-        db: SolalaDatabase = await database_connections.get_db()
+    await database_connections.open(wait=False)
+    await asyncio.sleep(1)
 
-        # DEBUG
-        LOGGER.debug('{_LOG_SRC}Obtained DB connection from pool')
-        stats = database_connections.pool.get_stats()
-        LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
-        LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
-        LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
-        LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
+    db: SolalaDatabase = await database_connections.get_db()
+
+    # DEBUG
+    LOGGER.debug('{_LOG_SRC}Obtained DB connection from pool')
+    stats = database_connections.get_stats()
+    LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
+    LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
+    LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
+    LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
 
     # Release the control state lock, then provide the database connection
     try:
@@ -724,7 +725,7 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
                 raise ConnectionError('Database pool closed while in use')
             await database_connections.put_db(db, commit_on_close)
         LOGGER.debug('{_LOG_SRC}Returned DB connection to pool')
-        stats = database_connections.pool.get_stats()
+        stats = database_connections.get_stats()
         LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
         LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
         LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
@@ -826,8 +827,8 @@ async def connect_controller(controller_connection: ControllerConnection) -> Non
 
         await disconnect_controller()
         state.reset_controller(controller, controller_connection)
-        connection_status = controller.get_connection_status()
-        LOGGER.info(f'{_LOG_SRC}Power controller connection: {json.dumps(connection_status)}')
+        connection_info = controller.get_connection_info()
+        LOGGER.info(f'{_LOG_SRC}Power controller connection: {json.dumps(connection_info)}')
         await _save_settings()
         await _reconfigure_registers(state)
 
@@ -861,8 +862,8 @@ async def connect_pricer(pricer_connection: PricerConnection) -> None:
 
         await disconnect_pricer()
         state.reset_pricer(pricer, pricer_connection)
-        connection_status = pricer.get_connection_status()
-        LOGGER.info(f'{_LOG_SRC}Power pricer connection: {json.dumps(connection_status)}')
+        connection_info = pricer.get_connection_info()
+        LOGGER.info(f'{_LOG_SRC}Power pricer connection: {json.dumps(connection_info)}')
         await _save_settings()
         await _reconfigure_registers(state)
 
@@ -901,8 +902,8 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
 
         await disconnect_consumer(name)
         state.reset_consumer(name, consumer, consumer_connection)
-        connection_status = consumer.get_connection_status()
-        LOGGER.info(f'{_LOG_SRC}Power consumer {name!r} connection: {json.dumps(connection_status)}')
+        connection_info = consumer.get_connection_info()
+        LOGGER.info(f'{_LOG_SRC}Power consumer {name!r} connection: {json.dumps(connection_info)}')
         await _save_settings()
         await _reconfigure_registers(state)
 
@@ -939,8 +940,8 @@ async def connect_forecaster(forecaster_connection: ForecasterConnection) -> Non
 
         await disconnect_forecaster()
         state.reset_forecaster(forecaster, forecaster_connection)
-        connection_status = forecaster.get_connection_status()
-        LOGGER.info(f'{_LOG_SRC}Solar forecaster connection: {json.dumps(connection_status)}')
+        connection_info = forecaster.get_connection_info()
+        LOGGER.info(f'{_LOG_SRC}Solar forecaster connection: {json.dumps(connection_info)}')
         await _save_settings()
         await _reconfigure_registers(state)
 
@@ -967,11 +968,10 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
             port=database_connection.port,
             database_name=database_connection.database_name,
         )
-        await database_connections.ensure_open()
         await disconnect_database()
         state.reset_database(database_connections, database_connection)
-        connection_status = database_connections.get_connection_status()
-        LOGGER.info(f'{_LOG_SRC}Database connection: {json.dumps(connection_status)}')
+        connection_info = database_connections.get_connection_info()
+        LOGGER.info(f'{_LOG_SRC}Database connection: {json.dumps(connection_info)}')
         await _save_settings()
         # no need to _reconfigure_registers(state)
 

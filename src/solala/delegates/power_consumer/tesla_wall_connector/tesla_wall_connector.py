@@ -20,12 +20,12 @@ class TeslaWallConnector(PowerConsumer):
     def __init__(self, host: str, mac_address: str = ''):
         # noinspection HttpUrlsUsage
         self._api = f'http://{host}/api/1/'
-        self._connection_status = {
+        self._connection_info = {
             'connection': 'Tesla Wall Connector',
             'host': host,
         }
         if mac_address != '':
-            self._connection_status['mac_address'] = mac_address
+            self._connection_info['mac_address'] = mac_address
 
         # Cache `__get_vitals` for 0.01s each call
         self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_vitals, 0.01)
@@ -50,8 +50,8 @@ class TeslaWallConnector(PowerConsumer):
             current=json_num(data['currentA_a']),
         )
 
-    def get_connection_status(self) -> JSONDict:
-        return self._connection_status
+    def get_connection_info(self) -> JSONDict:
+        return self._connection_info
 
     async def close(self) -> None:
         pass
@@ -76,7 +76,7 @@ class TeslaWallConnector(PowerConsumer):
             response = await async_get(url)
             return json_dict(response.json())
         except Exception as err:
-            LOGGER.error(f'{self.__class__.__name__} {self._connection_status["host"]!r}: {err!r}')
+            LOGGER.error(f'{self.__class__.__name__} {self._connection_info["host"]!r}: {err!r}')
             return {
                 'error': str(err),
                 'voltageA_v': float('nan'),

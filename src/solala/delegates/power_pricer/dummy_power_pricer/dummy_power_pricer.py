@@ -46,7 +46,7 @@ class DummyPowerPricer(PowerPricer):
         self.prices: List[Price] = []
         self.demand_window: Optional[Tuple[time, time]] = demand_window
 
-    def get_connection_status(self) -> JSONDict:
+    def get_connection_info(self) -> JSONDict:
         demand_window = (
             None if self.demand_window is None else
             [

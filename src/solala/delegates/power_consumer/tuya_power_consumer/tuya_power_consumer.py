@@ -31,7 +31,7 @@ class TuyaPowerConsumer(PowerConsumer):
             raise ConnectionError(response)
 
         self._status_url: str = f'/v1.0/iot-03/devices/{device_id}/status'
-        self._connection_status: JSONDict = {
+        self._connection_info: JSONDict = {
             'connection': 'Tuya',
             'access_id': access_id,
             'device_id': device_id,
@@ -60,8 +60,8 @@ class TuyaPowerConsumer(PowerConsumer):
             current=json_num(device_status['cur_current']) / 1000,
         )
 
-    def get_connection_status(self) -> JSONDict:
-        return self._connection_status
+    def get_connection_info(self) -> JSONDict:
+        return self._connection_info
 
     async def close(self) -> None:
         pass
@@ -90,7 +90,7 @@ class TuyaPowerConsumer(PowerConsumer):
                 for item in response['result']
             }
         except Exception as err:
-            LOGGER.error(f'{self.__class__.__name__} {self._connection_status["device_id"]!r}: {err!r}')
+            LOGGER.error(f'{self.__class__.__name__} {self._connection_info["device_id"]!r}: {err!r}')
             return {
                 'error': str(err),
                 'cur_voltage': float('nan'),

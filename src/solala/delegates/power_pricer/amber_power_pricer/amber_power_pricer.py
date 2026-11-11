@@ -36,7 +36,7 @@ class AmberPowerPricer(PowerPricer):
     def site_id(self) -> str:
         return self._site_id
 
-    def get_connection_status(self) -> JSONDict:
+    def get_connection_info(self) -> JSONDict:
         return {
             'connection': 'Amber',
             'nmi': self._nmi,
@@ -188,5 +188,5 @@ def _get_predicted(data: JSONDict) -> float:
         return _get_perKwh(data)
 
 
-def _get_datetime(date: str) -> datetime:
-    return datetime.fromisoformat(date).astimezone()
+def _get_datetime(date_str: str) -> datetime:
+    return datetime.fromisoformat(date_str).astimezone()

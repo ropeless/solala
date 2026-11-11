@@ -16,9 +16,9 @@ class SolarForecaster(ABC):
         ...
 
     @abstractmethod
-    def get_connection_status(self) -> JSONDict:
+    def get_connection_info(self) -> JSONDict:
         """
-        Get the status of the connection.
+        Get information about the connection.
         """
         ...
 

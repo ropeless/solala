@@ -113,12 +113,12 @@ class ModbusPowerController(PowerController):
                 unnamed_device = device_record
             else:
                 devices_record[device_name] = device_record
-        self._connection_status: Dict[str, JSONValue] = {
+        self._connection_info: Dict[str, JSONValue] = {
             'connection': 'Modbus',
             'devices': devices_record,
         }
         if unnamed_device is not None:
-            self._connection_status['unnamed_device'] = unnamed_device
+            self._connection_info['unnamed_device'] = unnamed_device
 
         # Calculate the constant inverter limit
         self._inverters_limit: List[float] = []
@@ -154,8 +154,8 @@ class ModbusPowerController(PowerController):
     def get_inverter_limit(self) -> float:
         return self._inverter_limit
 
-    def get_connection_status(self) -> JSONDict:
-        return self._connection_status
+    def get_connection_info(self) -> JSONDict:
+        return self._connection_info
 
     async def close(self) -> None:
         """

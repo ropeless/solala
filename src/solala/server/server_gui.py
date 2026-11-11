@@ -978,8 +978,8 @@ async def connection_page():
             # ----------------------------------------------------------
             with ui.card():
                 ui.label('Connection').classes('text-h6')
-                connection_json: JSONDict = await control_loop.get_connection_status()
-                json_as_str = render_json(connection_json, float_format='.2f', units=_CONNECTION_UNITS)
+                connection_info: JSONDict = await control_loop.get_connection_info()
+                json_as_str = render_json(connection_info, float_format='.2f', units=_CONNECTION_UNITS)
                 connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
                 connection_element.set_content(json_as_str)
 
