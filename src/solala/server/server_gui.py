@@ -490,7 +490,7 @@ class TabSelector:
 
             for name, button in self.tab_buttons.items():
                 if name == tab_name:
-                    background = rgba(self.colours.house, alpha=0.10)
+                    background = rgba(self.colours.tab, alpha=0.10)
                     button.props(f'color="{background}" text-color=black')
                     button.classes(add='solala-tab-button-active')
                 else:
