@@ -31,6 +31,7 @@ def main():
         settings_path=config.DUMMY_SETTINGS_PATH,
         settings=settings,
         force_settings=config.FORCE_SETTINGS,
+        database_write=False,
     )
 
 
