@@ -45,6 +45,11 @@
 }
 
 
+/* Keep the page width stable when content starts or stops scrolling. */
+html {
+    scrollbar-gutter: stable;
+}
+
 /* ---------------------------------------------------------
    Page layout
    --------------------------------------------------------- */
