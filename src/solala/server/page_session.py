@@ -22,11 +22,31 @@ class PageSession:
         self._cleanup.append(cleanup)
 
     async def add_control_listener(self, listener: LoopListener) -> None:
-        await control_loop.add_control_loop_listener(listener)
+        registration = asyncio.create_task(control_loop.add_control_loop_listener(listener))
+        try:
+            await asyncio.shield(registration)
+        except asyncio.CancelledError:
+            try:
+                await registration
+            except Exception:
+                pass
+            else:
+                await control_loop.remove_control_loop_listener(listener)
+            raise
         self.add_cleanup(partial(control_loop.remove_control_loop_listener, listener))
 
     async def add_database_listener(self, listener: LoopListener) -> None:
-        await control_loop.add_database_loop_listener(listener)
+        registration = asyncio.create_task(control_loop.add_database_loop_listener(listener))
+        try:
+            await asyncio.shield(registration)
+        except asyncio.CancelledError:
+            try:
+                await registration
+            except Exception:
+                pass
+            else:
+                await control_loop.remove_database_loop_listener(listener)
+            raise
         self.add_cleanup(partial(control_loop.remove_database_loop_listener, listener))
 
     def add_task(self, task: asyncio.Task) -> None:
