@@ -17,7 +17,13 @@ _CAROUSEL_PROPS = 'infinite transition-next="slide-left" transition-prev="slide-
 
 
 class DayNavigator:
-    def __init__(self):
+    def __init__(
+            self,
+            *,
+            enable_swipe_content: bool = False,
+            enable_swipe_navigator: bool = True,
+            enable_arrow_keys: bool = True,
+    ):
         # The navigator works by keeping s ring of three carousel slides. At any point of time
         # one slide is the current display day (focus slide) with the other two being the previous
         # and next day (left slide and right slide).
@@ -35,7 +41,8 @@ class DayNavigator:
         self._touch_start_x: float | None = None  # for our own swipe detection
 
         # Date and navigation row
-        with ui.row().classes('items-center gap-2 w-full'):
+        navigator_row = ui.row().classes('items-center gap-2 w-full')
+        with navigator_row:
             # Date
             ui.button(
                 icon='calendar_today',
@@ -87,21 +94,6 @@ class DayNavigator:
 
         self._carousel.on_value_change(self._on_slide_change)
         self._carousel.on('transition', self._on_carousel_transition)
-        self._carousel.on(
-            'touchstart',
-            self._on_touch_start,
-            js_handler='(e) => emit(e.touches[0]?.clientX ?? null)',
-        )
-        self._carousel.on(
-            'touchend',
-            self._on_touch_end,
-            js_handler='(e) => emit(e.changedTouches[0]?.clientX ?? null)',
-        )
-        self._carousel.on(
-            'touchcancel',
-            lambda _: setattr(self, '_touch_start_x', None),
-        )
-        ui.keyboard(on_key=self._handle_key, repeating=False)
 
         with ui.dialog(value=False) as dialog:
             with ui.card():
@@ -110,6 +102,14 @@ class DayNavigator:
                     on_change=self._dialog_day_changed,
                 )
         self._dialog = dialog
+
+        if enable_swipe_content:
+            self._add_swipe_handler(self._carousel)
+        if enable_swipe_navigator:
+            self._add_swipe_handler(navigator_row)
+
+        if enable_arrow_keys:
+            ui.keyboard(on_key=self._handle_key, repeating=False)
 
     def get_elements(self) -> Sequence[Element]:
         """
@@ -173,6 +173,22 @@ class DayNavigator:
             await self._update_element(self._focus_slide, day)
             asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
             asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+
+    def _add_swipe_handler(self, element: Element) -> None:
+        element.on(
+            'touchstart',
+            self._on_touch_start,
+            js_handler='(e) => emit(e.touches[0]?.clientX ?? null)',
+        )
+        element.on(
+            'touchend',
+            self._on_touch_end,
+            js_handler='(e) => emit(e.changedTouches[0]?.clientX ?? null)',
+        )
+        element.on(
+            'touchcancel',
+            lambda _: setattr(self, '_touch_start_x', None),
+        )
 
     @property
     def _display_slide(self) -> int:

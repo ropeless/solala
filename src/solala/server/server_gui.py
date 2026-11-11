@@ -29,7 +29,7 @@ from solala.server.graphs import EnergyChart, PriceChart, PowerChart, ChargeChar
 from solala.server.icons import analytics_name_to_icon_url, weather_code_to_icon_url
 from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
-from solala.server.ui_day_navigator import DayNavigator
+from solala.server.day_navigator import DayNavigator
 from solala.utils.datetime_extras import now
 from solala.utils.dict_extras import dict_merge
 from solala.utils.json_extras import JSONDict, json_dict, render_json, json_str, JSONPrimitive
