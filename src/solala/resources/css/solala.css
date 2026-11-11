@@ -133,7 +133,7 @@
     justify-content: center;
     gap: 1px;
     padding: 3px 5px;
-    border: 1px solid var(--solala-border);
+    border: 2x solid var(--solala-border);
     border-radius: 9px;
     box-shadow: none;
     text-transform: none;
@@ -150,7 +150,7 @@
 }
 
 .tab-navigation .q-btn.solala-tab-button-active {
-    border: 2px solid var(--solala-tab-color);
+    border: 3px solid var(--solala-tab-color);
     padding: 2px 4px;
 }
 
