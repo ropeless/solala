@@ -50,9 +50,21 @@ CREATE INDEX solar_forecast_target_idx
     ON solar_forecast (target_time);
 
 
-CREATE TABLE register
+CREATE TABLE register_numeric
 (
-    timestamp TIMESTAMPTZ PRIMARY KEY, -- should reference an entry in "measurements" table
-    name      TEXT,                    -- name of the register
-    value     DOUBLE PRECISION         -- only numeric registers are recorded
-)
+    timestamp TIMESTAMPTZ NOT NULL,
+    name      TEXT NOT NULL,
+    value     DOUBLE,
+
+    PRIMARY KEY (timestamp, name)
+);
+
+CREATE TABLE register_text
+(
+    timestamp TIMESTAMPTZ NOT NULL,
+    name      TEXT NOT NULL,
+    value     TEXT,
+
+    PRIMARY KEY (timestamp, name)
+);
+

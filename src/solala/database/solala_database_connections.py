@@ -1,60 +1,26 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
+from urllib.parse import quote_plus
 
-import psycopg
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
-from solala.constants import DEFAULT_DB_HOST, DEFAULT_DB_PORT, DEFAULT_DB_NAME
+from solala.constants import DEFAULT_DB_HOST, DEFAULT_DB_NAME, DEFAULT_DB_PORT
 from solala.database.solala_database import SolalaDatabase
 from solala.utils.json_extras import JSONDict
 
 
 def make_connection_string(
-        role: str,
-        password: str,
-        host: str,
-        port: int,
-        database_name: Optional[str] = None,
+    role: str,
+    password: str,
+    host: str,
+    port: int,
+    database_name: str | None = None,
 ) -> str:
-    if database_name is None:
-        database_name = ''
-    else:
-        database_name = '/' + database_name
-    return f'postgresql://{role}:{password}@{host}:{port}{database_name}'
-
-
-@asynccontextmanager
-async def solala_database(
-        role: str,
-        password: str,
-        host: str = DEFAULT_DB_HOST,
-        port: int = DEFAULT_DB_PORT,
-        database_name: str = DEFAULT_DB_NAME,
-        commit_on_close: bool = True,
-) -> AsyncIterator[SolalaDatabase]:
-    """
-    Single solala database connection.
-
-    Args:
-        role: database connection role (aka, username).
-        password: database connection password.
-        host: database host.
-        port: database port.
-        database_name: database name.
-        commit_on_close: whether to commit changes on close or not.
-    """
-    connection_string: str = make_connection_string(
-        role=role,
-        password=password,
-        host=host,
-        port=port,
-        database_name=database_name,
-    )
-    async with await psycopg.AsyncConnection.connect(conninfo=connection_string) as conn:
-        yield SolalaDatabase(conn)
-        if commit_on_close:
-            await conn.commit()
+    safe_role = quote_plus(role)
+    safe_password = quote_plus(password)
+    db_path = f'/{database_name}' if database_name else ''
+    return f'postgresql://{safe_role}:{safe_password}@{host}:{port}{db_path}'
 
 
 class SolalaDatabaseConnections:
@@ -69,17 +35,16 @@ class SolalaDatabaseConnections:
     """
 
     def __init__(
-            self,
-            role: str,
-            password: str,
-            host: str = DEFAULT_DB_HOST,
-            port: int = DEFAULT_DB_PORT,
-            database_name: str = DEFAULT_DB_NAME,
-            min_pool_size=4,
-            max_pool_size=8,
-    ):
-        print(f'DEBUG {min_pool_size=} {max_pool_size=}')
-        connection_string: str = make_connection_string(
+        self,
+        role: str,
+        password: str,
+        host: str = DEFAULT_DB_HOST,
+        port: int = DEFAULT_DB_PORT,
+        database_name: str = DEFAULT_DB_NAME,
+        min_pool_size: int = 1,
+        max_pool_size: int = 8,
+    ) -> None:
+        connection_string = make_connection_string(
             role=role,
             password=password,
             host=host,
@@ -92,77 +57,66 @@ class SolalaDatabaseConnections:
             max_size=max_pool_size,
             open=False,
         )
-        self._pool_open: bool = False
-        self._connection_status: JSONDict = {
+        self._connection_info: JSONDict = {
             'role': role,
             'host': host,
             'port': port,
             'database_name': database_name,
         }
 
-    def get_connection_status(self) -> JSONDict:
-        return self._connection_status
+    def get_connection_info(self) -> JSONDict:
+        return self._connection_info
 
     @asynccontextmanager
     async def solala_database(
-            self,
-            commit_on_close: bool = True,
-            timeout: float | None = None,
+        self,
+        commit_on_close: bool = True,
+        timeout: float | None = None,
     ) -> AsyncIterator[SolalaDatabase]:
         """
+        Yields a SolalaDatabase instance backed by a pooled connection.
 
         Args:
-            commit_on_close: whether to commit changes on close or not.
-            timeout: connection timeout.
+            commit_on_close: Whether to commit changes on exit (rolls back if False).
+            timeout: Connection acquisition timeout in seconds.
 
         Returns:
-            a SolalaDatabase instance.
+            A SolalaDatabase instance.
         """
-        await self.ensure_open()
         async with self._pool.connection(timeout=timeout) as conn:
             yield SolalaDatabase(conn)
-            if commit_on_close:
-                await conn.commit()
+            if not commit_on_close:
+                await conn.rollback()
 
     async def get_db(self, timeout: float | None = None) -> SolalaDatabase:
-        await self.ensure_open()
         conn: AsyncConnection = await self._pool.getconn(timeout=timeout)
         return SolalaDatabase(conn)
 
     async def put_db(self, db: SolalaDatabase, commit_on_close: bool = True) -> None:
         # noinspection PyProtectedMember
         conn: AsyncConnection = db._connection
-        if commit_on_close:
-            await conn.commit()
         # noinspection PyTypeChecker
         db._connection = None
-        await self._pool.putconn(conn)
+        try:
+            if commit_on_close:
+                await conn.commit()
+            else:
+                await conn.rollback()
+        finally:
+            await self._pool.putconn(conn)
 
-    async def ensure_open(self) -> None:
-        if not self._pool_open:
-            await self._pool.open()
-            self._pool_open = True
+    def get_stats(self) -> dict[str, int]:
+        return self._pool.get_stats()
 
-    @property
-    def pool_open(self) -> bool:
-        return self._pool_open
-
-    @property
-    def pool(self) -> AsyncConnectionPool:
-        return self._pool
-
-    async def open(self) -> None:
-        if not self._pool_open:
-            await self._pool.open()
-            self._pool_open = True
+    async def open(self, wait: bool = False) -> None:
+        await self._pool.open(wait=wait)
 
     async def close(self) -> None:
-        if self._pool_open:
-            await self._pool.close()
-            self._pool_open = False
+        await self._pool.close()
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> 'SolalaDatabaseConnections':
+        await self.open(wait=True)
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.close()
