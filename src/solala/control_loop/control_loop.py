@@ -1078,9 +1078,14 @@ async def _control_loop() -> None:
     Execute the main control loop.
     """
     LOGGER.info(f'{_LOG_SRC}Running control loop')
+
+    # Sleep to start the loop on a preferred time boundary.
+    # Also gives some time to queued async tasks.
+    await asyncio.sleep(_get_sleep_time())
+
     while _CONTROL_STATE.control_loop_running:
         async with _control_state() as state:
-            state.iteration_start = now()  # timestamp to calculate loop sleep time
+            state.iteration_start = iteration_start = now()  # timestamp to calculate loop sleep time
             await _control_step(state)
             listeners = state.control_loop_listeners.copy()
             state.last_power_valid = False
@@ -1091,19 +1096,27 @@ async def _control_loop() -> None:
         _update_listeners(listeners)
 
         # Sleep for the remaining time until the next loop iteration.
-        # Make adjustment so that iterations tend to fall at whole minutes
-        # (assuming `Constants.LOOP_TIME` is a factor of 60).
-        # The adjustment is limited to -1 to +1 second away from `Constants.LOOP_TIME`.
-        next_start_timestamp = state.iteration_start.timestamp() + Constants.LOOP_TIME
-        ideal_start_timestamp = round(next_start_timestamp / Constants.LOOP_TIME) * Constants.LOOP_TIME
-        next_start_timestamp += max(-1, min(ideal_start_timestamp - next_start_timestamp, 1))  # limited adjustment
-        sleeptime: float = next_start_timestamp - now().timestamp()
-        if sleeptime < Constants.LOOP_MIN_SLEEP_TIME:
-            LOGGER.warn(f'{_LOG_SRC}Low sleep time: {sleeptime} < {Constants.LOOP_MIN_SLEEP_TIME}')
-            sleeptime = Constants.LOOP_MIN_SLEEP_TIME
-        await asyncio.sleep(sleeptime)
+        sleep_time = _get_sleep_time()
+        loop_time_multiple = (now().timestamp() - iteration_start.timestamp() + sleep_time) / Constants.LOOP_TIME
+        if loop_time_multiple > 1:
+            LOGGER.warn(f'{_LOG_SRC}Loop time multiple > 1 ({loop_time_multiple})')
+        await asyncio.sleep(sleep_time)
 
     LOGGER.info(f'{_LOG_SRC}Stopped control loop')
+
+
+def _get_sleep_time() -> float:
+    """
+    Return the sleep time required to wake up on a Constants.LOOP_TIME multiple.
+    The result is > Constants.LOOP_MIN_SLEEP_TIME.
+    """
+    ts: float = now().timestamp()
+    start_timestamp = (int(ts / Constants.LOOP_TIME) + 1) * Constants.LOOP_TIME
+    sleep_time = start_timestamp - ts
+    while sleep_time < Constants.LOOP_MIN_SLEEP_TIME:
+        start_timestamp += Constants.LOOP_TIME
+        sleep_time = start_timestamp - ts
+    return sleep_time
 
 
 async def _cur_log_registers(cur_log_registers: Optional[re.Pattern]) -> None:
@@ -1116,7 +1129,7 @@ async def _cur_log_registers(cur_log_registers: Optional[re.Pattern]) -> None:
                 to_log[name] = value
         try:
             async with solala_database() as db:
-                await db.insert_registers(timestamp, to_log)
+                await db.insert_registers_numeric(timestamp, to_log)
         except (ConnectionError, DatabaseError) as err:
             LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
 
@@ -1248,7 +1261,7 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
     errors: List[JSONDict] = []
     for address in addresses:
         try:
-            client = ModbusTcpClient(address.ip_address, port=502)
+            client = ModbusTcpClient(address.ip_address)
             client.connect()
             clients.append(client)
         except Exception as err:
