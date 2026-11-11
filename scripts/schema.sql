@@ -54,7 +54,7 @@ CREATE TABLE register_numeric
 (
     timestamp TIMESTAMPTZ NOT NULL,
     name      TEXT NOT NULL,
-    value     DOUBLE,
+    value     DOUBLE PRECISION,
 
     PRIMARY KEY (timestamp, name)
 );
