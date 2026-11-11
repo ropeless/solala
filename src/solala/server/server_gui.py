@@ -473,22 +473,61 @@ class TabSelector:
         self.tab_buttons: Dict[str, Button] = tab_buttons
         self.active_tab: Optional[str] = None
         self.active_session: Optional[PageSession] = None
-        self.switching = False
+        self._build_task: Optional[asyncio.Task] = None
+        self._transition_lock = asyncio.Lock()
 
         for tab_name, button in self.tab_buttons.items():
             button.on_click(partial(self.select_tab, tab_name))
 
-    async def close_active_session(self) -> None:
+    async def _cancel_active_build(self) -> None:
+        task = self._build_task
+        self._build_task = None
+        if task is None or task.done():
+            return
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async def _close_active_session(self) -> None:
+        await self._cancel_active_build()
         if self.active_session is not None:
-            await self.active_session.close()
+            session = self.active_session
             self.active_session = None
+            await session.close()
+
+    async def close_active_session(self) -> None:
+        async with self._transition_lock:
+            await self._close_active_session()
+
+    async def _build_tab(self, tab_name: str, session: PageSession) -> None:
+        builder = _TAB_BUILDERS[tab_name]
+        try:
+            if tab_name == 'Power':
+                await builder(self.content_container, session, self.select_tab)
+            else:
+                await builder(self.content_container, session)
+        except asyncio.CancelledError:
+            await session.close()
+            raise
+        except Exception:
+            await session.close()
+            if self.active_session is session:
+                self.active_session = None
+                LOGGER.exception('Error building %s tab', tab_name)
+                with self.content_container:
+                    with ui.card().classes('w-full'):
+                        ui.label(f'Unable to display {tab_name}').classes('text-h6')
+                        ui.label('See the Solala log for details.').classes('text-sm text-gray-500')
 
     async def select_tab(self, tab_name: str) -> None:
-        if self.switching or tab_name == self.active_tab:
-            return
-        self.switching = True
-        try:
-            await self.close_active_session()
+        async with self._transition_lock:
+            if tab_name == self.active_tab:
+                return
+
+            await self._close_active_session()
             self.content_container.clear()
             self.active_tab = tab_name
 
@@ -498,24 +537,9 @@ class TabSelector:
                     remove='' if name == tab_name else 'solala-tab-button-active',
                 )
 
-            active_session = PageSession()
-            self.active_session = active_session
-            builder = _TAB_BUILDERS[tab_name]
-            try:
-                if tab_name == 'Power':
-                    await builder(self.content_container, active_session, self.select_tab)
-                else:
-                    await builder(self.content_container, active_session)
-            except Exception:
-                await active_session.close()
-                self.active_session = None
-                LOGGER.exception('Error building %s tab', tab_name)
-                with self.content_container:
-                    with ui.card().classes('w-full'):
-                        ui.label(f'Unable to display {tab_name}').classes('text-h6')
-                        ui.label('See the Solala log for details.').classes('text-sm text-gray-500')
-        finally:
-            self.switching = False
+            session = PageSession()
+            self.active_session = session
+            self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
 
 
 @ui.page('/')
