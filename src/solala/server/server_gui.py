@@ -154,11 +154,11 @@ async def _new_page_session() -> PageSession:
     return session
 
 
-async def _register_control_loop_listener(session, session: PageSession, listener: LoopListener) -> None:
+async def _register_control_loop_listener(session: PageSession, listener: LoopListener) -> None:
     await session.add_control_listener(listener)
 
 
-async def _register_database_loop_listener(session, session: PageSession, listener: LoopListener) -> None:
+async def _register_database_loop_listener(session: PageSession, listener: LoopListener) -> None:
     await session.add_database_listener(listener)
 
 
@@ -434,8 +434,9 @@ class PriceForecastUpdater(LoopListener):
 
 class SolarForecastUpdater(LoopListener):
 
-    def __init__(self, element: ui.element):
+    def __init__(self, element: ui.element, session: PageSession):
         super().__init__()
+        self._session = session
         self._prev: Optional[DailySolarForecast] = None
         self._day: date = date.today()
         self._element: ui.element = element
@@ -455,7 +456,7 @@ class SolarForecastUpdater(LoopListener):
     async def set_day(self, day: date) -> None:
         self._show_loading()
         self._day = day
-        asyncio.create_task(self.update())
+        self._session.add_task(self._session.add_task(asyncio.create_task(self.update())))
 
     def _show_loading(self) -> None:
         self._element.clear()
@@ -533,8 +534,9 @@ class SolarForecastUpdater(LoopListener):
 
 class ChartUpdater(LoopListener):
 
-    def __init__(self, element: ui.element, colours: Colours):
+    def __init__(self, element: ui.element, colours: Colours, session: PageSession):
         super().__init__()
+        self._session = session
         self._prev: Optional[DailySolarForecast] = None
         self._day: date = date.today()
 
@@ -919,7 +921,7 @@ async def root_page():
                         js_handler="(e) => emit(e.target.closest('rect')?.id)",
                     )
                     updater = InfographicUpdater(infographic_element=infographic)
-                    session.add_task(asyncio.create_task(updater.update()))
+                    session.add_task(session.add_task(asyncio.create_task(updater.update())))
                     await _register_control_loop_listener(session, updater)
 
             # ==============================================================
@@ -951,7 +953,7 @@ async def price_forecast_page():
         _page_header(' price forecast')
         element = ui.element('div')
         updater = PriceForecastUpdater(element=element)
-        asyncio.create_task(updater.update())
+        session.add_task(asyncio.create_task(updater.update()))
         await _register_control_loop_listener(session, updater)
 
 
@@ -963,7 +965,7 @@ async def solar_forecast_page():
         _page_header()
         navigator = DayNavigator()
         updaters = [
-            SolarForecastUpdater(element)
+            SolarForecastUpdater(element, session)
             for element in navigator.get_elements()
         ]
         navigator.set_listeners(*(updater.set_day for updater in updaters))
@@ -984,7 +986,7 @@ async def graphs_page():
             _page_header()
             navigator = DayNavigator()
             updaters = [
-                ChartUpdater(element, colours=colours)
+                ChartUpdater(element, colours=colours, session=session)
                 for element in navigator.get_elements()
             ]
             navigator.set_listeners(*(updater.set_day for updater in updaters))
@@ -1009,7 +1011,7 @@ async def status_page():
             with ui.card():
                 ui.label('Status').classes('text-h6')
                 updater = StatusUpdater(status_element=ui.code(language='nothing').classes('text-sm w-full grow'))
-                asyncio.create_task(updater.update())
+                session.add_task(asyncio.create_task(updater.update()))
                 await _register_control_loop_listener(session, updater)
 
 
@@ -1056,7 +1058,7 @@ async def registers_page():
     """
     json_element = _json_page('Registers')
     registers_elements = RegistersUpdater(json_element)
-    session.add_task(asyncio.create_task(registers_elements.update()))
+    session.add_task(session.add_task(asyncio.create_task(registers_elements.update())))
     await _register_control_loop_listener(session, registers_elements)
 
 
