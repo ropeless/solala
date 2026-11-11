@@ -479,7 +479,7 @@ class TabSelector:
         self.switching = False
 
         for tab_name, button in self.tab_buttons.items():
-            button.on_click(lambda: self.select_tab(tab_name))
+            button.on_click(lambda tab_name=tab_name: self.select_tab(tab_name))
 
     async def close_active_session(self) -> None:
         if self.active_session is not None:
@@ -501,15 +501,15 @@ class TabSelector:
                     remove='' if name == tab_name else 'solala-tab-button-active',
                 )
 
-            active_session = PageSession()
+            self.active_session = PageSession()
             builder = _TAB_BUILDERS[tab_name]
             try:
                 if tab_name == 'Power':
-                    await builder(self.content_container, active_session, self.select_tab)
+                    await builder(self.content_container, self.active_session, self.select_tab)
                 else:
-                    await builder(self.content_container, active_session)
+                    await builder(self.content_container, self.active_session)
             except Exception:
-                await active_session.close()
+                await self.active_session.close()
                 self.active_session = None
                 LOGGER.exception('Error building %s tab', tab_name)
                 with self.content_container:
