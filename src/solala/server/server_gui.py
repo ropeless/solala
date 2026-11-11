@@ -1,8 +1,7 @@
 import asyncio
-from abc import abstractmethod
-from datetime import date, datetime
+from datetime import date
 from functools import partial
-from typing import Mapping, final, Optional, Dict, List, Sequence, Callable, Awaitable, Tuple
+from typing import Optional, List, Callable, Awaitable, Dict
 
 from nicegui import ui, app, events
 from nicegui.element import Element
@@ -10,29 +9,21 @@ from nicegui.elements.button import Button
 from nicegui.elements.label import Label
 from nicegui.elements.mixins.content_element import ContentElement
 
-from solala.constants import Constants, GUI_DATE_FORMAT, GUI_TIME_FORMAT
-from solala.constants import Units
+from solala.constants import Constants
 from solala.control_loop import control_loop
-from solala.control_loop.control_loop import LoopListener
-from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
-from solala.database.measurement import Measurement
-from solala.delegates.power_pricer.power_pricer import Price
-from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
-from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
-from solala.registers import RegisterValue
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
 from solala.server.css_colours import Colours, css_colours
-from solala.server.graph_interpolator import GraphingInterpolator
-from solala.server.graphs import EnergyChart, PriceChart, PowerChart, ChargeChart
-from solala.server.icons import analytics_name_to_icon_url, weather_code_to_icon_url
-from solala.server.server_infographic import Infographic, CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
-    CLICK_ID_INVERTER
 from solala.server.day_navigator import DayNavigator
-from solala.utils.datetime_extras import now
-from solala.utils.dict_extras import dict_merge
-from solala.utils.json_extras import JSONDict, json_dict, render_json, json_str, JSONPrimitive
+from solala.server.icons import analytics_name_to_icon_url
+from solala.server.page_session import PageSession
+from solala.server.page_updaters import BatteryButtonUpdater, InverterButtonUpdater, InfographicUpdater, \
+    SolarForecastUpdater, PriceForecastUpdater, ChartUpdater, StatusUpdater, RegistersUpdater
+from solala.server.server_infographic import CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
+    CLICK_ID_INVERTER
+from solala.server.units_lookup import CONNECTION_UNITS, PARAMETERS_UNITS, CONSTANTS_UNITS
+from solala.utils.json_extras import JSONDict, render_json
 
 # --------------------------------------------------------------------
 # Main styling
@@ -46,552 +37,6 @@ _HEAD_HTML = r'''
 <link rel="stylesheet" href="/css/solala.css">
 <link rel="icon" type="image/png" href="/images/solala-32x32.png">
 '''
-
-# Units for pretty printing status
-_PARAMETERS_UNITS: Mapping[str, str] = {
-    'start_charge_price_threshold': Units.PRICE_CENTS,
-    'stop_charge_price_threshold': Units.PRICE_CENTS,
-    'disable_export_price_threshold': Units.PRICE_CENTS,
-    'enable_export_price_threshold': Units.PRICE_CENTS,
-}
-_STATUS_UNITS: Mapping[str, str] = dict_merge(
-    {
-        'buy_price': Units.PRICE_CENTS,
-        'feed_in_price': Units.PRICE_CENTS,
-        'renewables': Units.PERCENT,
-        'state_of_charge': Units.PERCENT,
-        'power_limit': Units.PERCENT,
-        'grid_power': Units.WATTS,
-        'solar_power': Units.WATTS,
-        'battery_power': Units.WATTS,
-        'house_power': Units.WATTS,
-        'consumers_total': Units.WATTS,
-        'consumers_remaining': Units.WATTS,
-        'power': Units.WATTS,
-        'voltage': Units.VOLTS,
-        'current': Units.AMPS,
-        'capacity': Units.WATTS,
-        'forecast_generation': Units.KILOWATT_HOURS,
-    },
-    _PARAMETERS_UNITS,
-)
-_CONSTANTS_UNITS: Mapping[str, str] = {
-    'LOOP_TIME': Units.SECONDS,
-    'LOOP_MIN_SLEEP_TIME': Units.SECONDS,
-    'CONTROL_DURATION': Units.SECONDS,
-    'PRICE_LOOK_AHEAD': Units.MINUTES,
-    'PRICE_SETTLE_CHECK': Units.SECONDS,
-    'PRICE_FORECAST_DURATION': Units.HOURS,
-    'PRICE_FORECAST_AGE': Units.MINUTES,
-    'SOLAR_FORECAST_AGE': Units.MINUTES,
-}
-_CONNECTION_UNITS: Mapping[str, str] = {
-    'latitude': Units.DEGREES,
-    'longitude': Units.DEGREES,
-    'panel_orientation': Units.DEGREES,
-    'panel_tilt': Units.DEGREES,
-    'panel_capacity': Units.WATTS,
-    'panel_temperature_coefficient': Units.CELSIUS,
-    'inverter_limit': Units.WATTS,
-}
-
-
-class StatusListener(LoopListener):
-
-    @final
-    async def update(self) -> None:
-        status_json: JSONDict = await control_loop.get_status()
-        self._update(status_json)
-
-    @abstractmethod
-    def _update(self, status_json: JSONDict) -> None:
-        ...
-
-
-class PageSession:
-    """Own resources that should exist only while a page is active."""
-
-    def __init__(self) -> None:
-        self._cleanup: List[Callable[[], Awaitable[None] | None]] = []
-        self._closed = False
-
-    def add_cleanup(self, cleanup: Callable[[], Awaitable[None] | None]) -> None:
-        if self._closed:
-            raise RuntimeError('Cannot add resources to a closed page session')
-        self._cleanup.append(cleanup)
-
-    async def add_control_listener(self, listener: LoopListener) -> None:
-        await control_loop.add_control_loop_listener(listener)
-        self.add_cleanup(partial(control_loop.remove_control_loop_listener, listener))
-
-    async def add_database_listener(self, listener: LoopListener) -> None:
-        await control_loop.add_database_loop_listener(listener)
-        self.add_cleanup(partial(control_loop.remove_database_loop_listener, listener))
-
-    def add_task(self, task: asyncio.Task) -> None:
-        async def cancel_task() -> None:
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        self.add_cleanup(cancel_task)
-
-    def add_timer(self, timer) -> None:
-        self.add_cleanup(timer.cancel)
-
-    async def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        while self._cleanup:
-            cleanup = self._cleanup.pop()
-            try:
-                result = cleanup()
-                if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
-                    await result
-            except Exception:
-                LOGGER.exception('Error cleaning up page resource')
-
-
-async def _register_control_loop_listener(session: PageSession, listener: LoopListener) -> None:
-    await session.add_control_listener(listener)
-
-
-async def _register_database_loop_listener(session: PageSession, listener: LoopListener) -> None:
-    await session.add_database_listener(listener)
-
-
-class InverterButtonUpdater(StatusListener):
-
-    def __init__(
-            self,
-            inverter_enable: Button,
-            inverter_disable: Button,
-            inverter_zero_export: Button,
-            inverter_neg_feed_in_zero_export: Button,
-    ):
-        super().__init__()
-        self.inverter_enable = inverter_enable.on_click(partial(
-            self._click, InverterMode.ENABLE, InverterPolicy.MANUAL
-        ))
-        self.inverter_disable = inverter_disable.on_click(partial(
-            self._click, InverterMode.DISABLE, InverterPolicy.MANUAL
-        ))
-        self.inverter_zero_export = inverter_zero_export.on_click(partial(
-            self._click, InverterMode.ZERO_EXPORT, InverterPolicy.MANUAL
-        ))
-        self.inverter_neg_feed_in_zero_export = inverter_neg_feed_in_zero_export.on_click(partial(
-            self._click, None, InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
-        ))
-
-        for button in [
-            inverter_enable, inverter_disable, inverter_zero_export,
-            inverter_neg_feed_in_zero_export
-        ]:
-            button.style('padding-top: 1px; padding-bottom: 1px;')
-            button.classes('py-0 px-2 text-xs')
-            button.props('color=grey dense')
-
-    async def _click(self, mode: Optional[InverterMode], policy: InverterPolicy) -> None:
-        await control_loop.set_control(
-            inverter_mode=mode,
-            inverter_policy=policy,
-        )
-        self._visual_update('' if mode is None else mode.name, policy.name)
-
-    def _update(self, status_json: JSONDict) -> None:
-        # Infer button states from status_json
-        try:
-            control_json: JSONDict = json_dict(status_json['control'])
-            inverter_status: JSONDict = json_dict(control_json['inverter'])
-            inverter_mode = json_str(inverter_status['mode'])
-            inverter_policy = json_str(inverter_status['policy'])
-        except (KeyError, TypeError, IOError, control_loop.ControlLoopError) as err:
-            LOGGER.error(f'Error getting control status: {err}')
-            inverter_mode = ''
-            inverter_policy = ''
-        self._visual_update(inverter_mode, inverter_policy)
-
-    def _visual_update(self, inverter_mode: str, inverter_policy: str):
-        inverter_button = (
-            inverter_policy
-            if inverter_policy != InverterPolicy.MANUAL.name
-            else inverter_mode
-        )
-
-        # Set the button states
-        def on_props(_on: str) -> str:
-            return 'color=blue dense' if inverter_button == _on else 'color=grey dense'
-
-        self.inverter_enable.props(on_props('ENABLE'))
-        self.inverter_disable.props(on_props('DISABLE'))
-        self.inverter_zero_export.props(on_props('ZERO_EXPORT'))
-        self.inverter_neg_feed_in_zero_export.props(on_props('NEG_FEED_IN_ZERO_EXPORT'))
-
-
-class BatteryButtonUpdater(StatusListener):
-
-    def __init__(
-            self,
-            battery_enable: Button,
-            battery_disable: Button,
-            battery_force_charge: Button,
-            battery_force_discharge: Button,
-            battery_charge_only: Button,
-            battery_discharge_only: Button,
-            battery_cheap_force_discharge: Button,
-    ):
-        super().__init__()
-        self.battery_enable = battery_enable.on_click(partial(
-            self._click, BatteryMode.ENABLE, BatteryPolicy.MANUAL
-        ))
-        self.battery_disable = battery_disable.on_click(partial(
-            self._click, BatteryMode.DISABLE, BatteryPolicy.MANUAL
-        ))
-        self.battery_force_charge = battery_force_charge.on_click(partial(
-            self._click, BatteryMode.FORCE_CHARGE, BatteryPolicy.MANUAL
-        ))
-        self.battery_force_discharge = battery_force_discharge.on_click(partial(
-            self._click, BatteryMode.FORCE_DISCHARGE, BatteryPolicy.MANUAL
-        ))
-        self.battery_charge_only = battery_charge_only.on_click(partial(
-            self._click, BatteryMode.CHARGE_ONLY, BatteryPolicy.MANUAL
-        ))
-        self.battery_discharge_only = battery_discharge_only.on_click(partial(
-            self._click, BatteryMode.DISCHARGE_ONLY, BatteryPolicy.MANUAL
-        ))
-        self.battery_cheap_force_discharge = battery_cheap_force_discharge.on_click(partial(
-            self._click, None, BatteryPolicy.CHEAP_CHARGE
-        ))
-
-        for button in [
-            battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
-            battery_charge_only, battery_discharge_only, battery_cheap_force_discharge
-        ]:
-            button.style('padding-top: 1px; padding-bottom: 1px;')
-            button.classes('py-0 px-2 text-xs')
-            button.props('color=grey dense')
-
-    async def _click(self, mode: Optional[BatteryMode], policy: BatteryPolicy) -> None:
-        await control_loop.set_control(
-            battery_mode=mode,
-            battery_policy=policy,
-        )
-        self._visual_update('' if mode is None else mode.name, policy.name)
-
-    def _update(self, status_json: JSONDict) -> None:
-        # Infer button states from status_json
-        try:
-            control_json: JSONDict = json_dict(status_json['control'])
-            battery_status: JSONDict = json_dict(control_json['battery'])
-            battery_mode = json_str(battery_status['mode'])
-            battery_policy = json_str(battery_status['policy'])
-        except (KeyError, TypeError, IOError, control_loop.ControlLoopError) as err:
-            LOGGER.error(f'Error getting control status: {err}')
-            battery_mode = ''
-            battery_policy = ''
-        self._visual_update(battery_mode, battery_policy)
-
-    def _visual_update(self, battery_mode: str, battery_policy: str):
-        battery_button = (
-            battery_policy
-            if battery_policy != BatteryPolicy.MANUAL.name
-            else battery_mode
-        )
-
-        def on_props(_on: str) -> str:
-            return 'color=blue dense' if battery_button == _on else 'color=grey dense'
-
-        self.battery_enable.props(on_props('ENABLE'))
-        self.battery_disable.props(on_props('DISABLE'))
-        self.battery_force_charge.props(on_props('FORCE_CHARGE'))
-        self.battery_force_discharge.props(on_props('FORCE_DISCHARGE'))
-        self.battery_charge_only.props(on_props('CHARGE_ONLY'))
-        self.battery_discharge_only.props(on_props('DISCHARGE_ONLY'))
-        self.battery_cheap_force_discharge.props(on_props('CHEAP_FORCE_DISCHARGE'))
-
-
-class StatusUpdater(StatusListener):
-
-    def __init__(
-            self,
-            status_element: ContentElement,
-    ):
-        super().__init__()
-        self.status_element = status_element
-
-    def _update(self, status_json: JSONDict) -> None:
-        # Set the content of the status and infographic elements
-        json_as_str = render_json(status_json, float_format='.2f', units=_STATUS_UNITS)
-        self.status_element.set_content(json_as_str)
-
-
-class InfographicUpdater(StatusListener):
-    def __init__(self, infographic_element: ContentElement):
-        super().__init__()
-        self.infographic_element = infographic_element
-        self.infographic = Infographic()
-
-    def _update(self, status_json: JSONDict) -> None:
-        self.infographic.make_from_status(status_json)
-        self.infographic_element.set_content(self.infographic.as_svg())
-
-
-class RegistersUpdater(LoopListener):
-
-    def __init__(self, registers_element: ContentElement):
-        super().__init__()
-        self._registers_element: ContentElement = registers_element
-
-    @final
-    async def update(self, register_values=None) -> None:
-        register_values: Dict[str, Optional[RegisterValue]] = await control_loop.get_registers()
-        self._update(register_values)
-
-    def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
-        json_as_str = render_json(
-            register_values,
-            float_format='.2f',
-            remove_key_underscores=False,
-            remove_value_underscores=False,
-        )
-        self._registers_element.set_content(json_as_str)
-
-
-class PriceForecastUpdater(LoopListener):
-    def __init__(self, element: ui.element):
-        super().__init__()
-        self._prev = None
-        self._element = element
-
-    @final
-    async def update(self) -> None:
-        price_forecast: Sequence[Price]
-        demand_window: Optional[Tuple[datetime, datetime]]
-
-        price_forecast, demand_window = await asyncio.gather(
-            control_loop.get_price_forecast(),
-            control_loop.get_demand_window(date.today())
-        )
-        if self._prev is not price_forecast:
-            self._prev = price_forecast
-            self._update(price_forecast, demand_window)
-
-    def _update(self, price_forecast: Sequence[Price], demand_window: Optional[Tuple[datetime, datetime]]) -> None:
-
-        def _is_demand_window(_price: Price) -> bool:
-            if demand_window is None:
-                return False
-            demand_start, demand_end = demand_window
-            return _price.start_time < demand_end and _price.end_time > demand_start
-
-        # Recreate the price forecast table
-        self._element.clear()
-        with self._element:
-
-            if len(price_forecast) == 0:
-                with ui.card().classes('w-full bg-white rounded-xl border border-[#e1e6ea] p-6'):
-                    ui.icon('query_stats').classes('text-3xl text-[#a1a9ae]')
-                    ui.label('No price forecast available').classes('text-lg font-semibold')
-                    ui.label('There are currently no forecast prices to display.').classes('text-sm text-gray-500')
-                return
-
-            forecast_date = price_forecast[0].start_time.date()
-
-            with ui.row().classes('items-center gap-2 mb-5'):
-                ui.icon('calendar_today').classes('text-lg text-gray-500')
-                ui.label(forecast_date.strftime(GUI_DATE_FORMAT)).classes('text-sm text-gray-500')
-
-            # Forecast table
-            with ui.column().classes('w-full gap-3'):
-                with ui.element('div').classes('price-table'):
-                    with ui.element('div').classes('price-row price-header'):
-                        ui.label('Time')
-                        ui.label('Buy').classes('text-right')
-                        ui.label('Feed-in').classes('text-right')
-                        ui.label('Renewables').classes('text-right')
-
-                    for i, price in enumerate(price_forecast):
-                        row_classes = 'price-row'
-
-                        if _is_demand_window(price):
-                            row_classes += ' price-row-demand'
-                        elif i % 2 == 1:
-                            row_classes += ' price-row-alt'
-
-                        with ui.element('div').classes(row_classes):
-                            ui.label(price.start_time.strftime(GUI_TIME_FORMAT)).classes('price-time')
-
-                            buy_class = _buy_price_class(price.buy_price)
-                            ui.label(f'{price.buy_price:.1f}').classes(f'price-number {buy_class}')
-
-                            feed_class = _feed_in_price_class(price.feed_in_price)
-                            ui.label(f'{price.feed_in_price:.1f}').classes(f'price-number {feed_class}')
-
-                            ui.label(f'{price.renewables:.1f}{Units.PERCENT}').classes('price-number')
-
-
-class SolarForecastUpdater(LoopListener):
-
-    def __init__(self, element: ui.element, session: PageSession):
-        super().__init__()
-        self._session = session
-        self._prev: Optional[DailySolarForecast] = None
-        self._day: date = date.today()
-        self._element: ui.element = element
-        self._show_loading()
-
-    @final
-    async def update(self) -> None:
-        solar_forecast: DailySolarForecast = await control_loop.get_solar_forecast(self._day)
-        if self._prev is not solar_forecast:
-            self._prev = solar_forecast
-            self._update(solar_forecast)
-
-    @property
-    def day(self) -> date:
-        return self._day
-
-    async def set_day(self, day: date) -> None:
-        self._show_loading()
-        self._day = day
-        self._session.add_task(asyncio.create_task(self.update()))
-
-    def _show_loading(self) -> None:
-        self._element.clear()
-        with self._element:
-            ui.label('loading solar forecast...').classes('text-center italic')
-
-    def _update(self, solar_forecast: DailySolarForecast) -> None:
-        _now = now()
-
-        def _forecast_for_now(_forecast: SolarForecast) -> bool:
-            return _forecast.start_time <= _now < _forecast.end_time
-
-        # Recreate the solar forecast table if needed
-        self._element.clear()
-        with self._element:
-            forecasts = solar_forecast.forecasts
-            if len(forecasts) == 0:
-                with ui.card().classes('w-full bg-white rounded-xl border border-[#e1e6ea] p-6'):
-                    ui.icon('query_stats').classes('text-3xl text-[#a1a9ae]')
-                    ui.label('No solar forecast available').classes('text-lg font-semibold')
-                return
-
-            with ui.row().classes('items-center gap-2 mb-5'):
-                ui.label('Daily generation estimate:').classes('text-sm text-gray-500')
-                total = f'{solar_forecast.total_forecast_energy() / 1000:.2f}'
-                ui.label(f'{total}{Units.KILOWATT_HOURS}').classes('solar-number')
-
-            # Forecast table
-            with ui.column().classes('w-full gap-3'):
-                with ui.element('div').classes('solar-table'):
-                    with ui.element('div').classes('solar-row solar-header'):
-                        ui.label('Time')
-                        ui.label('Temp').classes('text-right')
-                        ui.label('Sky').classes('text-right')
-                        ui.label('Irradiance').classes('text-right')
-                        ui.label('Power').classes('text-right')
-
-                    forecast: SolarForecast
-                    for i, forecast in enumerate(solar_forecast):
-                        row_classes = 'solar-row'
-                        if _forecast_for_now(forecast):
-                            row_classes += ' solar-row-now'
-                        elif i % 2 == 1:
-                            row_classes += ' solar-row-alt'
-
-                        icon: Optional[str] = weather_code_to_icon_url(
-                            forecast.weather, Constants.ANIMATE_WEATHER_ICONS
-                        )
-
-                        with ui.element('div').classes(row_classes):
-                            ui.label(
-                                forecast.start_time.strftime(GUI_TIME_FORMAT)
-                            ).classes('solar-time')
-
-                            ui.label(
-                                f'{int(forecast.temperature + 0.5)}{Units.CELSIUS}'
-                            ).classes('solar-number')
-
-                            with ui.element('div').classes('solar-weather-cell'):
-                                if icon is not None:
-                                    ui.image(icon).classes('solar-weather-image')
-
-                            if forecast.weather == WeatherCode.NIGHT:
-                                ui.label('.').classes('solar-number')
-                                ui.label('.').classes('solar-number')
-                            else:
-                                ui.label(
-                                    f'{int(forecast.irradiance + 0.5)}'
-                                ).classes('solar-number')
-
-                                ui.label(
-                                    f'{forecast.power / 1000:.2f}{Units.KILOWATTS}'
-                                ).classes('solar-number')
-
-
-class ChartUpdater(LoopListener):
-
-    def __init__(self, element: ui.element, colours: Colours, session: PageSession):
-        super().__init__()
-        self._session = session
-        self._prev: Optional[DailySolarForecast] = None
-        self._day: date = date.today()
-
-        with element:
-            self._loading = ui.label('loading graphs...').classes('text-center italic').set_visibility(True)
-            self._graphs = ui.element('div').set_visibility(False)
-
-            with self._graphs:
-                self._charge_chart = ChargeChart(colours)
-                self._price_chart = PriceChart(colours)
-                self._power_chart = PowerChart(colours)
-                self._energy_chart = EnergyChart(colours)
-
-        self._session.add_task(asyncio.create_task(self.update()))
-
-    @property
-    def day(self) -> date:
-        return self._day
-
-    async def set_day(self, day: date) -> None:
-        self._show_loading()
-        self._day = day
-        self._session.add_task(asyncio.create_task(self.update()))
-
-    @final
-    async def update(self) -> None:
-        graph_interpolator = await self._get_data()
-        self._update(graph_interpolator)
-
-    async def _get_data(self) -> GraphingInterpolator:
-        day = self._day
-        measurements: Sequence[Measurement]
-        price_forecast: Sequence[Price]
-        solar_forecast: DailySolarForecast
-        demand_window: Optional[Tuple[datetime, datetime]]
-        measurements, price_forecast, demand_window, solar_forecast = await asyncio.gather(
-            control_loop.solala_database_measurements(day),
-            control_loop.get_price_forecast(),
-            control_loop.get_demand_window(day),
-            control_loop.get_solar_forecast(day),
-        )
-        return GraphingInterpolator(day, measurements, price_forecast, solar_forecast, demand_window)
-
-    def _show_loading(self) -> None:
-        self._graphs.set_visibility(False)
-        self._loading.set_visibility(True)
-
-    def _update(self, graph_interpolator: GraphingInterpolator) -> None:
-        self._loading.set_visibility(False)
-        self._charge_chart.update(graph_interpolator)
-        self._price_chart.update(graph_interpolator)
-        self._power_chart.update(graph_interpolator)
-        self._energy_chart.update(graph_interpolator)
-        self._graphs.set_visibility(True)
 
 
 def _json_page(name: str) -> ContentElement:
@@ -715,7 +160,7 @@ async def _ui_control_buttons(session: PageSession) -> None:
                 battery_cheap_force_discharge=battery_cheap_force_discharge,
             )
             await updater.update()  # call synchronously to avoid flicker
-            await _register_control_loop_listener(session, updater)
+            await session.add_control_listener(updater)
 
         # ======================================================
         # INVERTER
@@ -740,7 +185,7 @@ async def _ui_control_buttons(session: PageSession) -> None:
                 inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
             )
             await updater.update()  # call synchronously to avoid flicker
-            await _register_control_loop_listener(session, updater)
+            await session.add_control_listener(updater)
 
 
 def _infographic_click(element, select_tab) -> None:
@@ -751,22 +196,6 @@ def _infographic_click(element, select_tab) -> None:
         asyncio.create_task(select_tab('Solar'))
     elif click_id in (CLICK_ID_INVERTER, CLICK_ID_HOME, CLICK_ID_BATTERY):
         pass
-
-
-def _buy_price_class(price: float) -> str:
-    if price >= Constants.BUY_PRICE_RED:
-        return 'price-buy-high'
-    elif price >= Constants.BUY_PRICE_AMBER:
-        return 'price-buy-okay'
-    else:
-        return 'price-buy-good'
-
-
-def _feed_in_price_class(price: float) -> str:
-    if price >= 0:
-        return 'price-feed-in-okay'
-    else:
-        return 'price-feed-in-bad'
 
 
 def _update_loop_status(loop_status_light: Element, loop_status_label: Label) -> None:
@@ -864,7 +293,6 @@ app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
 app.add_static_files(url_path='/css', local_directory=str(CSS_FILES))
 app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manifest.json'))
 
-
 _TAB_DEFINITIONS = (
     ('Power', 'monitoring'),
     ('Solar', 'wb_sunny'),
@@ -896,7 +324,9 @@ async def _build_power_page(container: Element, session: PageSession, select_tab
                     ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
                 )
 
-                ui.run_javascript(f"""
+                # Register the JavaScript to set the status light to stale when disconnected.
+                # Explicitly ignore the awaitable response.
+                _ = ui.run_javascript(f"""
                     const light = getHtmlElement({loop_status_light.id});
                     const label = getHtmlElement({loop_status_label.id});
                     window.socket.on('disconnect', () => {{
@@ -916,7 +346,7 @@ async def _build_power_page(container: Element, session: PageSession, select_tab
                 )
                 updater = InfographicUpdater(infographic_element=infographic)
                 session.add_task(asyncio.create_task(updater.update()))
-                await _register_control_loop_listener(session, updater)
+                await session.add_control_listener(updater)
 
         if Constants.CONTROLS_ENABLED:
             with ui.element('div').classes('dashboard-card control-card'):
@@ -933,7 +363,7 @@ async def _build_solar_page(container: Element, session: PageSession) -> None:
         navigator.set_listeners(*(updater.set_day for updater in updaters))
         await navigator.set_day(date.today())
         for updater in updaters:
-            await _register_control_loop_listener(session, updater)
+            await session.add_control_listener(updater)
 
 
 async def _build_grid_page(container: Element, session: PageSession) -> None:
@@ -941,7 +371,7 @@ async def _build_grid_page(container: Element, session: PageSession) -> None:
         element = ui.element('div')
         updater = PriceForecastUpdater(element=element)
         session.add_task(asyncio.create_task(updater.update()))
-        await _register_control_loop_listener(session, updater)
+        await session.add_control_listener(updater)
 
 
 async def _build_graphs_page(container: Element, session: PageSession) -> None:
@@ -957,7 +387,7 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
             navigator.set_listeners(*(updater.set_day for updater in updaters))
             await navigator.set_day(date.today())
             for updater in updaters:
-                await _register_database_loop_listener(session, updater)
+                await session.add_database_listener(updater)
 
 
 async def _build_status_page(container: Element, session: PageSession) -> None:
@@ -968,7 +398,7 @@ async def _build_status_page(container: Element, session: PageSession) -> None:
                 status_element=ui.code(language='nothing').classes('text-sm w-full grow')
             )
             session.add_task(asyncio.create_task(updater.update()))
-            await _register_control_loop_listener(session, updater)
+            await session.add_control_listener(updater)
 
 
 async def _build_connection_page(container: Element, session: PageSession) -> None:
@@ -977,7 +407,7 @@ async def _build_connection_page(container: Element, session: PageSession) -> No
             ui.label('Connection').classes('text-h6')
             connection_info: JSONDict = await control_loop.get_connection_info()
             json_as_str = render_json(
-                connection_info, float_format='.2f', units=_CONNECTION_UNITS
+                connection_info, float_format='.2f', units=CONNECTION_UNITS
             )
             connection_element = ui.code(language='nothing').classes('text-sm w-full grow')
             connection_element.set_content(json_as_str)
@@ -990,7 +420,7 @@ async def _build_parameters_page(container: Element, session: PageSession) -> No
                 ui.label('Policy').classes('text-h6')
                 policy = ui.code(language='nothing').classes('text-sm w-full grow')
                 policy_json: JSONDict = (await control_loop.get_control_mode()).to_json()
-                policy.set_content(render_json(policy_json, units=_PARAMETERS_UNITS))
+                policy.set_content(render_json(policy_json, units=PARAMETERS_UNITS))
             with ui.card().classes('w-full'):
                 ui.label('Constants').classes('text-h6')
                 consts = ui.code(language='nothing').classes('text-sm w-full grow')
@@ -999,7 +429,7 @@ async def _build_parameters_page(container: Element, session: PageSession) -> No
                     render_json(
                         constants_json,
                         remove_key_underscores=False,
-                        units=_CONSTANTS_UNITS,
+                        units=CONSTANTS_UNITS,
                     )
                 )
 
@@ -1011,7 +441,7 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
             registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
             updater = RegistersUpdater(registers_element)
             session.add_task(asyncio.create_task(updater.update()))
-            await _register_control_loop_listener(session, updater)
+            await session.add_control_listener(updater)
 
 
 async def _build_log_page(container: Element, session: PageSession) -> None:
@@ -1036,6 +466,60 @@ _TAB_BUILDERS = {
 }
 
 
+class TabSelector:
+    def __init__(
+            self,
+            content_container: Element,
+            tab_buttons: Dict[str, Button],
+    ) -> None:
+        self.content_container: Element = content_container
+        self.tab_buttons: Dict[str, Button] = tab_buttons
+        self.active_tab: Optional[str] = None
+        self.active_session: Optional[PageSession] = None
+        self.switching = False
+
+        for tab_name, button in self.tab_buttons.items():
+            button.on_click(lambda: self.select_tab(tab_name))
+
+    async def close_active_session(self) -> None:
+        if self.active_session is not None:
+            await self.active_session.close()
+            self.active_session = None
+
+    async def select_tab(self, tab_name: str) -> None:
+        if self.switching or tab_name == self.active_tab:
+            return
+        self.switching = True
+        try:
+            await self.close_active_session()
+            self.content_container.clear()
+            self.active_tab = tab_name
+
+            for name, button in self.tab_buttons.items():
+                button.classes(
+                    add='solala-tab-button-active' if name == tab_name else '',
+                    remove='' if name == tab_name else 'solala-tab-button-active',
+                )
+
+            active_session = PageSession()
+            builder = _TAB_BUILDERS[tab_name]
+            try:
+                if tab_name == 'Power':
+                    await builder(self.content_container, active_session, self.select_tab)
+                else:
+                    await builder(self.content_container, active_session)
+            except Exception:
+                await active_session.close()
+                self.active_session = None
+                LOGGER.exception('Error building %s tab', tab_name)
+                with self.content_container:
+                    with ui.card().classes('w-full'):
+                        ui.label(f'Unable to display {tab_name}').classes('text-h6')
+                        ui.label('See the Solala log for details.').classes('text-sm text-gray-500')
+        finally:
+            self.switching = False
+
+
 @ui.page('/')
 async def root_page():
     ui.add_head_html(_HEAD_HTML)
@@ -1045,61 +529,19 @@ async def root_page():
 
         with ui.element('div').classes('dashboard-card tab-navigation'):
             with ui.grid(columns=3).classes('w-full gap-2'):
-                tab_buttons = {}
-                for tab, icon_name in _TAB_DEFINITIONS:
-                    with ui.button(on_click=lambda tab=tab: select_tab(tab)).classes(
-                        'solala-tab-button'
+                tab_buttons: Dict[str, Button] = {}
+                for tab_name, icon_name in _TAB_DEFINITIONS:
+                    with ui.button().classes(
+                            'solala-tab-button'
                     ) as button:
                         ui.icon(icon_name).classes('text-2xl')
-                        ui.label(tab).classes('text-xs')
-                    tab_buttons[tab] = button
+                        ui.label(tab_name).classes('text-xs')
+                    tab_buttons[tab_name] = button
 
         content_container = ui.element('div').classes('tab-content w-full')
 
-    active_tab: Optional[str] = None
-    active_session: Optional[PageSession] = None
-    switching = False
+        tab_selector = TabSelector(content_container, tab_buttons)
 
-    async def close_active_session() -> None:
-        nonlocal active_session
-        if active_session is not None:
-            await active_session.close()
-            active_session = None
-
-    async def select_tab(tab: str) -> None:
-        nonlocal active_tab, active_session, switching
-
-        if switching or tab == active_tab:
-            return
-        switching = True
-        try:
-            await close_active_session()
-            content_container.clear()
-            active_tab = tab
-
-            for name, button in tab_buttons.items():
-                button.classes(
-                    add='solala-tab-button-active' if name == tab else '',
-                    remove='' if name == tab else 'solala-tab-button-active',
-                )
-
-            active_session = PageSession()
-            builder = _TAB_BUILDERS[tab]
-            try:
-                if tab == 'Power':
-                    await builder(content_container, active_session, select_tab)
-                else:
-                    await builder(content_container, active_session)
-            except Exception:
-                await active_session.close()
-                active_session = None
-                LOGGER.exception('Error building %s tab', tab)
-                with content_container:
-                    with ui.card().classes('w-full'):
-                        ui.label(f'Unable to display {tab}').classes('text-h6')
-                        ui.label('See the Solala log for details.').classes('text-sm text-gray-500')
-        finally:
-            switching = False
-
-    ui.context.client.on_disconnect(close_active_session)
-    await select_tab('Power')
+    ui.context.client.on_disconnect(tab_selector.close_active_session)
+    first_tab_name: str = _TAB_DEFINITIONS[0][0]
+    await tab_selector.select_tab(first_tab_name)
