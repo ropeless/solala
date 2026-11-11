@@ -141,6 +141,14 @@
     line-height: 1.1;
 }
 
+/* Override Quasar's button overlay as well as the button surface. */
+.tab-navigation .q-btn.solala-tab-button::before,
+.tab-navigation .q-btn.solala-tab-button::after {
+    background: transparent !important;
+    box-shadow: none !important;
+    opacity: 0 !important;
+}
+
 .tab-navigation .q-btn.solala-tab-button .q-btn__content,
 .tab-navigation .q-btn.solala-tab-button .q-icon {
     color: var(--solala-text) !important;
@@ -158,7 +166,7 @@
 .tab-navigation .q-btn.solala-tab-button-active {
     border: 2px solid var(--solala-house-color);
     padding: 2px 4px;
-    background-color: color-mix(in srgb, var(--solala-house-color) 12%, white) !important;
+    background: color-mix(in srgb, var(--solala-house-color) 12%, white) !important;
     color: var(--solala-text) !important;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--solala-house-color) 8%, transparent);
 }
