@@ -1460,8 +1460,7 @@ class PowerRegister(AsyncRegister):
         super().__init__(register_type)
 
     async def _async_get(self) -> RegisterValue:
-        status: PowerStatus = await get_power_status()
-        return getattr(status, self._field_name)
+        return getattr(await get_power_status(), self._field_name)
 
 
 class PriceRegister(AsyncRegister):
@@ -1471,8 +1470,7 @@ class PriceRegister(AsyncRegister):
         super().__init__(register_type)
 
     async def _async_get(self) -> RegisterValue:
-        status: Price = await get_price_now()
-        return getattr(status, self._field_name)
+        return getattr(await get_price_now(), self._field_name)
 
 
 class ConsumerRegister(AsyncRegister):
@@ -1483,8 +1481,7 @@ class ConsumerRegister(AsyncRegister):
         super().__init__(register_type)
 
     async def _async_get(self) -> RegisterValue:
-        status: ConsumerStatus = await self._consumer.get_status()
-        return getattr(status, self._field_name)
+        return getattr(await self._consumer.get_status(), self._field_name)
 
 
 async def _reconfigure_registers(state: _ControlState) -> None:

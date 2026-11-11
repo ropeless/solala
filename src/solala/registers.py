@@ -1,8 +1,8 @@
 import asyncio
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from typing import TypeAlias, Type, Mapping, Iterator, Iterable, Tuple, KeysView, Optional, Hashable, \
-    MutableMapping, Callable, final, Any, Awaitable
+from typing import TypeAlias, Type, Mapping, Iterator, Iterable, Tuple, KeysView, Optional, \
+    Callable, final, Any, Awaitable
 
 RegisterValue: TypeAlias = str | int | float | bool
 RegisterType: TypeAlias = Type[str] | Type[int] | Type[float] | Type[bool]
@@ -159,8 +159,7 @@ class CallRegister(ReadOnlyRegister):
 
     def __init__(self, f: Callable[[], RegisterValue], register_type: Optional[RegisterType] = None) -> None:
         if register_type is None:
-            check_value = f()
-            register_type = type(check_value)
+            register_type = type(f())
         super().__init__(register_type)
         self._f: Callable[[], RegisterValue] = f
 
@@ -197,33 +196,6 @@ class AsyncRegister(ReadOnlyRegister):
     @abstractmethod
     async def _async_get(self) -> RegisterValue:
         ...
-
-
-class DictRegister(Register):
-    """
-    A register that gets its value from a mapping.
-    """
-
-    def __init__(
-            self,
-            mapping: Mapping[Hashable, RegisterValue],
-            key: Hashable,
-            writable: bool = False,
-    ):
-        if writable and not isinstance(mapping, MutableMapping):
-            raise TypeError('Mapping must be mutable for a writable register')
-
-        check_value = mapping[key]
-        super().__init__(type(check_value), writable=writable)
-        self._mapping = mapping
-        self._key = key
-
-    def _get(self) -> RegisterValue:
-        return self._mapping[self._key]
-
-    def _set(self, value: RegisterValue) -> None:
-        assert self.writable
-        self._mapping[self._key] = value  # type: ignore
 
 
 class RegisterBank(Mapping[str, RegisterValue]):

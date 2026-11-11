@@ -36,8 +36,8 @@ class TeslaWallConnector(PowerConsumer):
     async def get_registers(self) -> RegisterBank:
         if self._register_bank is None:
             self._register_bank = reg_bank = RegisterBank({
-                key: AsyncCallRegister((partial(self.get_register_value, key)), reg_type)
-                async for key, reg_type in self.get_register_keys()
+                key: AsyncCallRegister((partial(self._get_register_value, key)), reg_type)
+                async for key, reg_type in self._get_register_keys()
             })
             return reg_bank
         else:
@@ -56,7 +56,7 @@ class TeslaWallConnector(PowerConsumer):
     async def close(self) -> None:
         pass
 
-    async def get_register_keys(self) -> AsyncIterator[Tuple[str, RegisterType]]:
+    async def _get_register_keys(self) -> AsyncIterator[Tuple[str, RegisterType]]:
         device_status: JSONDict = await self._cache()
         for key, value in device_status.items():
             try:
@@ -65,7 +65,7 @@ class TeslaWallConnector(PowerConsumer):
                 continue
             yield key, reg_type
 
-    async def get_register_value(self, key: str) -> RegisterValue:
+    async def _get_register_value(self, key: str) -> RegisterValue:
         json: JSONDict = await self._cache()
         value = json[key]
         return check_value(value)
