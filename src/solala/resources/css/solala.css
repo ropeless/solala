@@ -20,6 +20,8 @@
     --solala-border: #e1e6ea;
     --solala-accent: #c58b28;
     --solala-success: #16805b;
+    --solala-live-color: #15803d;
+    --solala-stale-color: #dc2626;
 
     --solala-radius: 14px;
     --solala-control-radius: 7px;
@@ -176,6 +178,30 @@
     .tab-navigation .q-btn.solala-tab-button .q-icon {
         font-size: 22px;
     }
+}
+
+/* ---------------------------------------------------------
+   Control-loop status
+   --------------------------------------------------------- */
+
+.solala-loop-status-light {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+}
+
+.solala-loop-status-label {
+    font-size: 0.875rem;
+}
+
+.solala-loop-status-live {
+    background-color: var(--solala-live-color);
+    color: var(--solala-live-color);
+}
+
+.solala-loop-status-stale {
+    background-color: var(--solala-stale-color);
+    color: var(--solala-stale-color);
 }
 
 /* ---------------------------------------------------------
