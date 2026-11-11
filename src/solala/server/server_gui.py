@@ -108,14 +108,58 @@ class StatusListener(LoopListener):
         ...
 
 
-async def _register_control_loop_listener(listener: LoopListener) -> None:
-    await control_loop.add_control_loop_listener(listener)
-    ui.context.client.on_disconnect(partial(control_loop.remove_control_loop_listener, listener))
+class PageSession:
+    """Own resources that should exist only while a page is active."""
+
+    def __init__(self) -> None:
+        self._cleanup: List[Callable[[], Awaitable[None] | None]] = []
+        self._closed = False
+
+    def add_cleanup(self, cleanup: Callable[[], Awaitable[None] | None]) -> None:
+        if self._closed:
+            raise RuntimeError('Cannot add resources to a closed page session')
+        self._cleanup.append(cleanup)
+
+    async def add_control_listener(self, listener: LoopListener) -> None:
+        await control_loop.add_control_loop_listener(listener)
+        self.add_cleanup(partial(control_loop.remove_control_loop_listener, listener))
+
+    async def add_database_listener(self, listener: LoopListener) -> None:
+        await control_loop.add_database_loop_listener(listener)
+        self.add_cleanup(partial(control_loop.remove_database_loop_listener, listener))
+
+    def add_task(self, task: asyncio.Task) -> None:
+        self.add_cleanup(task.cancel)
+
+    def add_timer(self, timer) -> None:
+        self.add_cleanup(timer.cancel)
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        while self._cleanup:
+            cleanup = self._cleanup.pop()
+            try:
+                result = cleanup()
+                if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
+                    await result
+            except Exception:
+                LOGGER.exception('Error cleaning up page resource')
 
 
-async def _register_database_loop_listener(listener: LoopListener) -> None:
-    await control_loop.add_database_loop_listener(listener)
-    ui.context.client.on_disconnect(partial(control_loop.remove_database_loop_listener, listener))
+async def _new_page_session() -> PageSession:
+    session = PageSession()
+    ui.context.client.on_disconnect(session.close)
+    return session
+
+
+async def _register_control_loop_listener(session, session: PageSession, listener: LoopListener) -> None:
+    await session.add_control_listener(listener)
+
+
+async def _register_database_loop_listener(session, session: PageSession, listener: LoopListener) -> None:
+    await session.add_database_listener(listener)
 
 
 class InverterButtonUpdater(StatusListener):
@@ -629,7 +673,7 @@ def _analytics_link(name: str, target: str) -> None:
         ui.label(name)
 
 
-async def _ui_control_buttons() -> None:
+async def _ui_control_buttons(session: PageSession) -> None:
     """
     Add the control buttons to the UI (if Constants.CONTROLS_ENABLED is True).
     """
@@ -668,7 +712,7 @@ async def _ui_control_buttons() -> None:
                 battery_cheap_force_discharge=battery_cheap_force_discharge,
             )
             await updater.update()  # call synchronously to avoid flicker
-            await _register_control_loop_listener(updater)
+            await _register_control_loop_listener(session, updater)
 
         # ======================================================
         # INVERTER
@@ -693,7 +737,7 @@ async def _ui_control_buttons() -> None:
                 inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
             )
             await updater.update()  # call synchronously to avoid flicker
-            await _register_control_loop_listener(updater)
+            await _register_control_loop_listener(session, updater)
 
 
 def _infographic_click(element):
@@ -827,6 +871,7 @@ app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manif
 
 @ui.page('/')
 async def root_page():
+    session = await _new_page_session()
     ui.add_head_html(_HEAD_HTML)
 
     with ui.element('div').classes('solala-page'):
@@ -850,7 +895,7 @@ async def root_page():
                         )
 
                     _update_loop_status(loop_status_light, loop_status_label)
-                    ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
+                    session.add_timer(ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label)))
 
                     # Add javascript to mark status light as "stale" if a disconnect is detected.
                     _ = ui.run_javascript(f"""
@@ -874,8 +919,8 @@ async def root_page():
                         js_handler="(e) => emit(e.target.closest('rect')?.id)",
                     )
                     updater = InfographicUpdater(infographic_element=infographic)
-                    asyncio.create_task(updater.update())
-                    await _register_control_loop_listener(updater)
+                    session.add_task(asyncio.create_task(updater.update()))
+                    await _register_control_loop_listener(session, updater)
 
             # ==============================================================
             # Analytics
@@ -895,22 +940,24 @@ async def root_page():
             # BATTERY + INVERTER control buttons
             # ----------------------------------------------------------
             with ui.element('div').classes('dashboard-card control-card'):
-                await _ui_control_buttons()
+                await _ui_control_buttons(session)
 
 
 @ui.page('/price_forecast_page')
 async def price_forecast_page():
+    session = await _new_page_session()
     ui.add_head_html(_HEAD_HTML)
     with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
         _page_header(' price forecast')
         element = ui.element('div')
         updater = PriceForecastUpdater(element=element)
         asyncio.create_task(updater.update())
-        await _register_control_loop_listener(updater)
+        await _register_control_loop_listener(session, updater)
 
 
 @ui.page('/solar_forecast_page')
 async def solar_forecast_page():
+    session = await _new_page_session()
     ui.add_head_html(_HEAD_HTML)
     with ui.element('div').classes('solala-page price-forecast w-full max-w-5xl mx-auto p-4 md:p-6'):
         _page_header()
@@ -922,11 +969,12 @@ async def solar_forecast_page():
         navigator.set_listeners(*(updater.set_day for updater in updaters))
         await navigator.set_day(date.today())
         for updater in updaters:
-            await _register_control_loop_listener(updater)
+            await _register_control_loop_listener(session, updater)
 
 
 @ui.page('/graphs_page')
 async def graphs_page():
+    session = await _new_page_session()
     ui.add_head_html(_HEAD_HTML)
     colours: Colours = await css_colours()  # must come after adding head html.
 
@@ -942,11 +990,12 @@ async def graphs_page():
             navigator.set_listeners(*(updater.set_day for updater in updaters))
             await navigator.set_day(date.today())
             for updater in updaters:
-                await _register_database_loop_listener(updater)
+                await _register_database_loop_listener(session, updater)
 
 
 @ui.page('/status_page')
 async def status_page():
+    session = await _new_page_session()
     """
     Show the system status textually.
     """
@@ -961,11 +1010,12 @@ async def status_page():
                 ui.label('Status').classes('text-h6')
                 updater = StatusUpdater(status_element=ui.code(language='nothing').classes('text-sm w-full grow'))
                 asyncio.create_task(updater.update())
-                await _register_control_loop_listener(updater)
+                await _register_control_loop_listener(session, updater)
 
 
 @ui.page('/connection_page')
 async def connection_page():
+    session = await _new_page_session()
     """
     Show the connections.
     """
@@ -986,6 +1036,7 @@ async def connection_page():
 
 @ui.page('/log_page')
 async def log_page():
+    session = await _new_page_session()
     """
     Listen to the Solala logger and display log messages.
     """
@@ -993,23 +1044,25 @@ async def log_page():
     with ui.element('div').classes('solala-page'):
         _page_header(' log console')
         log_ui = ui.log(max_lines=Constants.MAX_LOG_HISTORY).style('height: 100vh')
-    ui.context.client.on_disconnect(partial(server_log.remove, log_ui))
     server_log.add(log_ui)
+    session.add_cleanup(partial(server_log.remove, log_ui))
 
 
 @ui.page('/registers_page')
 async def registers_page():
+    session = await _new_page_session()
     """
     Show the inverter registers.
     """
     json_element = _json_page('Registers')
     registers_elements = RegistersUpdater(json_element)
-    asyncio.create_task(registers_elements.update())
-    await _register_control_loop_listener(registers_elements)
+    session.add_task(asyncio.create_task(registers_elements.update()))
+    await _register_control_loop_listener(session, registers_elements)
 
 
 @ui.page('/parameters_page')
 async def parameters_page():
+    session = await _new_page_session()
     """
     Show the policy parameters and control constants.
     """
