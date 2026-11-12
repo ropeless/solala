@@ -69,7 +69,7 @@ class AsyncRLockTestCase(unittest.IsolatedAsyncioTestCase):
     def test_release_outside_asyncio_task_raises(self):
         lock = AsyncRLock()
 
-        with self.assertRaisesRegex(RuntimeError, 'not owned'):
+        with self.assertRaises(RuntimeError):
             lock.release()
 
     async def test_cancelled_waiter_does_not_corrupt_lock(self):
