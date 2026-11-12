@@ -326,9 +326,11 @@ async def _build_power_page(container: Element, session: PageSession) -> None:
 
             with ui.element('div').classes('infographic-container'):
                 infographic_element = ui.html(
-                    '<div class="infographic-loading">loading...</div>'
+                    '<div class="infographic-loading">loading power schematic...</div>'
                 ).style(
-                    f'width: 100%; max-width: 760px; aspect-ratio: {infographic.WIDTH} / {infographic.HEIGHT}; margin: 0 auto;'
+                    f'width: {infographic.WIDTH}px; '
+                    f'height: {infographic.HEIGHT}px; '
+                    'flex: 0 0 auto;'
                 )
                 # infographic.on(
                 #     'click',

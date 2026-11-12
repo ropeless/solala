@@ -233,21 +233,10 @@ html {
     justify-content: center;
 }
 
-.infographic-loading {
-    display: flex;
-    width: 100%;
-    height: 100%;
-    align-items: center;
-    justify-content: center;
-    color: var(--solala-muted);
-    font-style: italic;
+.infographic-container svg {
+    display: block;
 }
 
-.infographic-container svg {
-    width: 100%;
-    height: auto;
-    max-width: 760px;
-}
 
 /* SVG text styles */
 
