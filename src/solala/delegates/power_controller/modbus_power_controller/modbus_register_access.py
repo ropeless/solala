@@ -385,9 +385,9 @@ class RegisterAccessScaled(RegisterAccess):
             )
         elif isinstance(value, int):
             if scale > 0:
-                scaled_value = value // (10 ** scale)
-                check_value = value * (10 ** scale)
-                if value != check_value:
+                factor = 10 ** scale
+                scaled_value = value // factor
+                if scaled_value * factor != value:
                     raise ValueError('Value is not an integer multiple of the scaling factor')
             else:
                 scaled_value = value * (10 ** -scale)
