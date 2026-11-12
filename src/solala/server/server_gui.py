@@ -22,7 +22,7 @@ from solala.server.page_session import PageSession
 from solala.server.page_updaters import BatteryButtonUpdater, InverterButtonUpdater, InfographicUpdater, \
     SolarForecastUpdater, PriceForecastUpdater, ChartUpdater, StatusUpdater, RegistersUpdater
 from solala.server.server_infographic import CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
-    CLICK_ID_INVERTER
+    CLICK_ID_INVERTER, WIDTH, HEIGHT
 from solala.server.units_lookup import CONNECTION_UNITS, PARAMETERS_UNITS, CONSTANTS_UNITS
 from solala.utils.json_extras import JSONDict, render_json
 
@@ -324,7 +324,9 @@ async def _build_power_page(container: Element, session: PageSession) -> None:
                 """)
 
             with ui.element('div').classes('infographic-container'):
-                infographic = ui.html()
+                infographic = ui.html(
+                    '<div class="infographic-loading">Loading...</div>'
+                ).style(f'width: 100%; aspect-ratio: {WIDTH} / {HEIGHT};')
                 # infographic.on(
                 #     'click',
                 #     handler=partial(_infographic_click, select_tab=select_tab),
