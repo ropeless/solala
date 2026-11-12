@@ -21,8 +21,8 @@ from solala.registers import RegisterValue
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.server.graphs import ChargeChart, PriceChart, PowerChart, EnergyChart
 from solala.server.icons import weather_code_to_icon_url
-from solala.server.page_session import PageSession
 from solala.server.infographic import Infographic
+from solala.server.page_session import PageSession
 from solala.server.units_lookup import STATUS_UNITS
 from solala.utils.datetime_extras import now
 from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json, JSONPrimitive
@@ -221,6 +221,7 @@ class RegistersUpdater(LoopListener):
     def __init__(self, registers_element: ContentElement):
         super().__init__()
         self._registers_element: ContentElement = registers_element
+        self._registers_element.set_content('loading registers...')
 
     @final
     async def update(self, register_values=None) -> None:

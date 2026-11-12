@@ -24,6 +24,7 @@ class DayNavigator:
             enable_swipe_navigator: bool = True,
             enable_arrow_keys: bool = True,
             auto_height: bool = False,
+            title: str = ''
     ):
         """
         Create a carousel of infinite cards, where each card represents a date.
@@ -46,6 +47,7 @@ class DayNavigator:
             enable_swipe_navigator: if true then the navigator bar respond to left-right swipe gestures.
             enable_arrow_keys: if true then the carousel responds to the left and right arrow keys.
             auto_height: if true then the carousel grows to fit the active slide content.
+            title: optional title to add above the navigator
         """
 
         self._day: date = _SENTINEL_DATE
@@ -54,47 +56,51 @@ class DayNavigator:
         self._touch_start_x: float | None = None  # for our own swipe detection
         self._auto_height_id = f'solala-carousel-{id(self)}' if auto_height else None
 
-        # Date and navigation row
-        navigator_row = ui.row().classes('items-center gap-2 w-full')
-        with navigator_row:
-            # Date
-            ui.button(
-                icon='calendar_today',
-                on_click=self._show_dialog,
-            ).props('flat round').style('color: #6b7280 !important')
-            self.date_element = ui.label().classes('text-sm w-30 text-gray-500')
+        with ui.element('div'):
+            if title != '':
+                ui.label(title).classes('dashboard-card-title')
 
-            button_classes = '!w-8 !h-8 min-w-0 shrink-0'
+            # Date and navigation row
+            navigator_row = ui.row().classes('items-center gap-2 w-full')
+            with navigator_row:
+                # Date
+                ui.button(
+                    icon='calendar_today',
+                    on_click=self._show_dialog,
+                ).props('flat round').style('color: #6b7280 !important')
+                self.date_element = ui.label().classes('text-sm w-30 text-gray-500')
 
-            # Previous day
-            ui.button(
-                icon='chevron_left',
-                on_click=lambda: self.change_day(-1),
-            ).props('flat round color=primary').classes(
-                button_classes
-            ).tooltip('Previous day')
+                button_classes = '!w-8 !h-8 min-w-0 shrink-0'
 
-            # "today" or "back to today"
-            with ui.row().classes(
-                    'items-center justify-center gap-0 h-8 w-23'
-            ):
-                self.day_status = ui.label('today').classes('text-sm text-gray-500').set_visibility(False)
-                self.today_button = ui.button(
-                    'back to today',
-                    on_click=lambda: self.set_day(date.today()),
-                ).props(
-                    'flat dense no-caps color=primary'
-                ).classes(
-                    'text-sm min-h-0 px-0 py-1'
-                )
+                # Previous day
+                ui.button(
+                    icon='chevron_left',
+                    on_click=lambda: self.change_day(-1),
+                ).props('flat round color=primary').classes(
+                    button_classes
+                ).tooltip('Previous day')
 
-            # Next day
-            ui.button(
-                icon='chevron_right',
-                on_click=lambda: self.change_day(1),
-            ).props('flat round color=primary').classes(
-                button_classes
-            ).tooltip('Next day')
+                # "today" or "back to today"
+                with ui.row().classes(
+                        'items-center justify-center gap-0 h-8 w-23'
+                ):
+                    self.day_status = ui.label('today').classes('text-sm text-gray-500').set_visibility(False)
+                    self.today_button = ui.button(
+                        'back to today',
+                        on_click=lambda: self.set_day(date.today()),
+                    ).props(
+                        'flat dense no-caps color=primary'
+                    ).classes(
+                        'text-sm min-h-0 px-0 py-1'
+                    )
+
+                # Next day
+                ui.button(
+                    icon='chevron_right',
+                    on_click=lambda: self.change_day(1),
+                ).props('flat round color=primary').classes(
+                    button_classes
+                ).tooltip('Next day')
 
         carousel = ui.carousel(animated=True, arrows=True, navigation=True). \
             props(_CAROUSEL_PROPS).classes('w-full')

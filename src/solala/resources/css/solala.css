@@ -120,6 +120,14 @@ html {
     box-shadow: var(--solala-shadow);
 }
 
+.dashboard-card-title {
+    padding: 4px 8px 10px;
+    font-size: 18px;
+    font-weight: 650;
+}
+
+
+
 /* ---------------------------------------------------------
    Tab navigation
    --------------------------------------------------------- */
@@ -220,12 +228,6 @@ html {
     padding: var(--solala-gap);
 }
 
-.infographic-title {
-    padding: 4px 8px 10px;
-    font-size: 18px;
-    font-weight: 650;
-}
-
 .infographic-container {
     display: flex;
     width: 100%;
@@ -291,14 +293,6 @@ html {
     align-items: center;
     justify-content: space-between;
     margin-bottom: 13px;
-}
-
-.control-title {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    font-size: 18px;
-    font-weight: 650;
 }
 
 .control-buttons {

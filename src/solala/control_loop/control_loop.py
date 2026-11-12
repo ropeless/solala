@@ -679,7 +679,7 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
                 LOGGER.info(f'{_LOG_SRC}Updating solar forecast: day = {key}')
                 state.last_solar_forecast[key] = forecast
             except Exception as err:
-                LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: {err}')
+                LOGGER.error(f'{_LOG_SRC}Solar forecast not available. Error: {err!r}')
                 return _NO_SOLAR_FORECAST
 
     return forecast
