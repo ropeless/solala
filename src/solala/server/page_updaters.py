@@ -22,7 +22,7 @@ from solala.server.graph_interpolator import GraphingInterpolator
 from solala.server.graphs import ChargeChart, PriceChart, PowerChart, EnergyChart
 from solala.server.icons import weather_code_to_icon_url
 from solala.server.page_session import PageSession
-from solala.server.server_infographic import Infographic
+from solala.server.infographic import Infographic
 from solala.server.units_lookup import STATUS_UNITS
 from solala.utils.datetime_extras import now
 from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json, JSONPrimitive

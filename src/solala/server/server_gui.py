@@ -21,8 +21,9 @@ from solala.server.icons import analytics_name_to_icon_url
 from solala.server.page_session import PageSession
 from solala.server.page_updaters import BatteryButtonUpdater, InverterButtonUpdater, InfographicUpdater, \
     SolarForecastUpdater, PriceForecastUpdater, ChartUpdater, StatusUpdater, RegistersUpdater
-from solala.server.server_infographic import CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
-    CLICK_ID_INVERTER, WIDTH, HEIGHT
+from solala.server.infographic import CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
+    CLICK_ID_INVERTER
+from solala.server import infographic
 from solala.server.units_lookup import CONNECTION_UNITS, PARAMETERS_UNITS, CONSTANTS_UNITS
 from solala.utils.json_extras import JSONDict, render_json
 
@@ -324,15 +325,15 @@ async def _build_power_page(container: Element, session: PageSession) -> None:
                 """)
 
             with ui.element('div').classes('infographic-container'):
-                infographic = ui.html(
-                    '<div class="infographic-loading">Loading...</div>'
-                ).style(f'width: 100%; aspect-ratio: {WIDTH} / {HEIGHT};')
+                infographic_element = ui.html(
+                    '<div class="infographic-loading">loading...</div>'
+                ).style(f'width: 100%; aspect-ratio: {infographic.WIDTH} / {infographic.HEIGHT};')
                 # infographic.on(
                 #     'click',
                 #     handler=partial(_infographic_click, select_tab=select_tab),
                 #     js_handler="(e) => emit(e.target.closest('rect')?.id)",
                 # )
-                updater = InfographicUpdater(infographic_element=infographic)
+                updater = InfographicUpdater(infographic_element=infographic_element)
                 session.add_task(asyncio.create_task(updater.update()))
                 await session.add_control_listener(updater)
 
@@ -389,7 +390,7 @@ async def _build_status_page(container: Element, session: PageSession) -> None:
             await session.add_control_listener(updater)
 
 
-async def _build_connection_page(container: Element, session: PageSession) -> None:
+async def _build_connection_page(container: Element, _: PageSession) -> None:
     with container:
         with ui.card().classes('w-full'):
             ui.label('Connection').classes('text-h6')
@@ -401,7 +402,7 @@ async def _build_connection_page(container: Element, session: PageSession) -> No
             connection_element.set_content(json_as_str)
 
 
-async def _build_parameters_page(container: Element, session: PageSession) -> None:
+async def _build_parameters_page(container: Element, _: PageSession) -> None:
     with container:
         with ui.column().classes('w-full'):
             with ui.card().classes('w-full'):
