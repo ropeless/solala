@@ -25,7 +25,7 @@ def _test_modules_r(prefix: str, folder: Path) -> Iterator[str]:
     Find all test modules in the given folder, and sub-folders, recursively.
     """
     for file in folder.iterdir():
-        if file.is_dir():
+        if file.is_dir() and not file.name.startswith('_'):
             next_prefix = f'{prefix}.{file.name}'
             for module in _test_modules_r(next_prefix, file):
                 yield module
