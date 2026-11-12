@@ -98,9 +98,9 @@ class DayNavigator:
             with ui.carousel_slide('0'):
                 element_0 = ui.element('div').classes('w-full')
             with ui.carousel_slide('1'):
-                element_1 = ui.element('div').classes('w-full h-screen')
+                element_1 = ui.element('div').classes('w-full')
             with ui.carousel_slide('2'):
-                element_2 = ui.element('div').classes('w-full h-screen')
+                element_2 = ui.element('div').classes('w-full')
         self._elements: List[Element] = [element_0, element_1, element_2]
 
         self._carousel.on_value_change(self._on_slide_change)
