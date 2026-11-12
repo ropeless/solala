@@ -150,8 +150,11 @@ html {
     gap: 1px;
 }
 
-.tab-navigation .q-btn.solala-tab-button .q-icon {
-    font-size: 23px;
+.tab-navigation .q-btn.solala-tab-button .solala-tab-icon {
+    display: block;
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
 }
 
 .tab-navigation .q-btn.solala-tab-button-active {
@@ -179,8 +182,8 @@ html {
     }
 
     .tab-navigation .q-btn.solala-tab-button .solala-tab-icon {
-        width: 22px;
-        height: 22px;
+        width: 48px;
+        height: 48px;
     }
 }
 
