@@ -427,7 +427,17 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
 
 async def _build_log_page(container: Element, session: PageSession) -> None:
     with container:
-        ui.label('Log Console').classes('dashboard-card-title')
+        with ui.row().classes('w-full items-center justify-between'):
+            ui.label('Log Console').classes('dashboard-card-title')
+            ui.button(icon='content_copy').props('round flat size=sm').classes(
+                'opacity-50 hover:opacity-100'
+            ).tooltip('Copy log contents').on(
+                'click',
+                js_handler="""() => {
+                    const log = document.querySelector('.solala-log');
+                    if (log) navigator.clipboard.writeText(log.innerText);
+                }""",
+            )
         log_ui = ui.element('div').classes('solala-log w-full')
     server_log.add(log_ui)
     session.add_cleanup(partial(server_log.remove, log_ui))
