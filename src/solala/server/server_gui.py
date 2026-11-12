@@ -481,6 +481,7 @@ class TabSelector:
                     ui.label(tab_def.name).classes('text-xs')
                     self.buttons[tab_def.name] = button
                     self.builder[tab_def.name] = tab_def.builder
+                    button.on_click(partial(self.select_tab, tab_def.name))
 
         self.active_tab: Optional[str] = None
         self.active_session: Optional[PageSession] = None
