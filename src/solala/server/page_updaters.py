@@ -220,7 +220,7 @@ class RegistersUpdater(LoopListener):
 
     def __init__(self):
         super().__init__()
-        self._loading_element = ui.label('loading registers...').classes('text-center italic')
+        self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
         self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
 
     @final
