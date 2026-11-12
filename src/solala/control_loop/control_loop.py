@@ -400,6 +400,9 @@ async def get_settings() -> Settings:
 
 
 async def add_control_loop_listener(listener: LoopListener) -> None:
+    if listener.event_loop is not asyncio.get_running_loop():
+        raise RuntimeError('Listener must use the control loop event loop')
+
     async with _control_state() as state:
         try:
             state.control_loop_listeners.remove(listener)
@@ -417,6 +420,9 @@ async def remove_control_loop_listener(listener: LoopListener) -> None:
 
 
 async def add_database_loop_listener(listener: LoopListener) -> None:
+    if listener.event_loop is not asyncio.get_running_loop():
+        raise RuntimeError('Listener must use the control loop event loop')
+
     async with _control_state() as state:
         try:
             state.database_loop_listeners.remove(listener)
@@ -1441,19 +1447,16 @@ def _resolve_addresses(raw_addresses: List[str]) -> List[_Address]:
 
 def _update_listeners(listeners: Iterable[LoopListener]) -> None:
     """
-    Call update on each listener, using the event loop provided by the listener.
+    Schedule an update on each listener.
 
     WARNING:
         * The given iterable should not be modified during iteration, i.e.
           this function should be given a copy of the list of listeners.
         * Do not hold the control state lock while scheduling listener updates,
           as listeners may need to acquire it themselves.
-        * Listeners that access the control state must use the control loop's asyncio event loop.
     """
     for listener in listeners:
-        # noinspection PyProtectedMember
-        event_loop = listener._event_loop
-        asyncio.run_coroutine_threadsafe(listener.update(), event_loop)
+        asyncio.create_task(listener.update())
 
 
 class PowerRegister(ReadOnlyRegister):
