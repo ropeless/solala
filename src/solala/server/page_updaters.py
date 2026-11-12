@@ -6,6 +6,7 @@ from typing import final, Optional, Dict, Sequence, Tuple
 
 from nicegui import ui
 from nicegui.elements.button import Button
+from nicegui.elements.label import Label
 from nicegui.elements.mixins.content_element import ContentElement
 
 from solala.constants import GUI_DATE_FORMAT, GUI_TIME_FORMAT, Units, Constants
@@ -218,10 +219,10 @@ class InfographicUpdater(StatusListener):
 
 class RegistersUpdater(LoopListener):
 
-    def __init__(self, registers_element: ContentElement, loading_element: ui.label):
+    def __init__(self, registers_element: ContentElement, loading_element: Label):
         super().__init__()
         self._registers_element: ContentElement = registers_element
-        self._loading_element: ui.label = loading_element
+        self._loading_element: Label = loading_element
 
     @final
     async def update(self, register_values=None) -> None:
