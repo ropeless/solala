@@ -444,21 +444,21 @@ Builder: TypeAlias = Callable[[Element, PageSession], Awaitable[None]]
 @dataclass
 class Tab:
     name: str
+    icon_scale: float  # for visually balancing the size of the icons.
     icon_url: str
     builder: Builder
-    icon_scale: float = 1.0
 
 
 _TABS: Sequence[Tab] = (
-    Tab('Power', '/images/analytics-icons/power.svg', _build_power_page),
-    Tab('Solar', '/images/solala-black.svg', _build_solar_page),
-    Tab('Grid', '/images/analytics-icons/grid.svg', _build_grid_page),
-    Tab('Graphs', analytics_name_to_icon_url('Graphs'), _build_graphs_page),
-    Tab('Status', analytics_name_to_icon_url('Status'), _build_status_page),
-    Tab('Connection', analytics_name_to_icon_url('Connection'), _build_connection_page),
-    Tab('Parameters', analytics_name_to_icon_url('Parameters'), _build_parameters_page),
-    Tab('Registers', analytics_name_to_icon_url('Registers'), _build_registers_page),
-    Tab('Log', analytics_name_to_icon_url('Log'), _build_log_page),
+    Tab('Power', 1.0, '/images/analytics-icons/power.svg', _build_power_page),
+    Tab('Solar', 1.2, '/images/solala-black.svg', _build_solar_page),
+    Tab('Grid', 1.0, '/images/analytics-icons/grid.svg', _build_grid_page),
+    Tab('Graphs', 0.9, analytics_name_to_icon_url('Graphs'), _build_graphs_page),
+    Tab('Status', 1.0, analytics_name_to_icon_url('Status'), _build_status_page),
+    Tab('Connection', 0.9, analytics_name_to_icon_url('Connection'), _build_connection_page),
+    Tab('Parameters', 0.9, analytics_name_to_icon_url('Parameters'), _build_parameters_page),
+    Tab('Registers', 1.0, analytics_name_to_icon_url('Registers'), _build_registers_page),
+    Tab('Log', 1.0, analytics_name_to_icon_url('Log'), _build_log_page),
 )
 
 
