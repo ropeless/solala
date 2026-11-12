@@ -446,6 +446,7 @@ class Tab:
     name: str
     icon_url: str
     builder: Builder
+    icon_scale: float = 1.0
 
 
 _TABS: Sequence[Tab] = (
@@ -477,7 +478,9 @@ class TabSelector:
         with self.button_container:
             for tab_def in _TABS:
                 with ui.button().classes('solala-tab-button').props('color=white text-color=black') as button:
-                    ui.image(tab_def.icon_url).classes('solala-tab-icon')
+                    ui.image(tab_def.icon_url).classes('solala-tab-icon').style(
+                        f'transform: scale({tab_def.icon_scale}); transform-origin: center;'
+                    )
                     ui.label(tab_def.name).classes('text-xs')
                     self.buttons[tab_def.name] = button
                     self.builder[tab_def.name] = tab_def.builder
