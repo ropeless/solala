@@ -386,8 +386,9 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
     with container:
         with ui.card().classes('w-full'):
             ui.label('Registers').classes('dashboard-card-title')
-            registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
-            updater = RegistersUpdater(registers_element)
+            loading_element = ui.label('loading registers...').classes('text-center italic')
+            registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
+            updater = RegistersUpdater(registers_element, loading_element)
             session.add_task(asyncio.create_task(updater.update()))
             await session.add_control_listener(updater)
 
