@@ -400,9 +400,6 @@ async def get_settings() -> Settings:
 
 
 async def add_control_loop_listener(listener: LoopListener) -> None:
-    if listener.event_loop is not asyncio.get_running_loop():
-        raise RuntimeError('Listener must use the control loop event loop')
-
     async with _control_state() as state:
         try:
             state.control_loop_listeners.remove(listener)
@@ -420,9 +417,6 @@ async def remove_control_loop_listener(listener: LoopListener) -> None:
 
 
 async def add_database_loop_listener(listener: LoopListener) -> None:
-    if listener.event_loop is not asyncio.get_running_loop():
-        raise RuntimeError('Listener must use the control loop event loop')
-
     async with _control_state() as state:
         try:
             state.database_loop_listeners.remove(listener)
