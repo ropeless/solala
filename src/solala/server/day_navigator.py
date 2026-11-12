@@ -138,21 +138,30 @@ class DayNavigator:
                 const carousel = document.getElementById('{self._auto_height_id}');
                 if (!carousel || carousel.dataset.autoHeightInitialised) return;
                 carousel.dataset.autoHeightInitialised = 'true';
+                const panel = () => carousel.querySelector('.q-panel');
                 const updateHeight = () => {{
-                    const active = carousel.querySelector('.q-panel--visible');
-                    if (!active) return;
-                    const content = active.firstElementChild || active;
-                    const height = Math.ceil(Math.max(content.scrollHeight, content.getBoundingClientRect().height));
-                    if (height > 0) carousel.style.height = height + 'px';
+                    const currentPanel = panel();
+                    if (!currentPanel) return;
+                    const slide = currentPanel.querySelector('.q-carousel__slide');
+                    if (!slide) return;
+                    const contentHeight = Math.ceil(slide.scrollHeight);
+                    const controls = carousel.querySelector('.q-carousel__navigation');
+                    const controlsHeight = controls ? Math.ceil(controls.getBoundingClientRect().height) + 12 : 0;
+                    carousel.style.height = (contentHeight + controlsHeight) + 'px';
+                    currentPanel.style.height = 'auto';
+                    currentPanel.style.overflow = 'visible';
                 }};
-                const resizeObserver = new ResizeObserver(() => updateHeight());
-                carousel.querySelectorAll('.q-carousel__slide').forEach(slide => {{
-                    resizeObserver.observe(slide);
-                    if (slide.firstElementChild) resizeObserver.observe(slide.firstElementChild);
-                }});
-                const mutationObserver = new MutationObserver(() => requestAnimationFrame(updateHeight));
-                mutationObserver.observe(carousel, {{subtree: true, attributes: true, attributeFilter: ['class']}});
-                requestAnimationFrame(updateHeight);
+                const resizeObserver = new ResizeObserver(() => requestAnimationFrame(updateHeight));
+                const observe = () => {{
+                    const currentPanel = panel();
+                    const slide = currentPanel?.querySelector('.q-carousel__slide');
+                    if (currentPanel) resizeObserver.observe(currentPanel);
+                    if (slide) resizeObserver.observe(slide);
+                    updateHeight();
+                }};
+                const mutationObserver = new MutationObserver(() => requestAnimationFrame(observe));
+                mutationObserver.observe(carousel, {{subtree: true, childList: true, attributes: true, attributeFilter: ['class']}});
+                observe();
             }})();
         """)
     def get_elements(self) -> Sequence[Element]:
