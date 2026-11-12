@@ -23,6 +23,7 @@ class DayNavigator:
             enable_swipe_content: bool = False,
             enable_swipe_navigator: bool = True,
             enable_arrow_keys: bool = True,
+            auto_height: bool = False,
     ):
         """
         Create a carousel of infinite cards, where each card represents a date.
@@ -44,12 +45,14 @@ class DayNavigator:
             enable_swipe_content: if true then the content cards respond to left-right swipe gestures.
             enable_swipe_navigator: if true then the navigator bar respond to left-right swipe gestures.
             enable_arrow_keys: if true then the carousel responds to the left and right arrow keys.
+            auto_height: if true then the carousel grows to fit the active slide content.
         """
 
         self._day: date = _SENTINEL_DATE
         self._focus_slide: int = 0
         self._updaters: Sequence[Updater] = ()  # mapping from slide number to `updater`
         self._touch_start_x: float | None = None  # for our own swipe detection
+        self._auto_height_id = f'solala-carousel-{id(self)}' if auto_height else None
 
         # Date and navigation row
         navigator_row = ui.row().classes('items-center gap-2 w-full')
@@ -122,6 +125,33 @@ class DayNavigator:
         if enable_arrow_keys:
             ui.keyboard(on_key=self._handle_key, repeating=False)
 
+    async def initialise_auto_height(self) -> None:
+        """Make the carousel follow the height of its active slide."""
+        if self._auto_height_id is None:
+            return
+
+        await ui.run_javascript(f"""
+            (() => {{
+                const carousel = document.getElementById('{self._auto_height_id}');
+                if (!carousel || carousel.dataset.autoHeightInitialised) return;
+                carousel.dataset.autoHeightInitialised = 'true';
+                const updateHeight = () => {{
+                    const active = carousel.querySelector('.q-carousel__slide--active');
+                    if (!active) return;
+                    const content = active.firstElementChild || active;
+                    const height = Math.ceil(Math.max(content.scrollHeight, content.getBoundingClientRect().height));
+                    if (height > 0) carousel.style.height = height + 'px';
+                }};
+                const resizeObserver = new ResizeObserver(() => updateHeight());
+                carousel.querySelectorAll('.q-carousel__slide').forEach(slide => {{
+                    resizeObserver.observe(slide);
+                    if (slide.firstElementChild) resizeObserver.observe(slide.firstElementChild);
+                }});
+                const mutationObserver = new MutationObserver(() => requestAnimationFrame(updateHeight));
+                mutationObserver.observe(carousel, {{subtree: true, attributes: true, attributeFilter: ['class']}});
+                requestAnimationFrame(updateHeight);
+            }})();
+        """)
     def get_elements(self) -> Sequence[Element]:
         """
         What element need a listener to update them
