@@ -70,7 +70,7 @@ def _json_multi_page(*names: str) -> List[ContentElement]:
 
 def _page_header(ext: str = '', link: bool = True) -> None:
     """
-    NiceGui snippet to add the Solala title to a page.
+    NiceGui snippet to add the Solala title to the page.
     Args:
         ext: A string to append to the title.
         link: Whether to create a link to the home page or not
@@ -291,15 +291,15 @@ app.add_static_files(url_path='/css', local_directory=str(CSS_FILES))
 app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manifest.json'))
 
 _TAB_DEFINITIONS = (
-    ('Power', 'monitoring'),
-    ('Solar', 'wb_sunny'),
-    ('Grid', 'electrical_services'),
-    ('Graphs', 'query_stats'),
-    ('Status', 'check_circle_outline'),
-    ('Connection', 'swap_horiz'),
-    ('Parameters', 'tune'),
-    ('Registers', 'memory'),
-    ('Log', 'description'),
+    ('Power', '/images/analytics-icons/power.svg'),
+    ('Solar', '/images/solala-black.svg'),
+    ('Grid', '/images/analytics-icons/grid.svg'),
+    ('Graphs', analytics_name_to_icon_url('Graphs')),
+    ('Status', analytics_name_to_icon_url('Status')),
+    ('Connection', analytics_name_to_icon_url('Connection')),
+    ('Parameters', analytics_name_to_icon_url('Parameters')),
+    ('Registers', analytics_name_to_icon_url('Registers')),
+    ('Log', analytics_name_to_icon_url('Log')),
 )
 
 
@@ -461,6 +461,7 @@ _TAB_BUILDERS = {
     'Log': _build_log_page,
 }
 
+
 class TabSelector:
     def __init__(
             self,
@@ -556,9 +557,9 @@ async def root_page():
         with ui.element('div').classes('dashboard-card tab-navigation'):
             with ui.grid(columns=3).classes('w-full gap-2'):
                 tab_buttons: Dict[str, Button] = {}
-                for tab_name, icon_name in _TAB_DEFINITIONS:
+                for tab_name, icon_url in _TAB_DEFINITIONS:
                     with ui.button().classes('solala-tab-button') as button:
-                        ui.icon(icon_name).classes('text-2xl')
+                        ui.image(icon_url).classes('solala-tab-icon')
                         ui.label(tab_name).classes('text-xs')
                     tab_buttons[tab_name] = button
 
