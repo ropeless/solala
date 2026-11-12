@@ -333,13 +333,14 @@ async def _build_power_page(container: Element, session: PageSession) -> None:
 
 async def _build_solar_page(container: Element, session: PageSession) -> None:
     with container:
-        navigator = DayNavigator(enable_swipe_content=True, title='Solar Forecast')
+        navigator = DayNavigator(enable_swipe_content=True, auto_height=True, title='Solar Forecast')
         updaters = [
             SolarForecastUpdater(element, session)
             for element in navigator.get_elements()
         ]
         navigator.set_listeners(*(updater.set_day for updater in updaters))
         await navigator.set_day(date.today())
+        await navigator.initialise_auto_height()
         for updater in updaters:
             await session.add_control_listener(updater)
 
