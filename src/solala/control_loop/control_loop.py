@@ -251,7 +251,7 @@ class _ControlState:
 
 
 # Global control loop state
-# For thread-safe access to the control state use `_control_state()`.
+# For exclusive asynchronous access to the control state use `_control_state()`.
 _CONTROL_STATE: _ControlState = _ControlState()
 
 
@@ -261,6 +261,7 @@ async def _control_state() -> AsyncIterator[_ControlState]:
     Get exclusive access to the control state.
 
     This is a reentrant lock, i.e. the same task can acquire the lock multiple times.
+    All access must occur on the same asyncio event loop.
 
     Usage:
     ```
@@ -289,7 +290,8 @@ async def control_loop(
     """
     Execute the control loop.
 
-    Multiple thread-safe functions are provided to manage the behaviour of the control loop.
+    Public asynchronous functions are provided to manage the behaviour of the control loop.
+    They must be called from the control loop's asyncio event loop.
 
     Call `exit_control_loop()` to gracefully terminate the control loop.
 
@@ -1444,8 +1446,9 @@ def _update_listeners(listeners: Iterable[LoopListener]) -> None:
     WARNING:
         * The given iterable should not be modified during iteration, i.e.
           this function should be given a copy of the list of listeners.
-        * The control state lock should _NOT_ be acquired while calling this function
-          as each listener may try to acquire the lock in its own thread.
+        * Do not hold the control state lock while scheduling listener updates,
+          as listeners may need to acquire it themselves.
+        * Listeners that access the control state must use the control loop's asyncio event loop.
     """
     for listener in listeners:
         # noinspection PyProtectedMember
