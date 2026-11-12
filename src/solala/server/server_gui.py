@@ -1,7 +1,8 @@
 import asyncio
+from dataclasses import dataclass
 from datetime import date
 from functools import partial
-from typing import Optional, List, Callable, Awaitable, Dict
+from typing import Optional, List, Callable, Awaitable, Dict, Sequence, TypeAlias
 
 from nicegui import ui, app, events
 from nicegui.element import Element
@@ -290,20 +291,8 @@ app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
 app.add_static_files(url_path='/css', local_directory=str(CSS_FILES))
 app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manifest.json'))
 
-_TAB_DEFINITIONS = (
-    ('Power', '/images/analytics-icons/power.svg'),
-    ('Solar', '/images/solala-black.svg'),
-    ('Grid', '/images/analytics-icons/grid.svg'),
-    ('Graphs', analytics_name_to_icon_url('Graphs')),
-    ('Status', analytics_name_to_icon_url('Status')),
-    ('Connection', analytics_name_to_icon_url('Connection')),
-    ('Parameters', analytics_name_to_icon_url('Parameters')),
-    ('Registers', analytics_name_to_icon_url('Registers')),
-    ('Log', analytics_name_to_icon_url('Log')),
-)
 
-
-async def _build_power_page(container: Element, session: PageSession, select_tab) -> None:
+async def _build_power_page(container: Element, session: PageSession) -> None:
     with container:
         with ui.element('div').classes('dashboard-card infographic-card'):
             with ui.row().classes('w-full items-center justify-between'):
@@ -336,11 +325,11 @@ async def _build_power_page(container: Element, session: PageSession, select_tab
 
             with ui.element('div').classes('infographic-container'):
                 infographic = ui.html()
-                infographic.on(
-                    'click',
-                    handler=partial(_infographic_click, select_tab=select_tab),
-                    js_handler="(e) => emit(e.target.closest('rect')?.id)",
-                )
+                # infographic.on(
+                #     'click',
+                #     handler=partial(_infographic_click, select_tab=select_tab),
+                #     js_handler="(e) => emit(e.target.closest('rect')?.id)",
+                # )
                 updater = InfographicUpdater(infographic_element=infographic)
                 session.add_task(asyncio.create_task(updater.update()))
                 await session.add_control_listener(updater)
@@ -449,36 +438,53 @@ async def _build_log_page(container: Element, session: PageSession) -> None:
     session.add_cleanup(partial(server_log.remove, log_ui))
 
 
-_TAB_BUILDERS = {
-    'Power': _build_power_page,
-    'Solar': _build_solar_page,
-    'Grid': _build_grid_page,
-    'Graphs': _build_graphs_page,
-    'Status': _build_status_page,
-    'Connection': _build_connection_page,
-    'Parameters': _build_parameters_page,
-    'Registers': _build_registers_page,
-    'Log': _build_log_page,
-}
+Builder: TypeAlias = Callable[[Element, PageSession], Awaitable[None]]
+
+
+@dataclass
+class Tab:
+    name: str
+    icon_url: str
+    builder: Builder
+
+
+_TABS: Sequence[Tab] = (
+    Tab('Power', '/images/analytics-icons/power.svg', _build_power_page),
+    Tab('Solar', '/images/solala-black.svg', _build_solar_page),
+    Tab('Grid', '/images/analytics-icons/grid.svg', _build_grid_page),
+    Tab('Graphs', analytics_name_to_icon_url('Graphs'), _build_graphs_page),
+    Tab('Status', analytics_name_to_icon_url('Status'), _build_status_page),
+    Tab('Connection', analytics_name_to_icon_url('Connection'), _build_connection_page),
+    Tab('Parameters', analytics_name_to_icon_url('Parameters'), _build_parameters_page),
+    Tab('Registers', analytics_name_to_icon_url('Registers'), _build_registers_page),
+    Tab('Log', analytics_name_to_icon_url('Log'), _build_log_page),
+)
 
 
 class TabSelector:
     def __init__(
             self,
-            content_container: Element,
-            tab_buttons: Dict[str, Button],
             colours: Colours,
     ) -> None:
-        self.content_container: Element = content_container
-        self.tab_buttons: Dict[str, Button] = tab_buttons
+        self.button_container: Element = ui.grid(columns=3).classes('w-full gap-2')
+        self.content_container: Element = ui.element('div').classes('tab-content w-full')
+
+        self.buttons: Dict[str, Button] = {}
+        self.builder: Dict[str, Builder] = {}
+
+        with self.button_container:
+            for tab_def in _TABS:
+                with ui.button().classes('solala-tab-button').props('color=white text-color=black') as button:
+                    ui.image(tab_def.icon_url).classes('solala-tab-icon')
+                    ui.label(tab_def.name).classes('text-xs')
+                    self.buttons[tab_def.name] = button
+                    self.builder[tab_def.name] = tab_def.builder
+
         self.active_tab: Optional[str] = None
         self.active_session: Optional[PageSession] = None
         self.colours: Colours = colours
         self._build_task: Optional[asyncio.Task] = None
         self._transition_lock = asyncio.Lock()
-
-        for tab_name, button in self.tab_buttons.items():
-            button.on_click(partial(self.select_tab, tab_name)).props('color=white text-color=black')
 
     async def select_tab(self, tab_name: str) -> None:
         async with self._transition_lock:
@@ -489,7 +495,7 @@ class TabSelector:
             self.content_container.clear()
             self.active_tab = tab_name
 
-            for name, button in self.tab_buttons.items():
+            for name, button in self.buttons.items():
                 if name == tab_name:
                     background = rgba(self.colours.tab, alpha=0.15)
                     button.props(f'color="{background}" text-color=black')
@@ -526,12 +532,9 @@ class TabSelector:
             await session.close()
 
     async def _build_tab(self, tab_name: str, session: PageSession) -> None:
-        builder = _TAB_BUILDERS[tab_name]
+        builder = self.builder[tab_name]
         try:
-            if tab_name == 'Power':
-                await builder(self.content_container, session, self.select_tab)
-            else:
-                await builder(self.content_container, session)
+            await builder(self.content_container, session)
         except asyncio.CancelledError:
             await session.close()
             raise
@@ -555,18 +558,8 @@ async def root_page():
         _page_header(link=False)
 
         with ui.element('div').classes('dashboard-card tab-navigation'):
-            with ui.grid(columns=3).classes('w-full gap-2'):
-                tab_buttons: Dict[str, Button] = {}
-                for tab_name, icon_url in _TAB_DEFINITIONS:
-                    with ui.button().classes('solala-tab-button') as button:
-                        ui.image(icon_url).classes('solala-tab-icon')
-                        ui.label(tab_name).classes('text-xs')
-                    tab_buttons[tab_name] = button
-
-        content_container = ui.element('div').classes('tab-content w-full')
-
-        tab_selector = TabSelector(content_container, tab_buttons, colours)
+            tab_selector = TabSelector(colours)
 
     ui.context.client.on_disconnect(tab_selector.close_active_session)
-    first_tab_name: str = _TAB_DEFINITIONS[0][0]
+    first_tab_name: str = _TABS[0].name
     await tab_selector.select_tab(first_tab_name)
