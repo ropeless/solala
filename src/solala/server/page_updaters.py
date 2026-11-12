@@ -218,11 +218,10 @@ class InfographicUpdater(StatusListener):
 
 class RegistersUpdater(LoopListener):
 
-    def __init__(self, registers_element: ContentElement):
+    def __init__(self, registers_element: ContentElement, loading_element: ui.label):
         super().__init__()
         self._registers_element: ContentElement = registers_element
-        self._registers_element.classes('text-center italic')
-        self._registers_element.set_content('loading registers...')
+        self._loading_element: ui.label = loading_element
 
     @final
     async def update(self, register_values=None) -> None:
@@ -236,8 +235,9 @@ class RegistersUpdater(LoopListener):
             remove_key_underscores=False,
             remove_value_underscores=False,
         )
-        self._registers_element.classes(remove='text-center italic')
         self._registers_element.set_content(json_as_str)
+        self._loading_element.set_visibility(False)
+        self._registers_element.set_visibility(True)
 
 
 class PriceForecastUpdater(LoopListener):
