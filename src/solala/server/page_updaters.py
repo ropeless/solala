@@ -218,10 +218,10 @@ class InfographicUpdater(StatusListener):
 
 class RegistersUpdater(LoopListener):
 
-    def __init__(self, registers_element: ContentElement, loading_element: ui.label):
+    def __init__(self):
         super().__init__()
-        self._registers_element: ContentElement = registers_element
-        self._loading_element: ui.label = loading_element
+        self._loading_element = ui.label('loading registers...').classes('text-center italic')
+        self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
 
     @final
     async def update(self, register_values=None) -> None:
