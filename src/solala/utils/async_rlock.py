@@ -4,6 +4,9 @@ import threading
 
 class AsyncRLock:
     """
+    A reentrant lock for asynchronous tasks. The same task may
+    re-acquire a lock that it currently holds.
+
     Note, we assume maximum one asyncio event loop per thread.
     """
 

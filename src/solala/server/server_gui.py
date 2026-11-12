@@ -2,13 +2,12 @@ import asyncio
 from dataclasses import dataclass
 from datetime import date
 from functools import partial
-from typing import Optional, List, Callable, Awaitable, Dict, Sequence, TypeAlias
+from typing import Optional, Callable, Awaitable, Dict, Sequence, TypeAlias
 
 from nicegui import ui, app, events
 from nicegui.element import Element
 from nicegui.elements.button import Button
 from nicegui.elements.label import Label
-from nicegui.elements.mixins.content_element import ContentElement
 
 from solala.constants import Constants
 from solala.control_loop import control_loop
@@ -36,38 +35,6 @@ _HEAD_HTML = r'''
 <link rel="stylesheet" href="/css/solala.css">
 <link rel="icon" type="image/png" href="/images/solala-32x32.png">
 '''
-
-
-def _json_page(name: str) -> ContentElement:
-    """
-    Prepare a page to show JSON data.
-
-    Args:
-        name: name of the page
-
-    Returns:
-        The content element to use for adding the rendered JSON data.
-    """
-    return _json_multi_page(name)[0]
-
-
-def _json_multi_page(*names: str) -> List[ContentElement]:
-    """
-    Prepare a page to show multiple JSON data.
-    """
-    result: List[ContentElement] = []
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page'):
-        _page_header()
-
-        with ui.column():
-            for name in names:
-                with ui.card():
-                    ui.label(name).classes('text-h6')
-                    registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
-                    result.append(registers_element)
-
-    return result
 
 
 def _page_header(ext: str = '', link: bool = True) -> None:
