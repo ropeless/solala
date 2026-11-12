@@ -1,7 +1,8 @@
 import asyncio
+from dataclasses import dataclass
 from datetime import date
 from functools import partial
-from typing import Optional, List, Callable, Awaitable, Dict
+from typing import Optional, List, Callable, Awaitable, Dict, Sequence, TypeAlias
 
 from nicegui import ui, app, events
 from nicegui.element import Element
@@ -14,7 +15,7 @@ from solala.control_loop import control_loop
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import server_log
-from solala.server.css_colours import Colours, css_colours
+from solala.server.css_colours import Colours, css_colours, rgba
 from solala.server.day_navigator import DayNavigator
 from solala.server.icons import analytics_name_to_icon_url
 from solala.server.page_session import PageSession
@@ -28,9 +29,6 @@ from solala.utils.json_extras import JSONDict, render_json
 # --------------------------------------------------------------------
 # Main styling
 # --------------------------------------------------------------------
-
-LIVE_COLOUR = 'green-700'
-STALE_COLOUR = 'red-600'
 
 _HEAD_HTML = r'''
 <link rel="manifest" href="/manifest.json">
@@ -73,7 +71,7 @@ def _json_multi_page(*names: str) -> List[ContentElement]:
 
 def _page_header(ext: str = '', link: bool = True) -> None:
     """
-    NiceGui snippet to add the Solala title to a page.
+    NiceGui snippet to add the Solala title to the page.
     Args:
         ext: A string to append to the title.
         link: Whether to create a link to the home page or not
@@ -202,21 +200,21 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
     overdue: float = control_loop.loop_check_overdue()
     if overdue > Constants.LOOP_TIME:
         loop_status_light.classes(
-            replace=f'w-3 h-3 rounded-full bg-{STALE_COLOUR}'
+            replace='solala-loop-status-light solala-loop-status-stale'
         )
         loop_status_light.tooltip('Control loop appears to be stalled')
         loop_status_label.set_text('stalled')
         loop_status_label.classes(
-            replace=f'text-sm text-{STALE_COLOUR}'
+            replace='solala-loop-status-label solala-loop-status-stale'
         )
     elif overdue == 0:
         loop_status_light.classes(
-            replace=f'w-3 h-3 rounded-full bg-{LIVE_COLOUR}'
+            replace='solala-loop-status-light solala-loop-status-live'
         )
         loop_status_light.tooltip('Control loop appears to be active')
         loop_status_label.set_text('live')
         loop_status_label.classes(
-            replace=f'text-sm text-{LIVE_COLOUR}'
+            replace='solala-loop-status-label solala-loop-status-live'
         )
     else:
         # Leave it as it is
@@ -293,30 +291,18 @@ app.add_static_files(url_path='/images', local_directory=str(IMAGE_FILES))
 app.add_static_files(url_path='/css', local_directory=str(CSS_FILES))
 app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manifest.json'))
 
-_TAB_DEFINITIONS = (
-    ('Power', 'monitoring'),
-    ('Solar', 'wb_sunny'),
-    ('Grid', 'electrical_services'),
-    ('Graphs', 'query_stats'),
-    ('Status', 'check_circle_outline'),
-    ('Connection', 'swap_horiz'),
-    ('Parameters', 'tune'),
-    ('Registers', 'memory'),
-    ('Log', 'description'),
-)
 
-
-async def _build_power_page(container: Element, session: PageSession, select_tab) -> None:
+async def _build_power_page(container: Element, session: PageSession) -> None:
     with container:
         with ui.element('div').classes('dashboard-card infographic-card'):
             with ui.row().classes('w-full items-center justify-between'):
                 ui.label('Power').classes('infographic-title')
                 with ui.row().classes('items-center gap-2'):
                     loop_status_light = ui.element('div').classes(
-                        f'w-3 h-3 rounded-full bg-{STALE_COLOUR}'
+                        'solala-loop-status-light solala-loop-status-stale'
                     )
                     loop_status_label = ui.label('active').classes(
-                        f'text-sm text-{STALE_COLOUR}'
+                        'solala-loop-status-label solala-loop-status-stale'
                     )
 
                 _update_loop_status(loop_status_light, loop_status_label)
@@ -330,20 +316,20 @@ async def _build_power_page(container: Element, session: PageSession, select_tab
                     const light = getHtmlElement({loop_status_light.id});
                     const label = getHtmlElement({loop_status_label.id});
                     window.socket.on('disconnect', () => {{
-                        light.className = 'w-3 h-3 rounded-full bg-{STALE_COLOUR}';
+                        light.className = 'solala-loop-status-light solala-loop-status-stale';
                         light.title = 'Connection to Solala server lost';
                         label.textContent = 'stale';
-                        label.className = 'text-sm text-{STALE_COLOUR}';
+                        label.className = 'solala-loop-status-label solala-loop-status-stale';
                     }});
                 """)
 
             with ui.element('div').classes('infographic-container'):
                 infographic = ui.html()
-                infographic.on(
-                    'click',
-                    handler=partial(_infographic_click, select_tab=select_tab),
-                    js_handler="(e) => emit(e.target.closest('rect')?.id)",
-                )
+                # infographic.on(
+                #     'click',
+                #     handler=partial(_infographic_click, select_tab=select_tab),
+                #     js_handler="(e) => emit(e.target.closest('rect')?.id)",
+                # )
                 updater = InfographicUpdater(infographic_element=infographic)
                 session.add_task(asyncio.create_task(updater.update()))
                 await session.add_control_listener(updater)
@@ -355,7 +341,7 @@ async def _build_power_page(container: Element, session: PageSession, select_tab
 
 async def _build_solar_page(container: Element, session: PageSession) -> None:
     with container:
-        navigator = DayNavigator()
+        navigator = DayNavigator(enable_swipe_content=True)
         updaters = [
             SolarForecastUpdater(element, session)
             for element in navigator.get_elements()
@@ -375,17 +361,17 @@ async def _build_grid_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_graphs_page(container: Element, session: PageSession) -> None:
-    colours: Colours = await css_colours()
     with container:
         swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
         with swipe_area:
-            navigator = DayNavigator()
+            navigator = DayNavigator(auto_height=True)
             updaters = [
-                ChartUpdater(element, colours=colours, session=session)
+                ChartUpdater(element, session=session)
                 for element in navigator.get_elements()
             ]
             navigator.set_listeners(*(updater.set_day for updater in updaters))
             await navigator.set_day(date.today())
+            await navigator.initialise_auto_height()
             for updater in updaters:
                 await session.add_database_listener(updater)
 
@@ -446,102 +432,142 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
 
 async def _build_log_page(container: Element, session: PageSession) -> None:
     with container:
-        log_ui = ui.log(max_lines=Constants.MAX_LOG_HISTORY).classes('w-full').style(
-            'height: calc(100vh - 300px); min-height: 240px;'
-        )
+        log_ui = ui.element('div').classes('solala-log w-full')
     server_log.add(log_ui)
     session.add_cleanup(partial(server_log.remove, log_ui))
 
 
-_TAB_BUILDERS = {
-    'Power': _build_power_page,
-    'Solar': _build_solar_page,
-    'Grid': _build_grid_page,
-    'Graphs': _build_graphs_page,
-    'Status': _build_status_page,
-    'Connection': _build_connection_page,
-    'Parameters': _build_parameters_page,
-    'Registers': _build_registers_page,
-    'Log': _build_log_page,
-}
+Builder: TypeAlias = Callable[[Element, PageSession], Awaitable[None]]
+
+
+@dataclass
+class Tab:
+    name: str
+    icon_scale: float  # for visually balancing the size of the icons.
+    icon_url: str
+    builder: Builder
+
+
+_TABS: Sequence[Tab] = (
+    Tab('Power', 1.0, '/images/analytics-icons/power.svg', _build_power_page),
+    Tab('Solar', 1.2, '/images/solala-black.svg', _build_solar_page),
+    Tab('Grid', 1.0, '/images/analytics-icons/grid.svg', _build_grid_page),
+    Tab('Graphs', 0.9, analytics_name_to_icon_url('Graphs'), _build_graphs_page),
+    Tab('Status', 1.0, analytics_name_to_icon_url('Status'), _build_status_page),
+    Tab('Connection', 0.9, analytics_name_to_icon_url('Connection'), _build_connection_page),
+    Tab('Parameters', 0.9, analytics_name_to_icon_url('Parameters'), _build_parameters_page),
+    Tab('Registers', 1.0, analytics_name_to_icon_url('Registers'), _build_registers_page),
+    Tab('Log', 1.0, analytics_name_to_icon_url('Log'), _build_log_page),
+)
 
 
 class TabSelector:
     def __init__(
             self,
+            colours: Colours,
+            button_container: Element,
             content_container: Element,
-            tab_buttons: Dict[str, Button],
     ) -> None:
+        self.button_container: Element = button_container
         self.content_container: Element = content_container
-        self.tab_buttons: Dict[str, Button] = tab_buttons
+
+        self.buttons: Dict[str, Button] = {}
+        self.builder: Dict[str, Builder] = {}
+
+        with self.button_container:
+            for tab_def in _TABS:
+                with ui.button().classes('solala-tab-button').props('color=white text-color=black') as button:
+                    ui.image(tab_def.icon_url).classes('solala-tab-icon').style(
+                        f'transform: scale({tab_def.icon_scale}); transform-origin: center;'
+                    )
+                    ui.label(tab_def.name).classes('text-xs')
+                    self.buttons[tab_def.name] = button
+                    self.builder[tab_def.name] = tab_def.builder
+                    button.on_click(partial(self.select_tab, tab_def.name))
+
         self.active_tab: Optional[str] = None
         self.active_session: Optional[PageSession] = None
-        self.switching = False
-
-        for tab_name, button in self.tab_buttons.items():
-            button.on_click(lambda: self.select_tab(tab_name))
-
-    async def close_active_session(self) -> None:
-        if self.active_session is not None:
-            await self.active_session.close()
-            self.active_session = None
+        self.colours: Colours = colours
+        self._build_task: Optional[asyncio.Task] = None
+        self._transition_lock = asyncio.Lock()
 
     async def select_tab(self, tab_name: str) -> None:
-        if self.switching or tab_name == self.active_tab:
-            return
-        self.switching = True
-        try:
-            await self.close_active_session()
+        async with self._transition_lock:
+            if tab_name == self.active_tab:
+                return
+
+            await self._close_active_session()
             self.content_container.clear()
             self.active_tab = tab_name
 
-            for name, button in self.tab_buttons.items():
-                button.classes(
-                    add='solala-tab-button-active' if name == tab_name else '',
-                    remove='' if name == tab_name else 'solala-tab-button-active',
-                )
-
-            active_session = PageSession()
-            builder = _TAB_BUILDERS[tab_name]
-            try:
-                if tab_name == 'Power':
-                    await builder(self.content_container, active_session, self.select_tab)
+            for name, button in self.buttons.items():
+                if name == tab_name:
+                    background = rgba(self.colours.tab, alpha=0.15)
+                    button.props(f'color="{background}" text-color=black')
+                    button.classes(add='solala-tab-button-active')
                 else:
-                    await builder(self.content_container, active_session)
-            except Exception:
-                await active_session.close()
+                    button.props('color=white text-color=black')
+                    button.classes(remove='solala-tab-button-active')
+
+            session = PageSession(self.colours)
+            self.active_session = session
+            self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
+
+    async def close_active_session(self) -> None:
+        async with self._transition_lock:
+            await self._close_active_session()
+
+    async def _cancel_active_build(self) -> None:
+        task = self._build_task
+        self._build_task = None
+        if task is None or task.done():
+            return
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async def _close_active_session(self) -> None:
+        await self._cancel_active_build()
+        if self.active_session is not None:
+            session = self.active_session
+            self.active_session = None
+            await session.close()
+
+    async def _build_tab(self, tab_name: str, session: PageSession) -> None:
+        builder = self.builder[tab_name]
+        try:
+            await builder(self.content_container, session)
+        except asyncio.CancelledError:
+            await session.close()
+            raise
+        except Exception:
+            await session.close()
+            if self.active_session is session:
                 self.active_session = None
                 LOGGER.exception('Error building %s tab', tab_name)
                 with self.content_container:
                     with ui.card().classes('w-full'):
                         ui.label(f'Unable to display {tab_name}').classes('text-h6')
                         ui.label('See the Solala log for details.').classes('text-sm text-gray-500')
-        finally:
-            self.switching = False
 
 
 @ui.page('/')
 async def root_page():
     ui.add_head_html(_HEAD_HTML)
+    colours: Colours = await css_colours()  # must come directly after add_head_html.
 
     with ui.element('div').classes('solala-page'):
         _page_header(link=False)
 
         with ui.element('div').classes('dashboard-card tab-navigation'):
-            with ui.grid(columns=3).classes('w-full gap-2'):
-                tab_buttons: Dict[str, Button] = {}
-                for tab_name, icon_name in _TAB_DEFINITIONS:
-                    with ui.button().classes(
-                            'solala-tab-button'
-                    ) as button:
-                        ui.icon(icon_name).classes('text-2xl')
-                        ui.label(tab_name).classes('text-xs')
-                    tab_buttons[tab_name] = button
+            button_container = ui.grid(columns=3).classes('w-full gap-2')
 
         content_container = ui.element('div').classes('tab-content w-full')
-
-        tab_selector = TabSelector(content_container, tab_buttons)
+        tab_selector = TabSelector(colours, button_container, content_container)
 
     ui.context.client.on_disconnect(tab_selector.close_active_session)
-    first_tab_name: str = _TAB_DEFINITIONS[0][0]
+    first_tab_name: str = _TABS[0].name
     await tab_selector.select_tab(first_tab_name)

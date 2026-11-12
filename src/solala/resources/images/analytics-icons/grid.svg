@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <g fill="none" stroke="#101010" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Main pole -->
+    <path d="M30 12 V56"/>
+    <!-- Cross arm -->
+    <path d="M14 18 H46"/>
+    <!-- Insulators -->
+    <path d="M18 18 V13"/>
+    <path d="M30 18 V11"/>
+    <path d="M42 18 V13"/>
+    <!-- Ground -->
+    <path d="M20 56 H40"/>
+  </g>
+</svg>

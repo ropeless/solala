@@ -3,6 +3,7 @@ import threading
 from typing import List
 
 from nicegui import ui
+from nicegui.element import Element
 
 from solala.constants import Constants, GUI_LOG_FORMAT
 from solala.logger import LOGGER
@@ -16,7 +17,7 @@ class _GuiLogHandler(logging.Handler):
 
     def __init__(self):
         super().__init__()
-        self._log_elements: List[ui.log] = []
+        self._log_elements: List[Element] = []
         self._history: List[str] = []
         self._lock = threading.Lock()
         self.setFormatter(logging.Formatter(GUI_LOG_FORMAT))
@@ -29,7 +30,8 @@ class _GuiLogHandler(logging.Handler):
             with self._lock:
                 # Push the message to the NiceGUI UI element
                 for ui_log in self._log_elements:
-                    ui_log.push(msg)
+                    with ui_log:
+                        ui.label(msg).classes('solala-log-line')
                 # Add to history
                 self._history.append(msg)
                 while len(self._history) > Constants.MAX_LOG_HISTORY:
@@ -37,14 +39,15 @@ class _GuiLogHandler(logging.Handler):
         except (IOError, ValueError, RuntimeError):
             self.handleError(record)
 
-    def add(self, element: ui.log) -> None:
+    def add(self, element: Element) -> None:
         self.remove(element)
         with self._lock:
             for msg in self._history:
-                element.push(msg)
+                with element:
+                    ui.label(msg).classes('solala-log-line')
             self._log_elements.append(element)
 
-    def remove(self, element: ui.log) -> None:
+    def remove(self, element: Element) -> None:
         try:
             self._log_elements.remove(element)
         except ValueError:
@@ -54,9 +57,9 @@ class _GuiLogHandler(logging.Handler):
 _LOG_HANDLER = _GuiLogHandler()
 
 
-def add(element: ui.log) -> None:
+def add(element: Element) -> None:
     _LOG_HANDLER.add(element)
 
 
-def remove(element: ui.log) -> None:
+def remove(element: Element) -> None:
     _LOG_HANDLER.remove(element)

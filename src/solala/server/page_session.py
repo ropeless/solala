@@ -5,6 +5,7 @@ from typing import List, Callable, Awaitable
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
 from solala.logger import LOGGER
+from solala.server.css_colours import Colours
 
 
 class PageSession:
@@ -12,9 +13,14 @@ class PageSession:
     Own resources that should exist only while a page is active.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, colours: Colours) -> None:
         self._cleanup: List[Callable[[], Awaitable[None] | None]] = []
         self._closed = False
+        self._colours = colours
+
+    @property
+    def colours(self) -> Colours:
+        return self._colours
 
     def add_cleanup(self, cleanup: Callable[[], Awaitable[None] | None]) -> None:
         if self._closed:
@@ -22,11 +28,31 @@ class PageSession:
         self._cleanup.append(cleanup)
 
     async def add_control_listener(self, listener: LoopListener) -> None:
-        await control_loop.add_control_loop_listener(listener)
+        registration = asyncio.create_task(control_loop.add_control_loop_listener(listener))
+        try:
+            await asyncio.shield(registration)
+        except asyncio.CancelledError:
+            try:
+                await registration
+            except Exception:
+                pass
+            else:
+                await control_loop.remove_control_loop_listener(listener)
+            raise
         self.add_cleanup(partial(control_loop.remove_control_loop_listener, listener))
 
     async def add_database_listener(self, listener: LoopListener) -> None:
-        await control_loop.add_database_loop_listener(listener)
+        registration = asyncio.create_task(control_loop.add_database_loop_listener(listener))
+        try:
+            await asyncio.shield(registration)
+        except asyncio.CancelledError:
+            try:
+                await registration
+            except Exception:
+                pass
+            else:
+                await control_loop.remove_database_loop_listener(listener)
+            raise
         self.add_cleanup(partial(control_loop.remove_database_loop_listener, listener))
 
     def add_task(self, task: asyncio.Task) -> None:

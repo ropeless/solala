@@ -20,6 +20,8 @@
     --solala-border: #e1e6ea;
     --solala-accent: #c58b28;
     --solala-success: #16805b;
+    --solala-live-color: #15803d;
+    --solala-stale-color: #dc2626;
 
     --solala-radius: 14px;
     --solala-control-radius: 7px;
@@ -31,6 +33,7 @@
 
     --solala-sun-color: #FFB700;
     --solala-house-color: #2196F3;
+    --solala-tab-color: #2196F3;
     --solala-grid-color: #101010;
     --solala-inverter-color: #808080;
     --solala-flow-color: #808080;
@@ -41,6 +44,11 @@
     --solala-demand-window-color: #C010C0;
 }
 
+
+/* Keep the page width stable when content starts or stops scrolling. */
+html {
+    scrollbar-gutter: stable;
+}
 
 /* ---------------------------------------------------------
    Page layout
@@ -130,10 +138,8 @@
     justify-content: center;
     gap: 1px;
     padding: 3px 5px;
-    border: 1px solid var(--solala-border);
+    border: 2px solid var(--solala-border);
     border-radius: 9px;
-    background: var(--solala-page-bg);
-    color: var(--solala-text);
     box-shadow: none;
     text-transform: none;
     line-height: 1.1;
@@ -144,14 +150,16 @@
     gap: 1px;
 }
 
-.tab-navigation .q-btn.solala-tab-button .q-icon {
-    font-size: 23px;
+.tab-navigation .q-btn.solala-tab-button .solala-tab-icon {
+    display: block;
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
 }
 
 .tab-navigation .q-btn.solala-tab-button-active {
-    border: 2px solid #4299eF;
+    border: 3px solid var(--solala-tab-color);
     padding: 2px 4px;
-    box-shadow: 0 0 0 1px rgb(66 153 239 / 8%);
 }
 
 .tab-content {
@@ -172,10 +180,36 @@
     .tab-navigation .q-btn.solala-tab-button {
         min-height: 49px;
     }
+}
 
-    .tab-navigation .q-btn.solala-tab-button .q-icon {
-        font-size: 22px;
-    }
+/* ---------------------------------------------------------
+   Control-loop status
+   --------------------------------------------------------- */
+
+.solala-loop-status-light {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+}
+
+.solala-loop-status-label {
+    font-size: 0.875rem;
+}
+
+.solala-loop-status-light.solala-loop-status-live {
+    background-color: var(--solala-live-color);
+}
+
+.solala-loop-status-light.solala-loop-status-stale {
+    background-color: var(--solala-stale-color);
+}
+
+.solala-loop-status-label.solala-loop-status-live {
+    color: var(--solala-live-color);
+}
+
+.solala-loop-status-label.solala-loop-status-stale {
+    color: var(--solala-stale-color);
 }
 
 /* ---------------------------------------------------------
