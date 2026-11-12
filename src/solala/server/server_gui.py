@@ -450,7 +450,7 @@ class Tab:
 
 _TABS: Sequence[Tab] = (
     Tab('Power', 1.0, '/images/analytics-icons/power.svg', _build_power_page),
-    Tab('Solar', 1.2, '/images/solala-black.svg', _build_solar_page),
+    Tab('Solar', 0.9, '/images/solala-black.svg', _build_solar_page),
     Tab('Grid', 1.0, '/images/analytics-icons/grid.svg', _build_grid_page),
     Tab('Graphs', 0.9, analytics_name_to_icon_url('Graphs'), _build_graphs_page),
     Tab('Status', 1.0, analytics_name_to_icon_url('Status'), _build_status_page),
