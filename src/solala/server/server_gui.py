@@ -465,9 +465,11 @@ class TabSelector:
     def __init__(
             self,
             colours: Colours,
+            button_container: Element,
+            content_container: Element,
     ) -> None:
-        self.button_container: Element = ui.grid(columns=3).classes('w-full gap-2')
-        self.content_container: Element = ui.element('div').classes('tab-content w-full')
+        self.button_container: Element = button_container
+        self.content_container: Element = content_container
 
         self.buttons: Dict[str, Button] = {}
         self.builder: Dict[str, Builder] = {}
@@ -558,7 +560,10 @@ async def root_page():
         _page_header(link=False)
 
         with ui.element('div').classes('dashboard-card tab-navigation'):
-            tab_selector = TabSelector(colours)
+            button_container = ui.grid(columns=3).classes('w-full gap-2')
+
+        content_container = ui.element('div').classes('tab-content w-full')
+        tab_selector = TabSelector(colours, button_container, content_container)
 
     ui.context.client.on_disconnect(tab_selector.close_active_session)
     first_tab_name: str = _TABS[0].name
