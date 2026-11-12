@@ -431,9 +431,7 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
 
 async def _build_log_page(container: Element, session: PageSession) -> None:
     with container:
-        log_ui = ui.log(max_lines=Constants.MAX_LOG_HISTORY).classes('w-full').style(
-            'height: calc(100vh - 300px); min-height: 240px;'
-        )
+        log_ui = ui.log(max_lines=Constants.MAX_LOG_HISTORY).classes('w-full')
     server_log.add(log_ui)
     session.add_cleanup(partial(server_log.remove, log_ui))
 
