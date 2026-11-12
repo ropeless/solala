@@ -1,6 +1,6 @@
 import unittest
 
-from solala.delegates.power_controller import check_valid_int
+from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import check_valid_int
 
 
 class MyTestCase(unittest.TestCase):

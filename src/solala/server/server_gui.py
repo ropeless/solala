@@ -2,27 +2,27 @@ import asyncio
 from dataclasses import dataclass
 from datetime import date
 from functools import partial
-from typing import Optional, List, Callable, Awaitable, Dict, Sequence, TypeAlias
+from typing import Optional, Callable, Awaitable, Dict, Sequence, TypeAlias
 
 from nicegui import ui, app, events
 from nicegui.element import Element
 from nicegui.elements.button import Button
 from nicegui.elements.label import Label
-from nicegui.elements.mixins.content_element import ContentElement
 
 from solala.constants import Constants
 from solala.control_loop import control_loop
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
+from solala.server import infographic
 from solala.server import server_log
 from solala.server.css_colours import Colours, css_colours, rgba
 from solala.server.day_navigator import DayNavigator
 from solala.server.icons import analytics_name_to_icon_url
+from solala.server.infographic import CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
+    CLICK_ID_INVERTER
 from solala.server.page_session import PageSession
 from solala.server.page_updaters import BatteryButtonUpdater, InverterButtonUpdater, InfographicUpdater, \
     SolarForecastUpdater, PriceForecastUpdater, ChartUpdater, StatusUpdater, RegistersUpdater
-from solala.server.server_infographic import CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
-    CLICK_ID_INVERTER
 from solala.server.units_lookup import CONNECTION_UNITS, PARAMETERS_UNITS, CONSTANTS_UNITS
 from solala.utils.json_extras import JSONDict, render_json
 
@@ -35,38 +35,6 @@ _HEAD_HTML = r'''
 <link rel="stylesheet" href="/css/solala.css">
 <link rel="icon" type="image/png" href="/images/solala-32x32.png">
 '''
-
-
-def _json_page(name: str) -> ContentElement:
-    """
-    Prepare a page to show JSON data.
-
-    Args:
-        name: name of the page
-
-    Returns:
-        The content element to use for adding the rendered JSON data.
-    """
-    return _json_multi_page(name)[0]
-
-
-def _json_multi_page(*names: str) -> List[ContentElement]:
-    """
-    Prepare a page to show multiple JSON data.
-    """
-    result: List[ContentElement] = []
-    ui.add_head_html(_HEAD_HTML)
-    with ui.element('div').classes('solala-page'):
-        _page_header()
-
-        with ui.column():
-            for name in names:
-                with ui.card():
-                    ui.label(name).classes('text-h6')
-                    registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
-                    result.append(registers_element)
-
-    return result
 
 
 def _page_header(ext: str = '', link: bool = True) -> None:
@@ -93,12 +61,8 @@ def _page_header(ext: str = '', link: bool = True) -> None:
 
 def _control_header(title: str) -> None:
     with ui.element('div').classes('control-header'):
-        with ui.element('div').classes('control-title'):
-            # ui.label(icon).classes('control-title-icon')
+        with ui.element('div').classes('dashboard-card-title'):
             ui.label(title)
-        # with ui.element('div').classes('control-state'):
-        #     ui.element('div').classes('control-state-dot')
-        #     ui.label(state)
 
 
 def _button_classes(button, primary=False, wide=False) -> None:
@@ -113,85 +77,75 @@ def _button_classes(button, primary=False, wide=False) -> None:
     return button
 
 
-def _analytics_link(name: str, target: str) -> None:
-    with ui.link(target=target).classes('analytics-link'):
-        ui.image(analytics_name_to_icon_url(name)).classes('analytics-icon')
-        ui.label(name)
-
-
 async def _ui_control_buttons(session: PageSession) -> None:
     """
-    Add the control buttons to the UI (if Constants.CONTROLS_ENABLED is True).
+    Add the control buttons to the UI.
     """
-    if not Constants.CONTROLS_ENABLED:
-        return
+    # ======================================================
+    # BATTERY
+    # ======================================================
 
-    with ui.element('div').classes('control-column'):
-        # ======================================================
-        # BATTERY
-        # ======================================================
+    with ui.element('div').classes('dashboard-card control-card'):
+        _control_header('Battery')
+        with ui.element('div').classes('control-buttons'):
+            battery_enable = ui.button('ENABLE').classes('solala-button')
+            battery_disable = ui.button('DISABLE').classes('solala-button')
+            battery_force_charge = ui.button('FORCE CHARGE').classes('solala-button')
+            battery_force_discharge = ui.button('FORCE DISCHARGE').classes('solala-button')
+            battery_charge_only = ui.button('CHARGE ONLY').classes('solala-button')
+            battery_discharge_only = ui.button('DISCHARGE ONLY').classes('solala-button')
+            battery_cheap_force_discharge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
 
-        with ui.element('div').classes('dashboard-card control-card'):
-            _control_header('Battery')
-            with ui.element('div').classes('control-buttons'):
-                battery_enable = ui.button('ENABLE').classes('solala-button')
-                battery_disable = ui.button('DISABLE').classes('solala-button')
-                battery_force_charge = ui.button('FORCE CHARGE').classes('solala-button')
-                battery_force_discharge = ui.button('FORCE DISCHARGE').classes('solala-button')
-                battery_charge_only = ui.button('CHARGE ONLY').classes('solala-button')
-                battery_discharge_only = ui.button('DISCHARGE ONLY').classes('solala-button')
-                battery_cheap_force_discharge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
+            battery_force_charge.classes('wide')
+            battery_force_discharge.classes('wide')
+            battery_charge_only.classes('wide')
+            battery_discharge_only.classes('wide')
+            battery_cheap_force_discharge.classes('wide')
 
-                battery_force_charge.classes('wide')
-                battery_force_discharge.classes('wide')
-                battery_charge_only.classes('wide')
-                battery_discharge_only.classes('wide')
-                battery_cheap_force_discharge.classes('wide')
+        updater = BatteryButtonUpdater(
+            battery_enable=battery_enable,
+            battery_disable=battery_disable,
+            battery_force_charge=battery_force_charge,
+            battery_force_discharge=battery_force_discharge,
+            battery_charge_only=battery_charge_only,
+            battery_discharge_only=battery_discharge_only,
+            battery_cheap_force_discharge=battery_cheap_force_discharge,
+        )
+        await updater.update()  # call synchronously to avoid flicker
+        await session.add_control_listener(updater)
 
-            updater = BatteryButtonUpdater(
-                battery_enable=battery_enable,
-                battery_disable=battery_disable,
-                battery_force_charge=battery_force_charge,
-                battery_force_discharge=battery_force_discharge,
-                battery_charge_only=battery_charge_only,
-                battery_discharge_only=battery_discharge_only,
-                battery_cheap_force_discharge=battery_cheap_force_discharge,
-            )
-            await updater.update()  # call synchronously to avoid flicker
-            await session.add_control_listener(updater)
+    # ======================================================
+    # INVERTER
+    # ======================================================
 
-        # ======================================================
-        # INVERTER
-        # ======================================================
+    with ui.element('div').classes('dashboard-card control-card'):
+        _control_header('Inverter')
+        with ui.element('div').classes('control-buttons'):
+            inverter_enable = ui.button('ENABLE').classes('solala-button')
+            inverter_disable = ui.button('DISABLE').classes('solala-button')
+            inverter_zero_export = ui.button('ZERO EXPORT').classes('solala-button')
+            inverter_neg_feed_in_zero_export = ui.button('NEG FEED-IN ⇒ ZERO EXPORT').classes(
+                'solala-button')
 
-        with ui.element('div').classes('dashboard-card control-card'):
-            _control_header('Inverter')
-            with ui.element('div').classes('control-buttons'):
-                inverter_enable = ui.button('ENABLE').classes('solala-button')
-                inverter_disable = ui.button('DISABLE').classes('solala-button')
-                inverter_zero_export = ui.button('ZERO EXPORT').classes('solala-button')
-                inverter_neg_feed_in_zero_export = ui.button('NEG FEED-IN ⇒ ZERO EXPORT').classes(
-                    'solala-button')
+            inverter_zero_export.classes('wide')
+            inverter_neg_feed_in_zero_export.classes('wide')
 
-                inverter_zero_export.classes('wide')
-                inverter_neg_feed_in_zero_export.classes('wide')
-
-            updater = InverterButtonUpdater(
-                inverter_enable=inverter_enable,
-                inverter_disable=inverter_disable,
-                inverter_zero_export=inverter_zero_export,
-                inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
-            )
-            await updater.update()  # call synchronously to avoid flicker
-            await session.add_control_listener(updater)
+        updater = InverterButtonUpdater(
+            inverter_enable=inverter_enable,
+            inverter_disable=inverter_disable,
+            inverter_zero_export=inverter_zero_export,
+            inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
+        )
+        await updater.update()  # call synchronously to avoid flicker
+        await session.add_control_listener(updater)
 
 
 def _infographic_click(element, select_tab) -> None:
     click_id: Optional[str] = element.args
     if click_id == CLICK_ID_GRID:
-        asyncio.create_task(select_tab('Grid'))
+        asyncio.create_task(select_tab(_PRICE_TAB))
     elif click_id == CLICK_ID_SUN:
-        asyncio.create_task(select_tab('Solar'))
+        asyncio.create_task(select_tab(_SOLAR_TAB))
     elif click_id in (CLICK_ID_INVERTER, CLICK_ID_HOME, CLICK_ID_BATTERY):
         pass
 
@@ -296,7 +250,7 @@ async def _build_power_page(container: Element, session: PageSession) -> None:
     with container:
         with ui.element('div').classes('dashboard-card infographic-card'):
             with ui.row().classes('w-full items-center justify-between'):
-                ui.label('Power').classes('infographic-title')
+                ui.label('Power').classes('dashboard-card-title')
                 with ui.row().classes('items-center gap-2'):
                     loop_status_light = ui.element('div').classes(
                         'solala-loop-status-light solala-loop-status-stale'
@@ -324,36 +278,44 @@ async def _build_power_page(container: Element, session: PageSession) -> None:
                 """)
 
             with ui.element('div').classes('infographic-container'):
-                infographic = ui.html()
-                # infographic.on(
-                #     'click',
-                #     handler=partial(_infographic_click, select_tab=select_tab),
-                #     js_handler="(e) => emit(e.target.closest('rect')?.id)",
-                # )
-                updater = InfographicUpdater(infographic_element=infographic)
+                infographic_element = ui.html(
+                    '<div class="infographic-loading">loading power schematic...</div>'
+                ).style(
+                    f'width: {infographic.WIDTH}px; '
+                    f'height: {infographic.HEIGHT}px; '
+                    'flex: 0 0 auto;'
+                )
+                infographic_element.on(
+                    'click',
+                    handler=partial(_infographic_click, select_tab=session.select_tab),
+                    js_handler="(e) => emit(e.target.closest('rect')?.id)",
+                )
+                updater = InfographicUpdater(infographic_element=infographic_element)
                 session.add_task(asyncio.create_task(updater.update()))
                 await session.add_control_listener(updater)
 
         if Constants.CONTROLS_ENABLED:
-            with ui.element('div').classes('dashboard-card control-card'):
-                await _ui_control_buttons(session)
+            await _ui_control_buttons(session)
 
 
 async def _build_solar_page(container: Element, session: PageSession) -> None:
     with container:
-        navigator = DayNavigator(enable_swipe_content=True)
+        navigator = DayNavigator(enable_swipe_content=True, auto_height=True, title='Solar Forecast')
         updaters = [
             SolarForecastUpdater(element, session)
             for element in navigator.get_elements()
         ]
         navigator.set_listeners(*(updater.set_day for updater in updaters))
         await navigator.set_day(date.today())
+        await navigator.initialise_auto_height()
         for updater in updaters:
             await session.add_control_listener(updater)
 
 
-async def _build_grid_page(container: Element, session: PageSession) -> None:
+async def _build_price_page(container: Element, session: PageSession) -> None:
     with container:
+        ui.label('Price Forecast').classes('dashboard-card-title')
+
         element = ui.element('div')
         updater = PriceForecastUpdater(element=element)
         session.add_task(asyncio.create_task(updater.update()))
@@ -364,7 +326,7 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
     with container:
         swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
         with swipe_area:
-            navigator = DayNavigator(auto_height=True)
+            navigator = DayNavigator(auto_height=True, title='Daily Graphs')
             updaters = [
                 ChartUpdater(element, session=session)
                 for element in navigator.get_elements()
@@ -379,7 +341,7 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
 async def _build_status_page(container: Element, session: PageSession) -> None:
     with container:
         with ui.card().classes('w-full'):
-            ui.label('Status').classes('text-h6')
+            ui.label('Status').classes('dashboard-card-title')
             updater = StatusUpdater(
                 status_element=ui.code(language='nothing').classes('text-sm w-full grow')
             )
@@ -387,10 +349,10 @@ async def _build_status_page(container: Element, session: PageSession) -> None:
             await session.add_control_listener(updater)
 
 
-async def _build_connection_page(container: Element, session: PageSession) -> None:
+async def _build_connection_page(container: Element, _: PageSession) -> None:
     with container:
         with ui.card().classes('w-full'):
-            ui.label('Connection').classes('text-h6')
+            ui.label('Connection').classes('dashboard-card-title')
             connection_info: JSONDict = await control_loop.get_connection_info()
             json_as_str = render_json(
                 connection_info, float_format='.2f', units=CONNECTION_UNITS
@@ -399,16 +361,16 @@ async def _build_connection_page(container: Element, session: PageSession) -> No
             connection_element.set_content(json_as_str)
 
 
-async def _build_parameters_page(container: Element, session: PageSession) -> None:
+async def _build_parameters_page(container: Element, _: PageSession) -> None:
     with container:
         with ui.column().classes('w-full'):
             with ui.card().classes('w-full'):
-                ui.label('Policy').classes('text-h6')
+                ui.label('Policy').classes('dashboard-card-title')
                 policy = ui.code(language='nothing').classes('text-sm w-full grow')
                 policy_json: JSONDict = (await control_loop.get_control_mode()).to_json()
                 policy.set_content(render_json(policy_json, units=PARAMETERS_UNITS))
             with ui.card().classes('w-full'):
-                ui.label('Constants').classes('text-h6')
+                ui.label('Constants').classes('dashboard-card-title')
                 consts = ui.code(language='nothing').classes('text-sm w-full grow')
                 constants_json: JSONDict = control_loop.Constants.to_json()
                 consts.set_content(
@@ -423,15 +385,25 @@ async def _build_parameters_page(container: Element, session: PageSession) -> No
 async def _build_registers_page(container: Element, session: PageSession) -> None:
     with container:
         with ui.card().classes('w-full'):
-            ui.label('Registers').classes('text-h6')
-            registers_element = ui.code(language='nothing').classes('text-sm w-full grow')
-            updater = RegistersUpdater(registers_element)
+            ui.label('Registers').classes('dashboard-card-title')
+            updater = RegistersUpdater()
             session.add_task(asyncio.create_task(updater.update()))
             await session.add_control_listener(updater)
 
 
 async def _build_log_page(container: Element, session: PageSession) -> None:
     with container:
+        with ui.row().classes('w-full items-center justify-between'):
+            ui.label('Log Console').classes('dashboard-card-title')
+            ui.button(icon='content_copy').props('round flat size=sm').classes(
+                'opacity-50 hover:opacity-100'
+            ).tooltip('Copy log contents').on(
+                'click',
+                js_handler="""() => {
+                    const log = document.querySelector('.solala-log');
+                    if (log) navigator.clipboard.writeText(log.innerText);
+                }""",
+            )
         log_ui = ui.element('div').classes('solala-log w-full')
     server_log.add(log_ui)
     session.add_cleanup(partial(server_log.remove, log_ui))
@@ -450,8 +422,8 @@ class Tab:
 
 _TABS: Sequence[Tab] = (
     Tab('Power', 1.0, '/images/analytics-icons/power.svg', _build_power_page),
-    Tab('Solar', 1.2, '/images/solala-black.svg', _build_solar_page),
-    Tab('Grid', 1.0, '/images/analytics-icons/grid.svg', _build_grid_page),
+    Tab('Solar', 0.9, '/images/solala-black.svg', _build_solar_page),
+    Tab('Price', 1.0, '/images/analytics-icons/grid.svg', _build_price_page),
     Tab('Graphs', 0.9, analytics_name_to_icon_url('Graphs'), _build_graphs_page),
     Tab('Status', 1.0, analytics_name_to_icon_url('Status'), _build_status_page),
     Tab('Connection', 0.9, analytics_name_to_icon_url('Connection'), _build_connection_page),
@@ -459,6 +431,10 @@ _TABS: Sequence[Tab] = (
     Tab('Registers', 1.0, analytics_name_to_icon_url('Registers'), _build_registers_page),
     Tab('Log', 1.0, analytics_name_to_icon_url('Log'), _build_log_page),
 )
+
+_FIRST_TAB: str = _TABS[0].name
+_SOLAR_TAB: str = _TABS[1].name
+_PRICE_TAB: str = _TABS[2].name
 
 
 class TabSelector:
@@ -509,7 +485,7 @@ class TabSelector:
                     button.props('color=white text-color=black')
                     button.classes(remove='solala-tab-button-active')
 
-            session = PageSession(self.colours)
+            session = PageSession(self.colours, self.select_tab)
             self.active_session = session
             self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
 
@@ -569,5 +545,4 @@ async def root_page():
         tab_selector = TabSelector(colours, button_container, content_container)
 
     ui.context.client.on_disconnect(tab_selector.close_active_session)
-    first_tab_name: str = _TABS[0].name
-    await tab_selector.select_tab(first_tab_name)
+    await tab_selector.select_tab(_FIRST_TAB)

@@ -120,6 +120,14 @@ html {
     box-shadow: var(--solala-shadow);
 }
 
+.dashboard-card-title {
+    padding: 4px 8px 10px;
+    font-size: 18px;
+    font-weight: 650;
+}
+
+
+
 /* ---------------------------------------------------------
    Tab navigation
    --------------------------------------------------------- */
@@ -152,8 +160,8 @@ html {
 
 .tab-navigation .q-btn.solala-tab-button .solala-tab-icon {
     display: block;
-    width: 48px;
-    height: 48px;
+    width: 32px;
+    height: 32px;
     object-fit: contain;
 }
 
@@ -220,12 +228,6 @@ html {
     padding: var(--solala-gap);
 }
 
-.infographic-title {
-    padding: 4px 8px 10px;
-    font-size: 18px;
-    font-weight: 650;
-}
-
 .infographic-container {
     display: flex;
     width: 100%;
@@ -234,9 +236,18 @@ html {
 }
 
 .infographic-container svg {
+    display: block;
+}
+
+.infographic-loading {
+    display: flex;
     width: 100%;
-    height: auto;
-    max-width: 760px;
+    height: 100%;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    color: var(--solala-muted);
+    font-style: italic;
 }
 
 /* SVG text styles */
@@ -282,14 +293,6 @@ html {
     align-items: center;
     justify-content: space-between;
     margin-bottom: 13px;
-}
-
-.control-title {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    font-size: 18px;
-    font-weight: 650;
 }
 
 .control-buttons {
@@ -601,4 +604,20 @@ html {
         font-size: 11px;
     }
 
+}
+
+/* ---------------------------------------------------------
+   Log console
+   --------------------------------------------------------- */
+
+.solala-log {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.solala-log-line {
+    width: max-content;
+    min-width: 100%;
+    white-space: nowrap;
 }

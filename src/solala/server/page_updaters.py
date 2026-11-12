@@ -21,8 +21,8 @@ from solala.registers import RegisterValue
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.server.graphs import ChargeChart, PriceChart, PowerChart, EnergyChart
 from solala.server.icons import weather_code_to_icon_url
+from solala.server.infographic import Infographic
 from solala.server.page_session import PageSession
-from solala.server.server_infographic import Infographic
 from solala.server.units_lookup import STATUS_UNITS
 from solala.utils.datetime_extras import now
 from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json, JSONPrimitive
@@ -218,9 +218,10 @@ class InfographicUpdater(StatusListener):
 
 class RegistersUpdater(LoopListener):
 
-    def __init__(self, registers_element: ContentElement):
+    def __init__(self):
         super().__init__()
-        self._registers_element: ContentElement = registers_element
+        self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
+        self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
 
     @final
     async def update(self, register_values=None) -> None:
@@ -235,6 +236,8 @@ class RegistersUpdater(LoopListener):
             remove_value_underscores=False,
         )
         self._registers_element.set_content(json_as_str)
+        self._loading_element.set_visibility(False)
+        self._registers_element.set_visibility(True)
 
 
 class PriceForecastUpdater(LoopListener):

@@ -13,10 +13,15 @@ class PageSession:
     Own resources that should exist only while a page is active.
     """
 
-    def __init__(self, colours: Colours) -> None:
+    def __init__(
+            self,
+            colours: Colours,
+            select_tab: Callable[[str], Awaitable[None]],
+    ) -> None:
         self._cleanup: List[Callable[[], Awaitable[None] | None]] = []
-        self._closed = False
-        self._colours = colours
+        self._closed: bool = False
+        self._colours: Colours = colours
+        self._select_tab: Callable[[str], Awaitable[None]] = select_tab
 
     @property
     def colours(self) -> Colours:
@@ -68,6 +73,9 @@ class PageSession:
 
     def add_timer(self, timer) -> None:
         self.add_cleanup(timer.cancel)
+
+    async def select_tab(self, tab_name: str) -> None:
+        await self._select_tab(tab_name)
 
     async def close(self) -> None:
         if self._closed:
