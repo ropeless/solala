@@ -102,7 +102,7 @@ class DayNavigator:
                     button_classes
                 ).tooltip('Next day')
 
-        carousel = ui.carousel(animated=True, arrows=True, navigation=True). \
+        carousel = ui.carousel(animated=True, arrows=True, navigation=False). \
             props(_CAROUSEL_PROPS).classes('w-full')
         if self._auto_height_id is not None:
             carousel.props(f'id={self._auto_height_id}')
