@@ -178,8 +178,9 @@ html {
         min-height: 49px;
     }
 
-    .tab-navigation .q-btn.solala-tab-button .q-icon {
-        font-size: 22px;
+    .tab-navigation .q-btn.solala-tab-button .solala-tab-icon {
+        width: 22px;
+        height: 22px;
     }
 }
 
