@@ -431,7 +431,7 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
 
 async def _build_log_page(container: Element, session: PageSession) -> None:
     with container:
-        log_ui = ui.log(max_lines=Constants.MAX_LOG_HISTORY).classes('w-full')
+        log_ui = ui.element('div').classes('solala-log w-full')
     server_log.add(log_ui)
     session.add_cleanup(partial(server_log.remove, log_ui))
 
