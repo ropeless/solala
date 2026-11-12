@@ -31,7 +31,7 @@ class AsyncRLock:
 
     def release(self) -> None:
         me = asyncio.current_task()
-        if self._owner is not me:
+        if me is None or self._owner is not me:
             raise RuntimeError('Cannot release a lock that is not owned')
 
         self._count -= 1
