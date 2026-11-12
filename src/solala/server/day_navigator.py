@@ -94,9 +94,9 @@ class DayNavigator:
             ).tooltip('Next day')
 
         with ui.carousel(animated=True, arrows=True, navigation=True). \
-                props(_CAROUSEL_PROPS).classes('w-full h-screen') as self._carousel:
+                props(_CAROUSEL_PROPS).classes('w-full') as self._carousel:
             with ui.carousel_slide('0'):
-                element_0 = ui.element('div').classes('w-full h-screen')
+                element_0 = ui.element('div').classes('w-full')
             with ui.carousel_slide('1'):
                 element_1 = ui.element('div').classes('w-full h-screen')
             with ui.carousel_slide('2'):
