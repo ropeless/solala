@@ -364,13 +364,14 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
     with container:
         swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
         with swipe_area:
-            navigator = DayNavigator()
+            navigator = DayNavigator(auto_height=True)
             updaters = [
                 ChartUpdater(element, session=session)
                 for element in navigator.get_elements()
             ]
             navigator.set_listeners(*(updater.set_day for updater in updaters))
             await navigator.set_day(date.today())
+            await navigator.initialise_auto_height()
             for updater in updaters:
                 await session.add_database_listener(updater)
 
