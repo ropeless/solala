@@ -221,6 +221,7 @@ class RegistersUpdater(LoopListener):
     def __init__(self, registers_element: ContentElement):
         super().__init__()
         self._registers_element: ContentElement = registers_element
+        self._registers_element.classes('text-center italic')
         self._registers_element.set_content('loading registers...')
 
     @final
@@ -235,6 +236,7 @@ class RegistersUpdater(LoopListener):
             remove_key_underscores=False,
             remove_value_underscores=False,
         )
+        self._registers_element.classes(remove='text-center italic')
         self._registers_element.set_content(json_as_str)
 
 
