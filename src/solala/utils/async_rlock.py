@@ -1,5 +1,5 @@
 import asyncio
-import threading
+from typing import Self
 
 
 class AsyncRLock:
@@ -7,66 +7,41 @@ class AsyncRLock:
     A reentrant lock for asynchronous tasks. The same task may
     re-acquire a lock that it currently holds.
 
-    Note, we assume maximum one asyncio event loop per thread.
+    This lock must only be used from a single asyncio event loop.
     """
 
     def __init__(self) -> None:
-        self._rlock = threading.RLock()
-        self._alock = None
-        self._owner = None
-        self._alock_count = 0
-        self._rlock_count = 0
+        self._lock = asyncio.Lock()
+        self._owner: asyncio.Task | None = None
+        self._count = 0
 
-    async def acquire(self):
+    async def acquire(self) -> bool:
         me = asyncio.current_task()
+        assert me is not None
 
-        self._rlock.acquire()
-        if self._rlock_count == 0:
-            # first entry this thread acquires the lock
-            assert self._alock is None
-            assert self._owner is None
-            assert self._alock_count == 0
-            self._alock = asyncio.Lock()
-
-        self._rlock_count += 1
         if self._owner is me:
-            # same thread, same task reenters the lock
-            self._alock_count += 1
+            # The current task already owns the lock.
+            self._count += 1
             return True
 
-        # same thread different task enters the lock
-        try:
-            await self._alock.acquire()
-        except BaseException:
-            self._rlock_count -= 1
-            if self._rlock_count == 0:
-                self._alock = None
-            self._rlock.release()
-            raise
-        assert self._owner is None
-        assert self._alock_count == 0
+        await self._lock.acquire()
         self._owner = me
-        self._alock_count = 1
+        self._count = 1
         return True
 
-    def release(self):
+    def release(self) -> None:
         me = asyncio.current_task()
         if self._owner is not me:
             raise RuntimeError('Cannot release a lock that is not owned')
 
-        self._alock_count -= 1
-        if self._alock_count == 0:
+        self._count -= 1
+        if self._count == 0:
             self._owner = None
-            self._alock.release()
+            self._lock.release()
 
-        self._rlock_count -= 1
-        if self._rlock_count == 0:
-            self._alock = None
-        self._rlock.release()
-
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         await self.acquire()
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
         self.release()
