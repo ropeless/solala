@@ -1,6 +1,4 @@
-import asyncio
 from abc import ABC, abstractmethod
-from asyncio import AbstractEventLoop
 
 
 class LoopListener(ABC):
