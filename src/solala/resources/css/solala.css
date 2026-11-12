@@ -605,3 +605,19 @@ html {
     }
 
 }
+
+/* ---------------------------------------------------------
+   Log console
+   --------------------------------------------------------- */
+
+.solala-log {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.solala-log-line {
+    width: max-content;
+    min-width: 100%;
+    white-space: nowrap;
+}
