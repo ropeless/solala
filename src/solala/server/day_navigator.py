@@ -139,7 +139,7 @@ class DayNavigator:
                 if (!carousel || carousel.dataset.autoHeightInitialised) return;
                 carousel.dataset.autoHeightInitialised = 'true';
                 const updateHeight = () => {{
-                    const active = carousel.querySelector('.q-carousel__slide--active');
+                    const active = carousel.querySelector('.q-panel--visible');
                     if (!active) return;
                     const content = active.firstElementChild || active;
                     const height = Math.ceil(Math.max(content.scrollHeight, content.getBoundingClientRect().height));
