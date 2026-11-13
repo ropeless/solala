@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import TypeAlias, Type, Mapping, Iterable, Tuple, KeysView, Optional, \
-    Callable, final, Any, Awaitable, AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, KeysView, Mapping
+from typing import Any, final
 
-RegisterValue: TypeAlias = str | int | float | bool
-RegisterType: TypeAlias = Type[str] | Type[int] | Type[float] | Type[bool]
+type RegisterValue = str | int | float | bool
+type RegisterType = type[str] | type[int] | type[float] | type[bool]
 
 
 class ReadOnlyError(AttributeError):
@@ -155,7 +155,7 @@ class CallRegister(ReadOnlyRegister):
     A register that calls a function to get its value.
     """
 
-    def __init__(self, f: Callable[[], RegisterValue], register_type: Optional[RegisterType] = None) -> None:
+    def __init__(self, f: Callable[[], RegisterValue], register_type: RegisterType | None = None) -> None:
         if register_type is None:
             register_type = type(f())
         super().__init__(register_type)
@@ -189,12 +189,12 @@ class RegisterBank:
 
     def __init__(
             self,
-            registers: Iterable[Tuple[str, Register | RegisterValue]] | Mapping[str, Register | RegisterValue]
+            registers: Iterable[tuple[str, Register | RegisterValue]] | Mapping[str, Register | RegisterValue]
     ):
         if isinstance(registers, Mapping):
             registers = registers.items()
 
-        registers: Iterable[Tuple[str, Register | RegisterValue]]
+        registers: Iterable[tuple[str, Register | RegisterValue]]
         self._registers: Mapping[str, Register] = {
             key: value if isinstance(value, Register) else ConstantRegister(value)
             for key, value in registers
@@ -210,19 +210,19 @@ class RegisterBank:
     def keys(self) -> KeysView[str]:
         return self._registers.keys()
 
-    async def items(self) -> AsyncIterator[Tuple[str, RegisterValue]]:
+    async def items(self) -> AsyncIterator[tuple[str, RegisterValue]]:
         for key in self._registers.keys():
             yield key, await self._registers[key].get()
 
-    async def get(self, key: str, default: Optional[RegisterValue] = None) -> Optional[RegisterValue]:
-        got: Optional[Register] = self._registers.get(key, None)
+    async def get(self, key: str, default: RegisterValue | None = None) -> RegisterValue | None:
+        got: Register | None = self._registers.get(key, None)
         if got is None:
             return default
         else:
             return await got.get()
 
     async def set(self, key: str, value: RegisterValue) -> None:
-        got: Optional[Register] = self._registers.get(key, None)
+        got: Register | None = self._registers.get(key, None)
         if got is None:
             raise KeyError(key)
         else:

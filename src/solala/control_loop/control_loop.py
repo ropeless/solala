@@ -7,7 +7,8 @@ from dataclasses import dataclass, field, fields, Field
 from datetime import datetime, UTC, timedelta, date
 from inspect import getmembers
 from pathlib import Path
-from typing import Optional, List, Dict, Sequence, Iterable, AsyncIterator, Tuple, Type, Iterator, get_type_hints
+from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
+from typing import get_type_hints
 
 from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
@@ -85,7 +86,7 @@ _DISCONNECTED: JSONDict = {'connection': 'disconnected'}
 _NO_SOLAR_FORECAST = DailySolarForecast([])
 _NO_REGISTERS: RegisterBank = RegisterBank({})
 
-MATCH_ALL: re.Pattern = re.compile('.*')  # regular expression to match anything
+MATCH_ALL: re.Pattern[str] = re.compile('.*')  # regular expression to match anything
 
 
 @dataclass(frozen=True)
@@ -104,10 +105,10 @@ class _PrevControl:
     Used to keep track of the previous control state, so the control loop only
     makes changes when needed.
     """
-    controller: Optional[PowerController] = None
+    controller: PowerController | None = None
     control_mode: ControlMode = field(default_factory=ControlMode)
 
-    def reset(self, controller: Optional[PowerController]) -> None:
+    def reset(self, controller: PowerController | None) -> None:
         self.controller = controller
         self.control_mode.battery_mode = BatteryMode.UNKNOWN
         self.control_mode.inverter_mode = InverterMode.UNKNOWN
@@ -118,18 +119,18 @@ class _PrevControl:
 @dataclass
 class _ControlState:
     # These are the work objects for accessing the solar power system
-    controller: Optional[PowerController] = None
-    pricer: Optional[PowerPricer] = None
-    forecaster: Optional[SolarForecaster] = None
-    consumers: Dict[str, PowerConsumer] = field(default_factory=dict)
-    database_connections: Optional[SolalaDatabaseConnections] = None
+    controller: PowerController | None = None
+    pricer: PowerPricer | None = None
+    forecaster: SolarForecaster | None = None
+    consumers: dict[str, PowerConsumer] = field(default_factory=dict)
+    database_connections: SolalaDatabaseConnections | None = None
 
     # Keep track of the settings use to connect to the solar power system
-    controller_settings: Optional[ControllerConnection] = None
-    pricer_settings: Optional[PricerConnection] = None
-    forecaster_settings: Optional[ForecasterConnection] = None
-    consumers_settings: Dict[str, ConsumerConnection] = field(default_factory=dict)
-    database_settings: Optional[DatabaseConnection] = None
+    controller_settings: ControllerConnection | None = None
+    pricer_settings: PricerConnection | None = None
+    forecaster_settings: ForecasterConnection | None = None
+    consumers_settings: dict[str, ConsumerConnection] = field(default_factory=dict)
+    database_settings: DatabaseConnection | None = None
 
     # What the user is asking the control loop to do
     control_mode: ControlMode = field(default_factory=ControlMode)
@@ -145,23 +146,23 @@ class _ControlState:
     last_price_forecast: Sequence[Price] = ()
     next_price_forecast_check: datetime = _MIN_DATE
 
-    last_price_demand_window: Dict[_DateKey, Optional[Tuple[datetime, datetime]]] = field(default_factory=dict)
+    last_price_demand_window: dict[_DateKey, tuple[datetime, datetime] | None] = field(default_factory=dict)
     next_price_demand_window_check: datetime = _MIN_DATE
 
-    last_solar_forecast: Dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
+    last_solar_forecast: dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
     next_solar_forecast_check: datetime = _MIN_DATE
 
     # Internal control loop tracking variables
     lock: AsyncRLock = field(default_factory=AsyncRLock)
     prev_state: _PrevControl = field(default_factory=_PrevControl)
     control_loop_running: bool = True
-    control_loop_listeners: List[LoopListener] = field(default_factory=list)
-    database_loop_listeners: List[LoopListener] = field(default_factory=list)
+    control_loop_listeners: list[LoopListener] = field(default_factory=list)
+    database_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_write: bool = True
-    settings_path: Optional[Path] = None  # for using persisted settings.
+    settings_path: Path | None = None  # for using persisted settings.
     iteration_start: datetime = field(default_factory=now)  # used to confirm the control loop is running
     registers: RegisterBank = field(default_factory=lambda: RegisterBank(()))
-    registers_to_log: re.Pattern | None = None
+    registers_to_log: re.Pattern[str] | None = None
     registers_to_log_str: str | None = None
 
     @property
@@ -186,7 +187,7 @@ class _ControlState:
             return self.forecaster.get_connection_info()
 
     @property
-    def consumers_connection_info(self) -> Dict[str, JSONDict]:
+    def consumers_connection_info(self) -> dict[str, JSONDict]:
         return {
             name: consumer.get_connection_info()
             for name, consumer in self.consumers.items()
@@ -199,7 +200,7 @@ class _ControlState:
         else:
             return self.database_connections.get_connection_info()
 
-    def reset_controller(self, controller: Optional[PowerController], settings: Optional[ControllerConnection]) -> None:
+    def reset_controller(self, controller: PowerController | None, settings: ControllerConnection | None) -> None:
         assert (controller is None) == (settings is None)
         self.controller = controller
         self.controller_settings = settings
@@ -212,7 +213,7 @@ class _ControlState:
         self.last_power = _NO_POWER
         self.last_power_valid = False
 
-    def reset_pricer(self, pricer: Optional[PowerPricer], settings: Optional[PricerConnection]) -> None:
+    def reset_pricer(self, pricer: PowerPricer | None, settings: PricerConnection | None) -> None:
         assert (pricer is None) == (settings is None)
         self.pricer = pricer
         self.pricer_settings = settings
@@ -223,7 +224,7 @@ class _ControlState:
         self.last_price_forecast = ()
         self.next_price_forecast_check = _MIN_DATE
 
-    def reset_forecaster(self, forecaster: Optional[SolarForecaster], settings: Optional[ForecasterConnection]) -> None:
+    def reset_forecaster(self, forecaster: SolarForecaster | None, settings: ForecasterConnection | None) -> None:
         assert (forecaster is None) == (settings is None)
         self.forecaster = forecaster
         self.forecaster_settings = settings
@@ -232,8 +233,8 @@ class _ControlState:
         self.last_price_forecast = ()
         self.next_solar_forecast_check = _MIN_DATE
 
-    def reset_consumer(self, consumer_name: str, consumer: Optional[PowerConsumer],
-                       settings: Optional[ConsumerConnection]) -> None:
+    def reset_consumer(self, consumer_name: str, consumer: PowerConsumer | None,
+                       settings: ConsumerConnection | None) -> None:
         if consumer is None:
             assert settings is None
             self.consumers.pop(consumer_name, None)
@@ -243,8 +244,8 @@ class _ControlState:
             self.consumers[consumer_name] = consumer
             self.consumers_settings[consumer_name] = settings
 
-    def reset_database(self, database: Optional[SolalaDatabaseConnections],
-                       settings: Optional[DatabaseConnection]) -> None:
+    def reset_database(self, database: SolalaDatabaseConnections | None,
+                       settings: DatabaseConnection | None) -> None:
         assert (database is None) == (settings is None)
         self.database_connections = database
         self.database_settings = settings
@@ -282,8 +283,8 @@ async def _control_state() -> AsyncIterator[_ControlState]:
 
 
 async def control_loop(
-        settings_path: Optional[Path | str] = None,
-        settings: Optional[Settings] = None,
+        settings_path: Path | str | None = None,
+        settings: Settings | None = None,
         force_settings: bool = False,
         database_write: bool = True,
 ) -> None:
@@ -452,7 +453,7 @@ async def get_prev_control_mode() -> ControlMode:
 async def get_power_status() -> PowerStatus:
     async with _control_state() as state:
         if not state.last_power_valid:
-            controller: Optional[PowerController] = state.controller
+            controller: PowerController | None = state.controller
             if controller is None:
                 LOGGER.error(f'{_LOG_SRC}Power update not available. Error: power controller not connected')
             else:
@@ -461,12 +462,12 @@ async def get_power_status() -> PowerStatus:
         return state.last_power
 
 
-async def get_registers(match: re.Pattern | Iterable[str] = MATCH_ALL) -> Dict[str, Optional[RegisterValue]]:
+async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> dict[str, RegisterValue | None]:
     """
     Get the values of registers, optionally limited to names that match a pattern.
     """
     registers: RegisterBank = _CONTROL_STATE.registers  # no need to lock as RegisterBank is stable.
-    if isinstance(match, re.Pattern):
+    if isinstance(match, re.Pattern[str]):
         return {
             name: await registers.get(name)
             for name in registers.keys()
@@ -530,7 +531,7 @@ async def get_price_now_no_estimate(max_tries: int = 10) -> Price:
     return price
 
 
-async def get_demand_window(day: date) -> Optional[Tuple[datetime, datetime]]:
+async def get_demand_window(day: date) -> tuple[datetime, datetime] | None:
     """
     Get the demand window for the given day.
 
@@ -538,7 +539,7 @@ async def get_demand_window(day: date) -> Optional[Tuple[datetime, datetime]]:
     """
     async with _control_state() as state:
         key = _DateKey(day.year, day.month, day.day)
-        demand_window: Optional[Tuple[datetime, datetime]]
+        demand_window: tuple[datetime, datetime] | None
         timestamp = now()
         if state.next_price_demand_window_check <= timestamp:
             # Invalidate the cache
@@ -583,7 +584,7 @@ async def get_price_forecast() -> Sequence[Price]:
 
             try:
                 # Plus one to account for possible race condition (see below).
-                prices: List[Price] = await pricer.get_price_forecast(needed_forecasts + 1)
+                prices: list[Price] = await pricer.get_price_forecast(needed_forecasts + 1)
                 LOGGER.info(f'{_LOG_SRC}Price forecast updating')
                 state.last_price_forecast = prices
                 state.next_price_forecast_check = timestamp + timedelta(minutes=Constants.PRICE_FORECAST_AGE)
@@ -599,7 +600,7 @@ async def get_price_forecast() -> Sequence[Price]:
     return prices[:needed_forecasts]
 
 
-async def get_consumers_status() -> Dict[str, ConsumerStatus]:
+async def get_consumers_status() -> dict[str, ConsumerStatus]:
     async with _control_state() as state:
         names = state.consumers.keys()
         statuses = await asyncio.gather(*[
@@ -611,7 +612,7 @@ async def get_consumers_status() -> Dict[str, ConsumerStatus]:
 
 async def get_connection_info() -> JSONDict:
     async with _control_state() as state:
-        result: Dict[str, JSONValue] = {
+        result: dict[str, JSONValue] = {
             'controller': state.controller_connection_info,
             'pricer': state.pricer_connection_info,
             'forecaster': state.forecaster_connection_info,
@@ -629,7 +630,7 @@ async def get_status() -> JSONDict:
     control_mode: ControlMode
     power_status: PowerStatus
     price: Price
-    consumers_status: Dict[str, ConsumerStatus]
+    consumers_status: dict[str, ConsumerStatus]
 
     control_mode, power_status, price, consumers_status = await asyncio.gather(
         get_control_mode(),
@@ -640,7 +641,7 @@ async def get_status() -> JSONDict:
 
     power_json: JSONDict = power_status.to_json()
     if len(consumers_status) > 0:
-        power_json: Dict[str, JSONValue] = dict(power_json)
+        power_json: dict[str, JSONValue] = dict(power_json)
         power_json['consumers'] = {
             consumer: status.to_json()
             for consumer, status in consumers_status.items()
@@ -674,7 +675,7 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
             state.next_price_forecast_check = timestamp + timedelta(minutes=Constants.SOLAR_FORECAST_AGE)
 
         key = _DateKey(day.year, day.month, day.day)
-        forecast: Optional[DailySolarForecast] = state.last_solar_forecast.get(key)
+        forecast: DailySolarForecast | None = state.last_solar_forecast.get(key)
         if forecast is None:
             try:
                 forecast: DailySolarForecast = await forecaster.get_forecast(day)
@@ -743,16 +744,16 @@ async def solala_database_measurements(day: date) -> Sequence[Measurement]:
 
 async def set_control(
         *,
-        battery_mode: Optional[BatteryMode] = None,
-        inverter_mode: Optional[InverterMode] = None,
-        battery_policy: Optional[BatteryPolicy] = None,
-        inverter_policy: Optional[InverterPolicy] = None,
+        battery_mode: BatteryMode | None = None,
+        inverter_mode: InverterMode | None = None,
+        battery_policy: BatteryPolicy | None = None,
+        inverter_policy: InverterPolicy | None = None,
         # NEG_FEED_IN_ZERO_EXPORT parameters
-        disable_export_price_threshold: Optional[float] = None,
-        enable_export_price_threshold: Optional[float] = None,
+        disable_export_price_threshold: float | None = None,
+        enable_export_price_threshold: float | None = None,
         # CHEAP_CHARGE parameters
-        start_charge_price_threshold: Optional[float] = None,
-        stop_charge_price_threshold: Optional[float] = None,
+        start_charge_price_threshold: float | None = None,
+        stop_charge_price_threshold: float | None = None,
 ) -> None:
     """
     Set the control loop modes and policies.
@@ -792,7 +793,7 @@ async def set_control(
         LOGGER.info(f'{_LOG_SRC}Control: {json.dumps(state.control_mode.to_json())}')
 
 
-async def log_registers(match: Optional[str]) -> None:
+async def log_registers(match: str | None) -> None:
     """
     Set what registers to log to the database
     """
@@ -913,7 +914,7 @@ async def disconnect_consumer(name: str) -> None:
     Close a power consumer connection.
     """
     async with _control_state() as state:
-        consumer: Optional[PowerConsumer] = state.consumers.get(name)
+        consumer: PowerConsumer | None = state.consumers.get(name)
         if consumer is not None:
             await consumer.close()
             state.reset_consumer(name, None, None)
@@ -1040,7 +1041,7 @@ async def _insert_measurement(dt_now: datetime, db: SolalaDatabase) -> None:
         get_solar_forecast(today)
     )
 
-    forecast: Optional[SolarForecast] = daily_forecast.find_contemporary(dt_now)
+    forecast: SolarForecast | None = daily_forecast.find_contemporary(dt_now)
     if forecast is None:
         LOGGER.warning(f'{_LOG_SRC}No solar forecast found for {dt_now}')
         forecast: SolarForecast = _NO_FORECAST
@@ -1089,7 +1090,7 @@ async def _control_loop() -> None:
             await _control_step(state)
             listeners = state.control_loop_listeners.copy()
             state.last_power_valid = False
-            cur_log_registers: re.Pattern | None = state.registers_to_log
+            cur_log_registers: re.Pattern[str] | None = state.registers_to_log
 
         # Update the listeners while not holding the control state lock.
         await _cur_log_registers(cur_log_registers)
@@ -1119,11 +1120,11 @@ def _get_sleep_time() -> float:
     return sleep_time
 
 
-async def _cur_log_registers(cur_log_registers: Optional[re.Pattern]) -> None:
+async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
     if cur_log_registers is not None:
         timestamp = now()
         registers = await get_registers(cur_log_registers)
-        to_log: Dict[str, int | float] = {}
+        to_log: dict[str, int | float] = {}
         for name, value in registers.items():
             if isinstance(value, (int, float)):
                 to_log[name] = value
@@ -1252,13 +1253,13 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
     Raises:
         ControlLoopError: a connection cannot be established.
     """
-    addresses: List[_Address] = _resolve_addresses(split_addresses(controller_connection.address))
+    addresses: list[_Address] = _resolve_addresses(split_addresses(controller_connection.address))
     if len(addresses) == 0:
         raise ControlLoopError('no controller address provided')
 
     # get ModbusTcpClient objects
-    clients: List[ModbusTcpClient] = []  # coindexed with address
-    errors: List[JSONDict] = []
+    clients: list[ModbusTcpClient] = []  # coindexed with address
+    errors: list[JSONDict] = []
     for address in addresses:
         try:
             client = ModbusTcpClient(address.ip_address)
@@ -1276,11 +1277,11 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
 
     # Configure power controller
     master_client: ModbusTcpClient = clients[0]
-    slave_clients: List[ModbusTcpClient] = clients[1:]
-    devices: Dict[str, ModbusDevice] = {
+    slave_clients: list[ModbusTcpClient] = clients[1:]
+    devices: dict[str, ModbusDevice] = {
         'master': ModbusDevice(master_client, controller_connection.master_device_id),
     }
-    slave_names: List[str]
+    slave_names: list[str]
     if len(slave_clients) == 1:
         slave_names = ['slave']
         devices['slave'] = ModbusDevice(slave_clients[0], controller_connection.slave_device_id)
@@ -1292,7 +1293,7 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
             devices[name] = ModbusDevice(slave_client, controller_connection.slave_device_id)
     devices['meter'] = ModbusDevice(master_client, controller_connection.meter_device_id)
 
-    mac_addr_lookup: Dict[str, str] = {
+    mac_addr_lookup: dict[str, str] = {
         address.ip_address: address.mac_address
         for address in addresses
     }
@@ -1388,7 +1389,7 @@ class _Address:
     ip_address: str = ''
 
 
-def _resolve_addresses(raw_addresses: List[str]) -> List[_Address]:
+def _resolve_addresses(raw_addresses: list[str]) -> list[_Address]:
     """
     Resolve a list of MAC or IP address.
 
@@ -1401,10 +1402,10 @@ def _resolve_addresses(raw_addresses: List[str]) -> List[_Address]:
     Raises:
         ControlLoopError: if any of the addresses are invalid
     """
-    addresses: List[_Address] = [_Address(address) for address in raw_addresses]
-    invalid_addresses: List[str] = []
+    addresses: list[_Address] = [_Address(address) for address in raw_addresses]
+    invalid_addresses: list[str] = []
     # Work out what address are MAC address
-    found_mac_addresses: List[str] = []
+    found_mac_addresses: list[str] = []
     for address in addresses:
         raw_address = address.raw_address
         is_mac = ':' in raw_address
@@ -1422,11 +1423,11 @@ def _resolve_addresses(raw_addresses: List[str]) -> List[_Address]:
         raise ControlLoopError('invalid address', errors=invalid_addresses)
 
     # Look up IP address for MAC address
-    mac_lookup: Dict[str, str] = find_ip_by_mac(found_mac_addresses)
+    mac_lookup: dict[str, str] = find_ip_by_mac(found_mac_addresses)
     for address in addresses:
         if address.ip_address == '':
             mac_address = address.mac_address
-            ip_address: Optional[str] = mac_lookup.get(mac_address)
+            ip_address: str | None = mac_lookup.get(mac_address)
             if ip_address is None:
                 invalid_addresses.append(mac_address)
             else:
@@ -1491,7 +1492,7 @@ async def _reconfigure_registers(state: _ControlState) -> None:
     """
 
     # Add status/battery and status/inverter registers
-    registers: Dict[str, Register] = {
+    registers: dict[str, Register] = {
         'status/battery/mode': CallRegister(lambda: _CONTROL_STATE.control_mode.battery_mode.name),
         'status/battery/policy': CallRegister(lambda: _CONTROL_STATE.control_mode.battery_policy.name),
         'status/battery/start_charge_price_threshold': CallRegister(
@@ -1548,7 +1549,7 @@ async def _reconfigure_registers(state: _ControlState) -> None:
     state.registers = RegisterBank(registers)
 
 
-def get_dataclass_properties(cls: Type) -> Iterator[Tuple[str, type]]:
+def get_dataclass_properties(cls: Type) -> Iterator[tuple[str, type]]:
     for name, member in getmembers(cls):
         if isinstance(member, property):
             prop = getattr(cls, name)

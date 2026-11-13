@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Sequence, Iterator, Optional
+from collections.abc import Iterator, Sequence
 
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.json_extras import to_json, JSONDict
@@ -48,7 +48,7 @@ class DailySolarForecast:
             for forecast in self.forecasts
         )
 
-    def find_contemporary(self, dt: datetime) -> Optional[SolarForecast]:
+    def find_contemporary(self, dt: datetime) -> SolarForecast | None:
         """
         Returns:
             The forecast covering the given datetime.

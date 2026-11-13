@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import date
 from functools import partial
-from typing import Optional, Callable, Awaitable, Dict, Sequence, TypeAlias
+from collections.abc import Awaitable, Callable, Sequence
 
 from nicegui import ui, app, events
 from nicegui.element import Element
@@ -141,7 +141,7 @@ async def _ui_control_buttons(session: PageSession) -> None:
 
 
 def _infographic_click(element, select_tab) -> None:
-    click_id: Optional[str] = element.args
+    click_id: str | None = element.args
     if click_id == CLICK_ID_GRID:
         asyncio.create_task(select_tab(_PRICE_TAB))
     elif click_id == CLICK_ID_SUN:
@@ -409,7 +409,7 @@ async def _build_log_page(container: Element, session: PageSession) -> None:
     session.add_cleanup(partial(server_log.remove, log_ui))
 
 
-Builder: TypeAlias = Callable[[Element, PageSession], Awaitable[None]]
+type Builder = Callable[[Element, PageSession], Awaitable[None]]
 
 
 @dataclass
@@ -447,8 +447,8 @@ class TabSelector:
         self.button_container: Element = button_container
         self.content_container: Element = content_container
 
-        self.buttons: Dict[str, Button] = {}
-        self.builder: Dict[str, Builder] = {}
+        self.buttons: dict[str, Button] = {}
+        self.builder: dict[str, Builder] = {}
 
         with self.button_container:
             for tab_def in _TABS:
@@ -461,10 +461,10 @@ class TabSelector:
                     self.builder[tab_def.name] = tab_def.builder
                     button.on_click(partial(self.select_tab, tab_def.name))
 
-        self.active_tab: Optional[str] = None
-        self.active_session: Optional[PageSession] = None
+        self.active_tab: str | None = None
+        self.active_session: PageSession | None = None
         self.colours: Colours = colours
-        self._build_task: Optional[asyncio.Task] = None
+        self._build_task: asyncio.Task | None = None
         self._transition_lock = asyncio.Lock()
 
     async def select_tab(self, tab_name: str) -> None:

@@ -1,8 +1,7 @@
-from typing import Dict
+
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.registers import RegisterBank, CallRegister
-
 
 class DummyPowerConsumer(PowerConsumer):
 
@@ -26,7 +25,7 @@ class DummyPowerConsumer(PowerConsumer):
     async def get_status(self) -> ConsumerStatus:
         return self.status
 
-    def get_connection_info(self) -> Dict[str, int | float | str]:
+    def get_connection_info(self) -> dict[str, int | float | str]:
         return {
             'connection': self.__class__.__name__,
             'voltage': self.status.voltage,

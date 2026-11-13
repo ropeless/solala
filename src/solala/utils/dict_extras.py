@@ -1,11 +1,9 @@
-from typing import TypeVar, Mapping, Dict
-
-_K = TypeVar('_K')
-_V = TypeVar('_V')
+from collections.abc import Mapping
 
 
-def dict_merge(*dicts: Mapping[_K, _V]) -> Dict[_K, _V]:
-    result: Dict[_K, _V] = {}
-    for d in dicts:
-        result.update(d)
+def dict_merge[K, V](*dicts: Mapping[K, V]) -> dict[K, V]:
+    """Merge mappings from left to right, with later mappings taking precedence."""
+    result: dict[K, V] = {}
+    for mapping in dicts:
+        result.update(mapping)
     return result

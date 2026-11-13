@@ -1,5 +1,5 @@
 # Units for pretty printing status
-from typing import Mapping
+from collections.abc import Mapping
 
 from solala.constants import Units
 from solala.utils.dict_extras import dict_merge

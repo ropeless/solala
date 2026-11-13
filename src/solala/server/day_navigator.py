@@ -1,6 +1,6 @@
 import asyncio
 from datetime import date, timedelta
-from typing import Callable, Awaitable, List, TypeAlias, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 
 from nicegui import ui, events
 from nicegui.element import Element
@@ -9,7 +9,7 @@ from solala.constants import GUI_DATE_FORMAT
 
 _ONE_DAY = timedelta(days=1)
 
-Updater: TypeAlias = Callable[[date], Awaitable[None]]
+type Updater = Callable[[date], Awaitable[None]]
 
 _SENTINEL_DATE: date = date(year=1901, month=12, day=31)  # a valid date but not near today.
 
@@ -113,7 +113,7 @@ class DayNavigator:
                 element_1 = ui.element('div').classes('w-full')
             with ui.carousel_slide('2'):
                 element_2 = ui.element('div').classes('w-full')
-        self._elements: List[Element] = [element_0, element_1, element_2]
+        self._elements: list[Element] = [element_0, element_1, element_2]
 
         self._carousel.on_value_change(self._on_slide_change)
         self._carousel.on('transition', self._on_carousel_transition)

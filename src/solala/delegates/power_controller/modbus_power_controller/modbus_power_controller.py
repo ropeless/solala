@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Iterable, List, Optional, Dict, Tuple
+from collections.abc import Iterable
 
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import ModbusError
@@ -8,14 +8,12 @@ from solala.logger import LOGGER
 from solala.registers import RegisterBank, Register, AsyncCallRegister
 from solala.utils.json_extras import JSONDict, JSONValue
 
-
 class _DEFAULT:
     """
     Critical registers and their default values.
     """
     MinRsvPct = 7  # Minimum reserve battery percentage
     WMaxLimPct_RvrtTms = 11  # Control reversion time in seconds
-
 
 # Prefixes used for logging
 _START = '>>>'
@@ -27,7 +25,6 @@ _SMALL_CHANGE_TOLERANCE = 2000  # Watts  Grid power threshold to change to "hunt
 _GAMMA = 0.1  # Hunting method parameter
 
 _INVERTER_LIMIT_NAME: str = 'inverter_limit'
-
 
 class ModbusPowerController(PowerController):
     """
@@ -42,7 +39,7 @@ class ModbusPowerController(PowerController):
             master: str = 'master',
             meter: str = 'meter',
             slaves: Iterable[str] = (),
-            mac_addr_lookup: Optional[Dict[str, str]] = None,
+            mac_addr_lookup: dict[str, str] | None = None,
             power_control_slaves: bool = False,
     ):
         """
@@ -63,32 +60,32 @@ class ModbusPowerController(PowerController):
         self._inverters = [self._master] + self._slaves
         self._meter = meter
         self._log_set_get: bool = False
-        self._hunt_history: List[float] = []
+        self._hunt_history: list[float] = []
         self._is_force_discharge: bool = False
 
         # Important registers
         self._ChaState: str = f'{master}/ChaState'
         self._charge_power: str = f'{master}/module/3/DCW'
         self._discharge_power: str = f'{master}/module/4/DCW'
-        self._solar_power: List[str] = [f'{inverter}/module/{i}/DCW' for inverter in self._inverters for i in [1, 2]]
+        self._solar_power: list[str] = [f'{inverter}/module/{i}/DCW' for inverter in self._inverters for i in [1, 2]]
         self._grid_power: str = f'{meter}/W'
-        self._inverter_power: List[str] = [f'{inverter}/W' for inverter in self._inverters]
+        self._inverter_power: list[str] = [f'{inverter}/W' for inverter in self._inverters]
 
         self._accumulated_grid_import: str = f'{meter}/TotWhImp'
         self._accumulated_grid_export: str = f'{meter}/TotWhExp'
-        self._accumulated_solar_energy: List[str] = [f'{inverter}/module/{i}/DCWH' for inverter in self._inverters for i
+        self._accumulated_solar_energy: list[str] = [f'{inverter}/module/{i}/DCWH' for inverter in self._inverters for i
                                                      in [1, 2]]
         self._accumulated_charge_energy: str = f'{master}/module/3/DCWH'
         self._accumulated_discharge_energy: str = f'{master}/module/4/DCWH'
-        # self._accumulated_inverter_power: List[str] = [f'{inverter}/ActWh' for inverter in self._inverters]
+        # self._accumulated_inverter_power: list[str] = [f'{inverter}/ActWh' for inverter in self._inverters]
 
         if power_control_slaves:
-            self._power_controllers: List[str] = self._inverters
+            self._power_controllers: list[str] = self._inverters
         else:
-            self._power_controllers: List[str] = [master]
-        self._WMaxLim_Ena: List[str] = [f'{inverter}/WMaxLim_Ena' for inverter in self._power_controllers]
-        self._WMaxLimPct: List[str] = [f'{inverter}/WMaxLimPct' for inverter in self._power_controllers]
-        self._WMaxLimPct_RvrtTms: List[str] = [f'{inverter}/WMaxLimPct_RvrtTms' for inverter in self._power_controllers]
+            self._power_controllers: list[str] = [master]
+        self._WMaxLim_Ena: list[str] = [f'{inverter}/WMaxLim_Ena' for inverter in self._power_controllers]
+        self._WMaxLimPct: list[str] = [f'{inverter}/WMaxLimPct' for inverter in self._power_controllers]
+        self._WMaxLimPct_RvrtTms: list[str] = [f'{inverter}/WMaxLimPct_RvrtTms' for inverter in self._power_controllers]
 
         self._InWRte: str = f'{master}/InWRte'
         self._OutWRte: str = f'{master}/OutWRte'
@@ -97,15 +94,15 @@ class ModbusPowerController(PowerController):
         self._ChaGriSet: str = f'{master}/ChaGriSet'
 
         # Save the connection status
-        devices_record: Dict[str, JSONValue] = {}
-        unnamed_device: Optional[JSONDict] = None
-        device_name: Optional[str]
+        devices_record: dict[str, JSONValue] = {}
+        unnamed_device: JSONDict | None = None
+        device_name: str | None
         device: ModbusDevice
         for device_name, device in modbus.devices().items():
             host: str = device.client.comm_params.host
-            device_record: Dict[str, JSONValue] = {'host': host}
+            device_record: dict[str, JSONValue] = {'host': host}
             if mac_addr_lookup is not None:
-                mac_address: Optional[str] = mac_addr_lookup.get(host)
+                mac_address: str | None = mac_addr_lookup.get(host)
                 if mac_address is not None and mac_address != '':
                     device_record['mac_address'] = mac_address
             device_record['device'] = device.device_id
@@ -113,14 +110,14 @@ class ModbusPowerController(PowerController):
                 unnamed_device = device_record
             else:
                 devices_record[device_name] = device_record
-        self._connection_info: Dict[str, JSONValue] = {
+        self._connection_info: dict[str, JSONValue] = {
             'connection': 'Modbus',
             'devices': devices_record,
         }
         if unnamed_device is not None:
             self._connection_info['unnamed_device'] = unnamed_device
 
-        registers: Dict[str, Register] = dict(self._modbus.registers)
+        registers: dict[str, Register] = dict(self._modbus.registers)
         registers[_INVERTER_LIMIT_NAME] = AsyncCallRegister(self.get_inverter_limit, float)
         self._registers: RegisterBank = RegisterBank(registers)
 
@@ -273,7 +270,7 @@ class ModbusPowerController(PowerController):
     #  Grid Export Control
     # =================================================
 
-    async def _get_inverter_limit_array(self) -> List[float]:
+    async def _get_inverter_limit_array(self) -> list[float]:
         return [
             min(
                 await self._get(f'{inverter}/WMax'),
@@ -359,15 +356,15 @@ class ModbusPowerController(PowerController):
     #  Support
     # =================================================
 
-    async def _get_power_limit(self) -> Tuple[float, bool]:
+    async def _get_power_limit(self) -> tuple[float, bool]:
         """
         Get the power limit set on the controlling inverters.
 
         Returns:
             (avg(_WMaxLimPct), any(WMaxLim_Ena != 0))
         """
-        power_limits: List[float] = await self._get_all(self._WMaxLimPct)
-        power_limits_enabled: List[bool] = [x != 0 for x in await self._get_all(self._WMaxLim_Ena)]
+        power_limits: list[float] = await self._get_all(self._WMaxLimPct)
+        power_limits_enabled: list[bool] = [x != 0 for x in await self._get_all(self._WMaxLim_Ena)]
         if len(power_limits) == 1:
             limit_enabled = power_limits_enabled[0]
             limit = power_limits[0] if limit_enabled else 100.0
@@ -375,7 +372,7 @@ class ModbusPowerController(PowerController):
 
         else:
             # all controlling inverters
-            inverter_limits: List[float] = await self._get_inverter_limit_array()
+            inverter_limits: list[float] = await self._get_inverter_limit_array()
             assert len(power_limits) == len(inverter_limits)
 
             total_limit: float = sum(inverter_limits)
@@ -453,16 +450,16 @@ class ModbusPowerController(PowerController):
             raise TypeError(msg)
         return value
 
-    async def _set_all(self, names: List[str], value: int | float, *, force: bool = False) -> None:
+    async def _set_all(self, names: list[str], value: int | float, *, force: bool = False) -> None:
         for name in names:
             await self._set(name, value, force=force)
 
-    async def _get_all(self, names: List[str]) -> List[int | float]:
+    async def _get_all(self, names: list[str]) -> list[int | float]:
         return [
             await self._get(name) for name in names
         ]
 
-    async def _get_sum(self, names: List[str]) -> int | float:
+    async def _get_sum(self, names: list[str]) -> int | float:
         self._logger_get_set(f'SUM {names}')
         result = sum(await self._get_all(names))
         self._logger_get_set(f'SUM = {result}')

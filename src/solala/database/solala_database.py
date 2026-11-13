@@ -2,7 +2,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 from enum import Enum
 from types import UnionType
-from typing import Any, TypeVar, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin
 
 from psycopg import AsyncConnection, sql
 from psycopg.rows import dict_row
@@ -10,7 +10,6 @@ from pydantic import BaseModel
 
 from solala.database.measurement import Measurement
 
-_ModelType = TypeVar('_ModelType', bound=BaseModel)
 _ENUM_FIELDS: dict[type[BaseModel], list[tuple[str, type[Enum]]]] = {}
 
 
@@ -149,7 +148,7 @@ class SolalaDatabase:
             await cur.execute(query, list(dumped.values()))
 
 
-def _model_from_dict(row: dict[str, Any], model_type: type[_ModelType]) -> _ModelType:
+def _model_from_dict[ModelT: BaseModel](row: dict[str, Any], model_type: type[ModelT]) -> ModelT:
     """Convert a database row dictionary to a Pydantic object of type `model_type`."""
     for field_name, enum_type in _get_enum_fields(model_type):
         raw_val = row.get(field_name)

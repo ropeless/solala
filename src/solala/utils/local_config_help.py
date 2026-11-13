@@ -52,7 +52,8 @@ import inspect
 import os
 from ast import literal_eval
 from itertools import chain
-from typing import Optional, Dict, Any, Sequence, Iterable
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 try:
     # Try to import the user's `local_config.py`
@@ -66,8 +67,8 @@ _NIL = object()
 
 class Config:
 
-    def __init__(self):
-        self._programmatic_config: Dict[str, Any] = {}
+    def __init__(self) -> None:
+        self._programmatic_config: dict[str, Any] = {}
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -111,7 +112,7 @@ class Config:
             raise ValueError(f'invalid local configuration parameter value: {value!r}')
         self._programmatic_config[key] = value
 
-    def __getitem__(self, key: str):
+    def __getitem__(self, key: str) -> Any:
         """
         Get the value of the given configuration variable.
         If the configuration variable is not available, raise a KeyError.
@@ -121,7 +122,7 @@ class Config:
             raise KeyError(f'undefined local configuration parameter: {key}')
         return value
 
-    def __getattr__(self, key: str):
+    def __getattr__(self, key: str) -> Any:
         """
         Get the value of the given configuration variable.
         If the configuration variable is not available, raise a KeyError.
@@ -153,10 +154,10 @@ def valid_value(value: Any) -> bool:
 
 def get_params(
         *keys: str,
-        sep: Optional[str] = None,
-        delim: Optional[str] = None,
+        sep: str | None = None,
+        delim: str | None = None,
         local_config: Config = config,
-):
+) -> str | tuple[tuple[str, Any], ...] | tuple[str, ...] | tuple[str, Any]:
     """
     Return one or more configuration parameter as key-value pairs.
 
@@ -212,7 +213,7 @@ def get_params(
 
 def update_config(
         argv: Sequence[str],
-        valid_keys: Optional[Iterable[str]] = None,
+        valid_keys: Iterable[str] | None = None,
         *,
         sep: str = '=',
         strip_whitespace: bool = True,

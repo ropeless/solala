@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta
-from typing import Sequence, List, Iterable, Optional, Tuple
+from collections.abc import Iterable, Sequence
 
 import numpy as np
 from scipy.interpolate import CubicSpline
@@ -21,7 +21,7 @@ class GraphingInterpolator:
             measurements: Sequence[Measurement],
             price_forecast: Sequence[Price],
             solar_forecast: DailySolarForecast,
-            demand_window: Optional[Tuple[datetime, datetime]]
+            demand_window: tuple[datetime, datetime] | None
     ):
         tz = local_time_zone()
         day = ensure_date(day, tz)
@@ -44,43 +44,43 @@ class GraphingInterpolator:
         self._demand_window = demand_window
 
     @property
-    def demand_window(self) -> Optional[Tuple[datetime, datetime]]:
+    def demand_window(self) -> tuple[datetime, datetime] | None:
         return self._demand_window
 
     @property
-    def battery_charge(self) -> List[float]:
+    def battery_charge(self) -> list[float]:
         values = [m.battery_charge for m in self._measurements]
         return self._interpolate_linear(self._ts_m, values)
 
     @property
-    def accumulated_solar_energy(self) -> List[float]:
+    def accumulated_solar_energy(self) -> list[float]:
         return self._accumulated_daily_energy('accumulated_solar_energy')
 
     @property
-    def accumulated_grid_energy_import(self) -> List[float]:
+    def accumulated_grid_energy_import(self) -> list[float]:
         return self._accumulated_daily_energy('accumulated_grid_energy_import')
 
     @property
-    def accumulated_grid_energy_export(self) -> List[float]:
+    def accumulated_grid_energy_export(self) -> list[float]:
         return self._accumulated_daily_energy('accumulated_grid_energy_export')
 
     @property
-    def accumulated_battery_energy_charge(self) -> List[float]:
+    def accumulated_battery_energy_charge(self) -> list[float]:
         return self._accumulated_daily_energy('accumulated_battery_energy_charge')
 
     @property
-    def accumulated_battery_energy_discharge(self) -> List[float]:
+    def accumulated_battery_energy_discharge(self) -> list[float]:
         return self._accumulated_daily_energy('accumulated_battery_energy_discharge')
 
     @property
-    def average_solar_power(self) -> List[float]:
+    def average_solar_power(self) -> list[float]:
         return self._energy_to_power(
             self.accumulated_solar_energy,
             self._measurements[-1].accumulated_solar_energy,
         )
 
     @property
-    def average_battery_power(self) -> List[float]:
+    def average_battery_power(self) -> list[float]:
         data = [
             x - y
             for x, y in zip(
@@ -93,7 +93,7 @@ class GraphingInterpolator:
         return self._energy_to_power(data, boundary_value)
 
     @property
-    def average_grid_power(self) -> List[float]:
+    def average_grid_power(self) -> list[float]:
         data = [
             x - y
             for x, y in zip(
@@ -106,48 +106,48 @@ class GraphingInterpolator:
         return self._energy_to_power(data, boundary_value)
 
     @property
-    def instantaneous_solar_power(self) -> List[float]:
+    def instantaneous_solar_power(self) -> list[float]:
         return self._instantaneous_power('solar_power')
 
     @property
-    def instantaneous_grid_power(self) -> List[float]:
+    def instantaneous_grid_power(self) -> list[float]:
         return self._instantaneous_power('grid_power')
 
     @property
-    def instantaneous_house_power(self) -> List[float]:
+    def instantaneous_house_power(self) -> list[float]:
         return self._instantaneous_power('house_power')
 
     @property
-    def instantaneous_battery_power(self) -> List[float]:
+    def instantaneous_battery_power(self) -> list[float]:
         return self._instantaneous_power('battery_power')
 
     @property
-    def buy_price(self) -> List[float]:
+    def buy_price(self) -> list[float]:
         values = [m.buy_price for m in self._measurements]
         return self._interpolate_nearest(self._ts_m, values)
 
     @property
-    def feed_in_price(self) -> List[float]:
+    def feed_in_price(self) -> list[float]:
         values = [m.feed_in_price for m in self._measurements]
         return self._interpolate_nearest(self._ts_m, values)
 
     @property
-    def forecast_buy_price(self) -> List[float]:
+    def forecast_buy_price(self) -> list[float]:
         values = [price.buy_price for price in self._price_forecast]
         return self._interpolate_nearest(self._ts_f, values)
 
     @property
-    def forecast_feed_in_price(self) -> List[float]:
+    def forecast_feed_in_price(self) -> list[float]:
         values = [price.feed_in_price for price in self._price_forecast]
         return self._interpolate_nearest(self._ts_f, values)
 
     @property
-    def forecast_solar_power(self) -> List[float]:
+    def forecast_solar_power(self) -> list[float]:
         values = [forecast.power / 1000 for forecast in self._solar_forecast]
         return _ensure_non_negative(self._interpolate_cubic(self._ts_s, values, left=0, right=0))
 
     @property
-    def forecast_accumulated_solar_energy(self) -> List[float]:
+    def forecast_accumulated_solar_energy(self) -> list[float]:
         values = _ensure_monotonic(_accumulate(forecast.energy / 1000 for forecast in self._solar_forecast))
         return _ensure_monotonic(_ensure_non_negative(self._interpolate_cubic(self._ts_s, values, left=0, right=None)))
 
@@ -155,7 +155,7 @@ class GraphingInterpolator:
     #  Support functions
     # ====================================================================
 
-    def _energy_to_power(self, data, boundary_value: float) -> List[float]:
+    def _energy_to_power(self, data, boundary_value: float) -> list[float]:
         """
         Convert accumulated energy to average power for each period.
         Args:
@@ -179,21 +179,21 @@ class GraphingInterpolator:
 
         return data
 
-    def _accumulated_daily_energy(self, field: str) -> List[float]:
+    def _accumulated_daily_energy(self, field: str) -> list[float]:
         values = [getattr(m, field) for m in self._measurements]
         return _ensure_monotonic(_zero(x / 1000 for x in self._interpolate_linear(self._ts_m, values)))
 
-    def _instantaneous_power(self, field: str) -> List[float]:
+    def _instantaneous_power(self, field: str) -> list[float]:
         values = [getattr(m, field) for m in self._measurements]
         return [x / 1000 for x in self._interpolate_linear(self._ts_m, values)]
 
     def _interpolate_linear(
             self,
             timestamps: np.ndarray,
-            values: List[float],
-            left: Optional[float] = np.nan,
-            right: Optional[float] = np.nan,
-    ) -> List[float]:
+            values: list[float],
+            left: float | None = np.nan,
+            right: float | None = np.nan,
+    ) -> list[float]:
         if len(values) == 0:
             return []
         y_values = np.array(values)
@@ -203,10 +203,10 @@ class GraphingInterpolator:
     def _interpolate_cubic(
             self,
             timestamps: np.ndarray,
-            values: List[float],
-            left: Optional[float] = np.nan,
-            right: Optional[float] = np.nan,
-    ) -> List[float]:
+            values: list[float],
+            left: float | None = np.nan,
+            right: float | None = np.nan,
+    ) -> list[float]:
         if len(values) == 0:
             return []
 
@@ -234,10 +234,10 @@ class GraphingInterpolator:
     def _interpolate_nearest(
             self,
             timestamps: np.ndarray,
-            values: List[float],
-            left: Optional[float] = np.nan,
-            right: Optional[float] = np.nan,
-    ) -> List[float]:
+            values: list[float],
+            left: float | None = np.nan,
+            right: float | None = np.nan,
+    ) -> list[float]:
         if len(values) == 0:
             return []
 
@@ -266,25 +266,25 @@ class GraphingInterpolator:
         return interpolated_values.tolist()
 
 
-def _ensure_monotonic(data: Iterable[float]) -> List[float]:
+def _ensure_monotonic(data: Iterable[float]) -> list[float]:
     m = float('-inf')
-    result: List[float] = []
+    result: list[float] = []
     for x in data:
         m = max(x, m)
         result.append(m)
     return result
 
 
-def _ensure_non_negative(data: Iterable[float]) -> List[float]:
+def _ensure_non_negative(data: Iterable[float]) -> list[float]:
     return [
         max(0, x)
         for x in data
     ]
 
 
-def _zero(data: Iterable[float]) -> List[float]:
+def _zero(data: Iterable[float]) -> list[float]:
     it = iter(data)
-    result: List[float] = []
+    result: list[float] = []
     try:
         first = next(it)
     except StopIteration:
@@ -300,8 +300,8 @@ def _zero(data: Iterable[float]) -> List[float]:
     return result
 
 
-def _accumulate(data: Iterable[float]) -> List[float]:
-    result: List[float] = []
+def _accumulate(data: Iterable[float]) -> list[float]:
+    result: list[float] = []
     acc = 0
     for x in data:
         acc += x
@@ -309,7 +309,7 @@ def _accumulate(data: Iterable[float]) -> List[float]:
     return result
 
 
-def _diff(data: List[float], times: Sequence[datetime]) -> List[float]:
+def _diff(data: list[float], times: Sequence[datetime]) -> list[float]:
     end = len(data) - 1
     for i in range(end):
         seconds = (times[i + 1].timestamp() - times[i].timestamp())

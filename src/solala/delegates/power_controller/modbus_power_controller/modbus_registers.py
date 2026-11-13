@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 
 from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import NEXT_SF as _NEXT_SF, \
     uint32, \
@@ -27,7 +27,7 @@ _DCWH_SF = 6  # Model 160
 _W_SF = 23  # Model 201
 _TotWh_SF = 55  # Model 201
 
-MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
+MODELS: Mapping[MODBUS_MODEL, dict[str, RegisterAccess]] = {
 
     # The special zero model, where registers addresses are in Modicon (40xxx) format.
     0: {
@@ -111,7 +111,7 @@ MODELS: Mapping[MODBUS_MODEL, Dict[str, RegisterAccess]] = {
 }
 
 
-def mppt_modules(number_of_modules: int) -> Iterator[Tuple[str, RegisterAccess]]:
+def mppt_modules(number_of_modules: int) -> Iterator[tuple[str, RegisterAccess]]:
     """
     Additional registers for MPPT modules.
     """

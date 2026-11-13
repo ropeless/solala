@@ -1,5 +1,4 @@
 import threading
-from typing import Dict
 
 import httpx
 from httpx import URL
@@ -15,7 +14,7 @@ class AsyncClients:
     """
 
     def __init__(self):
-        self._clients: Dict[int, httpx.AsyncClient] = {}
+        self._clients: dict[int, httpx.AsyncClient] = {}
         self._lock = threading.Lock()
 
     def get(self) -> httpx.AsyncClient:

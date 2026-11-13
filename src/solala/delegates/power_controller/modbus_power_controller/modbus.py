@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Mapping, Set, Dict, Iterable, Sequence, TypeAlias
+from collections.abc import Iterable, Mapping, Sequence
 
 from pymodbus.client import ModbusTcpClient
 
@@ -10,12 +10,10 @@ from solala.delegates.power_controller.modbus_power_controller.modbus_registers 
 from solala.logger import LOGGER
 from solala.registers import Register, RegisterValue, RegisterBank
 
-
 @dataclass
 class ModbusDevice:
     client: ModbusTcpClient
     device_id: int
-
 
 class ModbusRegister(Register):
 
@@ -30,13 +28,7 @@ class ModbusRegister(Register):
     async def _set(self, value: RegisterValue) -> None:
         return self._access.set(self._context, value)
 
-
-ModbusDevices: TypeAlias = (
-    Mapping[str, ModbusDevice]
-    | Mapping[str | None, ModbusDevice]
-    | Mapping[None, ModbusDevice]
-)
-
+type ModbusDevices = Mapping[str | None, ModbusDevice]
 
 class Modbus(RegisterBank):
     """
@@ -91,7 +83,7 @@ class Modbus(RegisterBank):
 
         # Get unique devices mentioned for each client
         # `devices_by_client_id` is client_id => set(device_id)
-        devices_by_client_id: Mapping[int, Set[int]] = {
+        devices_by_client_id: Mapping[int, set[int]] = {
             client_id: {
                 device.device_id
                 for device in devices.values()
@@ -102,7 +94,7 @@ class Modbus(RegisterBank):
 
         # Find offset models for each client
         # `offset_models` is client_id => device_id => MODBUS_MODEL => address_offset
-        offset_models: Dict[int, Dict[int, Dict[MODBUS_MODEL, int]]] = {
+        offset_models: dict[int, dict[int, dict[MODBUS_MODEL, int]]] = {
             id_client: {
                 device_id: _find_model_offsets(clients_by_client_id[id_client], device_id)
                 for device_id in device_ids
@@ -112,7 +104,7 @@ class Modbus(RegisterBank):
 
         # Construct logical devices
         # `device_registers` is logical_device_id => LogicalDevice
-        device_registers: Dict[str, ModbusRegister] = {}
+        device_registers: dict[str, ModbusRegister] = {}
         logical_device_id: str | None
         for logical_device_id, device in devices.items():
             client: ModbusTcpClient = device.client
@@ -122,11 +114,11 @@ class Modbus(RegisterBank):
                 LOGGER.warning(
                     f'no registers for logical device {logical_device_id!r}, device_id {device_id}, client {client.comm_params.host}')
                 continue
-            model_to_offset: Dict[MODBUS_MODEL, int] = client_models[device_id]
+            model_to_offset: dict[MODBUS_MODEL, int] = client_models[device_id]
 
             for modbus_model, address_offset in model_to_offset.items():
                 if modbus_model == MPPT_MODEL:
-                    model_registers: Dict[str, RegisterAccess] = dict(MODELS[modbus_model])
+                    model_registers: dict[str, RegisterAccess] = dict(MODELS[modbus_model])
                     # append special MPPT modules
                     context = RegisterContext(client, device_id, modbus_model, address_offset)
                     n_access: RegisterAccess = model_registers['N']
@@ -176,7 +168,6 @@ class Modbus(RegisterBank):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-
 def _find_devices(client: ModbusTcpClient) -> Iterable[int]:
     address = 40000
     for device_id in range(1, 256):
@@ -189,9 +180,8 @@ def _find_devices(client: ModbusTcpClient) -> Iterable[int]:
             continue
         yield device_id
 
-
-def _find_model_offsets(client: ModbusTcpClient, device_id: int) -> Dict[MODBUS_MODEL, int]:
-    result: Dict[MODBUS_MODEL, int] = {
+def _find_model_offsets(client: ModbusTcpClient, device_id: int) -> dict[MODBUS_MODEL, int]:
+    result: dict[MODBUS_MODEL, int] = {
         0: -1,  # initialise with the special zero model, where registers are in Modicon (40xxx) format.
     }
     current_address = 40002

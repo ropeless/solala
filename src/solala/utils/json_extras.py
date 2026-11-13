@@ -5,20 +5,21 @@ from datetime import datetime, date
 from enum import Enum
 from itertools import chain
 from types import NoneType
-from typing import TypeAlias, Dict, List, Optional, Mapping, Any, Collection, Iterator, Tuple, Iterable, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
+from typing import Any
 
 from pydantic import BaseModel
 
 # Non-container JSON value types
-JSONPrimitive: TypeAlias = str | int | float | bool | None
+type JSONPrimitive = str | int | float | bool | None
 
 # Define the recursive JSON value type
-JSONValue: TypeAlias = JSONPrimitive | Sequence["JSONValue"] | Mapping[str, "JSONValue"]
+type JSONValue = JSONPrimitive | Sequence[JSONValue] | Mapping[str, JSONValue]
 
 # The explicit types for JSON containers
-JSONDict: TypeAlias = Mapping[str, JSONValue]
-JSONList: TypeAlias = Sequence[JSONValue]
-JSONContainer: TypeAlias = JSONDict | JSONList
+type JSONDict = Mapping[str, JSONValue]
+type JSONList = Sequence[JSONValue]
+type JSONContainer = JSONDict | JSONList
 
 _LINE_ENDINGS_PATTERN = re.compile(r'[,{} \t]*\s*(?=\n|$)')
 _BLANK_LINES_PATTERN = re.compile(r'^[ \t]*\r?\n', flags=re.MULTILINE)
@@ -65,7 +66,7 @@ def json_dict(value: JSONValue) -> JSONDict:
         raise TypeError(f"Expected a dictionary, got {type(value)}")
 
 
-def follow_json(data: JSONDict, path: Optional[str]) -> JSONValue:
+def follow_json(data: JSONDict, path: str | None) -> JSONValue:
     """
     Follow a path through a JSON dictionary.
 
@@ -76,7 +77,7 @@ def follow_json(data: JSONDict, path: Optional[str]) -> JSONValue:
         TypeError if a key in the path is not a selector for a dictionary.
     """
     if path is not None:
-        parts: List[str] = path.split('/')
+        parts: list[str] = path.split('/')
         for i, part in enumerate(parts):
             if not isinstance(data, (dict, Mapping)):
                 raise TypeError('/'.join(parts[:i + 1]))
@@ -86,7 +87,7 @@ def follow_json(data: JSONDict, path: Optional[str]) -> JSONValue:
     return data
 
 
-def filter_json(data: JSONDict, match: Optional[str]) -> JSONDict:
+def filter_json(data: JSONDict, match: str | None) -> JSONDict:
     """
     Filter a JSON dictionary by keys containing a given substring.
     """
@@ -100,7 +101,7 @@ def filter_json(data: JSONDict, match: Optional[str]) -> JSONDict:
         }
 
 
-def flatten(data: JSONContainer, sep: str = '/', prefix: str = '') -> Dict[str, JSONPrimitive]:
+def flatten(data: JSONContainer, sep: str = '/', prefix: str = '') -> dict[str, JSONPrimitive]:
     """
     Flatten keys in nested JSON dictionaries. Lists are treated as dictionaries with
     integer keys (converted to strings).
@@ -122,10 +123,10 @@ def flatten(data: JSONContainer, sep: str = '/', prefix: str = '') -> Dict[str, 
 
 
 def _flatten(
-        data: Iterable[Tuple[str | int, JSONValue]],
+        data: Iterable[tuple[str | int, JSONValue]],
         sep: str,
         prefix: str,
-) -> Iterator[Tuple[str, JSONPrimitive]]:
+) -> Iterator[tuple[str, JSONPrimitive]]:
     for key, value in data:
         key = prefix + str(key)
         if isinstance(value, Mapping):
@@ -141,10 +142,10 @@ def render_json(
         *,
         indent: int = 2,
         float_format: str = '.2g',
-        units: Optional[Mapping[str, str]] = None,
+        units: Mapping[str, str] | None = None,
         remove_key_underscores: bool = True,
         remove_value_underscores: bool = True,
-        ensure_ascii=False,
+        ensure_ascii: bool = False,
 ) -> str:
     """
     Custom function to render JSON data as a formatted string for a human to read.
@@ -213,7 +214,7 @@ def _to_json(
         items = thing.__dict__.items()
     else:
         items = chain(thing.__dict__.items(), thing.__class__.__dict__.items())
-    result: Dict[str, JSONValue] = {}
+    result: dict[str, JSONValue] = {}
     for name, value in items:
         if name in result.keys():
             continue
@@ -267,7 +268,7 @@ def _ignore(value: Any) -> bool:
 
 
 def _stringify_values(
-        key: Optional[str],
+        key: str | None,
         value: JSONValue,
         float_format: str,
         units: Mapping[str, str],
@@ -326,7 +327,7 @@ def _stringify_values(
 
     # Add units.
     # noinspection PyTypeChecker
-    unit_str: Optional[str] = units.get(key)
+    unit_str: str | None = units.get(key)
     if unit_str is not None:
         value_str += unit_str
 

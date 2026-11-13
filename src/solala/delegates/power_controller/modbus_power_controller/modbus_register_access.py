@@ -1,6 +1,6 @@
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
-from typing import TypeAlias, Sequence
+from collections.abc import Sequence
 
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ModbusPDU
@@ -10,7 +10,7 @@ from solala.registers import ReadOnlyError, RegisterType, RegisterValue
 
 NEXT_SF = -1  # The scale factor address to use to nominate the next register.
 
-MODBUS_MODEL: TypeAlias = int
+type MODBUS_MODEL = int
 
 _LOG_SRC = '[modbus] '  # prefix for log messages
 

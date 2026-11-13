@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import date, datetime
-from typing import List, Optional, Tuple
+from types import TracebackType
+from typing import Self
 
 from solala.delegates.power_pricer.price import Price
 from solala.utils.json_extras import JSONDict
@@ -16,7 +17,7 @@ class PowerPricer(ABC):
         ...
 
     @abstractmethod
-    async def get_price_forecast(self, count: int) -> List[Price]:
+    async def get_price_forecast(self, count: int) -> list[Price]:
         """
         Get the 30-minute price forecasts, in ascending order of time from now.
 
@@ -32,7 +33,7 @@ class PowerPricer(ABC):
         ...
 
     @abstractmethod
-    async def get_demand_window(self, day: date) -> Optional[Tuple[datetime, datetime]]:
+    async def get_demand_window(self, day: date) -> tuple[datetime, datetime] | None:
         """
         Get the demand window for the given day, if active.
         """
@@ -52,8 +53,13 @@ class PowerPricer(ABC):
         """
         ...
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         await self.close()

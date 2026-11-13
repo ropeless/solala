@@ -1,5 +1,5 @@
 from datetime import time
-from typing import Literal, TypeAlias, Optional, Annotated, Union, ClassVar, Dict, Tuple
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
@@ -27,7 +27,7 @@ class DummyPricerConnection(BaseModel):
     feed_in_price_discount_min: float = 2
     feed_in_price_discount_max: float = 5
     cur_price_is_estimate: bool = False
-    demand_window: Optional[Tuple[time, time]] = None
+    demand_window: tuple[time, time] | None = None
 
 
 class DummyConsumerConnection(BaseModel):
@@ -106,72 +106,54 @@ class DatabaseConnection(BaseModel):
 #  Generic connection types
 # =====================================================================================
 
-ControllerConnection: TypeAlias = Annotated[
-    Union[
-        DummyControllerConnection,
-        ModbusControllerConnection,
-        # Add others as needed
-    ],
+type ControllerConnection = Annotated[
+    DummyControllerConnection | ModbusControllerConnection,
     Field(discriminator='type')
 ]
 
-PricerConnection: TypeAlias = Annotated[
-    Union[
-        DummyPricerConnection,
-        AmberPricerConnection,
-        # Add others as needed
-    ],
+type PricerConnection = Annotated[
+    DummyPricerConnection | AmberPricerConnection,
     Field(discriminator='type')
 ]
 
-ConsumerConnection: TypeAlias = Annotated[
-    Union[
-        DummyConsumerConnection,
-        TeslaWallConnectorConnection,
-        TuyaConnection,
-        # Add others as needed
-    ],
+type ConsumerConnection = Annotated[
+    DummyConsumerConnection | TeslaWallConnectorConnection | TuyaConnection,
     Field(discriminator='type')
 ]
 
-ForecasterConnection: TypeAlias = Annotated[
-    Union[
-        DummySolarForecasterConnection,
-        OpenMeteoConnection,
-        # Add others as needed
-    ],
+type ForecasterConnection = Annotated[
+    DummySolarForecasterConnection | OpenMeteoConnection,
     Field(discriminator='type')
 ]
-
 
 class Settings(BaseModel):
     """
     A class to hold user settings for the control loop.
     """
 
-    controller: Optional[ControllerConnection] = None
-    pricer: Optional[PricerConnection] = None
-    forecaster: Optional[ForecasterConnection] = None
-    consumers: Optional[Dict[str, ConsumerConnection]] = None
-    database: Optional[DatabaseConnection] = None
+    controller: ControllerConnection | None = None
+    pricer: PricerConnection | None = None
+    forecaster: ForecasterConnection | None = None
+    consumers: dict[str, ConsumerConnection] | None = None
+    database: DatabaseConnection | None = None
 
-    battery_mode: Optional[BatteryMode] = None
-    inverter_mode: Optional[InverterMode] = None
-    battery_policy: Optional[BatteryPolicy] = None
-    inverter_policy: Optional[InverterPolicy] = None
+    battery_mode: BatteryMode | None = None
+    inverter_mode: InverterMode | None = None
+    battery_policy: BatteryPolicy | None = None
+    inverter_policy: InverterPolicy | None = None
 
     # NEG_FEED_IN_ZERO_EXPORT parameters
-    disable_export_price_threshold: Optional[float] = None
-    enable_export_price_threshold: Optional[float] = None
+    disable_export_price_threshold: float | None = None
+    enable_export_price_threshold: float | None = None
 
     # CHEAP_CHARGE parameters
-    start_charge_price_threshold: Optional[float] = None
-    stop_charge_price_threshold: Optional[float] = None
+    start_charge_price_threshold: float | None = None
+    stop_charge_price_threshold: float | None = None
 
-    registers_to_log: Optional[str] = None
+    registers_to_log: str | None = None
 
 
-def consumers(**kwargs: ConsumerConnection) -> Dict[str, ConsumerConnection]:
+def consumers(**kwargs: ConsumerConnection) -> dict[str, ConsumerConnection]:
     """
     Helper to keep type inference tidy.
     """

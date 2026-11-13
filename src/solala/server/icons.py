@@ -1,5 +1,3 @@
-from typing import Optional
-
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 
 
@@ -7,16 +5,16 @@ def analytics_name_to_icon_url(analytics_name: str) -> str:
     return f'/images/analytics-icons/{analytics_name.lower()}.svg'
 
 
-def weather_code_to_icon_url(code: WeatherCode, animated: bool = False) -> Optional[str]:
+def weather_code_to_icon_url(code: WeatherCode, animated: bool = False) -> str | None:
     subdirectory = 'animated' if animated else 'static'
-    icon_name: Optional[str] = weather_code_to_icon_name(code)
+    icon_name: str | None = weather_code_to_icon_name(code)
     if icon_name is None:
         return None
     else:
         return f'/images/weather-icons/{subdirectory}/{icon_name}.svg'
 
 
-def weather_code_to_icon_name(code: WeatherCode) -> Optional[str]:
+def weather_code_to_icon_name(code: WeatherCode) -> str | None:
     """
     Given a Solala WeatherCode, return the name of the corresponding weather icon
     as from https://github.com/Makin-Things/weather-icons.

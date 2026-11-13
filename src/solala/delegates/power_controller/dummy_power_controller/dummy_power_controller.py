@@ -1,10 +1,8 @@
 from enum import Enum, auto
-from typing import Dict
 
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 from solala.registers import RegisterBank, CallRegister
 from solala.utils.datetime_extras import now
-
 
 class BatteryMode(Enum):
     ENABLE = auto()
@@ -14,12 +12,10 @@ class BatteryMode(Enum):
     CHARGE_ONLY = auto()
     DISCHARGE_ONLY = auto()
 
-
 class InverterMode(Enum):
     ENABLE = auto()
     DISABLE = auto()
     ZERO_EXPORT = auto()
-
 
 class DummyPowerController(PowerController):
     """
@@ -68,7 +64,7 @@ class DummyPowerController(PowerController):
     async def get_inverter_limit(self) -> float:
         return self.inverter_limit
 
-    def get_connection_info(self) -> Dict[str, int | float | str]:
+    def get_connection_info(self) -> dict[str, int | float | str]:
         return {
             'connection': self.__class__.__name__,
             'battery_mode': self.battery_mode.name,

@@ -1,5 +1,4 @@
 from datetime import datetime, timezone, date, timedelta
-from typing import List
 
 from solala.constants import DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
@@ -10,7 +9,6 @@ from solala.utils.httpx_extras import async_get
 from solala.utils.json_extras import JSONDict
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
-
 
 class OpenMeteoForecaster(SolarForecaster):
     """
@@ -81,7 +79,7 @@ class OpenMeteoForecaster(SolarForecaster):
         now = datetime.now().astimezone()
         tz = now.tzinfo
         duration = timedelta(hours=1)
-        forecasts: List[SolarForecast] = []
+        forecasts: list[SolarForecast] = []
 
         # All measures are instantaneous as at the timestamp in the 'time' field, except
         # 'global_tilted_irradiance' which is the average irradiance over the preceding hour.
@@ -176,7 +174,6 @@ class OpenMeteoForecaster(SolarForecaster):
         ac_watts = max(0.0, min(dc_watts * self._inverter_efficiency, self._inverter_limit))
 
         return ac_watts
-
 
 def _weather(code: int, is_day: bool) -> WeatherCode:
     """

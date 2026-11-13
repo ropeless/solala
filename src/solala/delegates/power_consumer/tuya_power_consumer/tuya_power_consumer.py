@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, Awaitable, Optional, Tuple, AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from tuya_connector import TuyaOpenAPI
 
@@ -11,7 +11,6 @@ from solala.utils.json_extras import JSONDict, json_num
 from solala.utils.micro_cache import AsyncMicroCache
 
 API_ENDPOINT = "https://openapi.tuyaeu.com"
-
 
 class TuyaPowerConsumer(PowerConsumer):
 
@@ -41,7 +40,7 @@ class TuyaPowerConsumer(PowerConsumer):
         self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_device_status, 0.01)
 
         # Created on first call to `get_registers`
-        self._register_bank: Optional[RegisterBank] = None
+        self._register_bank: RegisterBank | None = None
 
     async def get_registers(self) -> RegisterBank:
         if self._register_bank is None:
@@ -66,7 +65,7 @@ class TuyaPowerConsumer(PowerConsumer):
     async def close(self) -> None:
         pass
 
-    async def get_register_keys(self) -> AsyncIterator[Tuple[str, RegisterType]]:
+    async def get_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
         device_status: JSONDict = await self._cache()
         for key, value in device_status.items():
             try:

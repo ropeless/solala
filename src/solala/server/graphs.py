@@ -1,7 +1,7 @@
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Sequence, List, Optional, Tuple, Dict
+from collections.abc import Sequence
 
 import numpy as np
 from nicegui import ui
@@ -17,8 +17,8 @@ DASHED = [3, 3]
 
 @dataclass
 class SeriesData:
-    data: Sequence[List[float] | List[int]]
-    demand_window: Optional[Tuple[datetime, datetime]] = None
+    data: Sequence[list[float] | list[int]]
+    demand_window: tuple[datetime, datetime] | None = None
 
 
 class SolalaChart(ABC):
@@ -26,11 +26,11 @@ class SolalaChart(ABC):
             self,
             name: str,
             units: str,
-            series: List[JSONDict],
+            series: list[JSONDict],
             demand_window_colour: str = '',
             show_legend: bool = True,
     ) -> None:
-        options: Dict[str, JSONValue] = {
+        options: dict[str, JSONValue] = {
             'backgroundColor': 'transparent',
             'tooltip': _graph_tooltip(units),
             'grid': _grid(legend_space=show_legend),
@@ -213,7 +213,7 @@ def _create_series(
         line_type: str | list = 'solid',
         area_alpha: float = 0.1,
 ) -> JSONDict:
-    options: Dict[str, JSONValue] = {
+    options: dict[str, JSONValue] = {
         'name': name,
         'type': 'line',
         'data': [],

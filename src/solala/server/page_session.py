@@ -1,6 +1,6 @@
 import asyncio
 from functools import partial
-from typing import List, Callable, Awaitable
+from collections.abc import Awaitable, Callable
 
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
@@ -18,7 +18,7 @@ class PageSession:
             colours: Colours,
             select_tab: Callable[[str], Awaitable[None]],
     ) -> None:
-        self._cleanup: List[Callable[[], Awaitable[None] | None]] = []
+        self._cleanup: list[Callable[[], Awaitable[None] | None]] = []
         self._closed: bool = False
         self._colours: Colours = colours
         self._select_tab: Callable[[str], Awaitable[None]] = select_tab
