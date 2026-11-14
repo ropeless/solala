@@ -1,6 +1,6 @@
 from abc import abstractmethod, ABC
-from dataclasses import dataclass
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ModbusPDU
@@ -8,13 +8,12 @@ from pymodbus.pdu import ModbusPDU
 from solala.logger import LOGGER
 from solala.registers import ReadOnlyError, RegisterType, RegisterValue
 
-NEXT_SF = -1  # The scale factor address to use to nominate the next register.
+NEXT_SF = -1  # The special scale factor address to use to nominate the next register.
 
 type MODBUS_MODEL = int
 
+_DEBUG_LOG = False  # Enable debug logger messages or not.
 _LOG_SRC = '[modbus] '  # prefix for log messages
-
-_DEBUG_LOG = False
 
 
 class ModbusError(IOError):
@@ -59,7 +58,8 @@ class ModbusError(IOError):
 @dataclass
 class RegisterContext:
     """
-    Identify the Modbus device and address context for a register operation.
+    Identify the Modbus TCP connection, Modbus device ID, and
+    address offset to used for a defined register operation.
 
     Attributes:
         client: Modbus TCP client used to communicate with the device.
@@ -72,14 +72,14 @@ class RegisterContext:
     client: ModbusTcpClient
     device_id: int
     modbus_model: MODBUS_MODEL
-    address_offset: int  # the value to add to the relative address to get the physical, zero-based, address.
+    address_offset: int
 
 
 class RegisterAccess(ABC):
     """
-    Abstract base class for reading and writing to a register.
+    Abstract base class for defining reading and writing operations to a Modbus register.
     An implementation of this class takes into account the datatype of the register,
-    including the number of registers to read/write and any scaling factor.
+    including the number of atomic 16-bit registers to read/write and any scaling factor.
     """
 
     def __init__(self, register_type: RegisterType, writable: bool) -> None:
@@ -279,10 +279,13 @@ def _write_int(
             if result.isError():
                 raise ModbusError(context.device_id, context.modbus_model, addr, physical_addr, count, 'write', result)
         case _:
-            raise IOError('cannot write int')
+            raise IOError('cannot write int - not implemented')
 
 
 def _modbus_exception_code_message(code: int) -> str:
+    """
+    Map a Modbus exception code to a human-readable message.
+    """
     match code:
         case 1:
             return 'Illegal Function'
@@ -353,10 +356,10 @@ class RegisterAccessInt(RegisterAccess):
         Initialise integer register access.
 
         Args:
-            addr: Relative address of the first register.
+            addr: Relative address of the first register (relative to the SunSpec model start, counting from one).
             count: Number of 16-bit registers occupied by the integer.
-            signed: Whether the integer is signed.
-            writable: Whether the register can be written.
+            signed: Whether the integer is signed (versus unsigned).
+            writable: Whether the register can be written or not.
         """
         super().__init__(register_type=int, writable=writable)
         self.addr = addr
@@ -389,7 +392,7 @@ class RegisterAccessScaled(RegisterAccess):
         Initialise scaled integer register access.
 
         Args:
-            addr: Relative address of the first value register.
+            addr: Relative address of the first register (relative to the SunSpec model start, counting from one).
             scale_addr: Relative address of the scale-factor register, or
                 NEXT_SF to use the register immediately after the value.
             count: Number of 16-bit registers occupied by the value.
@@ -468,7 +471,7 @@ class RegisterAccessScaled(RegisterAccess):
 
 def _log(msg: str) -> None:
     """
-    Write a debug message when Modbus register-access logging is enabled.
+    Write a debug message to the logger (only when _DEBUG_LOG is True).
 
     Args:
         msg: Message to log.
