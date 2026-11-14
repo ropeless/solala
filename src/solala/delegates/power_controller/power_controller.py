@@ -9,6 +9,28 @@ from solala.utils.json_extras import JSONDict
 
 @dataclass
 class PowerStatus:
+    """
+    Represents the current operating status and accumulated energy of the power system.
+
+    Attributes:
+        state_of_charge: Battery state of charge as a percentage.
+        power_limit: Inverter output power limit as a percentage of rated capacity.
+        grid_power: Power imported from the grid in watts; negative values indicate export.
+        solar_power: Solar generation in watts.
+        battery_power: Battery power in watts; positive values indicate charging and
+            negative values indicate discharging.
+        house_power: House consumption in watts.
+        accumulated_solar_energy: Accumulated solar generation in watt-hours.
+        accumulated_grid_energy_import: Accumulated energy imported from the grid
+            in watt-hours.
+        accumulated_grid_energy_export: Accumulated energy exported to the grid
+            in watt-hours.
+        accumulated_battery_energy_charge: Accumulated energy used to charge the
+            battery in watt-hours.
+        accumulated_battery_energy_discharge: Accumulated energy discharged from
+            the battery in watt-hours.
+    """
+
     state_of_charge: float
     power_limit: float
 
@@ -24,18 +46,27 @@ class PowerStatus:
     accumulated_battery_energy_discharge: float
 
     def to_json(self) -> JSONDict:
+        """
+        Convert the status to a JSON-compatible dictionary.
+
+        Returns:
+            The status represented as a JSON-compatible dictionary.
+        """
         return asdict(self)
 
 
 class PowerController(ABC):
     """
-    High-level power controller to send commands and read status from the power system.
+    High-level interface for monitoring and controlling the power system.
+
+    Implementations provide access to system registers and status, battery and
+    inverter controls, connection information, and connection cleanup.
     """
 
     @abstractmethod
     async def close(self) -> None:
         """
-        Close any connections to the power system.
+        Close any connections to the power system and release associated resources.
         """
         ...
 
@@ -46,29 +77,43 @@ class PowerController(ABC):
     @abstractmethod
     async def get_registers(self) -> RegisterBank:
         """
-        Get the values of all known registers.
+        Get the register bank exposed by the power controller.
+
+        Returns:
+            The register bank containing the available system registers.
         """
         ...
 
     @abstractmethod
     async def get_status(self) -> PowerStatus:
         """
-        Get the high-level status of the system.
+        Get the current high-level status of the power system.
+
+        Returns:
+            The system status, including instantaneous power measurements and
+            accumulated energy measurements.
         """
         ...
 
     @abstractmethod
     def get_connection_info(self) -> JSONDict:
         """
-        Get information about the connection.
+        Get information about the power controller connection.
+
+        Returns:
+            A JSON-compatible dictionary containing connection information.
         """
         ...
 
     @abstractmethod
     async def get_inverter_limit(self) -> float:
         """
-        Get the reported power limit on inverter AC output.
-        This is expected to stay constant for the lifetime of the connection.
+        Get the total rated AC output power limit of the connected inverters.
+
+        This value is expected to remain constant for the lifetime of the connection.
+
+        Returns:
+            The total inverter output limit in watts.
         """
         ...
 
@@ -80,49 +125,51 @@ class PowerController(ABC):
     async def enable_battery(self) -> None:
         """
         Allow the battery to charge and discharge.
-        This is the normal state.
+        This is the normal operating mode.
         """
         ...
 
     @abstractmethod
     async def disable_battery(self) -> None:
         """
-        Stop the battery from charging and discharging.
+        Prevent the battery from charging or discharging.
         """
         ...
 
     @abstractmethod
     async def force_charge(self) -> None:
         """
-        Force the battery to charge.
-        This will aim to charge the battery to its maximum capacity,
-        even if it means drawing from the grid.
+        Force the battery to charge towards its maximum state of charge.
+
+        The battery may draw power from the grid if solar generation is insufficient.
         """
         ...
 
     @abstractmethod
     async def force_discharge(self) -> None:
         """
-        Force the battery to discharge.
-        This is a way to force stored power to the grid.
+        Force the battery to discharge, allowing stored energy to be exported to the grid.
         """
         ...
 
     @abstractmethod
     async def charge_only(self) -> None:
         """
-        Allow the battery to charge (when there is excess solar power)
-        but do not allow the battery to discharge (when there is insufficient solar power).
-        If there is insufficient solar power, power will be drawn from the grid.
+        Allow the battery to charge from excess solar generation, but prevent it
+        from discharging.
+
+        If solar generation is insufficient to meet house demand, power is drawn
+        from the grid.
         """
         ...
 
     @abstractmethod
     async def discharge_only(self) -> None:
         """
-        Allow the battery to discharge (when there is insufficient solar power)
-        but do not allow the battery to charge (when there is an oversupply of solar power).
-        If there is an oversupply of solar power, power will be sent to the grid.
+        Allow the battery to discharge when solar generation is insufficient, but
+        prevent it from charging.
+
+        Any excess solar generation is exported to the grid.
         """
         ...
 
@@ -133,42 +180,52 @@ class PowerController(ABC):
     @abstractmethod
     async def enable_inverter(self) -> None:
         """
-        Don't put any limit on inverter output power, so there is no limit on exports.
-        This is the normal state.
+        Remove the inverter output power limit.
+
+        This is the normal operating mode and allows the inverters to generate
+        up to their available output capacity.
         """
         ...
 
     @abstractmethod
     async def disable_inverter(self, *, change_duration: int) -> None:
         """
-        Stop the inverter providing output power.
+        Stop the inverters from supplying output power.
 
-        This inverter mode may be auto-reverting, but the control loop is requesting
-        that it not revert for at least `change_duration` seconds.
+        The inverter setting may revert automatically. The controller requests
+        that the setting remain in effect for at least the specified duration.
 
         Args:
-            change_duration: the expected minimum auto-revert duration in seconds.
+            change_duration: Minimum requested duration, in seconds, before the
+                inverter setting automatically reverts.
         """
         ...
 
     @abstractmethod
     async def zero_export(self, *, change_duration: int) -> None:
         """
-        Limit inverter output power to balance consumption, so there is no export.
-        Will still allow drawing from the grid if insufficient solar supply for demand.
+        Limit inverter output power to match consumption, preventing power export
+        to the grid.
 
-        This inverter mode may be auto-reverting, but the control loop is requesting
-        that it not revert for at least `change_duration` seconds.
+        The system may still import power from the grid when solar generation is
+        insufficient to meet demand.
 
-        This may also need to be repeatedly called as the consumption may change,
-        or the change duration expires.
+        The inverter setting may revert automatically, and may need to be updated
+        repeatedly as consumption changes or the requested duration expires.
 
         Args:
-            change_duration: the expected minimum auto-revert duration in seconds.
+            change_duration: Minimum requested duration, in seconds, before the
+                inverter setting automatically reverts.
         """
         ...
 
     async def __aenter__(self) -> Self:
+        """
+        Enter the asynchronous context manager.
+
+        Returns:
+            This power controller instance.
+        """
         return self
 
     async def __aexit__(
@@ -177,4 +234,7 @@ class PowerController(ABC):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """
+        Exit the asynchronous context manager and close the power controller.
+        """
         await self.close()
