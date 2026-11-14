@@ -1,3 +1,7 @@
+"""
+Build the tabbed NiceGUI interface and manage per-tab page sessions.
+"""
+
 import asyncio
 from dataclasses import dataclass
 from datetime import date
@@ -60,6 +64,12 @@ def _page_header(ext: str = '', link: bool = True) -> None:
 
 
 def _control_header(title: str) -> None:
+    """
+    Add a titled header to a dashboard control card.
+
+    Args:
+        title: Heading displayed above the controls.
+    """
     with ui.element('div').classes('control-header'):
         with ui.element('div').classes('dashboard-card-title'):
             ui.label(title)
@@ -67,7 +77,10 @@ def _control_header(title: str) -> None:
 
 async def _ui_control_buttons(session: PageSession) -> None:
     """
-    Add the control buttons to the UI.
+    Build battery and inverter controls and register their status listeners.
+
+    Args:
+        session: Session that owns the control listeners.
     """
     # ======================================================
     # BATTERY
@@ -129,6 +142,13 @@ async def _ui_control_buttons(session: PageSession) -> None:
 
 
 def _infographic_click(element: events.GenericEventArguments, select_tab: Callable[[str], Awaitable[None]]) -> None:
+    """
+    Navigate to the price or solar tab when its infographic region is clicked.
+
+    Args:
+        element: Click event containing the SVG region identifier.
+        select_tab: Asynchronous tab-selection callback.
+    """
     click_id: str | None = element.args
     if click_id == CLICK_ID_GRID:
         asyncio.create_task(select_tab(_PRICE_TAB))
@@ -139,6 +159,13 @@ def _infographic_click(element: events.GenericEventArguments, select_tab: Callab
 
 
 def _update_loop_status(loop_status_light: Element, loop_status_label: Label) -> None:
+    """
+    Refresh the control-loop health indicator from its overdue interval.
+
+    Args:
+        loop_status_light: Element displaying the health indicator colour.
+        loop_status_label: Label displaying the loop health text.
+    """
     overdue: float = control_loop.loop_check_overdue()
     if overdue > Constants.LOOP_TIME:
         loop_status_light.classes(
@@ -168,6 +195,14 @@ def _day_navigation(
         change_day: Callable[[int], Awaitable[None]],
         set_day: Callable[[date], Awaitable[None]],
 ) -> None:
+    """
+    Enable swipe and keyboard navigation between dates.
+
+    Args:
+        swipe_area: Element receiving horizontal touch gestures.
+        change_day: Callback that moves the selected date by a day offset.
+        set_day: Callback that selects an explicit date.
+    """
     # Handler for swipe actions
     async def handle_swipe(event: events.GenericEventArguments) -> None:
         direction = event.args
@@ -235,6 +270,9 @@ app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manif
 
 
 async def _build_power_page(container: Element, session: PageSession) -> None:
+    """
+    Build the power-flow infographic, loop health indicator, and controls.
+    """
     with container:
         with ui.element('div').classes('dashboard-card infographic-card'):
             with ui.row().classes('w-full items-center justify-between'):
@@ -287,6 +325,9 @@ async def _build_power_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_solar_page(container: Element, session: PageSession) -> None:
+    """
+    Build the date-navigable solar forecast with session-owned listeners.
+    """
     with container:
         navigator = DayNavigator(enable_swipe_content=True, auto_height=True, title='Solar Forecast')
         updaters = [
@@ -301,6 +342,9 @@ async def _build_solar_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_price_page(container: Element, session: PageSession) -> None:
+    """
+    Build the price forecast table and register its refresh listener.
+    """
     with container:
         ui.label('Price Forecast').classes('dashboard-card-title')
 
@@ -311,6 +355,9 @@ async def _build_price_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_graphs_page(container: Element, session: PageSession) -> None:
+    """
+    Build daily charts with date navigation and database-loop updates.
+    """
     with container:
         swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
         with swipe_area:
@@ -327,6 +374,9 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_status_page(container: Element, session: PageSession) -> None:
+    """
+    Build the formatted control-loop status display.
+    """
     with container:
         with ui.card().classes('w-full'):
             ui.label('Status').classes('dashboard-card-title')
@@ -338,6 +388,9 @@ async def _build_status_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_connection_page(container: Element, _: PageSession) -> None:
+    """
+    Display the current connection information as formatted JSON.
+    """
     with container:
         with ui.card().classes('w-full'):
             ui.label('Connection').classes('dashboard-card-title')
@@ -350,6 +403,9 @@ async def _build_connection_page(container: Element, _: PageSession) -> None:
 
 
 async def _build_parameters_page(container: Element, _: PageSession) -> None:
+    """
+    Display the active control policy and configured constants.
+    """
     with container:
         with ui.column().classes('w-full'):
             with ui.card().classes('w-full'):
@@ -371,6 +427,9 @@ async def _build_parameters_page(container: Element, _: PageSession) -> None:
 
 
 async def _build_registers_page(container: Element, session: PageSession) -> None:
+    """
+    Build the register display and register its refresh listener.
+    """
     with container:
         with ui.card().classes('w-full'):
             ui.label('Registers').classes('dashboard-card-title')
@@ -380,6 +439,9 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
 
 
 async def _build_log_page(container: Element, session: PageSession) -> None:
+    """
+    Build the log console and unregister it when the session closes.
+    """
     with container:
         with ui.row().classes('w-full items-center justify-between'):
             ui.label('Log Console').classes('dashboard-card-title')
@@ -398,10 +460,14 @@ async def _build_log_page(container: Element, session: PageSession) -> None:
 
 
 type Builder = Callable[[Element, PageSession], Awaitable[None]]
+"""Asynchronous builder for a tab's content and session resources."""
 
 
 @dataclass
 class Tab:
+    """
+    Describe a tab's label, icon presentation, and content builder.
+    """
     name: str
     icon_scale: float  # for visually balancing the size of the icons.
     icon_url: str
@@ -426,6 +492,13 @@ _PRICE_TAB: str = _TABS[2].name
 
 
 class TabSelector:
+    """
+    Manage tab selection, asynchronous construction, and session cleanup.
+
+    Tab transitions are serialised by a lock. Each selected tab receives a
+    new `PageSession`, and any previous build and session are closed before
+    the next tab is constructed.
+    """
     def __init__(
             self,
             colours: Colours,
@@ -456,6 +529,12 @@ class TabSelector:
         self._transition_lock = asyncio.Lock()
 
     async def select_tab(self, tab_name: str) -> None:
+        """
+        Select a tab, cancelling and cleaning up the previous tab first.
+
+        Args:
+            tab_name: Name of a configured tab.
+        """
         async with self._transition_lock:
             if tab_name == self.active_tab:
                 return
@@ -478,10 +557,16 @@ class TabSelector:
             self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
 
     async def close_active_session(self) -> None:
+        """
+        Close the active tab session, serialised with tab transitions.
+        """
         async with self._transition_lock:
             await self._close_active_session()
 
     async def _cancel_active_build(self) -> None:
+        """
+        Cancel and await an unfinished tab construction task.
+        """
         task = self._build_task
         self._build_task = None
         if task is None or task.done():
@@ -494,6 +579,9 @@ class TabSelector:
             pass
 
     async def _close_active_session(self) -> None:
+        """
+        Stop tab construction and release resources owned by its session.
+        """
         await self._cancel_active_build()
         if self.active_session is not None:
             session = self.active_session
@@ -501,6 +589,9 @@ class TabSelector:
             await session.close()
 
     async def _build_tab(self, tab_name: str, session: PageSession) -> None:
+        """
+        Build a tab and display an error panel if construction fails.
+        """
         builder = self.builder[tab_name]
         try:
             await builder(self.content_container, session)
@@ -520,6 +611,11 @@ class TabSelector:
 
 @ui.page('/')
 async def root_page() -> None:
+    """
+    Initialise the root page and select its initial tab.
+
+    The active session is closed when the NiceGUI client disconnects.
+    """
     ui.add_head_html(_HEAD_HTML)
     colours: Colours = await css_colours()  # must come directly after add_head_html.
 
