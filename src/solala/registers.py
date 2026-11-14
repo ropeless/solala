@@ -17,7 +17,7 @@ class ReadOnlyError(AttributeError):
 
 def check_type(t: object) -> RegisterType:
     """
-    Is the given type a valid register type.
+    Check that the given type is a valid register type.
 
     Args:
         t: The type to check.
@@ -41,7 +41,7 @@ def check_type(t: object) -> RegisterType:
 
 def check_value(v: object) -> RegisterValue:
     """
-    Is the given value a valid register value.
+    Check that the given value is a valid register value.
 
     Args:
         v: The value to check.
@@ -51,7 +51,6 @@ def check_value(v: object) -> RegisterValue:
 
     Raises:
         TypeError: If the type of value is not a valid register type.
-
     """
     if isinstance(v, (str, int, float, bool)):
         return v
@@ -61,7 +60,7 @@ def check_value(v: object) -> RegisterValue:
 
 def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
     """
-    Is the given value acceptable for the given register type.
+    Check whether the value is acceptable for the given register type.
 
     Note that this explicitly allows:
     * `bool` values can be used for `int` and `float` register types
@@ -82,8 +81,20 @@ def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
 
 
 class Register(ABC):
+    """
+    Base class for typed registers that support asynchronous access.
+
+    A register has a fixed value type and may be either writable or read-only.
+    """
 
     def __init__(self, register_type: RegisterType, writable: bool) -> None:
+        """
+        Initialise the register.
+
+        Args:
+            register_type: The type of values held by the register.
+            writable: Whether the register can be written to.
+        """
         if register_type not in (str, int, float, bool):
             raise TypeError(f'Unexpected register type: {register_type}')
         self._register_type = register_type
@@ -91,15 +102,24 @@ class Register(ABC):
 
     @property
     def reg_type(self) -> RegisterType:
+        """
+        Return the type of values held by the register.
+        """
         return self._register_type
 
     @property
     def writable(self) -> bool:
+        """
+        Return whether the register can be written to.
+        """
         return self._writable
 
     async def get(self) -> RegisterValue:
         """
-        Get the register value.
+        Get the current register value.
+
+        Returns:
+            The current register value.
         """
         return await self._get()
 
@@ -108,7 +128,7 @@ class Register(ABC):
         Set the register value.
 
         Args:
-            value: the new value for the register.
+            value: The new value for the register.
 
         Raises:
             ReadOnlyError: If the register is read-only.
@@ -122,19 +142,41 @@ class Register(ABC):
 
     @abstractmethod
     async def _get(self) -> RegisterValue:
+        """
+        Return the register value.
+        """
         ...
 
     @abstractmethod
     async def _set(self, value: RegisterValue) -> None:
+        """
+        Write a value to the register.
+
+        Args:
+            value: The value to write.
+        """
         ...
 
 
 class ReadOnlyRegister(Register):
+    """
+    Base class for registers that cannot be written to.
+    """
+
     def __init__(self, register_type: RegisterType) -> None:
+        """
+        Initialise the read-only register.
+
+        Args:
+            register_type: The type of values held by the register.
+        """
         super().__init__(register_type, writable=False)
 
     @abstractmethod
     async def _get(self) -> RegisterValue:
+        """
+        Return the register value.
+        """
         ...
 
     @final
@@ -145,9 +187,17 @@ class ReadOnlyRegister(Register):
 class ConstantRegister(ReadOnlyRegister):
     """
     A register with a constant value.
+
+    The value is set when the register is created and cannot be changed.
     """
 
     def __init__(self, value: RegisterValue) -> None:
+        """
+        Initialise the register with its constant value.
+
+        Args:
+            value: The value returned whenever the register is read.
+        """
         register_type: RegisterType = type(value)
         if not value_okay(value, register_type):
             raise TypeError(f'Expected {register_type}, got {type(value)}')
@@ -161,10 +211,21 @@ class ConstantRegister(ReadOnlyRegister):
 
 class CallRegister(ReadOnlyRegister):
     """
-    A register that calls a function to get its value.
+    A read-only register whose value is obtained by calling a synchronous function.
+
+    If the register type is not specified, the function is called once during
+    initialisation to determine the type of its return value.
     """
 
     def __init__(self, f: Callable[[], RegisterValue], register_type: RegisterType | None = None) -> None:
+        """
+        Initialise the register.
+
+        Args:
+            f: The function called whenever the register is read.
+            register_type: The register value type. If omitted, it is inferred
+                from the function's return value.
+        """
         if register_type is None:
             register_type = type(f())
         super().__init__(register_type)
@@ -176,10 +237,17 @@ class CallRegister(ReadOnlyRegister):
 
 class AsyncCallRegister(ReadOnlyRegister):
     """
-    A register that calls a function to get its value.
+    A read-only register whose value is obtained by awaiting an asynchronous function.
     """
 
     def __init__(self, f: Callable[[], Awaitable[RegisterValue]], register_type: RegisterType) -> None:
+        """
+        Initialise the register.
+
+        Args:
+            f: The asynchronous function awaited whenever the register is read.
+            register_type: The type of values returned by the function.
+        """
         super().__init__(register_type)
         self._f: Callable[[], Awaitable[RegisterValue]] = f
 
@@ -191,15 +259,22 @@ class RegisterBank:
     """
     A collection of named registers.
 
-    Note that it is not possible to change the registers
-    of a register bank (i.e. the keys), but the register
-    values may change.
+    The set of registers cannot be changed after initialisation, but the
+    values held by those registers may change.
     """
 
     def __init__(
             self,
             registers: Iterable[tuple[str, Register | RegisterValue]] | Mapping[str, Register | RegisterValue]
     ) -> None:
+        """
+        Initialise the register bank.
+
+        Args:
+            registers: The registers to include in the bank. Each entry
+                associates a name with either a Register or a constant value.
+                Constant values are wrapped in ConstantRegister instances.
+        """
         if isinstance(registers, Mapping):
             registers = registers.items()
 
@@ -211,19 +286,47 @@ class RegisterBank:
 
     @property
     def registers(self) -> Mapping[str, Register]:
+        """
+        Return the registers in the bank.
+
+        Returns:
+            A mapping of register names to Register instances.
+        """
         return self._registers
 
     def __len__(self) -> int:
+        """
+        Return the number of registers in the bank.
+        """
         return len(self._registers)
 
     def keys(self) -> KeysView[str]:
+        """
+        Return a view of the register names.
+        """
         return self._registers.keys()
 
     async def items(self) -> AsyncIterator[tuple[str, RegisterValue]]:
+        """
+        Iterate over the register names and their current values.
+
+        Yields:
+            A tuple containing a register name and its current value.
+        """
         for key in self._registers.keys():
             yield key, await self._registers[key].get()
 
     async def get(self, key: str, default: RegisterValue | None = None) -> RegisterValue | None:
+        """
+        Get the current value of a register.
+
+        Args:
+            key: The name of the register.
+            default: The value to return if the register does not exist.
+
+        Returns:
+            The register value, or the default if the register does not exist.
+        """
         got: Register | None = self._registers.get(key, None)
         if got is None:
             return default
@@ -231,6 +334,18 @@ class RegisterBank:
             return await got.get()
 
     async def set(self, key: str, value: RegisterValue) -> None:
+        """
+        Set the value of a register.
+
+        Args:
+            key: The name of the register.
+            value: The value to write.
+
+        Raises:
+            KeyError: If the register does not exist.
+            ReadOnlyError: If the register is read-only.
+            TypeError: If the value is not of the expected type.
+        """
         got: Register | None = self._registers.get(key, None)
         if got is None:
             raise KeyError(key)
