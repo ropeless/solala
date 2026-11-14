@@ -425,7 +425,7 @@ async def add_control_loop_listener(listener: LoopListener) -> None:
 async def remove_control_loop_listener(listener: LoopListener) -> None:
     """
     Unregister a control loop listener, if present.
-    No error is raised if the listener is not registers.
+    No error is raised if the listener is not registered.
 
     Args:
         listener: Listener to unregister.
@@ -456,7 +456,7 @@ async def add_database_loop_listener(listener: LoopListener) -> None:
 async def remove_database_loop_listener(listener: LoopListener) -> None:
     """
     Unregister a database loop listener, if present.
-    No error is raised if the listener is not registers.
+    No error is raised if the listener is not registered.
 
     Args:
         listener: Listener to unregister.
@@ -487,8 +487,8 @@ async def get_prev_control_mode() -> ControlMode:
 async def get_power_status() -> PowerStatus:
     """
     Get the power status.
-    If a valid cache exists of the power status, the cased value is returned
-    otherwise power status is obtained (and cached) it from the power controller.
+    If a valid cached power status exists, it is returned.
+    Otherwise, the status is obtained from the power controller and cached.
 
     Returns:
         The current cached status, or the default status if no controller is connected.
@@ -509,10 +509,10 @@ async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> d
     Get the values of registers, optionally limited to names that match a pattern.
 
     Args:
-        match: either a compiled regular expression or collection of register names.
+        match: A compiled regular expression or an iterable of register names.
 
     Returns:
-         a dicitonary of register name to register value.
+        A dictionary mapping register names to their values.
     """
     registers: RegisterBank = _CONTROL_STATE.registers  # no need to lock as RegisterBank is stable.
     if isinstance(match, re.Pattern):
@@ -807,8 +807,10 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
     """
-    Read measurements for a day, returning an empty sequence
-    if there are no measurement available for the given day.
+    Read measurements for a day.
+
+    Return an empty sequence if no measurements are available or if database
+    access fails with a connection or database error.
 
     Args:
         day: Local date for which to retrieve measurements.
@@ -841,7 +843,7 @@ async def set_control(
     Set the control loop modes, policies, and policy parameters.
 
     Parameters left as None retain their current values.
-    Export and charge thresholds should each be ordered to provide hysteresis.
+    Export and charge thresholds must each be strictly ordered to provide hysteresis.
 
     Args:
         battery_mode: Requested battery operating mode.
