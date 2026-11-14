@@ -388,8 +388,8 @@ async def _build_log_page(container: Element, session: PageSession) -> None:
     session.add_cleanup(partial(server_log.remove, log_ui))
 
 
+# Asynchronous builder for a tab's content and session resources.
 type Builder = Callable[[Element, PageSession], Awaitable[None]]
-"""Asynchronous builder for a tab's content and session resources."""
 
 
 @dataclass
