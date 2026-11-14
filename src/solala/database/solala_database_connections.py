@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from types import TracebackType
 from typing import Self
 from urllib.parse import quote_plus
 
@@ -121,5 +122,10 @@ class SolalaDatabaseConnections:
         await self.open(wait=True)
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            traceback: TracebackType | None,
+    ) -> None:
         await self.close()
