@@ -13,7 +13,7 @@ class DummySolarForecaster(SolarForecaster):
     Dummy solar forecaster that generates synthetic hourly forecasts for
     testing and development.
 
-    Its public attributes can be updated after construction to adjust the
+    Public attributes can be updated after construction to adjust the
     generated forecasts.
     """
 
@@ -77,13 +77,6 @@ class DummySolarForecaster(SolarForecaster):
         return DailySolarForecast(forecasts)
 
     def get_connection_info(self) -> JSONDict:
-        """
-        Return the configuration used by this dummy forecaster.
-
-        Returns:
-            A dictionary containing the forecaster class name, panel capacity,
-            inverter limit, and timezone.
-        """
         return {
             'connection': self.__class__.__name__,
             'panel_capacity': self.panel_capacity,
