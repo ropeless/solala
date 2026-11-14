@@ -1,7 +1,3 @@
-"""
-Provide a three-slide, date-driven NiceGUI carousel navigator.
-"""
-
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import date, timedelta
@@ -24,8 +20,8 @@ class DayNavigator:
     """
     Navigate dated content using three reusable carousel slides.
 
-    Each slide has a coindexed asynchronous updater that populates its content
-    for the selected, previous, or next day. The carousel supports date-picker,
+    The user provides each slide with an asynchronous updater that populates the slide's
+    content for the selected, previous, or next day. The carousel supports date-picker,
     button, swipe, and keyboard navigation.
     """
     def __init__(
@@ -38,16 +34,25 @@ class DayNavigator:
             title: str = ''
     ) -> None:
         """
-        Create the navigation controls and three reusable content slides.
+        Create a carousel of infinite cards, where each card represents a date.
 
-        The focus slide tracks the requested day, while the displayed slide
-        tracks the carousel's current visual position. Updaters are registered
-        separately using `set_listeners()`.
+        The navigator consists of a date navigation bar with a content slide below that.
+
+        The navigator works by keeping s ring of three carousel slides. At any point of time
+        one slide is the current display day (focus slide) with the other two being the previous
+        and next day (left slide and right slide).
+
+        The contents of each slide is maintained by an element "Updater" which is set for a particular
+        slide content element and called when required to update its content to a particular day.
+
+        The carousel can be operated either via the IU or programmatically so there is a distinction
+        between the slide we last set to the focus slide (self._focus_slide) and the slide currently
+        on display (self._display_slide).
 
         Args:
             enable_swipe_content: Enable horizontal swipes over slide content.
             enable_swipe_navigator: Enable horizontal swipes over the date bar.
-            enable_arrow_keys: Enable left/right arrow and Home key navigation.
+            enable_arrow_keys: Enable left arrow, right arrow, and home key navigation.
             auto_height: Allow the carousel to follow its active slide's height.
                 Call `initialise_auto_height()` after the client is ready.
             title: Optional heading above the date navigator.
@@ -116,7 +121,7 @@ class DayNavigator:
                 element_1 = ui.element('div').classes('w-full')
             with ui.carousel_slide('2'):
                 element_2 = ui.element('div').classes('w-full')
-        self._elements: list[Element] = [element_0, element_1, element_2]
+        self._elements: tuple(Element, Element, Element) = (element_0, element_1, element_2)
 
         self._carousel.on_value_change(self._on_slide_change)
         self._carousel.on('transition', self._on_carousel_transition)
@@ -178,14 +183,14 @@ class DayNavigator:
             }})();
         """)
 
-    def get_elements(self) -> Sequence[Element]:
+    def get_elements(self) -> tuple[Element, Element, Element]:
         """
         Return the three slide content elements in updater order.
 
         Returns:
             Elements coindexed with the callbacks passed to `set_listeners()`.
         """
-        return tuple(self._elements)
+        return self._elements
 
     def set_listeners(self, *listeners: Updater) -> None:
         """
