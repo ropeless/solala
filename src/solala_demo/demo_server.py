@@ -16,9 +16,9 @@ def main():
     outlet_charger: str | None = config.get('POWER_POINT_DEVICE')
     if outlet_charger:
         consumers['outlet_charger'] = TuyaConnection(
+            device_id=outlet_charger,
             access_id=config.POWER_POINT_ACCESS_ID,
             access_secret=config.POWER_POINT_ACCESS_SECRET,
-            device_id=config.POWER_POINT_DEVICE,
         )
 
     settings = Settings(
