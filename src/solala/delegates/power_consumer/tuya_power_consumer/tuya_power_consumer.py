@@ -15,7 +15,7 @@ API_ENDPOINT = "https://openapi.tuyaeu.com"
 
 class TuyaPowerConsumer(PowerConsumer):
     """
-    Power consumer implementation for devices connected through the Tuya IoT API.
+    Power consumer implementation for a device connected through the Tuya IoT API.
 
     Retrieves device status and exposes supported status fields as registers.
     """
@@ -78,20 +78,14 @@ class TuyaPowerConsumer(PowerConsumer):
     async def get_registers(self) -> RegisterBank:
         if self._register_bank is None:
             self._register_bank = reg_bank = RegisterBank({
-                key: AsyncCallRegister((partial(self.get_register_value, key)), reg_type)
-                async for key, reg_type in self.get_register_keys()
+                key: AsyncCallRegister((partial(self._get_register_value, key)), reg_type)
+                async for key, reg_type in self._get_register_keys()
             })
             return reg_bank
         else:
             return self._register_bank
 
     async def get_status(self) -> ConsumerStatus:
-        """
-        Get the device's electrical status.
-
-        The raw voltage, current, and power values are converted to volts,
-        amperes, and watts using the configured scale factors.
-        """
         device_status: JSONDict = await self._cache()
         return ConsumerStatus(
             voltage=json_num(device_status['cur_voltage']) * self._voltage_scale_factor,
@@ -100,19 +94,12 @@ class TuyaPowerConsumer(PowerConsumer):
         )
 
     def get_connection_info(self) -> JSONDict:
-        """
-        Get the Tuya connection details and measurement scale factors.
-
-        Returns:
-            The connection type, access ID, device ID, and configured scale
-            factors. The access secret is not included.
-        """
         return self._connection_info
 
     async def close(self) -> None:
         pass
 
-    async def get_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
+    async def _get_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
         """
         Get the device status fields supported by the register system.
 
@@ -129,7 +116,7 @@ class TuyaPowerConsumer(PowerConsumer):
                 continue
             yield key, reg_type
 
-    async def get_register_value(self, key: str) -> RegisterValue:
+    async def _get_register_value(self, key: str) -> RegisterValue:
         """
         Get the current value of a device status field.
 
