@@ -26,7 +26,7 @@ def run_server(
         database_write: bool = True,
 ) -> None:
     """
-    Run the web server and control loop in the current thread.
+    Run the web server and control loop as async tasks in the current thread.
 
     Both coroutines run concurrently on the same asyncio event loop, created
     using a selector-based loop factory.
@@ -39,7 +39,7 @@ def run_server(
         force_settings: Whether to force the supplied settings rather than
             using values loaded from the settings file.
         database_write: Whether the control loop writes measurements to the
-            database. Disabling writes is useful for testing.
+            database. The argument is useful for testing.
     """
     try:
         with asyncio.Runner(loop_factory=_loop_factory) as runner:
