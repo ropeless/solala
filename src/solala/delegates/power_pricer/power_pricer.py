@@ -8,11 +8,17 @@ from solala.utils.json_extras import JSONDict
 
 
 class PowerPricer(ABC):
+    """
+    Defines the interface for retrieving electricity prices and tariff information.
+    """
 
     @abstractmethod
     async def get_price(self) -> Price:
         """
-        Get the current price.
+        Get the current five-minute pricing interval.
+
+        Returns:
+            The current price.
         """
         ...
 
@@ -25,10 +31,10 @@ class PowerPricer(ABC):
         6 hours and will return 12 prices.
 
         Args:
-            count: number of prices, >= 1.
+            count: Number of 30-minute forecast intervals, >= 1.
 
         Returns:
-            `count` prices, in ascending time order.
+            `count` prices, in chronological order.
         """
         ...
 
@@ -36,13 +42,22 @@ class PowerPricer(ABC):
     async def get_demand_window(self, day: date) -> tuple[datetime, datetime] | None:
         """
         Get the demand window for the given day, if active.
+
+        The returned datetimes represent the local start and end of the demand
+        window. Returns `None` if no demand window applies.
+
+        Args:
+            day: The date for which to retrieve the demand window.
         """
         ...
 
     @abstractmethod
     def get_connection_info(self) -> JSONDict:
         """
-        Get information about the connection.
+        Get information about the pricing connection.
+
+        Returns:
+            A JSON-compatible dictionary describing the connection.
         """
         ...
 
@@ -54,6 +69,12 @@ class PowerPricer(ABC):
         ...
 
     async def __aenter__(self) -> Self:
+        """
+        Enter the asynchronous context manager.
+
+        Returns:
+            This power pricer.
+        """
         return self
 
     async def __aexit__(
@@ -62,4 +83,7 @@ class PowerPricer(ABC):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """
+        Exit the asynchronous context manager and close the power pricer.
+        """
         await self.close()
