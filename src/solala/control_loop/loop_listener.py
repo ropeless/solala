@@ -7,4 +7,7 @@ class LoopListener(Protocol):
     """
 
     async def update(self) -> None:
+        """
+        Perform the listener's update for the current iteration.
+        """
         ...
