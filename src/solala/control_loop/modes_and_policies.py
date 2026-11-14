@@ -48,7 +48,7 @@ class InverterPolicy(Enum):
 @dataclass
 class ControlMode:
     """
-    Specify the operating modes, policies, and price thresholds requested by the user.
+    Specify the operating modes, policies, and associated policy parameters.
 
     Attributes:
         battery_mode: Requested battery operating mode.
