@@ -1,3 +1,9 @@
+"""
+Default configuration values, display units, and application constants.
+
+Price thresholds use cents per kilowatt-hour unless otherwise specified.
+"""
+
 from solala.utils.json_extras import JSONDict, to_json
 
 DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.1  # disable export below this price
@@ -20,7 +26,11 @@ GUI_LOG_FORMAT: str = '%(asctime)s %(levelname)s: %(name)s %(message)s'
 
 
 class Units:
-    # Units for displaying quantities
+    """
+    Unit suffixes used when formatting quantities for display.
+
+    Most suffixes include a leading space to separate them from the value.
+    """
     PRICE_CENTS = ' ¢/kWh'
     PRICE_DOLLARS = ' $/kWh'
     VOLTS = ' V'
@@ -39,8 +49,13 @@ class Units:
 
 class Constants:
     """
-    These constants control the behaviour of the control loop and GUI.
-    They should only be modified by developers for testing and debugging.
+    Define timing, cache, logging, and display constants for Solala.
+
+    These values control the behaviour of the control loop and GUI and are
+    intended to be modified only by developers for testing or debugging.
+
+    Timing values use seconds unless their names or comments specify minutes
+    or hours.
     """
 
     APP_NAME: str = 'Solala'
@@ -66,4 +81,10 @@ class Constants:
 
     @staticmethod
     def to_json() -> JSONDict:
+        """
+        Export the application constants as a JSON-compatible dictionary.
+
+        Returns:
+            A mapping of constant names to their values.
+        """
         return to_json(Constants)
