@@ -1,3 +1,7 @@
+"""
+Update NiceGUI page controls, status displays, forecasts, and charts.
+"""
+
 import asyncio
 from abc import abstractmethod
 from datetime import datetime, date
@@ -30,6 +34,11 @@ from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json,
 
 
 class StatusListener(LoopListener):
+    """
+    Fetch the current control-loop status and delegate its presentation.
+
+    Subclasses implement `_update()` to refresh their own page elements.
+    """
 
     @final
     async def update(self) -> None:
@@ -42,6 +51,9 @@ class StatusListener(LoopListener):
 
 
 class InverterButtonUpdater(StatusListener):
+    """
+    Bind inverter control buttons and reflect the selected mode or policy.
+    """
 
     def __init__(
             self,
@@ -110,6 +122,9 @@ class InverterButtonUpdater(StatusListener):
 
 
 class BatteryButtonUpdater(StatusListener):
+    """
+    Bind battery control buttons and reflect the selected mode or policy.
+    """
 
     def __init__(
             self,
@@ -192,6 +207,9 @@ class BatteryButtonUpdater(StatusListener):
 
 
 class StatusUpdater(StatusListener):
+    """
+    Render the control-loop status as formatted JSON in a page element.
+    """
 
     def __init__(
             self,
@@ -207,6 +225,9 @@ class StatusUpdater(StatusListener):
 
 
 class InfographicUpdater(StatusListener):
+    """
+    Refresh the SVG power-flow infographic from the current status.
+    """
     def __init__(self, infographic_element: ContentElement) -> None:
         super().__init__()
         self.infographic_element = infographic_element
@@ -218,6 +239,9 @@ class InfographicUpdater(StatusListener):
 
 
 class RegistersUpdater(LoopListener):
+    """
+    Fetch and display register values, replacing the initial loading label.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -242,6 +266,11 @@ class RegistersUpdater(LoopListener):
 
 
 class PriceForecastUpdater(LoopListener):
+    """
+    Render a price forecast table with demand-window row highlighting.
+
+    The table is rebuilt when the forecast sequence object changes.
+    """
     def __init__(self, element: ui.element) -> None:
         super().__init__()
         self._prev: Sequence[Price] | None = None
@@ -315,6 +344,12 @@ class PriceForecastUpdater(LoopListener):
 
 
 class SolarForecastUpdater(LoopListener):
+    """
+    Render the selected day's solar forecast and estimated generation.
+
+    A day change schedules a page-owned refresh task and displays a loading
+    message until the forecast is available.
+    """
 
     def __init__(self, element: ui.element, session: PageSession) -> None:
         super().__init__()
@@ -336,6 +371,12 @@ class SolarForecastUpdater(LoopListener):
         return self._day
 
     async def set_day(self, day: date) -> None:
+        """
+        Select a forecast date and schedule a refresh of its table.
+
+        Args:
+            day: Date to display.
+        """
         self._show_loading()
         self._day = day
         self._session.add_task(asyncio.create_task(self.update()))
@@ -415,6 +456,12 @@ class SolarForecastUpdater(LoopListener):
 
 
 class ChartUpdater(LoopListener):
+    """
+    Fetch and display the four charts for the selected day.
+
+    Measurement, price, demand-window, and solar forecast data are fetched
+    concurrently and combined by `GraphingInterpolator`.
+    """
 
     def __init__(self, element: ui.element, session: PageSession) -> None:
         super().__init__()
@@ -439,6 +486,12 @@ class ChartUpdater(LoopListener):
         return self._day
 
     async def set_day(self, day: date) -> None:
+        """
+        Select a chart date and schedule a refresh of its graphs.
+
+        Args:
+            day: Date to display.
+        """
         self._show_loading()
         self._day = day
         self._session.add_task(asyncio.create_task(self.update()))
@@ -476,6 +529,9 @@ class ChartUpdater(LoopListener):
 
 
 def _buy_price_class(price: float) -> str:
+    """
+    Select the CSS class for the configured electricity purchase price bands.
+    """
     if price >= Constants.BUY_PRICE_RED:
         return 'price-buy-high'
     elif price >= Constants.BUY_PRICE_AMBER:
@@ -485,6 +541,9 @@ def _buy_price_class(price: float) -> str:
 
 
 def _feed_in_price_class(price: float) -> str:
+    """
+    Select the CSS class for nonnegative or negative feed-in prices.
+    """
     if price >= 0:
         return 'price-feed-in-okay'
     else:
