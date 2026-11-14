@@ -27,6 +27,16 @@ class SolalaDatabase:
 
     @property
     def _connection(self) -> AsyncConnection:
+        """
+        Get the connection of this database wrapper.
+
+        Returns:
+            The underlying database connection.
+
+        Raises:
+            RuntimeError: If the connection has been released.
+        """
+
         connection = self.__connection
         if connection is None:
             raise RuntimeError('database connection has been released')
@@ -42,7 +52,7 @@ class SolalaDatabase:
         Raises:
             RuntimeError: If the connection has already been transferred.
         """
-        connection = self._connection
+        connection = self._connection  # may raise RuntimeError
         self.__connection = None
         return connection
 
@@ -69,7 +79,7 @@ class SolalaDatabase:
             timestamp: Time associated with the register readings.
             registers: Register names mapped to numeric values.
         """
-        if not registers:
+        if len(registers) == 0:
             return
 
         params = [
@@ -98,7 +108,7 @@ class SolalaDatabase:
             timestamp: Time associated with the register readings.
             registers: Register names mapped to text values.
         """
-        if not registers:
+        if len(registers) == 0:
             return
 
         params = [
@@ -119,10 +129,10 @@ class SolalaDatabase:
             include_boundaries: bool = True,
     ) -> Sequence[Measurement]:
         """
-        Retrieve measurements for a day in ascending timestamp order.
+        Retrieve measurements for a day in ascending timestamp order (chronological order).
 
         Optionally include the nearest measurement before the day and the
-        nearest measurement on or after the next day's start, to support
+        nearest measurement after the day, to support
         interpolation at the day boundaries.
 
         Args:
@@ -180,10 +190,10 @@ class SolalaDatabase:
 
     async def get_latest_measurement(self) -> Measurement | None:
         """
-        Retrieve the most recent measurement by timestamp.
+        Retrieve the most recent measurement (by measurement timestamp).
 
         Returns:
-            The latest measurement, or None if the database contains none.
+            The latest measurement, or None if the database contains no measurements.
         """
         query = """
             SELECT *
