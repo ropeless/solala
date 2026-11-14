@@ -416,7 +416,7 @@ class SolarForecastUpdater(LoopListener):
 
 class ChartUpdater(LoopListener):
 
-    def __init__(self, element: ui.element, session: PageSession):
+    def __init__(self, element: ui.element, session: PageSession) -> None:
         super().__init__()
         self._session = session
         self._prev: DailySolarForecast | None = None
