@@ -10,7 +10,7 @@ from solala.utils.json_extras import JSONDict
 @dataclass
 class PowerStatus:
     """
-    Represents the current operating status and accumulated energy of the power system.
+    Records the current operating status and accumulated energy of the power system.
 
     Attributes:
         state_of_charge: Battery state of charge as a percentage.
@@ -60,7 +60,7 @@ class PowerController(ABC):
     High-level interface for monitoring and controlling the power system.
 
     Implementations provide access to system registers and status, battery and
-    inverter controls, connection information, and connection cleanup.
+    inverter controls, and connection information.
     """
 
     @abstractmethod
