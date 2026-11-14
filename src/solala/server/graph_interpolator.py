@@ -1,7 +1,3 @@
-"""
-Align measured and forecast energy data to five-minute graph timestamps.
-"""
-
 from datetime import date, datetime, timedelta
 from collections.abc import Iterable, Sequence
 
@@ -207,7 +203,7 @@ class GraphingInterpolator:
 
     def _accumulated_daily_energy(self, field: str) -> list[float]:
         """
-        Interpolate an accumulated energy field and rebase it to the first valid value.
+        Interpolate an accumulated energy field and offset so the first value is zero.
         """
         values = [getattr(m, field) for m in self._measurements]
         return _ensure_monotonic(_zero(x / 1000 for x in self._interpolate_linear(self._ts_m, values)))
@@ -227,7 +223,7 @@ class GraphingInterpolator:
             right: float | None = np.nan,
     ) -> list[float]:
         """
-        Interpolate onto the daily time grid using straight-line segments.
+        Interpolate `values` onto the daily time grid using straight-line segments.
         """
         if len(values) == 0:
             return []
@@ -243,7 +239,7 @@ class GraphingInterpolator:
             right: float | None = np.nan,
     ) -> list[float]:
         """
-        Interpolate onto the daily time grid using a cubic spline.
+        Interpolate `values` onto the daily time grid using a cubic spline.
         """
         if len(values) == 0:
             return []
@@ -277,7 +273,7 @@ class GraphingInterpolator:
             right: float | None = np.nan,
     ) -> list[float]:
         """
-        Sample values at the nearest source timestamp.
+        Interpolate `values` onto the daily time grid using the "nearest neighbour" algorithm.
         """
         if len(values) == 0:
             return []
@@ -309,7 +305,7 @@ class GraphingInterpolator:
 
 def _ensure_monotonic(data: Iterable[float]) -> list[float]:
     """
-    Replace decreases with the greatest value seen so far.
+    Replace decreasing values with the greatest value seen so far.
     """
     m = float('-inf')
     result: list[float] = []
