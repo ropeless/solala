@@ -3,10 +3,10 @@ from dataclasses import dataclass
 from datetime import datetime, date
 from typing import Literal
 
+import httpx
 import requests
 
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
-from solala.utils.httpx_extras import async_get
 from solala.utils.json_extras import JSONDict, json_str, json_num, json_bool, json_dict
 
 API = 'https://api.amber.com.au/v1'
@@ -34,6 +34,7 @@ class AmberPowerPricer(PowerPricer):
             api_token: Amber API authentication token (secret information).
             nmi: National Metering Identifier of the site to retrieve.
         """
+        self._client = httpx.AsyncClient()
         self._api_token: str = api_token
         self._nmi: str = nmi
         self._site: JSONDict = self._get_site()
@@ -61,7 +62,7 @@ class AmberPowerPricer(PowerPricer):
         }
 
     async def close(self) -> None:
-        pass
+        await self._client.aclose()
 
     async def get_price(self) -> Price:
         response = await self._get(5, 0)
@@ -112,7 +113,7 @@ class AmberPowerPricer(PowerPricer):
             'endDate': day_str,
             'resolution': '30',
         }
-        response = await async_get(url, headers=headers, params=params)
+        response = await self._client.get(url, headers=headers, params=params)
         if response.status_code != requests.codes.ok:
             raise IOError(f'error accessing Amber prices: {response}')
 
@@ -151,7 +152,7 @@ class AmberPowerPricer(PowerPricer):
             'resolution': resolution,
         }
 
-        response = await async_get(url, headers=headers, params=params)
+        response = await self._client.get(url, headers=headers, params=params)
         if response.status_code != requests.codes.ok:
             raise IOError(f'error accessing Amber prices: {response}')
         return response.json()
