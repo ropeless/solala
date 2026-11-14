@@ -15,7 +15,8 @@ class ConsumerStatus:
     Attributes:
         voltage: The measured voltage in volts.
         current: The measured current in amperes.
-        power: The measured power in watts.
+        power: The active power in watts, measured where available or estimated
+            where the device does not provide a direct measurement.
     """
 
     voltage: float
@@ -56,7 +57,8 @@ class PowerConsumer(ABC):
         Get the current electrical status of the consumer.
 
         Returns:
-            The consumer's voltage and current measurements.
+            The consumer's voltage and current measurements, together with
+            its active power in watts.
         """
         ...
 
