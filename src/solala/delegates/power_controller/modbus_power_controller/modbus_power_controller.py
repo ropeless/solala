@@ -94,9 +94,8 @@ class ModbusPowerController(PowerController):
             self._power_controllers: list[str] = self._inverters
         else:
             self._power_controllers: list[str] = [master]
-        # Because self._inverters always starts with the master inverter, the power controllers
-        # is always coindexed with inverters up to the length of the power controllers.
-        # This simplifies getting power controller limits in method `zero_export()`.
+        # The controlled inverters are always a prefix of self._inverters.
+        # This allows zero_export() to select their limits by slicing.
         assert self._inverters[:len(self._power_controllers)] == self._power_controllers
 
         self._W: list[str] = [f'{inverter}/W' for inverter in self._power_controllers]
