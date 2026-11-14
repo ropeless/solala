@@ -1,15 +1,22 @@
-# Units for pretty printing status
+"""
+Define display units for formatted Solala status and configuration values.
+
+Each mapping associates a JSON field name with the unit suffix used by the
+server's JSON renderer. Status units include the policy parameter units.
+"""
 from collections.abc import Mapping
 
 from solala.constants import Units
 from solala.utils.dict_extras import dict_merge
 
+# Unit suffixes for control-policy parameters.
 PARAMETERS_UNITS: Mapping[str, str] = {
     'start_charge_price_threshold': Units.PRICE_CENTS,
     'stop_charge_price_threshold': Units.PRICE_CENTS,
     'disable_export_price_threshold': Units.PRICE_CENTS,
     'enable_export_price_threshold': Units.PRICE_CENTS,
 }
+# Unit suffixes for status fields, including policy parameters.
 STATUS_UNITS: Mapping[str, str] = dict_merge(
     {
         'buy_price': Units.PRICE_CENTS,
@@ -31,6 +38,7 @@ STATUS_UNITS: Mapping[str, str] = dict_merge(
     },
     PARAMETERS_UNITS,
 )
+# Unit suffixes for control-loop timing and forecast constants.
 CONSTANTS_UNITS: Mapping[str, str] = {
     'LOOP_TIME': Units.SECONDS,
     'LOOP_MIN_SLEEP_TIME': Units.SECONDS,
@@ -41,6 +49,7 @@ CONSTANTS_UNITS: Mapping[str, str] = {
     'PRICE_FORECAST_AGE': Units.MINUTES,
     'SOLAR_FORECAST_AGE': Units.MINUTES,
 }
+# Unit suffixes for connection and solar-installation settings.
 CONNECTION_UNITS: Mapping[str, str] = {
     'latitude': Units.DEGREES,
     'longitude': Units.DEGREES,
