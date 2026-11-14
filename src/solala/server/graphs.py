@@ -1,3 +1,7 @@
+"""
+Construct and update NiceGUI ECharts for Solala measurements and forecasts.
+"""
+
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,11 +21,24 @@ DASHED = [3, 3]
 
 @dataclass
 class SeriesData:
+    """
+    Hold coindexed chart series and an optional demand-window interval.
+
+    Attributes:
+        data: One sequence of graph values for each configured chart series.
+        demand_window: Optional interval to highlight on the chart.
+    """
     data: Sequence[list[float] | list[int]]
     demand_window: tuple[datetime, datetime] | None = None
 
 
 class SolalaChart(ABC):
+    """
+    Provide common ECharts configuration and updates for Solala charts.
+
+    Subclasses define their series configuration and implement
+    `_get_series_data()` to supply values in the same series order.
+    """
     def __init__(
             self,
             name: str,
@@ -30,6 +47,16 @@ class SolalaChart(ABC):
             demand_window_colour: str = '',
             show_legend: bool = True,
     ) -> None:
+        """
+        Create a chart with the supplied series and display options.
+
+        Args:
+            name: Name displayed above the vertical axis.
+            units: Units shown in the axis title and tooltips.
+            series: ECharts series definitions in display order.
+            demand_window_colour: CSS colour for a highlighted demand window.
+            show_legend: Whether to reserve space and display a legend.
+        """
         options: dict[str, JSONValue] = {
             'backgroundColor': 'transparent',
             'tooltip': _graph_tooltip(units),
@@ -44,6 +71,16 @@ class SolalaChart(ABC):
         self.demand_window_colour = demand_window_colour
 
     def update(self, data: GraphingInterpolator) -> None:
+        """
+        Refresh chart timestamps, series values, and demand-window shading.
+
+        Args:
+            data: Interpolated data for the selected day.
+
+        Raises:
+            RuntimeError: If the number of returned data series differs from
+                the configured ECharts series count.
+        """
         series = self.chart.options['series']
         timestamps = [timestamp.strftime(GUI_TIME_FORMAT) for timestamp in data.timestamps]
 
@@ -67,10 +104,22 @@ class SolalaChart(ABC):
 
     @abstractmethod
     def _get_series_data(self, data: GraphingInterpolator) -> SeriesData:
+        """
+        Supply values coindexed with the chart's configured series.
+
+        Args:
+            data: Interpolated measurements and forecasts.
+
+        Returns:
+            Chart series values and an optional demand window.
+        """
         ...
 
 
 class EnergyChart(SolalaChart):
+    """
+    Display accumulated solar, grid, and battery energy with a forecast.
+    """
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Energy',
@@ -99,6 +148,9 @@ class EnergyChart(SolalaChart):
 
 
 class PowerChart(SolalaChart):
+    """
+    Display instantaneous solar, grid, battery, and house power.
+    """
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Power',
@@ -125,6 +177,11 @@ class PowerChart(SolalaChart):
 
 
 class PriceChart(SolalaChart):
+    """
+    Display actual and forecast electricity prices with demand-window shading.
+
+    Forecast values are hidden wherever corresponding actual prices exist.
+    """
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Price',
@@ -164,6 +221,9 @@ class PriceChart(SolalaChart):
 
 
 class ChargeChart(SolalaChart):
+    """
+    Display battery state of charge as a percentage.
+    """
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Charge',
@@ -182,6 +242,9 @@ class ChargeChart(SolalaChart):
 
 
 def _demand_window(start: datetime, end: datetime, colour: str, title: str = 'demand') -> JSONDict:
+    """
+    Build an ECharts mark-area definition for a demand-window interval.
+    """
     return {
         'silent': True,
         'itemStyle': {
@@ -213,6 +276,9 @@ def _create_series(
         line_type: str | list[int] = 'solid',
         area_alpha: float = 0.1,
 ) -> JSONDict:
+    """
+    Create an ECharts line series with optional area fill.
+    """
     options: dict[str, JSONValue] = {
         'name': name,
         'type': 'line',
@@ -233,6 +299,9 @@ def _create_series(
 
 
 def _graph_tooltip(units: str) -> JSONDict:
+    """
+    Configure an axis tooltip that formats finite values to two decimals.
+    """
     return {
         'trigger': 'axis',
         ':formatter': """(params) => {
@@ -257,6 +326,9 @@ def _graph_tooltip(units: str) -> JSONDict:
 
 
 def _grid(legend_space: bool) -> JSONDict:
+    """
+    Configure chart margins, allowing extra top space for a legend.
+    """
     return {
         'left': 0,
         'right': 0,
@@ -267,6 +339,9 @@ def _grid(legend_space: bool) -> JSONDict:
 
 
 def _legend() -> JSONDict:
+    """
+    Configure the horizontal chart legend.
+    """
     return {
         'type': 'plain',
         'top': 0,
@@ -283,6 +358,9 @@ def _legend() -> JSONDict:
 
 
 def _x_axis() -> JSONDict:
+    """
+    Configure the category axis used for formatted time labels.
+    """
     return {
         'type': 'category',
         'boundaryGap': False,
@@ -299,6 +377,9 @@ def _x_axis() -> JSONDict:
 
 
 def _y_axis(name: str, units: str) -> JSONDict:
+    """
+    Configure the numeric axis and its units.
+    """
     return {
         'type': 'value',
         'name': f'{name} ({units.strip()})',
