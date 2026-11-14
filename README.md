@@ -5,7 +5,7 @@ Solala is a Python package and web app for monitoring and controlling home solar
 power inverters and batteries. It is a personal project shared in case others
 find it useful.
 
-![Solala Power dashboard](doc_images/screenshot%20-%20Power.PNG)
+![Solala Power dashboard](doc/images/screenshot%20-%20Power.PNG)
 
 Features
 ========
