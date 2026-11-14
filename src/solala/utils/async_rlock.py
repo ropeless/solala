@@ -11,8 +11,9 @@ class AsyncRLock:
     successful acquisition must be matched by a release before another task
     can acquire it. Only the owning task may release the lock.
 
-    The lock must be used within a single asyncio event loop and can also be
-    acquired and released through an asynchronous context manager.
+    The lock must be used within a single asyncio event loop.
+
+    An AsyncRLock can be acquired and released through an asynchronous context manager.
     """
 
     def __init__(self) -> None:
