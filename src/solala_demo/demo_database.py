@@ -2,7 +2,6 @@ import asyncio
 import json
 import selectors
 from datetime import datetime
-from typing import Optional
 
 from solala.utils.local_config_help import config
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
@@ -56,7 +55,7 @@ async def main() -> None:
     ) as pool:
         async with pool.solala_database() as db:
             await insert_measurement(db)
-            got: Optional[Measurement] = await db.get_latest_measurement()
+            got: Measurement | None = await db.get_latest_measurement()
 
             if got is not None:
                 to_print = json.dumps(to_json(got), indent=4)

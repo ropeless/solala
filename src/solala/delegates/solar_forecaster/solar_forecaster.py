@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import date
+from types import TracebackType
+from typing import Self
 
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast
 from solala.utils.json_extras import JSONDict
@@ -29,8 +31,13 @@ class SolarForecaster(ABC):
         """
         ...
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         await self.close()

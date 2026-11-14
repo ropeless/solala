@@ -1,6 +1,7 @@
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, date
-from typing import List, Dict, Literal, TypeAlias, Callable, Optional, Tuple
+from typing import Literal
 
 import requests
 
@@ -17,12 +18,12 @@ class _ChannelPair:
     feed_in: JSONDict
 
 
-_PriceExtract: TypeAlias = Callable[[JSONDict], float]
+type _PriceExtract = Callable[[JSONDict], float]
 
 
 class AmberPowerPricer(PowerPricer):
 
-    def __init__(self, api_token: str, nmi: str):
+    def __init__(self, api_token: str, nmi: str) -> None:
         self._api_token: str = api_token
         self._nmi: str = nmi
         self._site: JSONDict = self._get_site()
@@ -50,7 +51,7 @@ class AmberPowerPricer(PowerPricer):
         response = await self._get(5, 0)
         return _parse_response(response, _get_perKwh)[0]
 
-    async def get_price_forecast(self, count: int) -> List[Price]:
+    async def get_price_forecast(self, count: int) -> list[Price]:
         if count < 1:
             raise ValueError('Count must be positive')
         response = await self._get(30, count - 1)
@@ -73,7 +74,7 @@ class AmberPowerPricer(PowerPricer):
 
         raise ValueError(f'NMI not found in sites')
 
-    async def get_demand_window(self, day: date) -> Optional[Tuple[datetime, datetime]]:
+    async def get_demand_window(self, day: date) -> tuple[datetime, datetime] | None:
         day_str: str = f'{day.year:04d}-{day.month:02d}-{day.day:02d}'
 
         url = f'{API}/sites/{self._site_id}/prices'
@@ -90,7 +91,7 @@ class AmberPowerPricer(PowerPricer):
         if response.status_code != requests.codes.ok:
             raise IOError(f'error accessing Amber prices: {response}')
 
-        prices: List[Price] = [
+        prices: list[Price] = [
             price for price in _parse_response(response.json(), _get_no_price)
             if price.tariff_demand_window
         ]
@@ -117,17 +118,17 @@ class AmberPowerPricer(PowerPricer):
         return response.json()
 
 
-def _parse_response(response_json, price_f: _PriceExtract) -> List[Price]:
+def _parse_response(response_json: Sequence[JSONDict], price_f: _PriceExtract) -> list[Price]:
     # Parse the response
-    parsed: Dict[datetime, _ChannelPair] = {}
+    parsed: dict[datetime, _ChannelPair] = {}
     for channel in response_json:
-        start_time = _get_datetime(channel['startTime'])
+        start_time = _get_datetime(json_str(channel['startTime']))
         pair = parsed.get(start_time)
         if pair is None:
             pair = _ChannelPair({}, {})
             parsed[start_time] = pair
 
-        channel_type = channel['channelType']
+        channel_type: str = json_str(channel['channelType'])
         if channel_type == 'general':
             if len(pair.general) == 0:
                 pair.general = channel
@@ -139,7 +140,7 @@ def _parse_response(response_json, price_f: _PriceExtract) -> List[Price]:
             else:
                 raise IOError(f'duplicate feed-in channel: {start_time}')
 
-    result: List[Price] = [
+    result: list[Price] = [
         _make_price(start_time, pair, price_f)
         for start_time, pair in sorted(parsed.items())
     ]

@@ -1,5 +1,4 @@
 from datetime import datetime, timezone, date, timedelta
-from typing import List
 
 from solala.constants import DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
@@ -29,7 +28,7 @@ class OpenMeteoForecaster(SolarForecaster):
             panel_temperature_coefficient: float = DEFAULT_PANEL_TEMPERATURE_COEFFICIENT,
             inverter_limit: float = DEFAULT_INVERTER_LIMIT,
             inverter_efficiency: float = DEFAULT_INVERTER_EFFICIENCY,
-    ):
+    ) -> None:
         """
         Args:
             latitude: Latitude of the location.
@@ -81,7 +80,7 @@ class OpenMeteoForecaster(SolarForecaster):
         now = datetime.now().astimezone()
         tz = now.tzinfo
         duration = timedelta(hours=1)
-        forecasts: List[SolarForecast] = []
+        forecasts: list[SolarForecast] = []
 
         # All measures are instantaneous as at the timestamp in the 'time' field, except
         # 'global_tilted_irradiance' which is the average irradiance over the preceding hour.

@@ -1,6 +1,5 @@
 import random
 from datetime import datetime, timedelta, date
-from typing import List
 
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster
@@ -31,7 +30,7 @@ class DummySolarForecaster(SolarForecaster):
             18: 148,
             19: 48,
         }
-        self.temperature: List[float] = [
+        self.temperature: list[float] = [
             21, 20, 19, 18, 18, 17, 17, 17, 17, 18, 20, 19,
             19, 19, 20, 17, 17, 17, 17, 16, 15, 15, 15, 15,
         ]
@@ -44,7 +43,7 @@ class DummySolarForecaster(SolarForecaster):
         day = list(WeatherCode)
         day.remove(night)
 
-        forecasts: List[SolarForecast] = [
+        forecasts: list[SolarForecast] = [
             SolarForecast(
                 start_time=day_of_interest + timedelta(hours=hour),
                 end_time=day_of_interest + timedelta(hours=hour + 1),

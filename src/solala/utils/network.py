@@ -1,15 +1,15 @@
 import socket
-from typing import Iterable, Dict, List
+from collections.abc import Iterable
 
 from scapy.layers.l2 import ARP, Ether
 from scapy.sendrecv import srp
 
 
-def find_ip_by_mac(mac_addresses: Iterable[str], timeout=3) -> Dict[str, str]:
+def find_ip_by_mac(mac_addresses: Iterable[str], timeout: float = 3) -> dict[str, str]:
     """
     Scans the local network for the specific MAC addresses and returns a mapping to their IP address.
     """
-    mac_addresses: List[str] = list(mac_addresses)
+    mac_addresses: list[str] = list(mac_addresses)
     if len(mac_addresses) == 0:
         # Don't do any work if there are no MAC addresses to look up
         return {}
@@ -26,7 +26,7 @@ def find_ip_by_mac(mac_addresses: Iterable[str], timeout=3) -> Dict[str, str]:
     # Send the packet and capture responses
     answered_list = srp(packet, timeout=timeout, verbose=False)[0]
 
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     for target_mac_addr in mac_addresses:
         target_mac_addr_lower = target_mac_addr.lower()
         for _, received in answered_list:

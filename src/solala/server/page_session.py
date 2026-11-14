@@ -1,11 +1,18 @@
 import asyncio
+import inspect
 from functools import partial
-from typing import List, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol
 
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
 from solala.logger import LOGGER
 from solala.server.css_colours import Colours
+
+
+class _CancellableTimer(Protocol):
+    def cancel(self) -> None:
+        ...
 
 
 class PageSession:
@@ -18,7 +25,7 @@ class PageSession:
             colours: Colours,
             select_tab: Callable[[str], Awaitable[None]],
     ) -> None:
-        self._cleanup: List[Callable[[], Awaitable[None] | None]] = []
+        self._cleanup: list[Callable[[], Awaitable[None] | None]] = []
         self._closed: bool = False
         self._colours: Colours = colours
         self._select_tab: Callable[[str], Awaitable[None]] = select_tab
@@ -60,7 +67,7 @@ class PageSession:
             raise
         self.add_cleanup(partial(control_loop.remove_database_loop_listener, listener))
 
-    def add_task(self, task: asyncio.Task) -> None:
+    def add_task(self, task: asyncio.Task[Any]) -> None:
         async def cancel_task() -> None:
             if not task.done():
                 task.cancel()
@@ -71,7 +78,7 @@ class PageSession:
 
         self.add_cleanup(cancel_task)
 
-    def add_timer(self, timer) -> None:
+    def add_timer(self, timer: _CancellableTimer) -> None:
         self.add_cleanup(timer.cancel)
 
     async def select_tab(self, tab_name: str) -> None:
@@ -85,7 +92,7 @@ class PageSession:
             cleanup = self._cleanup.pop()
             try:
                 result = cleanup()
-                if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
+                if inspect.isawaitable(result):
                     await result
             except Exception:
                 LOGGER.exception('Error cleaning up page resource')

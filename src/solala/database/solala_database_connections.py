@@ -1,5 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from types import TracebackType
+from typing import Self
 from urllib.parse import quote_plus
 
 from psycopg import AsyncConnection
@@ -84,11 +86,16 @@ class SolalaDatabaseConnections:
             A SolalaDatabase instance.
         """
         async with self._pool.connection(timeout=timeout) as conn:
-            yield SolalaDatabase(conn)
-            if commit_on_close:
-                await conn.commit()
-            else:
-                await conn.rollback()
+            db = SolalaDatabase(conn)
+            try:
+                yield db
+                if commit_on_close:
+                    await conn.commit()
+                else:
+                    await conn.rollback()
+            finally:
+                # noinspection PyProtectedMember
+                db._take_connection()
 
     async def get_db(self, timeout: float | None = None) -> SolalaDatabase:
         conn: AsyncConnection = await self._pool.getconn(timeout=timeout)
@@ -96,9 +103,7 @@ class SolalaDatabaseConnections:
 
     async def put_db(self, db: SolalaDatabase, commit_on_close: bool = True) -> None:
         # noinspection PyProtectedMember
-        conn: AsyncConnection = db._connection
-        # noinspection PyTypeChecker
-        db._connection = None
+        conn: AsyncConnection = db._take_connection()
         try:
             if commit_on_close:
                 await conn.commit()
@@ -116,9 +121,14 @@ class SolalaDatabaseConnections:
     async def close(self) -> None:
         await self._pool.close()
 
-    async def __aenter__(self) -> 'SolalaDatabaseConnections':
+    async def __aenter__(self) -> Self:
         await self.open(wait=True)
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            traceback: TracebackType | None,
+    ) -> None:
         await self.close()

@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from typing import List, Iterator
+from collections.abc import Iterator
 from unittest import TextTestRunner
 
 from tests.unittest_fixture import make_suit
@@ -11,7 +11,7 @@ TEST_VERBOSITY: int = 2
 NUMBER_OF_RUNS: int = 1
 
 
-def test_modules() -> List[str]:
+def test_modules() -> list[str]:
     """
     Find all test modules in this folder, and sub-folders, recursively.
     """

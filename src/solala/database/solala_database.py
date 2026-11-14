@@ -2,7 +2,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 from enum import Enum
 from types import UnionType
-from typing import Any, TypeVar, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin
 
 from psycopg import AsyncConnection, sql
 from psycopg.rows import dict_row
@@ -10,23 +10,38 @@ from pydantic import BaseModel
 
 from solala.database.measurement import Measurement
 
-_ModelType = TypeVar('_ModelType', bound=BaseModel)
 _ENUM_FIELDS: dict[type[BaseModel], list[tuple[str, type[Enum]]]] = {}
+
+type Row = dict[str, Any]
 
 
 class SolalaDatabase:
     def __init__(self, connection: AsyncConnection) -> None:
-        self._connection: AsyncConnection = connection
+        self.__connection: AsyncConnection | None = connection
+
+    @property
+    def _connection(self) -> AsyncConnection:
+        connection = self.__connection
+        if connection is None:
+            raise RuntimeError('database connection has been released')
+        return connection
+
+    def _take_connection(self) -> AsyncConnection:
+        connection = self._connection
+        self.__connection = None
+        return connection
 
     async def insert_measurement(self, measurement: Measurement) -> None:
         await self._insert('measurement', measurement)
 
     async def insert_registers_numeric(
-        self,
-        timestamp: datetime,
-        registers: Mapping[str, int | float],
+            self,
+            timestamp: datetime,
+            registers: Mapping[str, int | float],
     ) -> None:
-        """Insert numeric register values into the database."""
+        """
+        Insert numeric register values into the database.
+        """
         if not registers:
             return
 
@@ -43,11 +58,13 @@ class SolalaDatabase:
                 await cur.executemany(query, params)
 
     async def insert_registers_text(
-        self,
-        timestamp: datetime,
-        registers: Mapping[str, str],
+            self,
+            timestamp: datetime,
+            registers: Mapping[str, str],
     ) -> None:
-        """Insert text register values into the database."""
+        """
+        Insert text register values into the database.
+        """
         if not registers:
             return
 
@@ -64,9 +81,9 @@ class SolalaDatabase:
                 await cur.executemany(query, params)
 
     async def get_measurements(
-        self,
-        day: date,
-        include_boundaries: bool = True,
+            self,
+            day: date,
+            include_boundaries: bool = True,
     ) -> Sequence[Measurement]:
         """
         Get the measurements for a given day. Optionally include the boundary
@@ -115,11 +132,13 @@ class SolalaDatabase:
 
         async with self._connection.cursor(row_factory=dict_row) as cur:
             await cur.execute(query, params)
-            rows = await cur.fetchall()
+            rows: list[Row] = await cur.fetchall()
             return [_model_from_dict(row, Measurement) for row in rows]
 
     async def get_latest_measurement(self) -> Measurement | None:
-        """Get the latest measurement (if there is one)."""
+        """
+        Get the latest measurement (if there is one).
+        """
         query = """
             SELECT *
             FROM measurement
@@ -128,8 +147,11 @@ class SolalaDatabase:
         """
         async with self._connection.cursor(row_factory=dict_row) as cur:
             await cur.execute(query)
-            row = await cur.fetchone()
-            return _model_from_dict(row, Measurement) if row is not None else None
+            row: Row | None = await cur.fetchone()
+            if row is None:
+                return None
+            else:
+                return _model_from_dict(row, Measurement)
 
     async def _insert(self, table: str, data: BaseModel) -> None:
         dumped = data.model_dump()
@@ -149,8 +171,10 @@ class SolalaDatabase:
             await cur.execute(query, list(dumped.values()))
 
 
-def _model_from_dict(row: dict[str, Any], model_type: type[_ModelType]) -> _ModelType:
-    """Convert a database row dictionary to a Pydantic object of type `model_type`."""
+def _model_from_dict[ModelT: BaseModel](row: Row, model_type: type[ModelT]) -> ModelT:
+    """
+    Convert a database row dictionary to a Pydantic object of type `model_type`.
+    """
     for field_name, enum_type in _get_enum_fields(model_type):
         raw_val = row.get(field_name)
         if isinstance(raw_val, str):

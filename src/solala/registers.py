@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import TypeAlias, Type, Mapping, Iterable, Tuple, KeysView, Optional, \
-    Callable, final, Any, Awaitable, AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, KeysView, Mapping
+from typing import final
 
-RegisterValue: TypeAlias = str | int | float | bool
-RegisterType: TypeAlias = Type[str] | Type[int] | Type[float] | Type[bool]
+type RegisterValue = str | int | float | bool
+type RegisterType = type[str] | type[int] | type[float] | type[bool]
 
 
 class ReadOnlyError(AttributeError):
@@ -11,11 +11,11 @@ class ReadOnlyError(AttributeError):
     Raised when requesting to write to a read-only register.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('Register not writable')
 
 
-def check_type(t: Any) -> RegisterType:
+def check_type(t: object) -> RegisterType:
     """
     Is the given type a valid register type.
 
@@ -28,13 +28,18 @@ def check_type(t: Any) -> RegisterType:
     Raises:
         TypeError: If the type is not a valid register type.
     """
-    if t in (str, int, float, bool):
-        return t
-    else:
-        raise TypeError(f'not a valid register type: {t}')
+    if t is str:
+        return str
+    if t is int:
+        return int
+    if t is float:
+        return float
+    if t is bool:
+        return bool
+    raise TypeError(f'not a valid register type: {t}')
 
 
-def check_value(v: Any) -> RegisterValue:
+def check_value(v: object) -> RegisterValue:
     """
     Is the given value a valid register value.
 
@@ -58,6 +63,10 @@ def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
     """
     Is the given value acceptable for the given register type.
 
+    Note that this explicitly allows:
+    * `bool` values can be used for `int` and `float` register types
+    * `int` values can be used for `float` register types.
+
     Args:
         value: The value to check.
         register_type: The register type to check against.
@@ -74,7 +83,7 @@ def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
 
 class Register(ABC):
 
-    def __init__(self, register_type: RegisterType, writable: bool):
+    def __init__(self, register_type: RegisterType, writable: bool) -> None:
         if register_type not in (str, int, float, bool):
             raise TypeError(f'Unexpected register type: {register_type}')
         self._register_type = register_type
@@ -121,7 +130,7 @@ class Register(ABC):
 
 
 class ReadOnlyRegister(Register):
-    def __init__(self, register_type: RegisterType):
+    def __init__(self, register_type: RegisterType) -> None:
         super().__init__(register_type, writable=False)
 
     @abstractmethod
@@ -138,7 +147,7 @@ class ConstantRegister(ReadOnlyRegister):
     A register with a constant value.
     """
 
-    def __init__(self, value: RegisterValue):
+    def __init__(self, value: RegisterValue) -> None:
         register_type: RegisterType = type(value)
         if not value_okay(value, register_type):
             raise TypeError(f'Expected {register_type}, got {type(value)}')
@@ -155,7 +164,7 @@ class CallRegister(ReadOnlyRegister):
     A register that calls a function to get its value.
     """
 
-    def __init__(self, f: Callable[[], RegisterValue], register_type: Optional[RegisterType] = None) -> None:
+    def __init__(self, f: Callable[[], RegisterValue], register_type: RegisterType | None = None) -> None:
         if register_type is None:
             register_type = type(f())
         super().__init__(register_type)
@@ -189,12 +198,12 @@ class RegisterBank:
 
     def __init__(
             self,
-            registers: Iterable[Tuple[str, Register | RegisterValue]] | Mapping[str, Register | RegisterValue]
-    ):
+            registers: Iterable[tuple[str, Register | RegisterValue]] | Mapping[str, Register | RegisterValue]
+    ) -> None:
         if isinstance(registers, Mapping):
             registers = registers.items()
 
-        registers: Iterable[Tuple[str, Register | RegisterValue]]
+        registers: Iterable[tuple[str, Register | RegisterValue]]
         self._registers: Mapping[str, Register] = {
             key: value if isinstance(value, Register) else ConstantRegister(value)
             for key, value in registers
@@ -210,19 +219,19 @@ class RegisterBank:
     def keys(self) -> KeysView[str]:
         return self._registers.keys()
 
-    async def items(self) -> AsyncIterator[Tuple[str, RegisterValue]]:
+    async def items(self) -> AsyncIterator[tuple[str, RegisterValue]]:
         for key in self._registers.keys():
             yield key, await self._registers[key].get()
 
-    async def get(self, key: str, default: Optional[RegisterValue] = None) -> Optional[RegisterValue]:
-        got: Optional[Register] = self._registers.get(key, None)
+    async def get(self, key: str, default: RegisterValue | None = None) -> RegisterValue | None:
+        got: Register | None = self._registers.get(key, None)
         if got is None:
             return default
         else:
             return await got.get()
 
     async def set(self, key: str, value: RegisterValue) -> None:
-        got: Optional[Register] = self._registers.get(key, None)
+        got: Register | None = self._registers.get(key, None)
         if got is None:
             raise KeyError(key)
         else:

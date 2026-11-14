@@ -1,5 +1,4 @@
 import threading
-from typing import Dict
 
 import httpx
 from httpx import URL
@@ -14,8 +13,8 @@ class AsyncClients:
     Note, we assume maximum one asyncio event loop per thread.
     """
 
-    def __init__(self):
-        self._clients: Dict[int, httpx.AsyncClient] = {}
+    def __init__(self) -> None:
+        self._clients: dict[int, httpx.AsyncClient] = {}
         self._lock = threading.Lock()
 
     def get(self) -> httpx.AsyncClient:

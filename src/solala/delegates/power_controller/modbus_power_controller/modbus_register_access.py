@@ -1,6 +1,6 @@
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
-from typing import TypeAlias, Sequence
+from collections.abc import Sequence
 
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ModbusPDU
@@ -10,7 +10,7 @@ from solala.registers import ReadOnlyError, RegisterType, RegisterValue
 
 NEXT_SF = -1  # The scale factor address to use to nominate the next register.
 
-MODBUS_MODEL: TypeAlias = int
+type MODBUS_MODEL = int
 
 _LOG_SRC = '[modbus] '  # prefix for log messages
 
@@ -31,7 +31,7 @@ class ModbusError(IOError):
             count: int,
             read_write: str,
             result: ModbusPDU,
-    ):
+    ) -> None:
         super().__init__(
             f'Modbus {read_write} error device {device} at Model_{modbus_model}({addr})/{physical_addr}, '
             f'count {count}: {result}'
@@ -61,7 +61,7 @@ class RegisterAccess(ABC):
     including the number of registers to read/write and any scaling factor.
     """
 
-    def __init__(self, register_type: RegisterType, writable: bool):
+    def __init__(self, register_type: RegisterType, writable: bool) -> None:
         self.register_type = register_type
         self.writable = writable
 
@@ -290,7 +290,7 @@ def check_valid_int(value: int, count: int, signed: bool) -> None:
 
 class RegisterAccessStr(RegisterAccess):
 
-    def __init__(self, addr: int, count: int):
+    def __init__(self, addr: int, count: int) -> None:
         super().__init__(register_type=str, writable=False)
         self.addr = addr
         self.count = count
@@ -305,7 +305,7 @@ class RegisterAccessStr(RegisterAccess):
 
 class RegisterAccessInt(RegisterAccess):
 
-    def __init__(self, addr: int, count: int, signed: bool, writable: bool):
+    def __init__(self, addr: int, count: int, signed: bool, writable: bool) -> None:
         super().__init__(register_type=int, writable=writable)
         self.addr = addr
         self.count = count
@@ -327,7 +327,7 @@ class RegisterAccessInt(RegisterAccess):
 
 class RegisterAccessScaled(RegisterAccess):
 
-    def __init__(self, addr: int, scale_addr: int, count: int, signed: bool, writable: bool):
+    def __init__(self, addr: int, scale_addr: int, count: int, signed: bool, writable: bool) -> None:
         super().__init__(register_type=float, writable=writable)
         self.addr = addr
         self.scale_addr = (addr + 1) if scale_addr == NEXT_SF else scale_addr

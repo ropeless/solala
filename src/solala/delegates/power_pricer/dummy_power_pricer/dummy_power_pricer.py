@@ -1,6 +1,5 @@
 import random
 from datetime import datetime, timedelta, date, time
-from typing import List, Optional, Tuple
 
 from solala.constants import GUI_TIME_FORMAT
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
@@ -23,8 +22,8 @@ class DummyPowerPricer(PowerPricer):
             feed_in_price_discount_min: float = 2,
             feed_in_price_discount_max: float = 5,
             cur_price_is_estimate: bool = False,
-            demand_window: Optional[Tuple[time, time]] = None,
-    ):
+            demand_window: tuple[time, time] | None = None,
+    ) -> None:
         """
         If a demand window is provided, it will be interpreted as in the local time zone.
         """
@@ -43,8 +42,8 @@ class DummyPowerPricer(PowerPricer):
         self.feed_in_price_discount_min: float = feed_in_price_discount_min
         self.feed_in_price_discount_range: float = feed_in_price_discount_max - feed_in_price_discount_min
         self.cur_price_is_estate: bool = cur_price_is_estimate
-        self.prices: List[Price] = []
-        self.demand_window: Optional[Tuple[time, time]] = demand_window
+        self.prices: list[Price] = []
+        self.demand_window: tuple[time, time] | None = demand_window
 
     def get_connection_info(self) -> JSONDict:
         demand_window = (
@@ -77,7 +76,7 @@ class DummyPowerPricer(PowerPricer):
 
         return self.prices[0]
 
-    async def get_price_forecast(self, count: int) -> List[Price]:
+    async def get_price_forecast(self, count: int) -> list[Price]:
         prices_per_30 = 30 // 5
         needed_prices: int = count * prices_per_30
 
@@ -150,7 +149,7 @@ class DummyPowerPricer(PowerPricer):
         to_time = datetime.combine(day, self.demand_window[1])
         return start < to_time and from_time < end
 
-    async def get_demand_window(self, day: date) -> Optional[Tuple[datetime, datetime]]:
+    async def get_demand_window(self, day: date) -> tuple[datetime, datetime] | None:
         if self.demand_window is None:
             return None
         else:
@@ -164,7 +163,7 @@ class DummyPowerPricer(PowerPricer):
         # nothing to do
         pass
 
-    def _get_buy_price(self, prev_buy_price: Optional[float] = None) -> float:
+    def _get_buy_price(self, prev_buy_price: float | None = None) -> float:
         price = self.buy_price_min + self.buy_price_range * random.random()
         if prev_buy_price is None:
             return price
@@ -175,7 +174,7 @@ class DummyPowerPricer(PowerPricer):
         return buy_price - self.feed_in_price_discount_min - random.random() * self.feed_in_price_discount_range
 
 
-def _average_price(prices: List[Price]) -> Price:
+def _average_price(prices: list[Price]) -> Price:
     return Price(
         buy_price=sum(price.buy_price for price in prices) / len(prices),
         feed_in_price=sum(price.feed_in_price for price in prices) / len(prices),

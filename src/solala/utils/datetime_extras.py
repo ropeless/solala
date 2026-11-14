@@ -1,5 +1,4 @@
 from datetime import datetime, date, time, UTC, tzinfo
-from typing import Optional
 
 
 def local_time_zone() -> tzinfo:
@@ -18,7 +17,7 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
-def ensure_date(obj: date, tz: Optional[tzinfo] = None) -> date:
+def ensure_date(obj: date, tz: tzinfo | None = None) -> date:
     """
     Return a pure date (not a datetime).
 
@@ -33,7 +32,7 @@ def ensure_date(obj: date, tz: Optional[tzinfo] = None) -> date:
         return obj
 
 
-def date_to_datetime(obj: date, tz: Optional[tzinfo] = None) -> datetime:
+def date_to_datetime(obj: date, tz: tzinfo | None = None) -> datetime:
     result = datetime.combine(ensure_date(obj), time.min)
     if tz is not None:
         result = result.astimezone(tz)

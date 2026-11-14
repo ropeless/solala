@@ -1,7 +1,5 @@
 import logging
 import threading
-from typing import List
-
 from nicegui import ui
 from nicegui.element import Element
 
@@ -15,15 +13,15 @@ class _GuiLogHandler(logging.Handler):
     to NiceGUI ui.log components.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self._log_elements: List[Element] = []
-        self._history: List[str] = []
+        self._log_elements: list[Element] = []
+        self._history: list[str] = []
         self._lock = threading.Lock()
         self.setFormatter(logging.Formatter(GUI_LOG_FORMAT))
         LOGGER.addHandler(self)
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         try:
             # Format the log message using the handler's formatter
             msg = self.format(record)

@@ -2,7 +2,8 @@ import asyncio
 from abc import abstractmethod
 from datetime import datetime, date
 from functools import partial
-from typing import final, Optional, Dict, Sequence, Tuple
+from collections.abc import Sequence
+from typing import final
 
 from nicegui import ui
 from nicegui.elements.button import Button
@@ -48,7 +49,7 @@ class InverterButtonUpdater(StatusListener):
             inverter_disable: Button,
             inverter_zero_export: Button,
             inverter_neg_feed_in_zero_export: Button,
-    ):
+    ) -> None:
         super().__init__()
         self.inverter_enable = inverter_enable.on_click(partial(
             self._click, InverterMode.ENABLE, InverterPolicy.MANUAL
@@ -71,7 +72,7 @@ class InverterButtonUpdater(StatusListener):
             button.classes('py-0 px-2 text-xs')
             button.props('color=grey dense')
 
-    async def _click(self, mode: Optional[InverterMode], policy: InverterPolicy) -> None:
+    async def _click(self, mode: InverterMode | None, policy: InverterPolicy) -> None:
         await control_loop.set_control(
             inverter_mode=mode,
             inverter_policy=policy,
@@ -91,7 +92,7 @@ class InverterButtonUpdater(StatusListener):
             inverter_policy = ''
         self._visual_update(inverter_mode, inverter_policy)
 
-    def _visual_update(self, inverter_mode: str, inverter_policy: str):
+    def _visual_update(self, inverter_mode: str, inverter_policy: str) -> None:
         inverter_button = (
             inverter_policy
             if inverter_policy != InverterPolicy.MANUAL.name
@@ -119,7 +120,7 @@ class BatteryButtonUpdater(StatusListener):
             battery_charge_only: Button,
             battery_discharge_only: Button,
             battery_cheap_force_discharge: Button,
-    ):
+    ) -> None:
         super().__init__()
         self.battery_enable = battery_enable.on_click(partial(
             self._click, BatteryMode.ENABLE, BatteryPolicy.MANUAL
@@ -151,7 +152,7 @@ class BatteryButtonUpdater(StatusListener):
             button.classes('py-0 px-2 text-xs')
             button.props('color=grey dense')
 
-    async def _click(self, mode: Optional[BatteryMode], policy: BatteryPolicy) -> None:
+    async def _click(self, mode: BatteryMode | None, policy: BatteryPolicy) -> None:
         await control_loop.set_control(
             battery_mode=mode,
             battery_policy=policy,
@@ -171,7 +172,7 @@ class BatteryButtonUpdater(StatusListener):
             battery_policy = ''
         self._visual_update(battery_mode, battery_policy)
 
-    def _visual_update(self, battery_mode: str, battery_policy: str):
+    def _visual_update(self, battery_mode: str, battery_policy: str) -> None:
         battery_button = (
             battery_policy
             if battery_policy != BatteryPolicy.MANUAL.name
@@ -195,7 +196,7 @@ class StatusUpdater(StatusListener):
     def __init__(
             self,
             status_element: ContentElement,
-    ):
+    ) -> None:
         super().__init__()
         self.status_element = status_element
 
@@ -206,7 +207,7 @@ class StatusUpdater(StatusListener):
 
 
 class InfographicUpdater(StatusListener):
-    def __init__(self, infographic_element: ContentElement):
+    def __init__(self, infographic_element: ContentElement) -> None:
         super().__init__()
         self.infographic_element = infographic_element
         self.infographic = Infographic()
@@ -218,17 +219,17 @@ class InfographicUpdater(StatusListener):
 
 class RegistersUpdater(LoopListener):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
         self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
 
     @final
-    async def update(self, register_values=None) -> None:
-        register_values: Dict[str, Optional[RegisterValue]] = await control_loop.get_registers()
+    async def update(self) -> None:
+        register_values: dict[str, RegisterValue | None] = await control_loop.get_registers()
         self._update(register_values)
 
-    def _update(self, register_values: Dict[str, JSONPrimitive]) -> None:
+    def _update(self, register_values: dict[str, JSONPrimitive]) -> None:
         json_as_str = render_json(
             register_values,
             float_format='.2f',
@@ -241,15 +242,15 @@ class RegistersUpdater(LoopListener):
 
 
 class PriceForecastUpdater(LoopListener):
-    def __init__(self, element: ui.element):
+    def __init__(self, element: ui.element) -> None:
         super().__init__()
-        self._prev = None
+        self._prev: Sequence[Price] | None = None
         self._element = element
 
     @final
     async def update(self) -> None:
         price_forecast: Sequence[Price]
-        demand_window: Optional[Tuple[datetime, datetime]]
+        demand_window: tuple[datetime, datetime] | None
 
         price_forecast, demand_window = await asyncio.gather(
             control_loop.get_price_forecast(),
@@ -259,7 +260,7 @@ class PriceForecastUpdater(LoopListener):
             self._prev = price_forecast
             self._update(price_forecast, demand_window)
 
-    def _update(self, price_forecast: Sequence[Price], demand_window: Optional[Tuple[datetime, datetime]]) -> None:
+    def _update(self, price_forecast: Sequence[Price], demand_window: tuple[datetime, datetime] | None) -> None:
 
         def _is_demand_window(_price: Price) -> bool:
             if demand_window is None:
@@ -315,10 +316,10 @@ class PriceForecastUpdater(LoopListener):
 
 class SolarForecastUpdater(LoopListener):
 
-    def __init__(self, element: ui.element, session: PageSession):
+    def __init__(self, element: ui.element, session: PageSession) -> None:
         super().__init__()
         self._session = session
-        self._prev: Optional[DailySolarForecast] = None
+        self._prev: DailySolarForecast | None = None
         self._day: date = date.today()
         self._element: ui.element = element
         self._show_loading()
@@ -383,7 +384,7 @@ class SolarForecastUpdater(LoopListener):
                         elif i % 2 == 1:
                             row_classes += ' solar-row-alt'
 
-                        icon: Optional[str] = weather_code_to_icon_url(
+                        icon: str | None = weather_code_to_icon_url(
                             forecast.weather, Constants.ANIMATE_WEATHER_ICONS
                         )
 
@@ -415,10 +416,10 @@ class SolarForecastUpdater(LoopListener):
 
 class ChartUpdater(LoopListener):
 
-    def __init__(self, element: ui.element, session: PageSession):
+    def __init__(self, element: ui.element, session: PageSession) -> None:
         super().__init__()
         self._session = session
-        self._prev: Optional[DailySolarForecast] = None
+        self._prev: DailySolarForecast | None = None
         self._day: date = date.today()
 
         with element:
@@ -452,7 +453,7 @@ class ChartUpdater(LoopListener):
         measurements: Sequence[Measurement]
         price_forecast: Sequence[Price]
         solar_forecast: DailySolarForecast
-        demand_window: Optional[Tuple[datetime, datetime]]
+        demand_window: tuple[datetime, datetime] | None
         measurements, price_forecast, demand_window, solar_forecast = await asyncio.gather(
             control_loop.solala_database_measurements(day),
             control_loop.get_price_forecast(),

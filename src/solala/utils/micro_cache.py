@@ -1,5 +1,13 @@
 from collections.abc import Awaitable, Callable
 from time import monotonic
+from typing import cast
+
+
+class _Unset:
+    pass
+
+
+_UNSET = _Unset()
 
 
 class _BaseMicroCache:
@@ -7,7 +15,7 @@ class _BaseMicroCache:
     Common implementation for synchronous and asynchronous micro-caches.
     """
 
-    def __init__(self, cache_time: float):
+    def __init__(self, cache_time: float) -> None:
         self._cache_time: float = cache_time
         self._cache_timestamp: float = float('-inf')
 
@@ -27,17 +35,17 @@ class MicroCache[T](_BaseMicroCache):
             self,
             f: Callable[[], T],
             cache_time: float,
-    ):
+    ) -> None:
         super().__init__(cache_time)
         self._f = f
-        self._cache: T
+        self._cache: T | _Unset = _UNSET
 
     def __call__(self) -> T:
-        if self._is_expired():
+        if self._is_expired() or isinstance(self._cache, _Unset):
             self._cache = self._f()
             self._update_timestamp()
 
-        return self._cache
+        return cast(T, self._cache)
 
 
 class AsyncMicroCache[T](_BaseMicroCache):
@@ -49,14 +57,14 @@ class AsyncMicroCache[T](_BaseMicroCache):
             self,
             f: Callable[[], Awaitable[T]],
             cache_time: float,
-    ):
+    ) -> None:
         super().__init__(cache_time)
         self._f = f
-        self._cache: T
+        self._cache: T | _Unset = _UNSET
 
     async def __call__(self) -> T:
-        if self._is_expired():
+        if self._is_expired() or isinstance(self._cache, _Unset):
             self._cache = await self._f()
             self._update_timestamp()
 
-        return self._cache
+        return cast(T, self._cache)

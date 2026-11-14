@@ -1,6 +1,7 @@
 import math
 from importlib import import_module as _import
-from typing import Iterable, Optional, Mapping, Any, Iterator, Tuple
+from collections.abc import Iterable, Iterator, Mapping
+from typing import Any
 from unittest import \
     TestCase, \
     main as _unittest_main, \
@@ -17,7 +18,7 @@ def test_main():
     return _unittest_main()
 
 
-def make_suit(test_modules: Iterable[str], package: Optional[str] = None):
+def make_suit(test_modules: Iterable[str], package: str | None = None):
     """
         Construct a `unittest.TestSuite` object containing all the unit test in the named test modules.
 
@@ -181,7 +182,7 @@ def _make_msg(orig_msg, *parts):
     return msg
 
 
-def _iter_index_value(iterable: Any) -> Iterator[Tuple[Tuple[int, ...], Any]]:
+def _iter_index_value(iterable: Any) -> Iterator[tuple[tuple[int, ...], Any]]:
     """
     Iterate over (index, value) pairs, where index is a multidimensional
     index into the given iterable.

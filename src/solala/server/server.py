@@ -1,7 +1,6 @@
 import asyncio
 import selectors
 from pathlib import Path
-from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI
@@ -17,8 +16,8 @@ from solala.settings import Settings
 def run_server(
         host: str,
         port: int,
-        settings_path: Optional[Path | str] = None,
-        settings: Optional[Settings] = None,
+        settings_path: Path | str | None = None,
+        settings: Settings | None = None,
         force_settings: bool = False,
         database_write: bool = True,
 ) -> None:
@@ -47,11 +46,12 @@ def run_server(
     except KeyboardInterrupt:
         LOGGER.info(f'killed by keyboard interrupt')
 
+
 async def _async_run_server(
         host: str,
         port: int,
-        settings_path: Optional[Path | str] = None,
-        settings: Optional[Settings] = None,
+        settings_path: Path | str | None = None,
+        settings: Settings | None = None,
         force_settings: bool = False,
         database_write: bool = True,
 ) -> None:
@@ -74,5 +74,5 @@ async def _async_run_server(
     )
 
 
-def _loop_factory():
+def _loop_factory() -> asyncio.AbstractEventLoop:
     return asyncio.SelectorEventLoop(selectors.SelectSelector())

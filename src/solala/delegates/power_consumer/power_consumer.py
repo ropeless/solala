@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from types import TracebackType
+from typing import Self
 
 from solala.registers import RegisterBank
 from solala.utils.json_extras import JSONDict, to_json
@@ -51,8 +53,13 @@ class PowerConsumer(ABC):
         """
         ...
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         await self.close()
