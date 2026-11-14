@@ -5,10 +5,14 @@ from typing import Self, Any
 
 class AsyncRLock:
     """
-    A reentrant lock for asynchronous tasks. The same task may
-    re-acquire a lock that it currently holds.
+    Provide a reentrant lock for asyncio tasks.
 
-    This lock must only be used from a single asyncio event loop.
+    The owning task may acquire the lock repeatedly without blocking. Each
+    successful acquisition must be matched by a release before another task
+    can acquire it. Only the owning task may release the lock.
+
+    The lock must be used within a single asyncio event loop and can also be
+    acquired and released through an asynchronous context manager.
     """
 
     def __init__(self) -> None:
@@ -17,6 +21,14 @@ class AsyncRLock:
         self._count = 0
 
     async def acquire(self) -> bool:
+        """
+        Acquire the lock, waiting if another task currently owns it.
+
+        Repeated acquisitions by the owning task increment the hold count.
+
+        Returns:
+            True once the lock has been acquired.
+        """
         me = asyncio.current_task()
         assert me is not None
 
@@ -31,6 +43,14 @@ class AsyncRLock:
         return True
 
     def release(self) -> None:
+        """
+        Release one level of ownership held by the current task.
+
+        The underlying lock is released when the hold count reaches zero.
+
+        Raises:
+            RuntimeError: If the current task does not own the lock.
+        """
         me = asyncio.current_task()
         if me is None or self._owner is not me:
             raise RuntimeError('Cannot release a lock that is not owned')
@@ -41,6 +61,12 @@ class AsyncRLock:
             self._lock.release()
 
     async def __aenter__(self) -> Self:
+        """
+        Acquire the lock on entry to an asynchronous context manager.
+
+        Returns:
+            This lock instance.
+        """
         await self.acquire()
         return self
 
@@ -50,4 +76,7 @@ class AsyncRLock:
             exc_value: BaseException | None,
             traceback: TracebackType | None,
     ) -> None:
+        """
+        Release one level of ownership when leaving the context manager.
+        """
         self.release()
