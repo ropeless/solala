@@ -11,6 +11,12 @@ from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, In
 class DummyControllerConnection(BaseModel):
     """
     Configure a simulated power controller and its power limits.
+
+    Attributes:
+        inverter_limit: Maximum simulated inverter output in watts.
+        house_power: Simulated household power consumption in watts.
+        max_charge_param: Maximum battery charging power in watts.
+        max_discharge_param: Maximum battery discharging power in watts.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -23,7 +29,15 @@ class DummyControllerConnection(BaseModel):
 
 class DummyPricerConnection(BaseModel):
     """
-    Configure simulated pricer and an optional demand window.
+    Configure a simulated electricity pricer and an optional demand window.
+
+    Attributes:
+        buy_price_min: Lower bound for simulated electricity purchase prices.
+        buy_price_max: Upper bound for simulated electricity purchase prices.
+        feed_in_price_discount_min: Lower bound for the simulated feed-in price discount.
+        feed_in_price_discount_max: Upper bound for the simulated feed-in price discount.
+        cur_price_is_estimate: Whether the current simulated price is marked as estimated.
+        demand_window: Optional start and end times of a demand window.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -38,7 +52,12 @@ class DummyPricerConnection(BaseModel):
 
 class DummyConsumerConnection(BaseModel):
     """
-    Configure a simulated power consumer's voltage and current.
+    Configure a simulated power consumer's electrical measurements.
+
+    Attributes:
+        voltage: Simulated supply voltage in volts.
+        current: Simulated current in amperes.
+        power: Optional simulated power in watts.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -51,6 +70,10 @@ class DummyConsumerConnection(BaseModel):
 class DummySolarForecasterConnection(BaseModel):
     """
     Configure a simulated solar forecaster.
+
+    Attributes:
+        panel_capacity: Rated solar panel capacity in watts.
+        inverter_limit: Maximum inverter output in watts.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
