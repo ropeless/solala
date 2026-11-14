@@ -1,5 +1,5 @@
 """
-Provide named sentinel objects for distinguishing special values.
+Provide named and typed sentinel objects for distinguishing special values.
 """
 
 
@@ -21,13 +21,7 @@ class Sentinel:
         self._name = name
 
     def __repr__(self) -> str:
-        """
-        Return a representation that includes the sentinel's name.
-        """
         return f'Sentinel({self._name!r})'
 
     def __str__(self) -> str:
-        """
-        Return the sentinel's name.
-        """
         return self._name
