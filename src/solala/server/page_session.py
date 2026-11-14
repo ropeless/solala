@@ -1,7 +1,3 @@
-"""
-Manage listeners, tasks, and timers belonging to an active GUI page.
-"""
-
 import asyncio
 import inspect
 from functools import partial
@@ -16,7 +12,7 @@ from solala.server.css_colours import Colours
 
 class _CancellableTimer(Protocol):
     """
-    Describe the cancellation operation required of page-owned timers.
+    Declare the cancellation operation required of page-owned timers.
     """
     def cancel(self) -> None:
         ...
@@ -24,11 +20,12 @@ class _CancellableTimer(Protocol):
 
 class PageSession:
     """
-    Own resources that should exist only while a page is active.
+    Own resources that should exist only while a page is active and provide
+    a delegation back to the session owner for tab selection.
 
-    Registered cleanup callbacks run in reverse registration order when the
+    Registered clean-up callbacks run in reverse registration order when the
     session closes. Callbacks may be synchronous or asynchronous; failures
-    are logged without preventing subsequent cleanup.
+    are logged without preventing subsequent clean-up.
     """
 
     def __init__(
@@ -37,7 +34,7 @@ class PageSession:
             select_tab: Callable[[str], Awaitable[None]],
     ) -> None:
         """
-        Initialise the session with page colours and tab navigation.
+        Initialise the session with page colours and tab navigation delegation.
 
         Args:
             colours: Colours used by the page.
@@ -60,7 +57,7 @@ class PageSession:
         Register a callback to run when the session closes.
 
         Args:
-            cleanup: Synchronous or asynchronous resource cleanup callback.
+            cleanup: Synchronous or asynchronous resource clean-up callback.
 
         Raises:
             RuntimeError: If the session has already closed.
@@ -152,9 +149,11 @@ class PageSession:
 
     async def close(self) -> None:
         """
-        Release registered resources once, in reverse registration order.
+        Release registered resources in reverse registration order.
 
-        Cleanup exceptions are logged and remaining callbacks still run.
+        Multiple calls to `close()` for the same page session is acceptable.
+
+        Clean-up exceptions are logged and remaining callbacks still run.
         Subsequent calls have no effect.
         """
         if self._closed:
