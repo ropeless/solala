@@ -23,7 +23,7 @@ class DummyPowerConsumer(PowerConsumer):
             voltage: Supply voltage in volts.
             current: Current draw in amperes.
             power: Active power in watts. Defaults to voltage multiplied by
-                current when omitted.
+                current when omitted. If not None, then must be <= voltage * current.
 
         Raises:
             ValueError: If power exceeds voltage multiplied by current.

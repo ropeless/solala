@@ -52,12 +52,13 @@ class DummyPricerConnection(BaseModel):
 
 class DummyConsumerConnection(BaseModel):
     """
-    Configure a simulated power consumer's electrical measurements.
+    Configure a simulated power consumer.
 
     Attributes:
         voltage: Simulated supply voltage in volts.
         current: Simulated current in amperes.
-        power: Optional simulated power in watts.
+        power: Active power in watts. Defaults to voltage multiplied by
+                current when omitted. If not None, then must be <= voltage * current.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
