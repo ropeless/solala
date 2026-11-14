@@ -94,6 +94,13 @@ class ModbusPowerController(PowerController):
             self._power_controllers: list[str] = self._inverters
         else:
             self._power_controllers: list[str] = [master]
+        # Because self._inverters always starts with the master inverter, the power controllers
+        # is always coindexed with inverters up to the length of the power controllers.
+        # This simplifies getting power controller limits in method `zero_export()`.
+        for i in range(len(self._power_controllers)):
+            assert self._inverters[i] is self._inverters[i]
+
+        self._W: list[str] = [f'{inverter}/W' for inverter in self._power_controllers]
         self._WMaxLim_Ena: list[str] = [f'{inverter}/WMaxLim_Ena' for inverter in self._power_controllers]
         self._WMaxLimPct: list[str] = [f'{inverter}/WMaxLimPct' for inverter in self._power_controllers]
         self._WMaxLimPct_RvrtTms: list[str] = [f'{inverter}/WMaxLimPct_RvrtTms' for inverter in self._power_controllers]
@@ -297,14 +304,9 @@ class ModbusPowerController(PowerController):
             grid_power: float = await self._get(self._grid_power)
             # Only inverters receiving the power-limit command are controllable.
             controlled_limits = await self._get_inverter_limit_array()
-            controlled_limits = [
-                limit for inverter, limit in zip(self._inverters, controlled_limits)
-                if inverter in self._power_controllers
-            ]
+            controlled_limits = controlled_limits[:len(self._power_controllers)]
             max_power: float = sum(controlled_limits)
-            cur_power: float = await self._get_sum(
-                [f'{inverter}/W' for inverter in self._power_controllers]
-            )
+            cur_power: float = await self._get_sum(self._W)
 
             # Include normal battery discharge when calculating available power.
             # Forced discharge is handled separately.
