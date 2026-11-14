@@ -7,7 +7,12 @@ from solala.utils.network import find_ip_by_mac
 @dataclass
 class ResolvedAddress:
     """
-    Track an input address and its resolved MAC and IP addresses.
+    Represent an input address and its resolved network identifiers.
+
+    Attributes:
+        raw_address: Original MAC or IP address supplied by the caller.
+        mac_address: MAC address, if the input was a MAC address.
+        ip_address: Input IP address or the IP address resolved from a MAC address.
     """
     raw_address: str
     mac_address: str = ''
@@ -16,7 +21,11 @@ class ResolvedAddress:
 
 def resolve_addresses(raw_addresses: list[str]) -> list[ResolvedAddress]:
     """
-    Resolve MAC or IP addresses to their corresponding IP addresses.
+    Resolve a sequence of MAC or IP addresses.
+
+    IP address inputs are retained as supplied. MAC address inputs are looked up
+    on the local network. The returned objects retain the original input and
+    the resolved identifiers.
 
     Args:
         raw_addresses: Input MAC or IP addresses.
@@ -25,11 +34,12 @@ def resolve_addresses(raw_addresses: list[str]) -> list[ResolvedAddress]:
         Resolved addresses in the same order as the input.
 
     Raises:
-        ControlLoopError: If an address is invalid or a MAC address cannot be resolved.
+        ControlLoopError: If an address has an unsupported format or a MAC
+            address cannot be resolved to an IP address.
     """
     addresses: list[ResolvedAddress] = [ResolvedAddress(address) for address in raw_addresses]
     invalid_addresses: list[str] = []
-    # Work out what address are MAC address
+    # Identify MAC and IP address inputs.
     found_mac_addresses: list[str] = []
     for address in addresses:
         raw_address = address.raw_address
@@ -58,7 +68,7 @@ def resolve_addresses(raw_addresses: list[str]) -> list[ResolvedAddress]:
             else:
                 address.ip_address = ip_address
 
-    # Fail if there are any invalid ip addresses
+    # Fail if any MAC addresses could not be resolved.
     if len(invalid_addresses) > 0:
         raise ControlLoopError('could not find IP address for MAC address', errors=invalid_addresses)
 
