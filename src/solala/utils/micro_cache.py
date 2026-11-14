@@ -2,7 +2,12 @@ from collections.abc import Awaitable, Callable
 from time import monotonic
 from typing import cast
 
-_UNSET = object()
+
+class _Unset:
+    pass
+
+
+_UNSET = _Unset()
 
 
 class _BaseMicroCache:
@@ -33,10 +38,10 @@ class MicroCache[T](_BaseMicroCache):
     ) -> None:
         super().__init__(cache_time)
         self._f = f
-        self._cache: T | object = _UNSET
+        self._cache: T | _Unset = _UNSET
 
     def __call__(self) -> T:
-        if self._is_expired() or self._cache is _UNSET:
+        if self._is_expired() or isinstance(self._cache, _Unset):
             self._cache = self._f()
             self._update_timestamp()
 
