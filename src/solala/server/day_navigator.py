@@ -25,7 +25,7 @@ class DayNavigator:
             enable_arrow_keys: bool = True,
             auto_height: bool = False,
             title: str = ''
-    ):
+    ) -> None:
         """
         Create a carousel of infinite cards, where each card represents a date.
 
@@ -310,7 +310,7 @@ class DayNavigator:
         updater: Updater = self._updaters[slide_number]
         await updater(day)
 
-    async def _on_slide_change(self):
+    async def _on_slide_change(self) -> None:
         """
         This is the callback for when the carousel slide changes.
         it may be called either when the user changes the slide or the slide con changed programmatically.

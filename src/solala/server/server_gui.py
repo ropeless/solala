@@ -128,7 +128,7 @@ async def _ui_control_buttons(session: PageSession) -> None:
         await session.add_control_listener(updater)
 
 
-def _infographic_click(element, select_tab) -> None:
+def _infographic_click(element: events.GenericEventArguments, select_tab: Callable[[str], Awaitable[None]]) -> None:
     click_id: str | None = element.args
     if click_id == CLICK_ID_GRID:
         asyncio.create_task(select_tab(_PRICE_TAB))
@@ -167,9 +167,9 @@ def _day_navigation(
         swipe_area: ui.Area,
         change_day: Callable[[int], Awaitable[None]],
         set_day: Callable[[date], Awaitable[None]],
-):
+) -> None:
     # Handler for swipe actions
-    async def handle_swipe(event) -> None:
+    async def handle_swipe(event: events.GenericEventArguments) -> None:
         direction = event.args
         if direction == 'left':
             await change_day(1)
@@ -452,7 +452,7 @@ class TabSelector:
         self.active_tab: str | None = None
         self.active_session: PageSession | None = None
         self.colours: Colours = colours
-        self._build_task: asyncio.Task | None = None
+        self._build_task: asyncio.Task[None] | None = None
         self._transition_lock = asyncio.Lock()
 
     async def select_tab(self, tab_name: str) -> None:
@@ -519,7 +519,7 @@ class TabSelector:
 
 
 @ui.page('/')
-async def root_page():
+async def root_page() -> None:
     ui.add_head_html(_HEAD_HTML)
     colours: Colours = await css_colours()  # must come directly after add_head_html.
 

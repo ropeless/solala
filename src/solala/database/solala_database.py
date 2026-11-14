@@ -17,7 +17,19 @@ type Row = dict[str, Any]
 
 class SolalaDatabase:
     def __init__(self, connection: AsyncConnection) -> None:
-        self._connection: AsyncConnection = connection
+        self.__connection: AsyncConnection | None = connection
+
+    @property
+    def _connection(self) -> AsyncConnection:
+        connection = self.__connection
+        if connection is None:
+            raise RuntimeError('database connection has been released')
+        return connection
+
+    def _take_connection(self) -> AsyncConnection:
+        connection = self._connection
+        self.__connection = None
+        return connection
 
     async def insert_measurement(self, measurement: Measurement) -> None:
         await self._insert('measurement', measurement)

@@ -8,7 +8,7 @@ class DummyPowerConsumer(PowerConsumer):
             self,
             voltage: float = 240,
             current: float = 0,
-    ):
+    ) -> None:
         self.status = ConsumerStatus(
             voltage=voltage,
             current=current

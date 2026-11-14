@@ -20,7 +20,7 @@ class TuyaPowerConsumer(PowerConsumer):
             access_id: str,
             access_secret: str,
             device_id: str,
-    ):
+    ) -> None:
         self._tuya = TuyaOpenAPI(
             API_ENDPOINT,
             access_id,

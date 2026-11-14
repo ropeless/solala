@@ -98,9 +98,7 @@ class SolalaDatabaseConnections:
 
     async def put_db(self, db: SolalaDatabase, commit_on_close: bool = True) -> None:
         # noinspection PyProtectedMember
-        conn: AsyncConnection = db._connection
-        # noinspection PyTypeChecker
-        db._connection = None
+        conn: AsyncConnection = db._take_connection()
         try:
             if commit_on_close:
                 await conn.commit()

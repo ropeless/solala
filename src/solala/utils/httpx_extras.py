@@ -13,7 +13,7 @@ class AsyncClients:
     Note, we assume maximum one asyncio event loop per thread.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._clients: dict[int, httpx.AsyncClient] = {}
         self._lock = threading.Lock()
 

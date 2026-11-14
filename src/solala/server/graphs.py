@@ -210,7 +210,7 @@ def _demand_window(start: datetime, end: datetime, colour: str, title: str = 'de
 def _create_series(
         name: str,
         colour: str,
-        line_type: str | list = 'solid',
+        line_type: str | list[int] = 'solid',
         area_alpha: float = 0.1,
 ) -> JSONDict:
     options: dict[str, JSONValue] = {

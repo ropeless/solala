@@ -45,7 +45,7 @@ class ModbusPowerController(PowerController):
             slaves: Iterable[str] = (),
             mac_addr_lookup: dict[str, str] | None = None,
             power_control_slaves: bool = False,
-    ):
+    ) -> None:
         """
         Make a power controller from a Modbus connection.
 

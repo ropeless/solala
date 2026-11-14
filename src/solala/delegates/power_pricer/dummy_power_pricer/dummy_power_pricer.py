@@ -23,7 +23,7 @@ class DummyPowerPricer(PowerPricer):
             feed_in_price_discount_max: float = 5,
             cur_price_is_estimate: bool = False,
             demand_window: tuple[time, time] | None = None,
-    ):
+    ) -> None:
         """
         If a demand window is provided, it will be interpreted as in the local time zone.
         """

@@ -21,7 +21,7 @@ class ModbusDevice:
 
 class ModbusRegister(Register):
 
-    def __init__(self, access: RegisterAccess, context: RegisterContext):
+    def __init__(self, access: RegisterAccess, context: RegisterContext) -> None:
         super().__init__(access.register_type, access.writable)
         self._access: RegisterAccess = access
         self._context: RegisterContext = context
@@ -49,7 +49,7 @@ class Modbus(RegisterBank):
     registers are named `register_name`.
     """
 
-    def __init__(self, devices: ModbusDevices | ModbusDevice | ModbusTcpClient):
+    def __init__(self, devices: ModbusDevices | ModbusDevice | ModbusTcpClient) -> None:
         """
         Wraps a ModbusTcpClient to provide access to Modbus registers.
 

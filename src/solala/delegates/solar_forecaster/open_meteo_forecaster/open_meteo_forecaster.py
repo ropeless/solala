@@ -28,7 +28,7 @@ class OpenMeteoForecaster(SolarForecaster):
             panel_temperature_coefficient: float = DEFAULT_PANEL_TEMPERATURE_COEFFICIENT,
             inverter_limit: float = DEFAULT_INVERTER_LIMIT,
             inverter_efficiency: float = DEFAULT_INVERTER_EFFICIENCY,
-    ):
+    ) -> None:
         """
         Args:
             latitude: Latitude of the location.

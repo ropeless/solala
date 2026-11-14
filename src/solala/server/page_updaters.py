@@ -244,7 +244,7 @@ class RegistersUpdater(LoopListener):
 class PriceForecastUpdater(LoopListener):
     def __init__(self, element: ui.element) -> None:
         super().__init__()
-        self._prev = None
+        self._prev: Sequence[Price] | None = None
         self._element = element
 
     @final

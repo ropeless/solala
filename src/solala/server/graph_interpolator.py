@@ -22,7 +22,7 @@ class GraphingInterpolator:
             price_forecast: Sequence[Price],
             solar_forecast: DailySolarForecast,
             demand_window: tuple[datetime, datetime] | None
-    ):
+    ) -> None:
         tz = local_time_zone()
         day = ensure_date(day, tz)
         day_as_datetime: datetime = date_to_datetime(day, tz)
@@ -155,7 +155,7 @@ class GraphingInterpolator:
     #  Support functions
     # ====================================================================
 
-    def _energy_to_power(self, data, boundary_value: float) -> list[float]:
+    def _energy_to_power(self, data: list[float], boundary_value: float) -> list[float]:
         """
         Convert accumulated energy to average power for each period.
         Args:

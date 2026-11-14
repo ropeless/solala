@@ -23,7 +23,7 @@ type _PriceExtract = Callable[[JSONDict], float]
 
 class AmberPowerPricer(PowerPricer):
 
-    def __init__(self, api_token: str, nmi: str):
+    def __init__(self, api_token: str, nmi: str) -> None:
         self._api_token: str = api_token
         self._nmi: str = nmi
         self._site: JSONDict = self._get_site()
