@@ -14,14 +14,14 @@ class _BaseMicroCache:
     refresh. A cache duration of zero causes every call to refresh.
     """
 
-    def __init__(self, cache_time: float) -> None:
+    def __init__(self, cache_duration: float) -> None:
         """
         Initialise the cache expiry interval.
 
         Args:
-            cache_time: Number of seconds for which a refreshed value remains valid.
+            cache_duration: Number of seconds for which a refreshed value remains valid.
         """
-        self._cache_time: float = cache_time
+        self._cache_time: float = cache_duration
         self._cache_timestamp: float = float('-inf')
 
     def _is_expired(self) -> bool:
@@ -37,15 +37,15 @@ class MicroCache[T](_BaseMicroCache):
 
     The function is called on first access and again after the cache expires.
     Exceptions propagate to the caller without updating the expiry time.
-    Calls are not synchronised across threads.
+    Concurrent callers are not explicitly managed and may refresh the cache separately.
     """
 
     def __init__(
             self,
             f: Callable[[], T],
-            cache_time: float,
+            cache_duration: float,
     ) -> None:
-        super().__init__(cache_time)
+        super().__init__(cache_duration)
         self._f = f
         self._cache: T | Sentinel = _UNSET
 
@@ -69,15 +69,15 @@ class AsyncMicroCache[T](_BaseMicroCache):
 
     The function is awaited on first access and again after the cache expires.
     Exceptions propagate to the caller without updating the expiry time.
-    Concurrent callers are not coalesced and may refresh the cache separately.
+    Concurrent callers are not explicitly managed and may refresh the cache separately.
     """
 
     def __init__(
             self,
             f: Callable[[], Awaitable[T]],
-            cache_time: float,
+            cache_duration: float,
     ) -> None:
-        super().__init__(cache_time)
+        super().__init__(cache_duration)
         self._f = f
         self._cache: T | Sentinel = _UNSET
 
