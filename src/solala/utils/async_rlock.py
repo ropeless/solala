@@ -1,4 +1,5 @@
 import asyncio
+from types import TracebackType
 from typing import Self, Any
 
 
@@ -43,5 +44,10 @@ class AsyncRLock:
         await self.acquire()
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+    async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            traceback: TracebackType | None,
+    ) -> None:
         self.release()
