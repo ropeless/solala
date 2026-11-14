@@ -396,11 +396,23 @@ async def configure_from_settings(settings: Settings) -> None:
 
 
 async def get_settings() -> Settings:
+    """
+    Get a snapshot of the current connection and control settings.
+
+    Returns:
+        The current settings.
+    """
     async with _control_state() as state:
         return _get_settings(state)
 
 
 async def add_control_loop_listener(listener: LoopListener) -> None:
+    """
+    Register a listener for control loop iterations, moving an existing listener to the end.
+
+    Args:
+        listener: Listener to register.
+    """
     async with _control_state() as state:
         try:
             state.control_loop_listeners.remove(listener)
@@ -410,6 +422,12 @@ async def add_control_loop_listener(listener: LoopListener) -> None:
 
 
 async def remove_control_loop_listener(listener: LoopListener) -> None:
+    """
+    Unregister a control loop listener, if present.
+
+    Args:
+        listener: Listener to unregister.
+    """
     async with _control_state() as state:
         try:
             state.control_loop_listeners.remove(listener)
@@ -418,6 +436,12 @@ async def remove_control_loop_listener(listener: LoopListener) -> None:
 
 
 async def add_database_loop_listener(listener: LoopListener) -> None:
+    """
+    Register a listener for database loop iterations, moving an existing listener to the end.
+
+    Args:
+        listener: Listener to register.
+    """
     async with _control_state() as state:
         try:
             state.database_loop_listeners.remove(listener)
@@ -427,6 +451,12 @@ async def add_database_loop_listener(listener: LoopListener) -> None:
 
 
 async def remove_database_loop_listener(listener: LoopListener) -> None:
+    """
+    Unregister a database loop listener, if present.
+
+    Args:
+        listener: Listener to unregister.
+    """
     async with _control_state() as state:
         try:
             state.database_loop_listeners.remove(listener)
@@ -451,6 +481,12 @@ async def get_prev_control_mode() -> ControlMode:
 
 
 async def get_power_status() -> PowerStatus:
+    """
+    Get the cached power status, fetching it from the controller if invalidated.
+
+    Returns:
+        The current cached status, or the default status if no controller is connected.
+    """
     async with _control_state() as state:
         if not state.last_power_valid:
             controller: PowerController | None = state.controller
@@ -601,6 +637,12 @@ async def get_price_forecast() -> Sequence[Price]:
 
 
 async def get_consumers_status() -> dict[str, ConsumerStatus]:
+    """
+    Get the electrical status of each connected power consumer.
+
+    Returns:
+        A mapping from consumer names to their electrical status.
+    """
     async with _control_state() as state:
         names = state.consumers.keys()
         statuses = await asyncio.gather(*[
@@ -611,6 +653,12 @@ async def get_consumers_status() -> dict[str, ConsumerStatus]:
 
 
 async def get_connection_info() -> JSONDict:
+    """
+    Get connection information for the configured system delegates.
+
+    Returns:
+        A JSON-compatible dictionary of connection information.
+    """
     async with _control_state() as state:
         result: dict[str, JSONValue] = {
             'controller': state.controller_connection_info,
@@ -690,6 +738,18 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
 
 @asynccontextmanager
 async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaDatabase]:
+    """
+    Borrow a database connection from the pool for an asynchronous context.
+
+    Args:
+        commit_on_close: Whether to commit when returning the connection to the pool.
+
+    Yields:
+        A database interface backed by the borrowed connection.
+
+    Raises:
+        ConnectionError: If the database pool is unavailable or changes while in use.
+    """
     async with _control_state() as state:
         LOGGER.debug('{_LOG_SRC}Requesting DB connection from pool')
         database_connections = state.database_connections
@@ -734,6 +794,15 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
+    """
+    Read measurements for a day, returning an empty sequence on connection errors.
+
+    Args:
+        day: Local date for which to retrieve measurements.
+
+    Returns:
+        Measurements for the day, or an empty sequence if database access fails.
+    """
     try:
         async with solala_database() as db:
             return await db.get_measurements(day)
@@ -756,7 +825,23 @@ async def set_control(
         stop_charge_price_threshold: float | None = None,
 ) -> None:
     """
-    Set the control loop modes and policies.
+    Set the control loop modes, policies, and price thresholds.
+
+    Parameters left as None retain their current values. Export and charge
+    thresholds must each be ordered to provide hysteresis.
+
+    Args:
+        battery_mode: Requested battery operating mode.
+        inverter_mode: Requested inverter operating mode.
+        battery_policy: Policy controlling automatic battery mode selection.
+        inverter_policy: Policy controlling automatic inverter mode selection.
+        disable_export_price_threshold: Feed-in price below which export is disabled.
+        enable_export_price_threshold: Feed-in price above which export is enabled.
+        start_charge_price_threshold: Buy price below which forced charging starts.
+        stop_charge_price_threshold: Buy price above which forced charging stops.
+
+    Raises:
+        ControlLoopError: If either pair of price thresholds is not strictly ordered.
     """
     async with _control_state() as state:
         control_mode = state.control_mode
@@ -795,7 +880,10 @@ async def set_control(
 
 async def log_registers(match: str | None) -> None:
     """
-    Set what registers to log to the database
+    Select registers to log to the database.
+
+    Args:
+        match: Regular expression matching register names, or None to disable logging.
     """
     async with _control_state() as state:
         if match is None:
@@ -811,6 +899,12 @@ async def log_registers(match: str | None) -> None:
 # =============================================================================
 
 async def connect_controller(controller_connection: ControllerConnection) -> None:
+    """
+    Connect or replace the power controller using the given settings.
+
+    Args:
+        controller_connection: Power controller connection configuration.
+    """
     async with _control_state() as state:
         controller: PowerController
 
@@ -848,6 +942,12 @@ async def disconnect_controller() -> None:
 
 
 async def connect_pricer(pricer_connection: PricerConnection) -> None:
+    """
+    Connect or replace the power pricer using the given settings.
+
+    Args:
+        pricer_connection: Power pricer connection configuration.
+    """
     async with _control_state() as state:
         pricer: PowerPricer
 
@@ -883,6 +983,13 @@ async def disconnect_pricer() -> None:
 
 
 async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> None:
+    """
+    Connect or replace a named power consumer.
+
+    Args:
+        name: Name identifying the consumer.
+        consumer_connection: Power consumer connection configuration.
+    """
     async with _control_state() as state:
         consumer: PowerConsumer
 
@@ -924,6 +1031,12 @@ async def disconnect_consumer(name: str) -> None:
 
 
 async def connect_forecaster(forecaster_connection: ForecasterConnection) -> None:
+    """
+    Connect or replace the solar forecaster using the given settings.
+
+    Args:
+        forecaster_connection: Solar forecaster connection configuration.
+    """
     async with _control_state() as state:
         forecaster: SolarForecaster
 
@@ -949,7 +1062,7 @@ async def connect_forecaster(forecaster_connection: ForecasterConnection) -> Non
 
 async def disconnect_forecaster() -> None:
     """
-    Close the power pricer connection.
+    Close the solar forecaster connection.
     """
     async with _control_state() as state:
         if state.forecaster is not None:
@@ -961,6 +1074,12 @@ async def disconnect_forecaster() -> None:
 
 
 async def connect_database(database_connection: DatabaseConnection) -> None:
+    """
+    Configure or replace the database connection pool.
+
+    Args:
+        database_connection: Database connection configuration.
+    """
     async with _control_state() as state:
         database_connections = SolalaDatabaseConnections(
             role=database_connection.role,
