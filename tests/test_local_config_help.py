@@ -11,7 +11,6 @@ class TestConfigHelp(TestCase):
     def setUp(self) -> None:
         self.config = Config()
 
-
     def test_update(self):
         valid_vars = ['A', 'B', 'C']
         argv = ['A=1', 'B="2"', 'C=[3,4]']
@@ -40,55 +39,55 @@ class TestConfigHelp(TestCase):
         self.config['A'] = 'totally okay'
         self.assertEqual(self.config.A, 'totally okay')
         self.assertEqual(self.config['A'], 'totally okay')
-        self.assertEqual(self.self.config.get('A'), 'totally okay')
+        self.assertEqual(self.config.get('A'), 'totally okay')
 
         self.config['A'] = 123
         self.assertEqual(self.config.A, 123)
         self.assertEqual(self.config['A'], 123)
-        self.assertEqual(self.self.config.get('A'), 123)
-        self.assertEqual(self.self.config.get('A', 'B'), 123)
+        self.assertEqual(self.config.get('A'), 123)
+        self.assertEqual(self.config.get('A', 'B'), 123)
 
         self.config['A'] = 123.456
         self.assertEqual(self.config.A, 123.456)
         self.assertEqual(self.config['A'], 123.456)
-        self.assertEqual(self.self.config.get('A'), 123.456)
-        self.assertEqual(self.self.config.get('A', 'B'), 123.456)
+        self.assertEqual(self.config.get('A'), 123.456)
+        self.assertEqual(self.config.get('A', 'B'), 123.456)
 
         self.config['A'] = True
         self.assertEqual(self.config.A, True)
         self.assertEqual(self.config['A'], True)
-        self.assertEqual(self.self.config.get('A'), True)
-        self.assertEqual(self.self.config.get('A', 'B'), True)
+        self.assertEqual(self.config.get('A'), True)
+        self.assertEqual(self.config.get('A', 'B'), True)
 
         self.config['A'] = None
         self.assertEqual(self.config.A, None)
         self.assertEqual(self.config['A'], None)
-        self.assertEqual(self.self.config.get('A'), None)
-        self.assertEqual(self.self.config.get('A', 'B'), None)
+        self.assertEqual(self.config.get('A'), None)
+        self.assertEqual(self.config.get('A', 'B'), None)
 
         self.config['A'] = [1, 2, 3, 4]
         self.assertEqual(self.config.A, [1, 2, 3, 4])
         self.assertEqual(self.config['A'], [1, 2, 3, 4])
-        self.assertEqual(self.self.config.get('A'), [1, 2, 3, 4])
-        self.assertEqual(self.self.config.get('A', 'B'), [1, 2, 3, 4])
+        self.assertEqual(self.config.get('A'), [1, 2, 3, 4])
+        self.assertEqual(self.config.get('A', 'B'), [1, 2, 3, 4])
 
         self.config['A'] = (1, 2, 3, 4)
         self.assertEqual(self.config.A, (1, 2, 3, 4))
         self.assertEqual(self.config['A'], (1, 2, 3, 4))
-        self.assertEqual(self.self.config.get('A'), (1, 2, 3, 4))
-        self.assertEqual(self.self.config.get('A', 'B'), (1, 2, 3, 4))
+        self.assertEqual(self.config.get('A'), (1, 2, 3, 4))
+        self.assertEqual(self.config.get('A', 'B'), (1, 2, 3, 4))
 
         self.config['A'] = {1, 2, 3, 4}
         self.assertEqual(self.config.A, {1, 2, 3, 4})
         self.assertEqual(self.config['A'], {1, 2, 3, 4})
-        self.assertEqual(self.self.config.get('A'), {1, 2, 3, 4})
-        self.assertEqual(self.self.config.get('A', 'B'), {1, 2, 3, 4})
+        self.assertEqual(self.config.get('A'), {1, 2, 3, 4})
+        self.assertEqual(self.config.get('A', 'B'), {1, 2, 3, 4})
 
         self.config['A'] = {'1': 1, '2': 2, '3': 3, '4': 4}
         self.assertEqual(self.config.A, {'1': 1, '2': 2, '3': 3, '4': 4})
         self.assertEqual(self.config['A'], {'1': 1, '2': 2, '3': 3, '4': 4})
-        self.assertEqual(self.self.config.get('A'), {'1': 1, '2': 2, '3': 3, '4': 4})
-        self.assertEqual(self.self.config.get('A', 'B'), {'1': 1, '2': 2, '3': 3, '4': 4})
+        self.assertEqual(self.config.get('A'), {'1': 1, '2': 2, '3': 3, '4': 4})
+        self.assertEqual(self.config.get('A', 'B'), {'1': 1, '2': 2, '3': 3, '4': 4})
 
     def test_missing(self):
         # Note: We have no idea what is already in the configuration,
@@ -102,21 +101,21 @@ class TestConfigHelp(TestCase):
         with self.assertRaises(AttributeError):
             getattr(self.config, key)
 
-        self.assertIsNone(self.self.config.get(key))
-        self.assertEqual(self.self.config.get(key, 'abc'), 'abc')
+        self.assertIsNone(self.config.get(key))
+        self.assertEqual(self.config.get(key, 'abc'), 'abc')
 
         # Just confirm we can actually use that key.
         self.config[key] = 123
         self.assertEqual(self.config[key], 123)
         self.assertEqual(getattr(self.config, key), 123)
-        self.assertEqual(self.self.config.get(key), 123)
-        self.assertEqual(self.self.config.get(key, 'abc'), 123)
+        self.assertEqual(self.config.get(key), 123)
+        self.assertEqual(self.config.get(key, 'abc'), 123)
 
     def test_os_environ(self):
         # Note: We have no idea what is already in the configuration,
         # but we assume this key is not in it.
         key = '_ck_valid_test_key_that_should_not_exist__test_os_environ_'
-        assert key not in self.config, 'test assumption'
+        self.assertNotIn(key, self.config)
 
         with patch.dict(os.environ, {key: 'abc'}):
             self.assertEqual(self.config[key], 'abc')
@@ -158,31 +157,31 @@ class TestConfigHelp(TestCase):
         update_config(argv, strip_whitespace=True, local_config=self.config)
         self.assertEqual(self.config.B, 'what')
 
-    def test_get_params(self, local_config=self.config):
+    def test_get_params(self):
         argv = ['A=1', 'B="2"', 'C=[3,4]']
         update_config(argv, local_config=self.config)
 
-        self.assertEqual(get_params('A'), ('A', 1), local_config=self.config)
-        self.assertEqual(get_params('B'), ('B', '2'), local_config=self.config)
-        self.assertEqual(get_params('C'), ('C', [3, 4]), local_config=self.config)
-        self.assertEqual(get_params('A', 'B'), (('A', 1), ('B', '2')), local_config=self.config)
+        self.assertEqual(get_params('A', local_config=self.config), ('A', 1))
+        self.assertEqual(get_params('B', local_config=self.config), ('B', '2'))
+        self.assertEqual(get_params('C', local_config=self.config), ('C', [3, 4]))
+        self.assertEqual(get_params('A', 'B', local_config=self.config), (('A', 1), ('B', '2')))
 
     def test_get_params_with_sep(self):
         argv = ['A=1', 'B="2"', 'C=[3,4]']
         update_config(argv, local_config=self.config)
 
-        self.assertEqual(get_params('A', sep='='), 'A=1', local_config=self.config)
-        self.assertEqual(get_params('B', sep='='), "B='2'", local_config=self.config)
-        self.assertEqual(get_params('C', sep='='), "C=[3, 4]", local_config=self.config)
-        self.assertEqual(get_params('A', 'B', sep='='), ('A=1', "B='2'"), local_config=self.config)
+        self.assertEqual(get_params('A', sep='=', local_config=self.config), 'A=1')
+        self.assertEqual(get_params('B', sep='=', local_config=self.config), "B='2'")
+        self.assertEqual(get_params('C', sep='=', local_config=self.config), "C=[3, 4]")
+        self.assertEqual(get_params('A', 'B', sep='=', local_config=self.config), ('A=1', "B='2'"))
 
     def test_get_params_with_delim(self):
         argv = ['A=1', 'B="2"', 'C=[3,4]']
         update_config(argv, local_config=self.config)
 
-        self.assertEqual(get_params('A', 'B', 'C', delim=';'), "A=1;B='2';C=[3, 4]", local_config=self.config)
-        self.assertEqual(get_params('A;B;C', delim=';'), "A=1;B='2';C=[3, 4]", local_config=self.config)
-        self.assertEqual(get_params('A;B;C', delim=';', sep='=='), "A==1;B=='2';C==[3, 4]", local_config=self.config)
+        self.assertEqual(get_params('A', 'B', 'C', delim=';', local_config=self.config), "A=1;B='2';C=[3, 4]")
+        self.assertEqual(get_params('A;B;C', delim=';', local_config=self.config), "A=1;B='2';C=[3, 4]")
+        self.assertEqual(get_params('A;B;C', delim=';', sep='==', local_config=self.config), "A==1;B=='2';C==[3, 4]")
 
     def test_missing_attribute_and_hasattr(self):
         self.assertFalse(hasattr(self.config, 'NOT_DEFINED'))
