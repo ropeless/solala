@@ -37,8 +37,8 @@ class ModbusPowerController(PowerController):
     The controller uses a master inverter, optional slave inverters, and a grid
     meter. Battery control is performed through the master inverter.
 
-    By default, inverter power limits are applied only to the master inverter.
-    Set `power_control_slaves` to True to apply power limits to all inverters.
+    By default, inverter power curtailment is applied only to the master inverter.
+    Set `power_control_slaves` to True to apply power curtailment to all inverters.
     """
 
     def __init__(
@@ -52,7 +52,7 @@ class ModbusPowerController(PowerController):
             power_control_slaves: bool = False,
     ) -> None:
         """
-        Initialise the power controller.
+        Initialise a Modbus power controller.
 
         Args:
             modbus: Modbus connection providing access to the power system devices.
@@ -60,9 +60,9 @@ class ModbusPowerController(PowerController):
             meter: Logical name of the grid meter in `modbus`.
             slaves: Logical names of any slave inverters in `modbus`.
             mac_addr_lookup: Optional mapping of device host addresses to MAC addresses,
-                used when recording connection information.
-            power_control_slaves: Whether inverter power limits should also be
-                applied to slave inverters. If False, limits are applied only
+                used when reporting connection information.
+            power_control_slaves: Whether inverter power curtailment should also be
+                applied to slave inverters. If False, curtailment is applied only
                 to the master inverter.
         """
         self._modbus: Modbus = modbus
@@ -191,7 +191,7 @@ class ModbusPowerController(PowerController):
     # =================================================
 
     async def enable_battery(self) -> None:
-        with self._logit('enable_battery'):
+        with self._log_it('enable_battery'):
             await self._set(self._StorCtl_Mod, 0)
             await self._set(self._InWRte, 100)
             await self._set(self._OutWRte, 100)
@@ -200,7 +200,7 @@ class ModbusPowerController(PowerController):
             self._is_force_discharge = False
 
     async def disable_battery(self) -> None:
-        with self._logit('disable_battery'):
+        with self._log_it('disable_battery'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, 0)
             await self._set(self._OutWRte, 0)
@@ -210,7 +210,7 @@ class ModbusPowerController(PowerController):
             self._is_force_discharge = False
 
     async def force_charge(self) -> None:
-        with self._logit('force_charge'):
+        with self._log_it('force_charge'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, 100)
             await self._set(self._OutWRte, 0)  # Don't try to discharge at the same time as charging
@@ -220,7 +220,7 @@ class ModbusPowerController(PowerController):
             self._is_force_discharge = False
 
     async def force_discharge(self) -> None:
-        with self._logit('force_discharge'):
+        with self._log_it('force_discharge'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, -100)  # negative flow
             await self._set(self._OutWRte, 100)
@@ -230,7 +230,7 @@ class ModbusPowerController(PowerController):
             self._is_force_discharge = True
 
     async def charge_only(self) -> None:
-        with self._logit('charge_only'):
+        with self._log_it('charge_only'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, 100)
             await self._set(self._OutWRte, 0)
@@ -240,7 +240,7 @@ class ModbusPowerController(PowerController):
             self._is_force_discharge = False
 
     async def discharge_only(self) -> None:
-        with self._logit('discharge_only'):
+        with self._log_it('discharge_only'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, 0)
             await self._set(self._OutWRte, 100)
@@ -261,7 +261,8 @@ class ModbusPowerController(PowerController):
         its rated power.
 
         Returns:
-            The output power limits in watts, in inverter order.
+            The output power limits in watts, in inverter order,
+            coindexed with `self._inverters`.
         """
         return [
             min(
@@ -272,16 +273,16 @@ class ModbusPowerController(PowerController):
         ]
 
     async def enable_inverter(self) -> None:
-        with self._logit('enable_inverter'):
+        with self._log_it('enable_inverter'):
             await self._set_power_pct(100)
 
     async def disable_inverter(self, *, change_duration: int) -> None:
-        with self._logit('disable_inverter'):
+        with self._log_it('disable_inverter'):
             await self._set_power_pct(0, change_duration)
 
     async def zero_export(self, *, change_duration: int) -> None:
         """
-        Adjust inverter output power to minimise grid export.
+        Curtail the inverter output power to minimise grid export.
 
         The controller adjusts the inverter limit to balance solar generation
         against consumption. Small power differences are handled using a
@@ -290,7 +291,7 @@ class ModbusPowerController(PowerController):
         This method may need to be called repeatedly as consumption changes
         or the inverter setting reverts after the requested duration.
         """
-        with self._logit('zero_export'):
+        with self._log_it('zero_export'):
             cur_pct: float
             cur_pct, _ = await self._get_power_limit()
             grid_power: float = await self._get(self._grid_power)
@@ -385,7 +386,7 @@ class ModbusPowerController(PowerController):
             return avg_limit, any(power_limits_enabled)
 
     @contextmanager
-    def _logit(self, name: str) -> Iterator[None]:
+    def _log_it(self, name: str) -> Iterator[None]:
         """
         Enable register-operation logging for the duration of the context.
 
@@ -409,9 +410,8 @@ class ModbusPowerController(PowerController):
         """
         Set the inverter output limit and its automatic reversion duration.
 
-        A limit of 100% or greater disables the power limit. Lower values enable
-        the limit and force the enable register to be written to keep the setting
-        active.
+        A limit of 100% or greater disables power curtailment. Lower values enable
+        implement power curtialment.
 
         Args:
             pct: Inverter output limit as a percentage of rated power.
