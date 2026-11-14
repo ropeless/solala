@@ -1,12 +1,17 @@
 import asyncio
 from functools import partial
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Protocol
 
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
 from solala.logger import LOGGER
 from solala.server.css_colours import Colours
+
+
+class _CancellableTimer(Protocol):
+    def cancel(self) -> None:
+        ...
 
 
 class PageSession:
@@ -72,7 +77,7 @@ class PageSession:
 
         self.add_cleanup(cancel_task)
 
-    def add_timer(self, timer) -> None:
+    def add_timer(self, timer: _CancellableTimer) -> None:
         self.add_cleanup(timer.cancel)
 
     async def select_tab(self, tab_name: str) -> None:
