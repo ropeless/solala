@@ -295,8 +295,16 @@ class ModbusPowerController(PowerController):
             cur_pct: float
             cur_pct, _ = await self._get_power_limit()
             grid_power: float = await self._get(self._grid_power)
-            max_power: float = await self.get_inverter_limit()
-            cur_power: float = await self._get_sum(self._inverter_power)
+            # Only inverters receiving the power-limit command are controllable.
+            controlled_limits = await self._get_inverter_limit_array()
+            controlled_limits = [
+                limit for inverter, limit in zip(self._inverters, controlled_limits)
+                if inverter in self._power_controllers
+            ]
+            max_power: float = sum(controlled_limits)
+            cur_power: float = await self._get_sum(
+                [f'{inverter}/W' for inverter in self._power_controllers]
+            )
 
             # Include normal battery discharge when calculating available power.
             # Forced discharge is handled separately.
