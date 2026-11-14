@@ -20,7 +20,7 @@ class _GuiLogHandler(logging.Handler):
 
     The handler formats each record, appends it to a bounded history, and
     displays it in every registered log console. A lock protects updates to
-    the history and active consoles during emission and registration.
+    the history and active consoles during emission, registration and removal.
     """
 
     def __init__(self) -> None:
@@ -60,8 +60,9 @@ class _GuiLogHandler(logging.Handler):
         Args:
             element: NiceGUI container that receives log line labels.
         """
-        self.remove(element)
         with self._lock:
+            if element in self._log_elements:
+                self._log_elements.remove(element)
             for msg in self._history:
                 with element:
                     ui.label(msg).classes('solala-log-line')
@@ -74,10 +75,11 @@ class _GuiLogHandler(logging.Handler):
         Args:
             element: NiceGUI container to unregister.
         """
-        try:
-            self._log_elements.remove(element)
-        except ValueError:
-            pass
+        with self._lock:
+            try:
+                self._log_elements.remove(element)
+            except ValueError:
+                pass
 
 
 _LOG_HANDLER = _GuiLogHandler()
