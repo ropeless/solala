@@ -213,10 +213,10 @@ class ModbusPowerController(PowerController):
         with self._log_it('force_charge'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, 100)
-            await self._set(self._OutWRte, 0)  # Don't try to discharge at the same time as charging
+            await self._set(self._OutWRte, -100)  # Force charging at the maximum permitted rate
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 1)
-            await self._set(self._MinRsvPct, 100)
+            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
             self._is_force_discharge = False
 
     async def force_discharge(self) -> None:
