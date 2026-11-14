@@ -50,9 +50,7 @@ class TeslaWallConnector(PowerConsumer):
         return ConsumerStatus(
             voltage=voltage,
             current=current,
-            # Estimate active power assuming a power factor of 1.0.
-            # The actual active power may be lower for loads with a power factor below 1.0.
-            power=voltage * current,
+            power=voltage * current,  # assumes a pure resistive load
         )
 
     def get_connection_info(self) -> JSONDict:
