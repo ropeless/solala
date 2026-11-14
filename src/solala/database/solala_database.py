@@ -38,9 +38,9 @@ class SolalaDatabase:
             for name, value in registers.items()
         ]
         query = """
-                INSERT INTO register_numeric (timestamp, name, value)
-                VALUES (%(timestamp)s, %(name)s, %(value)s) \
-                """
+            INSERT INTO register_numeric (timestamp, name, value)
+            VALUES (%(timestamp)s, %(name)s, %(value)s)
+        """
         async with self._connection.transaction():
             async with self._connection.cursor() as cur:
                 await cur.executemany(query, params)
@@ -61,9 +61,9 @@ class SolalaDatabase:
             for name, value in registers.items()
         ]
         query = """
-                INSERT INTO register_text (timestamp, name, value)
-                VALUES (%(timestamp)s, %(name)s, %(value)s) \
-                """
+            INSERT INTO register_text (timestamp, name, value)
+            VALUES (%(timestamp)s, %(name)s, %(value)s)
+        """
         async with self._connection.transaction():
             async with self._connection.cursor() as cur:
                 await cur.executemany(query, params)
@@ -83,35 +83,40 @@ class SolalaDatabase:
 
         if include_boundaries:
             query = """
-                    SELECT *
-                    FROM ((SELECT *
-                           FROM measurement
-                           WHERE timestamp < %(day_start)s
-                           ORDER BY timestamp DESC
-                               LIMIT 1)
-                          UNION ALL
-                          (SELECT *
-                           FROM measurement
-                           WHERE timestamp >= %(day_start)s
-                             AND timestamp
-                               < %(next_day_start)s)
-                          UNION ALL
-                          (SELECT *
-                           FROM measurement
-                           WHERE timestamp >= %(next_day_start)s
-                           ORDER BY timestamp ASC
-                               LIMIT 1)) AS combined
-                    ORDER BY timestamp ASC \
-                    """
+                SELECT * FROM (
+                    (
+                        SELECT *
+                        FROM measurement
+                        WHERE timestamp < %(day_start)s
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    )
+                    UNION ALL
+                    (
+                        SELECT *
+                        FROM measurement
+                        WHERE timestamp >= %(day_start)s
+                          AND timestamp < %(next_day_start)s
+                    )
+                    UNION ALL
+                    (
+                        SELECT *
+                        FROM measurement
+                        WHERE timestamp >= %(next_day_start)s
+                        ORDER BY timestamp ASC
+                        LIMIT 1
+                    )
+                ) AS combined
+                ORDER BY timestamp ASC
+            """
         else:
             query = """
-                    SELECT *
-                    FROM measurement
-                    WHERE timestamp >= %(day_start)s
-                      AND timestamp
-                        < %(next_day_start)s
-                    ORDER BY timestamp ASC \
-                    """
+                SELECT *
+                FROM measurement
+                WHERE timestamp >= %(day_start)s
+                  AND timestamp < %(next_day_start)s
+                ORDER BY timestamp ASC
+            """
 
         async with self._connection.cursor(row_factory=dict_row) as cur:
             await cur.execute(query, params)
@@ -123,11 +128,11 @@ class SolalaDatabase:
         Get the latest measurement (if there is one).
         """
         query = """
-                SELECT *
-                FROM measurement
-                ORDER BY timestamp DESC
-                    LIMIT 1 \
-                """
+            SELECT *
+            FROM measurement
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """
         async with self._connection.cursor(row_factory=dict_row) as cur:
             await cur.execute(query)
             row: Row | None = await cur.fetchone()
