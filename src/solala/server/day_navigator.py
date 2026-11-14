@@ -1,3 +1,7 @@
+"""
+Provide a three-slide, date-driven NiceGUI carousel navigator.
+"""
+
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import date, timedelta
@@ -17,6 +21,13 @@ _CAROUSEL_PROPS = 'infinite transition-next="slide-left" transition-prev="slide-
 
 
 class DayNavigator:
+    """
+    Navigate dated content using three reusable carousel slides.
+
+    Each slide has a coindexed asynchronous updater that populates its content
+    for the selected, previous, or next day. The carousel supports date-picker,
+    button, swipe, and keyboard navigation.
+    """
     def __init__(
             self,
             *,
@@ -27,27 +38,19 @@ class DayNavigator:
             title: str = ''
     ) -> None:
         """
-        Create a carousel of infinite cards, where each card represents a date.
+        Create the navigation controls and three reusable content slides.
 
-        The navigator consists of a date navigation bar with a content slide below that.
-
-        The navigator works by keeping s ring of three carousel slides. At any point of time
-        one slide is the current display day (focus slide) with the other two being the previous
-        and next day (left slide and right slide).
-
-        The contents of each slide is maintained by an element "Updater" which is set for a particular
-        slide content element and called when required to update its content to a particular day.
-
-        The carousel can be operated either via the IU or programmatically so there is a distinction
-        between the slide we last set to the focus slide (self._focus_slide) and the slide currently
-        on display (self._display_slide).
+        The focus slide tracks the requested day, while the displayed slide
+        tracks the carousel's current visual position. Updaters are registered
+        separately using `set_listeners()`.
 
         Args:
-            enable_swipe_content: if true then the content cards respond to left-right swipe gestures.
-            enable_swipe_navigator: if true then the navigator bar respond to left-right swipe gestures.
-            enable_arrow_keys: if true then the carousel responds to the left and right arrow keys.
-            auto_height: if true then the carousel grows to fit the active slide content.
-            title: optional title to add above the navigator
+            enable_swipe_content: Enable horizontal swipes over slide content.
+            enable_swipe_navigator: Enable horizontal swipes over the date bar.
+            enable_arrow_keys: Enable left/right arrow and Home key navigation.
+            auto_height: Allow the carousel to follow its active slide's height.
+                Call `initialise_auto_height()` after the client is ready.
+            title: Optional heading above the date navigator.
         """
 
         self._day: date = _SENTINEL_DATE
@@ -135,7 +138,11 @@ class DayNavigator:
             ui.keyboard(on_key=self._handle_key, repeating=False)
 
     async def initialise_auto_height(self) -> None:
-        """Make the carousel follow the height of its active slide."""
+        """
+        Install browser observers to follow the active slide's content height.
+
+        Has no effect when `auto_height` was disabled at construction.
+        """
         if self._auto_height_id is None:
             return
 
@@ -173,24 +180,46 @@ class DayNavigator:
 
     def get_elements(self) -> Sequence[Element]:
         """
-        What element need a listener to update them
+        Return the three slide content elements in updater order.
+
+        Returns:
+            Elements coindexed with the callbacks passed to `set_listeners()`.
         """
         return tuple(self._elements)
 
     def set_listeners(self, *listeners: Updater) -> None:
         """
-        Set listeners for each element, coindexed with `self.get_elements`
+        Register one asynchronous updater for each slide content element.
+
+        Args:
+            listeners: Three callbacks coindexed with `get_elements()`.
+                Each callback receives the date its slide should display.
+
+        Raises:
+            ValueError: If the number of callbacks is not three.
         """
         if len(listeners) != len(self._elements):
             raise ValueError(f'need {len(listeners)} listeners')
         self._updaters = tuple(listeners)
 
     async def change_day(self, delta: int) -> None:
+        """
+        Navigate relative to the currently selected date.
+
+        Args:
+            delta: Number of days to move; negative values move backwards.
+        """
         await self.set_day(self._day + timedelta(days=delta))
 
     async def set_day(self, day: date) -> None:
         """
-        Set the day to display
+        Select a date and refresh the required carousel slides.
+
+        Adjacent dates reuse the existing slides; larger jumps refresh all
+        three. Neighbouring slide refreshes are scheduled asynchronously.
+
+        Args:
+            day: Date to display.
         """
         # This is how many days are being requested to change from the current day.
         # If this is -1, 0, or +1 then there is not much to do. Otherwise, we
@@ -253,14 +282,16 @@ class DayNavigator:
     @property
     def _display_slide(self) -> int:
         """
-        What slide number is currently on display.
+        Return the slide index currently shown by the carousel.
         """
         return int(str(self._carousel.value))
 
     def _set_display_slide(self, slide: int) -> None:
         """
-        Set the slide number to display.
-        This does not update any other state.
+        Navigate visually to a slide without changing the selected date.
+
+        Args:
+            slide: Index of the slide to display.
         """
         match self._display_slide, slide:
             case 0, 1:
@@ -286,23 +317,23 @@ class DayNavigator:
 
     def _left_slide(self) -> int:
         """
-        What slide number is to the left of the focus slide.
+        Return the slide index preceding the focus slide.
         """
         return (self._focus_slide - 1) % 3
 
     def _right_slide(self) -> int:
         """
-        What slide number is to the right of the focus slide.
+        Return the slide index following the focus slide.
         """
         return (self._focus_slide + 1) % 3
 
     async def _update_element(self, slide_number: int, day: date) -> None:
         """
-        Call the appropriate updater for the given slide element.
+        Invoke the registered updater for a slide, if available.
 
         Args:
-            slide_number: The number of the slide element to update.
-            day: what day the slide element needs to display.
+            slide_number: Index of the slide content element to update.
+            day: Date that the slide should display.
         """
         if len(self._updaters) == 0:
             # updaters not yet set
@@ -312,8 +343,9 @@ class DayNavigator:
 
     async def _on_slide_change(self) -> None:
         """
-        This is the callback for when the carousel slide changes.
-        it may be called either when the user changes the slide or the slide con changed programmatically.
+        Handle carousel changes initiated by the user or by code.
+
+        Only a change away from the focus slide triggers date navigation.
         """
         delta: int = ((self._display_slide - self._focus_slide + 1) % 3) - 1
         if delta != 0:
@@ -345,7 +377,7 @@ class DayNavigator:
 
     async def _show_dialog(self) -> None:
         """
-        Present the date picker dialogue to the user.
+        Open the date picker, synchronising its value with the selected day.
         """
         cur_date = self._day.isoformat()
         if cur_date != self._date_picker.value:
