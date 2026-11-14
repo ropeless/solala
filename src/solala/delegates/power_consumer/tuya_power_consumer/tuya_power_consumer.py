@@ -14,6 +14,11 @@ API_ENDPOINT = "https://openapi.tuyaeu.com"
 
 
 class TuyaPowerConsumer(PowerConsumer):
+    """
+    Power consumer implementation for devices connected through the Tuya IoT API.
+
+    Retrieves device status and exposes supported status fields as registers.
+    """
 
     def __init__(
             self,
@@ -26,10 +31,21 @@ class TuyaPowerConsumer(PowerConsumer):
             power_scale_factor: float = 0.1,
     ) -> None:
         """
+        Initialise the Tuya API connection and configure device measurements.
+
         Args:
-            voltage_scale_factor: The multiplier to convert the device 'cur_voltage' to volts.
-            current_scale_factor: The multiplier to convert the device 'cur_current' to amperes.
-            power_scale_factor: The multiplier to convert the device 'cur_power' to watts.
+            access_id: Tuya project access ID.
+            access_secret: Tuya project access secret.
+            device_id: Identifier of the Tuya device.
+            voltage_scale_factor: Multiplier converting the device's
+                'cur_voltage' value to volts.
+            current_scale_factor: Multiplier converting the device's
+                'cur_current' value to amperes.
+            power_scale_factor: Multiplier converting the device's
+                'cur_power' value to watts.
+
+        Raises:
+            ConnectionError: If the Tuya API connection cannot be established.
         """
         self._voltage_scale_factor: float = voltage_scale_factor
         self._current_scale_factor: float = current_scale_factor
@@ -70,6 +86,12 @@ class TuyaPowerConsumer(PowerConsumer):
             return self._register_bank
 
     async def get_status(self) -> ConsumerStatus:
+        """
+        Get the device's electrical status.
+
+        The raw voltage, current, and power values are converted to volts,
+        amperes, and watts using the configured scale factors.
+        """
         device_status: JSONDict = await self._cache()
         return ConsumerStatus(
             voltage=json_num(device_status['cur_voltage']) * self._voltage_scale_factor,
@@ -78,12 +100,27 @@ class TuyaPowerConsumer(PowerConsumer):
         )
 
     def get_connection_info(self) -> JSONDict:
+        """
+        Get the Tuya connection details and measurement scale factors.
+
+        Returns:
+            The connection type, access ID, device ID, and configured scale
+            factors. The access secret is not included.
+        """
         return self._connection_info
 
     async def close(self) -> None:
         pass
 
     async def get_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
+        """
+        Get the device status fields supported by the register system.
+
+        Returns:
+            An asynchronous iterator of status field names and their
+            corresponding register types. Fields with unsupported value types
+            are skipped.
+        """
         device_status: JSONDict = await self._cache()
         for key, value in device_status.items():
             try:
@@ -93,11 +130,28 @@ class TuyaPowerConsumer(PowerConsumer):
             yield key, reg_type
 
     async def get_register_value(self, key: str) -> RegisterValue:
+        """
+        Get the current value of a device status field.
+
+        Args:
+            key: Name of the status field to retrieve.
+
+        Returns:
+            The field value converted to a supported register type.
+        """
         device_status: JSONDict = await self._cache()
         value = device_status[key]
         return check_value(value)
 
     async def __get_device_status(self) -> JSONDict:
+        """
+        Retrieve the device status from the Tuya IoT API.
+
+        Returns:
+            A dictionary mapping status codes to values. If the API request
+            fails, an error message and NaN electrical measurements are
+            returned.
+        """
         try:
             response = self._tuya.get(self._status_url)
             if not response.get('success', False):
