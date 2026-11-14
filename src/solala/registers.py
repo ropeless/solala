@@ -15,7 +15,7 @@ class ReadOnlyError(AttributeError):
         super().__init__('Register not writable')
 
 
-def check_type(t: Any) -> RegisterType:
+def check_type(t: object) -> RegisterType:
     """
     Is the given type a valid register type.
 
@@ -28,13 +28,18 @@ def check_type(t: Any) -> RegisterType:
     Raises:
         TypeError: If the type is not a valid register type.
     """
-    if t in (str, int, float, bool):
-        return t
-    else:
-        raise TypeError(f'not a valid register type: {t}')
+    if t is str:
+        return str
+    if t is int:
+        return int
+    if t is float:
+        return float
+    if t is bool:
+        return bool
+    raise TypeError(f'not a valid register type: {t}')
 
 
-def check_value(v: Any) -> RegisterValue:
+def check_value(v: object) -> RegisterValue:
     """
     Is the given value a valid register value.
 
