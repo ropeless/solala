@@ -4,7 +4,7 @@ Getting Started
 ### Prerequisites and installation
 
 Solala requires **Python 3.13 or later**. The repository uses Poetry to manage
-dependencies (see `../pyproject.toml`); Poetry is configured for dependency
+dependencies (see `pyproject.toml`); Poetry is configured for dependency
 management rather than packaging the project as an installable distribution.
 
 Clone the repository and install its dependencies:
@@ -15,12 +15,12 @@ cd solala
 poetry install
 ```
 
-The demonstration modules are under `../src/`. Include that directory in
+The demonstration modules are under `src/`. Include that directory in
 `PYTHONPATH` when running them from the repository checkout.
 
 ### Configure the demos
 
-Copy `../src/solala_demo/_example_local_config.py` to a file named
+Copy `src/solala_demo/_example_local_config.py` to a file named
 `local_config.py` in a directory on your Python path, and edit the values
 for your environment. The demo scripts import this configuration through
 `solala.utils.local_config_help`.
@@ -40,7 +40,7 @@ The dummy server uses simulated controller, pricing, consumer and solar
 forecast implementations. It does not require an inverter or an Amber
 account, and it disables database writes.
 
-With `../src/` and the directory containing `local_config.py` on
+With `src/` and the directory containing `local_config.py` on
 `PYTHONPATH`, run:
 
 ```sh
@@ -57,7 +57,7 @@ initial dummy connections instead of previously saved settings.
 ### Run with real hardware and services
 
 The real-hardware demonstration is
-`../src/solala_demo/demo_server.py`. Its sample configuration connects to
+`src/solala_demo/demo_server.py`. Its sample configuration connects to
 Fronius inverters over Modbus, Amber for electricity pricing, Open-Meteo
 for solar forecasting, Tesla and Tuya power consumers, and PostgreSQL
 for historical data.
@@ -73,7 +73,7 @@ Run it from the repository checkout:
 poetry run python -m solala_demo.demo_server
 ```
 
-The `../scripts/run_solala.sh` script is an example deployment script with
+The `scripts/run_solala.sh` script is an example deployment script with
 machine-specific paths and an automatic `git pull`; review and adapt it
 before use.
 
