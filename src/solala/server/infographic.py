@@ -57,7 +57,7 @@ class Infographic:
             is_estimate=True,
         )
 
-    def make_from_status(self, status: JSONDict, power_scale=2000) -> None:
+    def make_from_status(self, status: JSONDict, power_scale: float = 2000) -> None:
         power_dict: JSONDict = json_dict(status['power'])
         price_dict: JSONDict = json_dict(status['price'])
         self.make(
@@ -262,7 +262,7 @@ class Shape(Group):
         return self.args['transform']
 
     @_transform.setter
-    def _transform(self, value: str):
+    def _transform(self, value: str) -> None:
         self.args['transform'] = value
 
 
@@ -270,11 +270,11 @@ class House(Shape):
     def __init__(
             self,
             *,
-            size=64,
+            size: float = 64,
             x: float = 0,
             y: float = 0,
-            stroke_width=5,
-    ):
+            stroke_width: float = 5,
+    ) -> None:
         """
         Draw a simple house icon with no windows.
 
@@ -337,7 +337,7 @@ class Inverter(Shape):
             size: int = 15,
             x: float = 0,
             y: float = 0,
-            stroke_width=3,
+            stroke_width: float = 3,
     ) -> None:
         super().__init__(x=x, y=y)
 
@@ -387,7 +387,7 @@ class Battery(Shape):
             size: int = 64,
             x: float = 0,
             y: float = 0,
-            stroke_width=5,
+            stroke_width: float = 5,
             state_of_charge: float = 100,
     ) -> None:
         super().__init__(x=x, y=y)
@@ -439,7 +439,7 @@ class Sun(Shape):
             size: float = 80,
             x: float = 0,
             y: float = 0,
-    ):
+    ) -> None:
         super().__init__(x=x, y=y, scale=size / 512)
         color = 'var(--solala-sun-color)'
 
@@ -464,7 +464,7 @@ class Grid(Shape):
             x: float = 0,
             y: float = 0,
             stroke_width: float = 5,
-    ):
+    ) -> None:
         super().__init__(x=x, y=y)
         s = size / 64
         color = 'var(--solala-grid-color)'
@@ -540,7 +540,7 @@ class Chevron(Shape):
             y: float = 0,
             rotate: float = 0,
             stroke_width: float = 5,
-    ):
+    ) -> None:
         super().__init__(x=x, y=y, rotate=rotate)
         color = 'var(--solala-flow-color)'
 
