@@ -38,7 +38,7 @@ STATUS_UNITS: Mapping[str, str] = dict_merge(
         'capacity': Units.WATTS,
         'forecast_generation': Units.KILOWATT_HOURS,
     },
-    PARAMETERS_UNITS, # status JSON includes policy parameters.
+    PARAMETERS_UNITS,  # status JSON includes policy parameters.
 )
 
 # Unit suffixes for control-loop timing and forecast constants.
