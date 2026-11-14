@@ -1,12 +1,13 @@
 """
-Build the tabbed NiceGUI interface and manage per-tab page sessions.
+Implement the NiceGUI interface.
 """
 
 import asyncio
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from functools import partial
-from collections.abc import Awaitable, Callable, Sequence
+from typing import Coroutine, Any
 
 from nicegui import ui, app, events
 from nicegui.element import Element
@@ -141,7 +142,10 @@ async def _ui_control_buttons(session: PageSession) -> None:
         await session.add_control_listener(updater)
 
 
-def _infographic_click(element: events.GenericEventArguments, select_tab: Callable[[str], Awaitable[None]]) -> None:
+def _infographic_click(
+        element: events.GenericEventArguments,
+        select_tab: Callable[[str], Coroutine[Any, Any, None]],
+) -> None:
     """
     Navigate to the price or solar tab when its infographic region is clicked.
 
@@ -160,7 +164,7 @@ def _infographic_click(element: events.GenericEventArguments, select_tab: Callab
 
 def _update_loop_status(loop_status_light: Element, loop_status_label: Label) -> None:
     """
-    Refresh the control-loop health indicator from its overdue interval.
+    Refresh the control-loop health indicator using `control_loop.loop_check_overdue()`.
 
     Args:
         loop_status_light: Element displaying the health indicator colour.
@@ -188,75 +192,6 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
     else:
         # Leave it as it is
         pass
-
-
-def _day_navigation(
-        swipe_area: ui.Area,
-        change_day: Callable[[int], Awaitable[None]],
-        set_day: Callable[[date], Awaitable[None]],
-) -> None:
-    """
-    Enable swipe and keyboard navigation between dates.
-
-    Args:
-        swipe_area: Element receiving horizontal touch gestures.
-        change_day: Callback that moves the selected date by a day offset.
-        set_day: Callback that selects an explicit date.
-    """
-    # Handler for swipe actions
-    async def handle_swipe(event: events.GenericEventArguments) -> None:
-        direction = event.args
-        if direction == 'left':
-            await change_day(1)
-        elif direction == 'right':
-            await change_day(-1)
-
-    swipe_area.on(
-        'touchstart',
-        js_handler="""(e) => {
-            if (!e.changedTouches.length) return;
-
-            const touch = e.changedTouches[0];
-            e.currentTarget.dataset.startX = touch.clientX;
-            e.currentTarget.dataset.startY = touch.clientY;
-        }""",
-    )
-
-    swipe_area.on(
-        'touchend',
-        handle_swipe,
-        js_handler="""(e) => {
-            if (!e.changedTouches.length) return;
-
-            const touch = e.changedTouches[0];
-            const startX = Number(e.currentTarget.dataset.startX);
-            const startY = Number(e.currentTarget.dataset.startY);
-
-            // Ignore gestures if the starting position was not recorded.
-            if (!Number.isFinite(startX) ||
-                !Number.isFinite(startY)) return;
-
-            const dx = touch.clientX - startX;
-            const dy = touch.clientY - startY;
-
-            // Require a deliberate horizontal swipe.
-            if (Math.abs(dx) >= 60 &&
-                Math.abs(dx) > Math.abs(dy) * 1.5) {
-                emit(dx < 0 ? 'left' : 'right');
-            }
-        }""",
-    )
-
-    async def handle_key(e: events.KeyEventArguments) -> None:
-        if e.action.keydown:
-            if e.key.arrow_left:
-                await change_day(-1)
-            elif e.key.arrow_right:
-                await change_day(1)
-            elif e.key.home:
-                await set_day(date.today())
-
-    ui.keyboard(on_key=handle_key, repeating=False)
 
 
 # ====================================================================
@@ -493,12 +428,13 @@ _PRICE_TAB: str = _TABS[2].name
 
 class TabSelector:
     """
-    Manage tab selection, asynchronous construction, and session cleanup.
+    Manage tab selection, asynchronous construction, and session clean-up.
 
     Tab transitions are serialised by a lock. Each selected tab receives a
     new `PageSession`, and any previous build and session are closed before
     the next tab is constructed.
     """
+
     def __init__(
             self,
             colours: Colours,
