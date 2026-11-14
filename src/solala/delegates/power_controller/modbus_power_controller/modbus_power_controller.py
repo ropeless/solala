@@ -392,9 +392,6 @@ class ModbusPowerController(PowerController):
 
         Args:
             name: Name of the operation to include in the log messages.
-
-        Yields:
-            None.
         """
         self._log_set_get = True
         LOGGER.info(f'{_START} {name}')
@@ -410,7 +407,7 @@ class ModbusPowerController(PowerController):
         """
         Set the inverter output limit and its automatic reversion duration.
 
-        A limit of 100% or greater disables power curtailment. Lower values enable
+        A limit of 100% or greater disables power curtailment. Lower values implement
         power curtailment.
 
         Args:
