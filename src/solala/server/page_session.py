@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from functools import partial
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
@@ -91,7 +92,7 @@ class PageSession:
             cleanup = self._cleanup.pop()
             try:
                 result = cleanup()
-                if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
+                if inspect.isawaitable(result):
                     await result
             except Exception:
                 LOGGER.exception('Error cleaning up page resource')

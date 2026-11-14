@@ -63,6 +63,10 @@ def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
     """
     Is the given value acceptable for the given register type.
 
+    Note that this explicitly allows:
+    * `bool` values can be used for `int` and `float` register types
+    * `int` values can be used for `float` register types.
+
     Args:
         value: The value to check.
         register_type: The register type to check against.

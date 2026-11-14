@@ -65,18 +65,6 @@ def _control_header(title: str) -> None:
             ui.label(title)
 
 
-def _button_classes(button, primary=False, wide=False) -> None:
-    classes = 'solala-button'
-    if wide:
-        classes += ' wide'
-    button.classes(classes)
-    if primary:
-        button.props('color=primary')
-    else:
-        button.props('color=grey')
-    return button
-
-
 async def _ui_control_buttons(session: PageSession) -> None:
     """
     Add the control buttons to the UI.

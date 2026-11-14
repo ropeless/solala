@@ -131,7 +131,7 @@ def _flatten(
         key = prefix + str(key)
         if isinstance(value, Mapping):
             yield from _flatten(value.items(), sep, key + sep)
-        elif isinstance(value, Sequence):
+        elif isinstance(value, Sequence) and not isinstance(value, str):
             yield from _flatten(enumerate(value), sep, key + sep)
         else:
             yield str(key), value
@@ -291,7 +291,7 @@ def _stringify_values(
         transformed JSON value.
     """
     # Recursive cases: dictionary and list.
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         if remove_key_underscores:
             key_f = _remove_underscores
         else:
@@ -301,7 +301,7 @@ def _stringify_values(
             key_f(k): _stringify_values(k, v, float_format, units, remove_key_underscores, remove_value_underscores)
             for k, v in value.items()
         }
-    elif isinstance(value, list):
+    elif isinstance(value, Sequence) and not isinstance(value, str):
         return [
             _stringify_values(None, v, float_format, units, remove_key_underscores, remove_value_underscores)
             for v in value
