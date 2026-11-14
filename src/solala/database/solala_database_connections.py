@@ -86,11 +86,16 @@ class SolalaDatabaseConnections:
             A SolalaDatabase instance.
         """
         async with self._pool.connection(timeout=timeout) as conn:
-            yield SolalaDatabase(conn)
-            if commit_on_close:
-                await conn.commit()
-            else:
-                await conn.rollback()
+            db = SolalaDatabase(conn)
+            try:
+                yield db
+                if commit_on_close:
+                    await conn.commit()
+                else:
+                    await conn.rollback()
+            finally:
+                # noinspection PyProtectedMember
+                db._take_connection()
 
     async def get_db(self, timeout: float | None = None) -> SolalaDatabase:
         conn: AsyncConnection = await self._pool.getconn(timeout=timeout)
