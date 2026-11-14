@@ -3,29 +3,39 @@ Discover local IPv4 addresses and devices using network routing and ARP.
 """
 
 import socket
+from ipaddress import IPv4Network
 from collections.abc import Iterable
 
 from scapy.layers.l2 import ARP, Ether
 from scapy.sendrecv import srp
 
 
-def find_ip_by_mac(mac_addresses: Iterable[str], timeout: float = 3) -> dict[str, str]:
+def find_ip_by_mac(
+        mac_addresses: Iterable[str],
+        timeout: float = 3,
+        subnet_mask: int | str = 24,
+) -> dict[str, str]:
     """
     Find IPv4 addresses associated with the requested MAC addresses.
 
-    Broadcast an ARP request across the /24 subnet inferred from the local
-    IPv4 address. MAC address matching is case-insensitive, but the returned
+    Broadcast an ARP request across the subnet derived from the local IPv4
+    address and the supplied subnet mask. MAC address matching is case-insensitive, but the returned
     dictionary uses the original input strings as keys. Devices outside that
     subnet, or devices that do not respond to ARP, are not discovered.
 
     Args:
         mac_addresses: MAC addresses to look up.
         timeout: Number of seconds to wait for ARP responses.
+        subnet_mask: CIDR prefix length (e.g. 23) or dotted-decimal subnet mask
+            (e.g. '255.255.254.0'). Defaults to 24 for backward compatibility.
 
     Returns:
         Mapping from matched input MAC addresses to discovered IPv4 addresses.
         Unmatched addresses are omitted. An empty input returns an empty mapping
         without performing a network scan.
+
+    Raises:
+        ValueError: If the subnet mask is invalid.
     """
     mac_addresses: list[str] = list(mac_addresses)
     if len(mac_addresses) == 0:
@@ -33,8 +43,7 @@ def find_ip_by_mac(mac_addresses: Iterable[str], timeout: float = 3) -> dict[str
         return {}
 
     my_ip = get_local_ip()
-    ip_parts = my_ip.split('.')
-    ip_range = f'{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.0/24'
+    ip_range = str(IPv4Network(f'{my_ip}/{subnet_mask}', strict=False))
 
     # Create an ARP request packet inside an Ethernet broadcast frame
     arp_request = ARP(pdst=ip_range)
