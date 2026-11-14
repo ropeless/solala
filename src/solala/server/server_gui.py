@@ -53,7 +53,7 @@ def _page_header() -> None:
             image.classes('w-12 h-12 bg-transparent')
 
             with ui.element('div'):
-                ui.label(f'{Constants.APP_NAME}').classes('solala-brand-name')
+                ui.label(Constants.APP_NAME).classes('solala-brand-name')
                 ui.label(Constants.APP_SUBTITLE).classes('solala-brand-subtitle')
 
 
@@ -152,6 +152,7 @@ def _infographic_click(
     elif click_id == CLICK_ID_SUN:
         asyncio.create_task(select_tab(_SOLAR_TAB))
     elif click_id in (CLICK_ID_INVERTER, CLICK_ID_HOME, CLICK_ID_BATTERY):
+        # More may be implemented in the future
         pass
 
 
