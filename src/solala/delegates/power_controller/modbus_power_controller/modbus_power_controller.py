@@ -393,11 +393,14 @@ class ModbusPowerController(PowerController):
         Args:
             name: Name of the operation to include in the log messages.
         """
+        previous = self._log_set_get
         self._log_set_get = True
         LOGGER.info(f'{_START} {name}')
-        yield
-        LOGGER.info(f'{_STOP} {name}')
-        self._log_set_get = False
+        try:
+            yield
+        finally:
+            LOGGER.info(f'{_STOP} {name}')
+            self._log_set_get = previous
 
     def _logger_get_set(self, message: str) -> None:
         """
