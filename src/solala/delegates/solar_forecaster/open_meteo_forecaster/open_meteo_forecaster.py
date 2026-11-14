@@ -1,11 +1,12 @@
 from datetime import datetime, timezone, date, timedelta
 
+import httpx
+
 from solala.constants import DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.datetime_extras import ensure_date
-from solala.utils.httpx_extras import async_get
 from solala.utils.json_extras import JSONDict
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
@@ -43,6 +44,7 @@ class OpenMeteoForecaster(SolarForecaster):
             inverter_limit: Maximum inverter AC output power in W.
             inverter_efficiency: Inverter efficiency as a fraction between 0 and 1.
         """
+        self._client = httpx.AsyncClient()
         self._latitude = latitude
         self._longitude = longitude
         self._panel_orientation = panel_orientation
@@ -79,7 +81,7 @@ class OpenMeteoForecaster(SolarForecaster):
             'wind_speed_unit': 'ms',
         }
 
-        response = await async_get(API_URL, params=params)
+        response = await self._client.get(API_URL, params=params)
         response.raise_for_status()
         data = response.json()
 
@@ -142,7 +144,7 @@ class OpenMeteoForecaster(SolarForecaster):
         }
 
     async def close(self) -> None:
-        pass
+        await self._client.aclose()
 
     def power(
             self,
