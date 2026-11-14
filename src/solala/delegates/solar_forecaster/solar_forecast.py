@@ -9,11 +9,11 @@ from solala.utils.json_extras import to_json, JSONDict
 @dataclass(frozen=True)
 class SolarForecast:
     """
-    Forecast of solar conditions and power for a single time interval.
+    Forecast of solar conditions and power for a single time interval (should be 1 hour).
 
     Attributes:
-        start_time: Start of the forecast interval, as a local timezone-aware datetime.
-        end_time: End of the forecast interval, as a local timezone-aware datetime.
+        start_time: Start of the forecast interval, as a datetime with timezone, in local time.
+        end_time: End of the forecast interval, as a datetime with timezone, in local time.
         weather: Forecast weather conditions.
         irradiance: Solar irradiance in W/m².
         temperature: Forecast temperature in °C.
@@ -23,9 +23,9 @@ class SolarForecast:
     start_time: datetime  # date + time + timezone (local time)
     end_time: datetime  # date + time + timezone (local time)
     weather: WeatherCode
-    irradiance: float  # W/m^2
-    temperature: float  # Celsius
-    power: float  # W
+    irradiance: float
+    temperature: float
+    power: float
 
     @property
     def energy(self) -> float:
@@ -82,14 +82,14 @@ class DailySolarForecast:
             for forecast in self.forecasts
         )
 
-    def find_contemporary(self, dt: datetime) -> SolarForecast | None:
+    def find_contemporary(self, when: datetime) -> SolarForecast | None:
         """
         Find the forecast interval containing a given datetime.
 
         The datetime is converted to the forecast timezone before comparison.
 
         Args:
-            dt: Datetime to find within the daily forecast.
+            when: Datetime to find within the daily forecast.
 
         Returns:
             The forecast interval containing the datetime, or None if no interval
@@ -99,9 +99,9 @@ class DailySolarForecast:
         if len(forecasts) == 0:
             return None
         tz = forecasts[0].start_time.tzinfo
-        dt_local = dt.astimezone(tz)
+        when_local = when.astimezone(tz)
 
         for forecast in self.forecasts:
-            if forecast.start_time <= dt_local < forecast.end_time:
+            if forecast.start_time <= when_local < forecast.end_time:
                 return forecast
         return None
