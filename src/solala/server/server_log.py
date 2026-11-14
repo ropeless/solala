@@ -1,3 +1,10 @@
+"""
+Mirror Solala log messages into active NiceGUI log consoles.
+
+A shared logging handler retains a bounded message history so newly opened
+consoles can display recent messages immediately.
+"""
+
 import logging
 import threading
 from nicegui import ui
@@ -9,8 +16,11 @@ from solala.logger import LOGGER
 
 class _GuiLogHandler(logging.Handler):
     """
-    A custom logging Handler that writes the Solala logger
-    to NiceGUI ui.log components.
+    Forward Solala log records to registered NiceGUI elements.
+
+    The handler formats each record, appends it to a bounded history, and
+    displays it in every registered log console. A lock protects updates to
+    the history and active consoles during emission and registration.
     """
 
     def __init__(self) -> None:
@@ -22,6 +32,12 @@ class _GuiLogHandler(logging.Handler):
         LOGGER.addHandler(self)
 
     def emit(self, record: logging.LogRecord) -> None:
+        """
+        Append a formatted record to the history and active log consoles.
+
+        Args:
+            record: Log record to display and retain.
+        """
         try:
             # Format the log message using the handler's formatter
             msg = self.format(record)
@@ -38,6 +54,12 @@ class _GuiLogHandler(logging.Handler):
             self.handleError(record)
 
     def add(self, element: Element) -> None:
+        """
+        Register a console and populate it with retained log messages.
+
+        Args:
+            element: NiceGUI container that receives log line labels.
+        """
         self.remove(element)
         with self._lock:
             for msg in self._history:
@@ -46,6 +68,12 @@ class _GuiLogHandler(logging.Handler):
             self._log_elements.append(element)
 
     def remove(self, element: Element) -> None:
+        """
+        Unregister a console, ignoring elements that are not registered.
+
+        Args:
+            element: NiceGUI container to unregister.
+        """
         try:
             self._log_elements.remove(element)
         except ValueError:
@@ -56,8 +84,20 @@ _LOG_HANDLER = _GuiLogHandler()
 
 
 def add(element: Element) -> None:
+    """
+    Register a NiceGUI log console with the shared handler.
+
+    Args:
+        element: Container that receives log messages.
+    """
     _LOG_HANDLER.add(element)
 
 
 def remove(element: Element) -> None:
+    """
+    Unregister a NiceGUI log console from the shared handler.
+
+    Args:
+        element: Container to unregister.
+    """
     _LOG_HANDLER.remove(element)
