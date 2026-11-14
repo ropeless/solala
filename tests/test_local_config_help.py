@@ -92,7 +92,7 @@ class TestConfigHelp(TestCase):
     def test_missing(self):
         # Note: We have no idea what is already in the configuration,
         # but we assume this key is not in it.
-        key = '_ck_valid_test_key_that_should_not_exist__test_missing_'
+        key = '_valid_test_key_that_should_not_exist__test_missing_'
         self.assertNotIn(key, self.config)
 
         with self.assertRaises(KeyError):
@@ -114,14 +114,14 @@ class TestConfigHelp(TestCase):
     def test_os_environ(self):
         # Note: We have no idea what is already in the configuration,
         # but we assume this key is not in it.
-        key = '_ck_valid_test_key_that_should_not_exist__test_os_environ_'
+        key = '_valid_test_key_that_should_not_exist__test_os_environ_'
         self.assertNotIn(key, self.config)
 
         with patch.dict(os.environ, {key: 'abc'}):
             self.assertEqual(self.config[key], 'abc')
 
     def test_invalid_key(self):
-        bad_key = 'ck:test_bad_key:my really bad key'
+        bad_key = 'oh:test_bad_key:my really bad key'
 
         with self.assertRaises(KeyError):
             _ = self.config[bad_key]

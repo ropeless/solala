@@ -54,6 +54,8 @@ from collections.abc import Iterable, Sequence
 from itertools import chain
 from typing import Any
 
+from solala.utils.sentinel import Sentinel
+
 try:
     # Try to import the user's `local_config.py`
     import local_config as _local_config
@@ -61,7 +63,7 @@ except ImportError:
     _local_config = None
 
 # Sentinel object
-_NIL = object()
+_NIL = Sentinel('_NIL')
 
 
 class Config:
@@ -269,7 +271,7 @@ def update_config(
             ...
 
         if __name__ == '__main__':
-            update_config(sys.argv[1:], ['in_name', 'out_name'])
+            update_config(sys.argv, ['in_name', 'out_name'])
             main()
 
     Args:
