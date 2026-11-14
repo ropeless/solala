@@ -21,13 +21,13 @@ class ReadOnlyError(AttributeError):
 
 def check_type(t: object) -> RegisterType:
     """
-    Validate that a type is one of `str`, `int`, `float`, or `bool`.
+    Validate that a type is an allowed RegisterType.
 
     Args:
         t: The type to check.
 
     Returns:
-        The register type.
+        The register type, cast to RegisterType.
 
     Raises:
         TypeError: If the type is not a valid register type.
@@ -45,13 +45,13 @@ def check_type(t: object) -> RegisterType:
 
 def check_value(v: object) -> RegisterValue:
     """
-    Validate that a value is a string, integer, float, or boolean.
+    Validate that a value is an allowed RegisterValue.
 
     Args:
         v: The value to check.
 
     Returns:
-        The value.
+        The value, cast to RegisterValue.
 
     Raises:
         TypeError: If the value has an unsupported type.
