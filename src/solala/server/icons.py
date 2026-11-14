@@ -1,7 +1,3 @@
-"""
-Map analytics identifiers and weather conditions to static asset icon paths.
-"""
-
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 
 
@@ -45,7 +41,7 @@ def weather_code_to_icon_name(code: WeatherCode) -> str | None:
     https://github.com/Makin-Things/weather-icons.
 
     Args:
-        code: Weather condition to look up.
+        code: Solala weather code to look up.
 
     Returns:
         Icon name without the `.svg` suffix, or None for an unmapped code.
