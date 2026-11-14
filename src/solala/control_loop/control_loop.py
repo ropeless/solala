@@ -2,12 +2,12 @@ import asyncio
 import copy
 import json
 import re
+from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, fields, Field
 from datetime import datetime, UTC, timedelta, date
 from inspect import getmembers
 from pathlib import Path
-from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
 from typing import get_type_hints, Any
 
 from psycopg import DatabaseError
@@ -17,6 +17,7 @@ from solala.constants import Constants, GUI_TIMESTAMP_FORMAT
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
+from solala.control_loop.resolve_addresses import ResolvedAddress, resolve_addresses
 from solala.database.solala_database import SolalaDatabase, Measurement
 from solala.database.solala_database_connections import SolalaDatabaseConnections
 from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
@@ -47,7 +48,6 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
 from solala.utils.async_rlock import AsyncRLock
 from solala.utils.datetime_extras import now, local_time_zone
 from solala.utils.json_extras import JSONDict, json_num, JSONValue
-from solala.utils.network import find_ip_by_mac
 from solala.utils.string_extras import split_addresses
 
 _LOG_SRC = '[control loop] '  # prefix for log messages
@@ -132,24 +132,24 @@ class _ControlState:
 
     Access to mutable shared state is coordinated through `_control_state()`.
     """
-    # These are the work objects for accessing the solar power system
+    # These are the work delegates for accessing the solar power system and database.
     controller: PowerController | None = None
     pricer: PowerPricer | None = None
     forecaster: SolarForecaster | None = None
     consumers: dict[str, PowerConsumer] = field(default_factory=dict)
     database_connections: SolalaDatabaseConnections | None = None
 
-    # Keep track of the settings use to connect to the solar power system
+    # Keep track of the settings use to connect to the solar power system.
     controller_settings: ControllerConnection | None = None
     pricer_settings: PricerConnection | None = None
     forecaster_settings: ForecasterConnection | None = None
     consumers_settings: dict[str, ConsumerConnection] = field(default_factory=dict)
     database_settings: DatabaseConnection | None = None
 
-    # What the user is asking the control loop to do
+    # What the user is asking the control loop to do.
     control_mode: ControlMode = field(default_factory=ControlMode)
 
-    # Caches of status components
+    # Caches of status components.
 
     last_power: PowerStatus = field(default_factory=lambda: _NO_POWER)
     last_power_valid: bool = False
@@ -166,7 +166,7 @@ class _ControlState:
     last_solar_forecast: dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
     next_solar_forecast_check: datetime = _MIN_DATE
 
-    # Internal control loop tracking variables
+    # Internal control loop tracking variables.
     lock: AsyncRLock = field(default_factory=AsyncRLock)
     prev_state: _PrevControl = field(default_factory=_PrevControl)
     control_loop_running: bool = True
@@ -526,7 +526,8 @@ async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> d
         match: A compiled regular expression or an iterable of register names.
 
     Returns:
-        A dictionary mapping each register name to its values.
+        A dictionary mapping each register name to its value or None if as
+        specific register name was requested that is not available.
     """
     registers: RegisterBank = _CONTROL_STATE.registers  # no need to lock as RegisterBank is stable.
     if isinstance(match, re.Pattern):
@@ -1281,7 +1282,7 @@ def _get_sleep_time() -> float:
 
 async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
     """
-    Log numeric values of registers matching the configured pattern.
+    Log values of registers matching the configured pattern.
 
     Args:
         cur_log_registers: Compiled name pattern, or None to skip logging.
@@ -1289,13 +1290,19 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
     if cur_log_registers is not None:
         timestamp = now()
         registers = await get_registers(cur_log_registers)
-        to_log: dict[str, int | float] = {}
+        to_log_numeric: dict[str, int | float] = {}
+        to_log_text: dict[str, str] = {}
         for name, value in registers.items():
-            if isinstance(value, (int, float)):
-                to_log[name] = value
+            if isinstance(value, bool):
+                to_log_numeric[name] = 1 if value else 0
+            elif isinstance(value, (int, float)):
+                to_log_numeric[name] = value
+            elif isinstance(value, str):
+                to_log_text[name] = value
         try:
             async with solala_database() as db:
-                await db.insert_registers_numeric(timestamp, to_log)
+                await db.insert_registers_numeric(timestamp, to_log_numeric)
+                await db.insert_registers_text(timestamp, to_log_text)
         except (ConnectionError, DatabaseError) as err:
             LOGGER.error(f'{_LOG_SRC}Database connection error: {err}')
 
@@ -1418,7 +1425,7 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
     Raises:
         ControlLoopError: a connection cannot be established.
     """
-    addresses: list[_Address] = _resolve_addresses(split_addresses(controller_connection.address))
+    addresses: list[ResolvedAddress] = resolve_addresses(split_addresses(controller_connection.address))
     if len(addresses) == 0:
         raise ControlLoopError('no controller address provided')
 
@@ -1505,7 +1512,7 @@ def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnect
     Raises:
         ControlLoopError: a connection cannot be established.
     """
-    address: _Address = _resolve_addresses([consumer_connection.address])[0]
+    address: ResolvedAddress = resolve_addresses([consumer_connection.address])[0]
     try:
         return TeslaWallConnector(address.ip_address, address.mac_address)
     except Exception as err:
@@ -1560,67 +1567,6 @@ def _connect_open_meteo_forecaster(forecaster_connection: OpenMeteoConnection) -
         )
     except Exception as err:
         raise ControlLoopError('could not connect Open-Meteo', errors=[str(err)])
-
-
-@dataclass
-class _Address:
-    """
-    Track an input address and its resolved MAC and IP addresses.
-    """
-    raw_address: str
-    mac_address: str = ''
-    ip_address: str = ''
-
-
-def _resolve_addresses(raw_addresses: list[str]) -> list[_Address]:
-    """
-    Resolve MAC or IP addresses to their corresponding IP addresses.
-
-    Args:
-        raw_addresses: Input MAC or IP addresses.
-
-    Returns:
-        Resolved addresses in the same order as the input.
-
-    Raises:
-        ControlLoopError: If an address is invalid or a MAC address cannot be resolved.
-    """
-    addresses: list[_Address] = [_Address(address) for address in raw_addresses]
-    invalid_addresses: list[str] = []
-    # Work out what address are MAC address
-    found_mac_addresses: list[str] = []
-    for address in addresses:
-        raw_address = address.raw_address
-        is_mac = ':' in raw_address
-        is_ip = '.' in raw_address
-        if is_mac and not is_ip:
-            address.mac_address = raw_address
-            found_mac_addresses.append(raw_address)
-        elif is_ip and not is_mac:
-            address.ip_address = raw_address
-        else:
-            invalid_addresses.append(raw_address)
-
-    # Fail if there are any invalid addresses
-    if len(invalid_addresses) > 0:
-        raise ControlLoopError('invalid address', errors=invalid_addresses)
-
-    # Look up IP address for MAC address
-    mac_lookup: dict[str, str] = find_ip_by_mac(found_mac_addresses)
-    for address in addresses:
-        if address.ip_address == '':
-            mac_address = address.mac_address
-            ip_address: str | None = mac_lookup.get(mac_address)
-            if ip_address is None:
-                invalid_addresses.append(mac_address)
-            else:
-                address.ip_address = ip_address
-
-    # Fail if there are any invalid ip addresses
-    if len(invalid_addresses) > 0:
-        raise ControlLoopError('could not find IP address for MAC address', errors=invalid_addresses)
-
-    return addresses
 
 
 def _update_listeners(listeners: Iterable[LoopListener]) -> None:
