@@ -12,6 +12,9 @@ class DummySolarForecaster(SolarForecaster):
     """
     Dummy solar forecaster that generates synthetic hourly forecasts for
     testing and development.
+
+    Its public attributes can be updated after construction to adjust the
+    generated forecasts.
     """
 
     def __init__(self, panel_capacity: float, inverter_limit: float):
@@ -44,7 +47,7 @@ class DummySolarForecaster(SolarForecaster):
         }
         self.temperature: list[float] = [
             21, 20, 19, 18, 18, 17, 17, 17, 17, 18, 20, 19,
-            19, 19, 20, 17, 17, 17, 17, 16, 15, 15, 15, 15,
+            19, 19, 20, 17, 17, 17, 17, 16, 15, 15, 15,
         ]
 
     async def get_forecast(self, day: date) -> DailySolarForecast:
