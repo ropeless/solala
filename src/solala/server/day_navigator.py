@@ -38,14 +38,14 @@ class DayNavigator:
 
         The navigator consists of a date navigation bar with a content slide below that.
 
-        The navigator works by keeping s ring of three carousel slides. At any point of time
+        The navigator works by keeping a ring of three carousel slides. At any point in time
         one slide is the current display day (focus slide) with the other two being the previous
         and next day (left slide and right slide).
 
         The contents of each slide is maintained by an element "Updater" which is set for a particular
         slide content element and called when required to update its content to a particular day.
 
-        The carousel can be operated either via the IU or programmatically so there is a distinction
+        The carousel can be operated either via the UI or programmatically so there is a distinction
         between the slide we last set to the focus slide (self._focus_slide) and the slide currently
         on display (self._display_slide).
 
