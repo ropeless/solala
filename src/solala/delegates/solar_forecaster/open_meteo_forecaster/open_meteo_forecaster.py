@@ -1,11 +1,12 @@
 from datetime import datetime, timezone, date, timedelta
 
+import httpx
+
 from solala.constants import DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.datetime_extras import ensure_date
-from solala.utils.httpx_extras import async_get
 from solala.utils.json_extras import JSONDict
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
@@ -13,8 +14,9 @@ API_URL = "https://api.open-meteo.com/v1/forecast"
 
 class OpenMeteoForecaster(SolarForecaster):
     """
-    A basic solar forecaster that uses the Open-Meteo API and a simple
-    model to forecast solar power output.
+    Solar forecaster that retrieves hourly weather and irradiance forecasts
+    from the Open-Meteo API and estimates solar power output using the panel
+    and inverter characteristics.
     """
 
     def __init__(
@@ -30,16 +32,19 @@ class OpenMeteoForecaster(SolarForecaster):
             inverter_efficiency: float = DEFAULT_INVERTER_EFFICIENCY,
     ) -> None:
         """
+        Initialise an Open-Meteo solar forecaster.
+
         Args:
-            latitude: Latitude of the location.
-            longitude: Longitude of the location.
-            panel_orientation: Orientation of the solar panel in degrees.
-            panel_tilt: Tilt of the solar panel in degrees.
-            panel_capacity: Capacity of the solar panel in W.
-            panel_temperature_coefficient: Temperature coefficient of the solar panel.
-            inverter_limit: Power output limit of the inverter in W.
-            inverter_efficiency: Efficiency of the inverter.
+            latitude: Latitude of the location in decimal degrees.
+            longitude: Longitude of the location in decimal degrees.
+            panel_orientation: Panel orientation in degrees relative to true North.
+            panel_tilt: Panel tilt from horizontal in degrees.
+            panel_capacity: Capacity of the solar panels in W.
+            panel_temperature_coefficient: Panel temperature coefficient in 1/°C.
+            inverter_limit: Maximum inverter AC output power in W.
+            inverter_efficiency: Inverter efficiency as a fraction between 0 and 1.
         """
+        self._client = httpx.AsyncClient()
         self._latitude = latitude
         self._longitude = longitude
         self._panel_orientation = panel_orientation
@@ -50,6 +55,10 @@ class OpenMeteoForecaster(SolarForecaster):
         self._panel_temperature_coefficient = panel_temperature_coefficient
 
     async def get_forecast(self, day: date) -> DailySolarForecast:
+        # Forecast data is requested from the Open-Meteo API using UTC
+        # timestamps, which are converted to the local timezone before
+        # selecting the requested day.
+
         day: date = ensure_date(day)
         start_date = day - timedelta(days=1)
         end_date = day + timedelta(days=1)
@@ -72,7 +81,7 @@ class OpenMeteoForecaster(SolarForecaster):
             'wind_speed_unit': 'ms',
         }
 
-        response = await async_get(API_URL, params=params)
+        response = await self._client.get(API_URL, params=params)
         response.raise_for_status()
         data = response.json()
 
@@ -135,7 +144,7 @@ class OpenMeteoForecaster(SolarForecaster):
         }
 
     async def close(self) -> None:
-        pass
+        await self._client.aclose()
 
     def power(
             self,
@@ -179,7 +188,14 @@ class OpenMeteoForecaster(SolarForecaster):
 
 def _weather(code: int, is_day: bool) -> WeatherCode:
     """
-    Given an Open-Meteo WMO weather code, return a Solala WeatherCode.
+    Convert an Open-Meteo WMO weather code to a Solala weather code.
+
+    Args:
+        code: Open-Meteo WMO weather code.
+        is_day: Whether the forecast timestamp is during daylight.
+
+    Returns:
+        The corresponding Solala weather code.
     """
     if not is_day:
         return WeatherCode.NIGHT

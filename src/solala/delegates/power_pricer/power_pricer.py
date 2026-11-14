@@ -8,27 +8,33 @@ from solala.utils.json_extras import JSONDict
 
 
 class PowerPricer(ABC):
+    """
+    Defines the interface for retrieving electricity prices and tariff information.
+    """
 
     @abstractmethod
     async def get_price(self) -> Price:
         """
-        Get the current price.
+        Get the current price information (a single five-minute pricing interval).
+
+        Returns:
+            The current price information.
         """
         ...
 
     @abstractmethod
     async def get_price_forecast(self, count: int) -> list[Price]:
         """
-        Get the 30-minute price forecasts, in ascending order of time from now.
+        Get the 30-minute price forecasts, in ascending chronological order from now.
 
         The pricing interval is 30 minutes, so `count = 12` covers
         6 hours and will return 12 prices.
 
         Args:
-            count: number of prices, >= 1.
+            count: The number of 30-minute forecast intervals, >= 1.
 
         Returns:
-            `count` prices, in ascending time order.
+            `count` prices, in chronological order. Price times should be in the local timezone
         """
         ...
 
@@ -36,13 +42,23 @@ class PowerPricer(ABC):
     async def get_demand_window(self, day: date) -> tuple[datetime, datetime] | None:
         """
         Get the demand window for the given day, if active.
+
+        The returned times should be the start and end of the demand
+        window in the local timezone. Returns `None` if no demand window applies
+        to the given day.
+
+        Args:
+            day: The date for which to retrieve the demand window.
         """
         ...
 
     @abstractmethod
     def get_connection_info(self) -> JSONDict:
         """
-        Get information about the connection.
+        Get information about the pricer connection.
+
+        Returns:
+            A JSON-compatible dictionary describing the connection.
         """
         ...
 
@@ -54,6 +70,12 @@ class PowerPricer(ABC):
         ...
 
     async def __aenter__(self) -> Self:
+        """
+        Enter the asynchronous context manager.
+
+        Returns:
+            This power pricer.
+        """
         return self
 
     async def __aexit__(
@@ -62,4 +84,7 @@ class PowerPricer(ABC):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """
+        Exit the asynchronous context manager and close the power pricer.
+        """
         await self.close()

@@ -6,6 +6,10 @@ from solala.utils.datetime_extras import now
 
 
 class BatteryMode(Enum):
+    """
+    Operating modes supported by the dummy battery simulation.
+    """
+
     ENABLE = auto()
     DISABLE = auto()
     FORCE_CHARGE = auto()
@@ -15,6 +19,10 @@ class BatteryMode(Enum):
 
 
 class InverterMode(Enum):
+    """
+    Operating modes supported by the dummy inverter simulation.
+    """
+
     ENABLE = auto()
     DISABLE = auto()
     ZERO_EXPORT = auto()
@@ -24,7 +32,13 @@ class DummyPowerController(PowerController):
     """
     A dummy power controller for testing and demonstration purposes.
 
-    This power controller approximately simulates a simple power system.
+    Simulates a simple power system with a fixed house load, a solar inverter,
+    and a battery. The simulation updates power flows according to the selected
+    battery and inverter modes and accumulates energy between updates.
+
+    Public fields may be updated by the client at any time. Changes do not
+    automatically update the simulated power flows; `update_status()` should
+    be called after making changes.
     """
 
     def __init__(
@@ -36,6 +50,15 @@ class DummyPowerController(PowerController):
             max_discharge_param: float,
 
     ) -> None:
+        """
+        Initialise a dummy power system.
+
+        Args:
+            inverter_limit: Maximum simulated inverter output power, in watts.
+            house_power: Fixed simulated house load, in watts.
+            max_charge_param: Maximum simulated battery charging power, in watts.
+            max_discharge_param: Maximum simulated battery discharging power, in watts.
+        """
         self.state_of_charge = 50
 
         self.house_power = house_power
@@ -140,7 +163,11 @@ class DummyPowerController(PowerController):
 
     def update_status(self) -> None:
         """
-        Simulate a simple power system.
+        Update simulated power flows and accumulated energy.
+
+        Energy is accumulated using the power values from the preceding update
+        and the elapsed time since that update. The current power flows are
+        then recalculated from the configured house load and operating modes.
         """
         # accumulate energy
         now_timestamp = now().timestamp()

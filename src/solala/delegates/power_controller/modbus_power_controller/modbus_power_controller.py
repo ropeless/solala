@@ -32,8 +32,13 @@ _INVERTER_LIMIT_NAME: str = 'inverter_limit'
 
 class ModbusPowerController(PowerController):
     """
-    High-level power controller to send commands and read status from the power system.
-    This power controller uses Modbus.
+    Power controller that monitors and controls a power system using Modbus.
+
+    The controller uses a master inverter, optional slave inverters, and a grid
+    meter. Battery control is performed through the master inverter.
+
+    By default, inverter power curtailment is applied only to the master inverter.
+    Set `power_control_slaves` to True to apply power curtailment to all inverters.
     """
 
     def __init__(
@@ -47,16 +52,18 @@ class ModbusPowerController(PowerController):
             power_control_slaves: bool = False,
     ) -> None:
         """
-        Make a power controller from a Modbus connection.
+        Initialise a Modbus power controller.
 
         Args:
-            modbus: Modbus connections.
-            master: the name of the master inverter device in `modbus`.
-            slaves: the names of any slave inverter devices in `modbus`.
-            meter: the name of the grid meter device in `modbus`.
-            mac_addr_lookup: optional mac addresses for recording in the connection status.
-            power_control_slaves: shoul;d power limit controls be sent to the slaves or not; if not then
-                power control is sent only to the master.
+            modbus: Modbus connection providing access to the power system devices.
+            master: Logical name of the master inverter in `modbus`.
+            meter: Logical name of the grid meter in `modbus`.
+            slaves: Logical names of any slave inverters in `modbus`.
+            mac_addr_lookup: Optional mapping of device host addresses to MAC addresses,
+                used when reporting connection information.
+            power_control_slaves: Whether inverter power curtailment should also be
+                applied to slave inverters. If False, curtailment is applied only
+                to the master inverter.
         """
         self._modbus: Modbus = modbus
         self._master = master
@@ -144,15 +151,9 @@ class ModbusPowerController(PowerController):
         self._modbus.close()
 
     async def get_registers(self) -> RegisterBank:
-        """
-        Get the values of all known registers.
-        """
         return self._registers
 
     async def get_status(self) -> PowerStatus:
-        """
-        Get a high-level status of the system.
-        """
         state_of_charge = await self._get(self._ChaState)
         charge_power = await self._get(self._charge_power)
         discharge_power = await self._get(self._discharge_power)
@@ -190,11 +191,7 @@ class ModbusPowerController(PowerController):
     # =================================================
 
     async def enable_battery(self) -> None:
-        """
-        Allow the battery to charge and discharge.
-        This is the normal state.
-        """
-        with self._logit('enable_battery'):
+        with self._log_it('enable_battery'):
             await self._set(self._StorCtl_Mod, 0)
             await self._set(self._InWRte, 100)
             await self._set(self._OutWRte, 100)
@@ -203,10 +200,7 @@ class ModbusPowerController(PowerController):
             self._is_force_discharge = False
 
     async def disable_battery(self) -> None:
-        """
-        Stop the battery from charging and discharging.
-        """
-        with self._logit('disable_battery'):
+        with self._log_it('disable_battery'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, 0)
             await self._set(self._OutWRte, 0)
@@ -216,12 +210,7 @@ class ModbusPowerController(PowerController):
             self._is_force_discharge = False
 
     async def force_charge(self) -> None:
-        """
-        Force the battery to charge.
-        This will aim to charge the battery to its maximum capacity,
-        even if it means drawing from the grid.
-        """
-        with self._logit('force_charge'):
+        with self._log_it('force_charge'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, 100)
             await self._set(self._OutWRte, 0)  # Don't try to discharge at the same time as charging
@@ -231,11 +220,7 @@ class ModbusPowerController(PowerController):
             self._is_force_discharge = False
 
     async def force_discharge(self) -> None:
-        """
-        Force the battery to discharge.
-        This is a way to force stored power to the grid.
-        """
-        with self._logit('force_discharge'):
+        with self._log_it('force_discharge'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, -100)  # negative flow
             await self._set(self._OutWRte, 100)
@@ -245,10 +230,7 @@ class ModbusPowerController(PowerController):
             self._is_force_discharge = True
 
     async def charge_only(self) -> None:
-        """
-        Allow charging but not discharging.
-        """
-        with self._logit('charge_only'):
+        with self._log_it('charge_only'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, 100)
             await self._set(self._OutWRte, 0)
@@ -258,10 +240,7 @@ class ModbusPowerController(PowerController):
             self._is_force_discharge = False
 
     async def discharge_only(self) -> None:
-        """
-        Allow discharging but not charging.
-        """
-        with self._logit('discharge_only'):
+        with self._log_it('discharge_only'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, 0)
             await self._set(self._OutWRte, 100)
@@ -275,6 +254,16 @@ class ModbusPowerController(PowerController):
     # =================================================
 
     async def _get_inverter_limit_array(self) -> list[float]:
+        """
+        Get the effective output power limit for each inverter.
+
+        The limit is the lower of the inverter's maximum power rating and
+        its rated power.
+
+        Returns:
+            The output power limits in watts, in inverter order,
+            coindexed with `self._inverters`.
+        """
         return [
             min(
                 await self._get(f'{inverter}/WMax'),
@@ -284,35 +273,40 @@ class ModbusPowerController(PowerController):
         ]
 
     async def enable_inverter(self) -> None:
-        with self._logit('enable_inverter'):
+        with self._log_it('enable_inverter'):
             await self._set_power_pct(100)
 
     async def disable_inverter(self, *, change_duration: int) -> None:
-        with self._logit('disable_inverter'):
+        with self._log_it('disable_inverter'):
             await self._set_power_pct(0, change_duration)
 
     async def zero_export(self, *, change_duration: int) -> None:
         """
-        Limit inverter output power to balance consumption, so there is no export.
-        Will still allow drawing from the grid if insufficient solar supply for demand.
-        This may need to be repeatedly called as the consumption may change,
-        or the change duration expires.
+        Curtail the inverter output power to minimise grid export.
+
+        The controller adjusts the inverter limit to balance solar generation
+        against consumption. Small power differences are handled using a
+        hunting method, while larger differences use a direct adjustment.
+
+        This method may need to be called repeatedly as consumption changes
+        or the inverter setting reverts after the requested duration.
         """
-        with self._logit('zero_export'):
+        with self._log_it('zero_export'):
             cur_pct: float
             cur_pct, _ = await self._get_power_limit()
             grid_power: float = await self._get(self._grid_power)
             max_power: float = await self.get_inverter_limit()
             cur_power: float = await self._get_sum(self._inverter_power)
 
-            # If the battery is discharging and it not a forced discharge then
-            # We actually need that power as well.
+            # Include normal battery discharge when calculating available power.
+            # Forced discharge is handled separately.
             if not self._is_force_discharge:
                 discharge_power = await self._get(self._discharge_power)
                 cur_power += discharge_power
 
             abs_grid_power = abs(grid_power)
-            max_power = max(max_power, cur_power)  # incase the inverter is oversupplying - simplifies maths
+            # Account for existing output if the inverter is oversupplying.
+            max_power = max(max_power, cur_power)
 
             if abs_grid_power < _POWER_CHANGE_TOLERANCE:
                 # Not worth changing power settings
@@ -365,7 +359,10 @@ class ModbusPowerController(PowerController):
         Get the power limit set on the controlling inverters.
 
         Returns:
-            (avg(_WMaxLimPct), any(WMaxLim_Ena != 0))
+            tuple[float, bool]: The effective inverter power limit as a percentage
+            and whether a power limit is enabled. When multiple inverters are
+            controlled, the percentage is weighted by each inverter's rated
+            output power.
         """
         power_limits: list[float] = await self._get_all(self._WMaxLimPct)
         power_limits_enabled: list[bool] = [x != 0 for x in await self._get_all(self._WMaxLim_Ena)]
@@ -389,7 +386,13 @@ class ModbusPowerController(PowerController):
             return avg_limit, any(power_limits_enabled)
 
     @contextmanager
-    def _logit(self, name: str) -> Iterator[None]:
+    def _log_it(self, name: str) -> Iterator[None]:
+        """
+        Enable register-operation logging for the duration of the context.
+
+        Args:
+            name: Name of the operation to include in the log messages.
+        """
         self._log_set_get = True
         LOGGER.info(f'{_START} {name}')
         yield
@@ -397,10 +400,26 @@ class ModbusPowerController(PowerController):
         self._log_set_get = False
 
     def _logger_get_set(self, message: str) -> None:
+        """
+        Log a register operation when register-operation logging is enabled.
+
+        Args:
+            message: Message describing the register operation.
+        """
         if self._log_set_get:
             LOGGER.info(message)
 
     async def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
+        """
+        Set the inverter output limit and its automatic reversion duration.
+
+        A limit of 100% or greater disables power curtailment. Lower values implement
+        power curtailment.
+
+        Args:
+            pct: Inverter output limit as a percentage of rated power.
+            change_duration: Requested duration in seconds before the setting reverts.
+        """
         if pct >= 100:
             await self._set_all(self._WMaxLimPct, 100)
             await self._set_all(self._WMaxLimPct_RvrtTms, change_duration)
@@ -412,8 +431,15 @@ class ModbusPowerController(PowerController):
 
     async def _set(self, name: str, value: int | float, *, force: bool = False) -> None:
         """
-        Set the value of the named register, logging its old and new value, and
-        verifying the change.
+        Set a register value and verify the change.
+
+        The old and new values are logged when register logging is enabled.
+        Modbus write errors and verification failures are logged.
+
+        Args:
+            name: Name of the register to update.
+            value: Value to write.
+            force: Write the value even if it is unchanged.
         """
         old = await self._modbus.get(name)
         if not force and old == value:
@@ -443,8 +469,16 @@ class ModbusPowerController(PowerController):
 
     async def _get(self, name: str) -> int | float:
         """
-        Get the value of the named register, logging its value, and
-        ensuring it is an int or float.
+        Read a register value and ensure it is numeric.
+
+        Args:
+            name: Name of the register to read.
+
+        Returns:
+            The register value as an integer or float.
+
+        Raises:
+            TypeError: If the register value is not numeric.
         """
         value = await self._modbus.get(name)
         self._logger_get_set(f'GET {name}: {value!r}')
@@ -455,15 +489,41 @@ class ModbusPowerController(PowerController):
         return value
 
     async def _set_all(self, names: list[str], value: int | float, *, force: bool = False) -> None:
+        """
+        Set the same value on each register in a list.
+
+        Args:
+            names: Names of the registers to update.
+            value: Value to write to each register.
+            force: Write each value even if it is unchanged.
+        """
         for name in names:
             await self._set(name, value, force=force)
 
     async def _get_all(self, names: list[str]) -> list[int | float]:
+        """
+        Read a list of registers.
+
+        Args:
+            names: Names of the registers to read.
+
+        Returns:
+            Register values are returned coindexed with the given names.
+        """
         return [
             await self._get(name) for name in names
         ]
 
     async def _get_sum(self, names: list[str]) -> int | float:
+        """
+        Read and sum a list of numeric registers.
+
+        Args:
+            names: Names of the registers to read and sum.
+
+        Returns:
+            The sum of the register values.
+        """
         self._logger_get_set(f'SUM {names}')
         result = sum(await self._get_all(names))
         self._logger_get_set(f'SUM = {result}')

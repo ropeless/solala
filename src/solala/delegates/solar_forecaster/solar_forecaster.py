@@ -8,12 +8,24 @@ from solala.utils.json_extras import JSONDict
 
 
 class SolarForecaster(ABC):
+    """
+    Defines the interface for obtaining daily solar irradiance and temperature
+    forecasts.
+    """
+
     @abstractmethod
     async def get_forecast(self, day: date) -> DailySolarForecast:
         """
-        Provide an hourly forecast of solar irradiance and temperature for today.
-        The implementer should account for the local conditions and daily weather
-        (such as cloud cover).
+        Get an hourly forecast of solar irradiance and temperature for a day.
+
+        Implementations should account for local conditions and daily weather,
+        including cloud cover.
+
+        Args:
+            day: Date for which to obtain the forecast.
+
+        Returns:
+            The hourly solar irradiance and temperature forecast for the day.
         """
         ...
 
@@ -21,17 +33,26 @@ class SolarForecaster(ABC):
     def get_connection_info(self) -> JSONDict:
         """
         Get information about the connection.
+
+        Returns:
+            A JSON-compatible dictionary describing the connection.
         """
         ...
 
     @abstractmethod
     async def close(self) -> None:
         """
-        Close any connections to the pricing system.
+        Close any connections used by the solar forecaster.
         """
         ...
 
     async def __aenter__(self) -> Self:
+        """
+        Enter the asynchronous context manager.
+
+        Returns:
+            This solar forecaster.
+        """
         return self
 
     async def __aexit__(
@@ -40,4 +61,7 @@ class SolarForecaster(ABC):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """
+        Exit the asynchronous context manager and close the solar forecaster.
+        """
         await self.close()

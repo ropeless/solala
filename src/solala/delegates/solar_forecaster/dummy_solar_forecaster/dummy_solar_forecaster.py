@@ -9,7 +9,22 @@ from solala.utils.json_extras import JSONDict
 
 
 class DummySolarForecaster(SolarForecaster):
+    """
+    Dummy solar forecaster that generates synthetic hourly forecasts for
+    testing and development.
+
+    Public attributes can be updated after construction to adjust the
+    generated forecasts.
+    """
+
     def __init__(self, panel_capacity: float, inverter_limit: float):
+        """
+        Initialise the dummy solar forecaster.
+
+        Args:
+            panel_capacity: Installed solar panel capacity in W.
+            inverter_limit: Maximum inverter output power in W.
+        """
         self.panel_capacity: float = panel_capacity
         self.inverter_limit: float = inverter_limit
         self._tz = datetime.now().astimezone().tzinfo
@@ -32,10 +47,15 @@ class DummySolarForecaster(SolarForecaster):
         }
         self.temperature: list[float] = [
             21, 20, 19, 18, 18, 17, 17, 17, 17, 18, 20, 19,
-            19, 19, 20, 17, 17, 17, 17, 16, 15, 15, 15, 15,
+            19, 19, 20, 17, 17, 17, 17, 16, 15, 15, 15,
         ]
 
     async def get_forecast(self, day: date) -> DailySolarForecast:
+        """
+        Generate a synthetic daily forecast using predefined hourly irradiance
+        and temperature values, with randomly selected daytime weather
+        conditions.
+        """
         day_of_interest: datetime = date_to_datetime(ensure_date(day)).replace(tzinfo=self._tz)
         limit = max(self.panel_capacity, self.inverter_limit)
 

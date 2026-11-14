@@ -11,8 +11,9 @@ _FIVE_MINUTES: timedelta = timedelta(minutes=5)
 
 class DummyPowerPricer(PowerPricer):
     """
-    A dummy power pricer for testing and demonstration purposes.
-    Values are random.
+    Generates simulated electricity prices for testing and demonstration.
+
+    Prices and renewable percentages are generated randomly.
     """
 
     def __init__(
@@ -25,7 +26,21 @@ class DummyPowerPricer(PowerPricer):
             demand_window: tuple[time, time] | None = None,
     ) -> None:
         """
-        If a demand window is provided, it will be interpreted as in the local time zone.
+        Initialise the simulated price generator.
+
+        Demand window times are interpreted in the local time zone.
+
+        Args:
+            buy_price_min: Minimum simulated purchase price, in cents per kWh.
+            buy_price_max: Maximum simulated purchase price, in cents per kWh.
+            feed_in_price_discount_min: Minimum discount from the purchase price
+                when generating the feed-in price, in cents per kWh.
+            feed_in_price_discount_max: Maximum discount from the purchase price
+                when generating the feed-in price, in cents per kWh.
+            cur_price_is_estimate: Whether the initial current price is marked
+                as an estimate.
+            demand_window: Optional start and end times of the daily demand
+                window, in local time.
         """
         self._local_tz = local_time_zone()
 
@@ -91,6 +106,12 @@ class DummyPowerPricer(PowerPricer):
         return [_average_price(prices[i:i + prices_per_30]) for i in range(0, needed_prices, prices_per_30)]
 
     def _set_first_price(self, now: datetime) -> None:
+        """
+        Initialise the price cache with the five-minute interval containing now.
+
+        Args:
+            now: Current datetime used to determine the interval.
+        """
         assert len(self.prices) == 0
 
         start_time: datetime = now - timedelta(
@@ -116,6 +137,9 @@ class DummyPowerPricer(PowerPricer):
         )
 
     def _append_price(self) -> None:
+        """
+        Append the next simulated five-minute price interval to the cache.
+        """
         assert len(self.prices) > 0
 
         prev_price: Price = self.prices[-1]
@@ -140,7 +164,14 @@ class DummyPowerPricer(PowerPricer):
 
     def _is_demand_window(self, start: datetime, end: datetime) -> bool:
         """
-        Does the period between start and end overlap with the demand period.
+        Check whether a price interval overlaps the configured demand window.
+
+        Args:
+            start: Start of the price interval.
+            end: End of the price interval.
+
+        Returns:
+            True if the interval overlaps the demand window, otherwise False.
         """
         if self.demand_window is None:
             return False
@@ -164,6 +195,19 @@ class DummyPowerPricer(PowerPricer):
         pass
 
     def _get_buy_price(self, prev_buy_price: float | None = None) -> float:
+        """
+        Generate a simulated purchase price.
+
+        When a previous price is supplied, blend it with the newly generated
+        price to smooth the transition.
+
+        Args:
+            prev_buy_price: Previous purchase price, in cents per kWh, or None
+                when generating the initial price.
+
+        Returns:
+            The generated purchase price, in cents per kWh.
+        """
         price = self.buy_price_min + self.buy_price_range * random.random()
         if prev_buy_price is None:
             return price
@@ -171,10 +215,33 @@ class DummyPowerPricer(PowerPricer):
             return (prev_buy_price * 3 + price) / 4  # Smooth the transition to the new price
 
     def _get_feed_in_price(self, buy_price: float) -> float:
+        """
+        Generate a simulated feed-in price by subtracting a random discount
+        from the purchase price.
+
+        Args:
+            buy_price: Simulated purchase price, in cents per kWh.
+
+        Returns:
+            The generated feed-in price, in cents per kWh.
+        """
         return buy_price - self.feed_in_price_discount_min - random.random() * self.feed_in_price_discount_range
 
 
 def _average_price(prices: list[Price]) -> Price:
+    """
+    Average a sequence of five-minute prices into one 30-minute price.
+
+    The start time is taken from the first price and the end time from the
+    last price. The averaged price is marked as an estimate.
+
+    Args:
+        prices: Six consecutive five-minute prices.
+
+    Returns:
+        A 30-minute price containing the average purchase price, feed-in price
+        and renewable percentage.
+    """
     return Price(
         buy_price=sum(price.buy_price for price in prices) / len(prices),
         feed_in_price=sum(price.feed_in_price for price in prices) / len(prices),

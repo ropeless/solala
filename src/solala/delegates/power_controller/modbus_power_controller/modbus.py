@@ -15,13 +15,32 @@ from solala.registers import Register, RegisterValue, RegisterBank
 
 @dataclass
 class ModbusDevice:
+    """
+    Define a logical Modbus device by associating a Modbus TCP client with
+    Modbus a device ID.
+
+    Attributes:
+        client: Modbus TCP client used to communicate with the device.
+        device_id: Modbus device ID.
+    """
+
     client: ModbusTcpClient
     device_id: int
 
 
 class ModbusRegister(Register):
+    """
+    The Modbus implementation of the abstract Register data type.
+    """
 
     def __init__(self, access: RegisterAccess, context: RegisterContext) -> None:
+        """
+
+        Args:
+            access: A concrete implementation of a RegisterAccess that defines
+                how to interpret a Modbus register.
+            context: The information needed by `access` to perform read and write operations.
+        """
         super().__init__(access.register_type, access.writable)
         self._access: RegisterAccess = access
         self._context: RegisterContext = context
@@ -185,6 +204,18 @@ class Modbus(RegisterBank):
 
 
 def _find_devices(client: ModbusTcpClient) -> Iterable[int]:
+    """
+    Find SunSpec devices accessible through a Modbus TCP client.
+
+    The function probes device IDs from 1 to 255 for the SunSpec identifier
+    at Modbus address 40000 (zero-offset address).
+
+    Args:
+        client: Modbus TCP client used to probe device IDs.
+
+    Yields:
+        Device IDs that respond with the SunSpec identifier.
+    """
     address = 40000
     for device_id in range(1, 256):
         result = client.read_holding_registers(address=address, count=2, device_id=device_id)
@@ -198,6 +229,21 @@ def _find_devices(client: ModbusTcpClient) -> Iterable[int]:
 
 
 def _find_model_offsets(client: ModbusTcpClient, device_id: int) -> dict[MODBUS_MODEL, int]:
+    """
+    Find the address offsets of the SunSpec models exposed by a device.
+
+    The function scans the device's Modbus register blocks until it encounters
+    an end block or a read error. The special zero model is included in the result
+    which has an offset of -1 for registers addressed in Modicon 40xxx format (i.e.,
+    one-offset addresses).
+
+    Args:
+        client: Modbus TCP client used to read the model blocks.
+        device_id: Modbus device ID to scan.
+
+    Returns:
+        A mapping from model IDs to their address offsets.
+    """
     result: dict[MODBUS_MODEL, int] = {
         0: -1,  # initialise with the special zero model, where registers are in Modicon (40xxx) format.
     }
