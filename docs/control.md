@@ -25,7 +25,7 @@ For example, a negative feed-in tariff can trigger Zero Export without
 requiring the user to disable the inverter manually.
 
 The mode, policy and thresholds are represented together by `ControlMode`
-in `../src/solala/control_loop/modes_and_policies.py`. The control loop
+in `src/solala/control_loop/modes_and_policies.py`. The control loop
 evaluates these settings and sends commands through the `PowerController`
 interface. Actual device behaviour depends on the inverter and battery
 capabilities and configuration.
