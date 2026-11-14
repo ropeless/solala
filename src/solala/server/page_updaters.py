@@ -1,5 +1,5 @@
 """
-Update NiceGUI page controls, status displays, forecasts, and charts.
+Provides page updaters for NiceGUI pages.
 """
 
 import asyncio
@@ -35,7 +35,8 @@ from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json,
 
 class StatusListener(LoopListener):
     """
-    Fetch the current control-loop status and delegate its presentation.
+    A partial implementation of a LoopListener where an updater requires
+    the result of `control_loop.get_status()`
 
     Subclasses implement `_update()` to refresh their own page elements.
     """
@@ -52,7 +53,8 @@ class StatusListener(LoopListener):
 
 class InverterButtonUpdater(StatusListener):
     """
-    Bind inverter control buttons and reflect the selected mode or policy.
+    Updater for inverter control buttons so that buttons reflect the
+    selected mode and policy.
     """
 
     def __init__(
@@ -123,7 +125,8 @@ class InverterButtonUpdater(StatusListener):
 
 class BatteryButtonUpdater(StatusListener):
     """
-    Bind battery control buttons and reflect the selected mode or policy.
+    Updater for battery control buttons so that buttons reflect the
+    selected mode and policy.
     """
 
     def __init__(
@@ -226,7 +229,7 @@ class StatusUpdater(StatusListener):
 
 class InfographicUpdater(StatusListener):
     """
-    Refresh the SVG power-flow infographic from the current status.
+    Render the SVG power-flow infographic in a page element.
     """
     def __init__(self, infographic_element: ContentElement) -> None:
         super().__init__()
@@ -240,7 +243,7 @@ class InfographicUpdater(StatusListener):
 
 class RegistersUpdater(LoopListener):
     """
-    Fetch and display register values, replacing the initial loading label.
+    Fetch and display register values, including display of an initial "loading" label.
     """
 
     def __init__(self) -> None:
@@ -345,10 +348,10 @@ class PriceForecastUpdater(LoopListener):
 
 class SolarForecastUpdater(LoopListener):
     """
-    Render the selected day's solar forecast and estimated generation.
+    Render a selected day's solar forecast and estimated generation.
 
-    A day change schedules a page-owned refresh task and displays a loading
-    message until the forecast is available.
+    A call to `set_day()` will change the day and schedule a page-owned refresh task.
+    Displays a "loading" message until the forecast is available.
     """
 
     def __init__(self, element: ui.element, session: PageSession) -> None:
@@ -457,10 +460,9 @@ class SolarForecastUpdater(LoopListener):
 
 class ChartUpdater(LoopListener):
     """
-    Fetch and display the four charts for the selected day.
+    Fetch and display charts for the selected day.
 
-    Measurement, price, demand-window, and solar forecast data are fetched
-    concurrently and combined by `GraphingInterpolator`.
+    Chart data are fetched concurrently and combined using a `GraphingInterpolator`.
     """
 
     def __init__(self, element: ui.element, session: PageSession) -> None:
@@ -487,7 +489,7 @@ class ChartUpdater(LoopListener):
 
     async def set_day(self, day: date) -> None:
         """
-        Select a chart date and schedule a refresh of its graphs.
+        Select a chart date and schedule a refresh of the graphs.
 
         Args:
             day: Date to display.
