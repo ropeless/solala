@@ -23,9 +23,9 @@ def make_connection_string(
     Build a PostgreSQL connection URI with encoded credentials.
 
     Args:
-        role: Database user name.
-        password: Database password.
-        host: Database server host.
+        role: Database username.
+        password: Database user password.
+        host: Database server hostname or IP address.
         port: Database server port.
         database_name: Database name, or None to omit it from the URI.
 
@@ -66,7 +66,7 @@ class SolalaDatabaseConnections:
         Configure the connection pool without opening it.
 
         Args:
-            role: Database user name.
+            role: Database username.
             password: Database password.
             host: Database server host.
             port: Database server port.
@@ -96,7 +96,7 @@ class SolalaDatabaseConnections:
 
     def get_connection_info(self) -> JSONDict:
         """
-        Return connection settings without the password.
+        Return connection settings (without the password).
 
         Returns:
             Connection role, host, port, and database name.
