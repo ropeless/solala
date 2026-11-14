@@ -72,7 +72,6 @@ class ModbusPowerController(PowerController):
         self._meter = meter
         self._log_set_get: bool = False
         self._hunt_history: list[float] = []
-        self._is_force_discharge: bool = False
 
         # Important registers
         self._ChaState: str = f'{master}/ChaState'
@@ -202,7 +201,6 @@ class ModbusPowerController(PowerController):
             await self._set(self._OutWRte, 100)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = False
 
     async def disable_battery(self) -> None:
         with self._log_it('disable_battery'):
@@ -212,7 +210,6 @@ class ModbusPowerController(PowerController):
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = False
 
     async def force_charge(self) -> None:
         with self._log_it('force_charge'):
@@ -222,7 +219,6 @@ class ModbusPowerController(PowerController):
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 1)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = False
 
     async def force_discharge(self) -> None:
         with self._log_it('force_discharge'):
@@ -232,7 +228,6 @@ class ModbusPowerController(PowerController):
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = True
 
     async def charge_only(self) -> None:
         with self._log_it('charge_only'):
@@ -242,7 +237,6 @@ class ModbusPowerController(PowerController):
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = False
 
     async def discharge_only(self) -> None:
         with self._log_it('discharge_only'):
@@ -252,7 +246,6 @@ class ModbusPowerController(PowerController):
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = False
 
     # =================================================
     #  Grid Export Control
@@ -285,6 +278,12 @@ class ModbusPowerController(PowerController):
         with self._log_it('disable_inverter'):
             await self._set_power_pct(0, change_duration)
 
+    async def _is_force_discharge_enabled(self) -> bool:
+        """Determine forced discharge from the inverter's current settings."""
+        mode = await self._get(self._StorCtl_Mod)
+        charge_rate = await self._get(self._InWRte)
+        return bool(mode & 1) and charge_rate < 0
+
     async def zero_export(self, *, change_duration: int) -> None:
         """
         Curtail the inverter output power to minimise grid export.
@@ -308,7 +307,7 @@ class ModbusPowerController(PowerController):
 
             # Include normal battery discharge when calculating available power.
             # Forced discharge is handled separately.
-            if not self._is_force_discharge:
+            if not await self._is_force_discharge_enabled():
                 discharge_power = await self._get(self._discharge_power)
                 cur_power += discharge_power
 
