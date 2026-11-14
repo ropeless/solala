@@ -400,6 +400,12 @@ class ModbusPowerController(PowerController):
         self._log_set_get = False
 
     def _logger_get_set(self, message: str) -> None:
+        """
+        Log a register operation when register-operation logging is enabled.
+
+        Args:
+            message: Message describing the register operation.
+        """
         if self._log_set_get:
             LOGGER.info(message)
 
@@ -483,15 +489,41 @@ class ModbusPowerController(PowerController):
         return value
 
     async def _set_all(self, names: list[str], value: int | float, *, force: bool = False) -> None:
+        """
+        Set the same value on each register in a list.
+
+        Args:
+            names: Names of the registers to update.
+            value: Value to write to each register.
+            force: Write each value even if it is unchanged.
+        """
         for name in names:
             await self._set(name, value, force=force)
 
     async def _get_all(self, names: list[str]) -> list[int | float]:
+        """
+        Read a list of registers.
+
+        Args:
+            names: Names of the registers to read.
+
+        Returns:
+            Register values in the same order as the supplied names.
+        """
         return [
             await self._get(name) for name in names
         ]
 
     async def _get_sum(self, names: list[str]) -> int | float:
+        """
+        Read and sum a list of numeric registers.
+
+        Args:
+            names: Names of the registers to read and sum.
+
+        Returns:
+            The sum of the register values.
+        """
         self._logger_get_set(f'SUM {names}')
         result = sum(await self._get_all(names))
         self._logger_get_set(f'SUM = {result}')
