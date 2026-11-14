@@ -1,6 +1,7 @@
 import asyncio
 from functools import partial
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
@@ -60,7 +61,7 @@ class PageSession:
             raise
         self.add_cleanup(partial(control_loop.remove_database_loop_listener, listener))
 
-    def add_task(self, task: asyncio.Task) -> None:
+    def add_task(self, task: asyncio.Task[Any]) -> None:
         async def cancel_task() -> None:
             if not task.done():
                 task.cancel()

@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from contextlib import contextmanager
+from typing import Iterator
 
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import ModbusError
@@ -388,7 +389,7 @@ class ModbusPowerController(PowerController):
             return avg_limit, any(power_limits_enabled)
 
     @contextmanager
-    def _logit(self, name: str):
+    def _logit(self, name: str) -> Iterator[None]:
         self._log_set_get = True
         LOGGER.info(f'{_START} {name}')
         yield

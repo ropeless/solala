@@ -1,5 +1,5 @@
 import asyncio
-from typing import Self
+from typing import Self, Any
 
 
 class AsyncRLock:
@@ -12,7 +12,7 @@ class AsyncRLock:
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
-        self._owner: asyncio.Task | None = None
+        self._owner: asyncio.Task[Any] | None = None
         self._count = 0
 
     async def acquire(self) -> bool:

@@ -225,7 +225,7 @@ class RegistersUpdater(LoopListener):
         self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
 
     @final
-    async def update(self, register_values=None) -> None:
+    async def update(self) -> None:
         register_values: dict[str, RegisterValue | None] = await control_loop.get_registers()
         self._update(register_values)
 

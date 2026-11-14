@@ -8,7 +8,7 @@ from datetime import datetime, UTC, timedelta, date
 from inspect import getmembers
 from pathlib import Path
 from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
-from typing import get_type_hints
+from typing import get_type_hints, Any
 
 from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
@@ -1521,7 +1521,7 @@ async def _reconfigure_registers(state: _ControlState) -> None:
                 continue
             registers[f'status/power/consumers/{consumer_name}/{f.name}'] = \
                 ConsumerRegister(consumer, f.name, reg_type)
-        for prop_name, prop_type in get_dataclass_properties(ConsumerStatus):
+        for prop_name, prop_type in _get_dataclass_properties(ConsumerStatus):
             try:
                 reg_type: RegisterType = check_type(prop_type)
             except TypeError:
@@ -1549,11 +1549,14 @@ async def _reconfigure_registers(state: _ControlState) -> None:
     state.registers = RegisterBank(registers)
 
 
-def get_dataclass_properties(cls: type) -> Iterator[tuple[str, type]]:
+def _get_dataclass_properties(cls: type) -> Iterator[tuple[str, Any]]:
+    """
+    Get all "properties" of the given class and iterator over
+    tuples (property_name, property_type).
+    """
     for name, member in getmembers(cls):
-        if isinstance(member, property):
-            prop = getattr(cls, name)
-            prop_type = get_type_hints(prop.fget)['return']
+        if isinstance(member, property) and member.fget is not None:
+            prop_type = get_type_hints(member.fget)['return']
             yield name, prop_type
 
 
