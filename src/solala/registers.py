@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, KeysView, Mapping
-from typing import Any, final
+from typing import final
 
 type RegisterValue = str | int | float | bool
 type RegisterType = type[str] | type[int] | type[float] | type[bool]
@@ -11,7 +11,7 @@ class ReadOnlyError(AttributeError):
     Raised when requesting to write to a read-only register.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('Register not writable')
 
 
@@ -79,7 +79,7 @@ def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
 
 class Register(ABC):
 
-    def __init__(self, register_type: RegisterType, writable: bool):
+    def __init__(self, register_type: RegisterType, writable: bool) -> None:
         if register_type not in (str, int, float, bool):
             raise TypeError(f'Unexpected register type: {register_type}')
         self._register_type = register_type
@@ -126,7 +126,7 @@ class Register(ABC):
 
 
 class ReadOnlyRegister(Register):
-    def __init__(self, register_type: RegisterType):
+    def __init__(self, register_type: RegisterType) -> None:
         super().__init__(register_type, writable=False)
 
     @abstractmethod
@@ -143,7 +143,7 @@ class ConstantRegister(ReadOnlyRegister):
     A register with a constant value.
     """
 
-    def __init__(self, value: RegisterValue):
+    def __init__(self, value: RegisterValue) -> None:
         register_type: RegisterType = type(value)
         if not value_okay(value, register_type):
             raise TypeError(f'Expected {register_type}, got {type(value)}')
@@ -195,7 +195,7 @@ class RegisterBank:
     def __init__(
             self,
             registers: Iterable[tuple[str, Register | RegisterValue]] | Mapping[str, Register | RegisterValue]
-    ):
+    ) -> None:
         if isinstance(registers, Mapping):
             registers = registers.items()
 
