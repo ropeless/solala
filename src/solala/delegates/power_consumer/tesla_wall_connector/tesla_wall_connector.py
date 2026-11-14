@@ -45,9 +45,12 @@ class TeslaWallConnector(PowerConsumer):
 
     async def get_status(self) -> ConsumerStatus:
         data: JSONDict = await self._cache()
+        voltage: float = json_num(data['voltageA_v'])
+        current: float = json_num(data['currentA_a'])
         return ConsumerStatus(
-            voltage=json_num(data['voltageA_v']),
-            current=json_num(data['currentA_a']),
+            voltage=voltage,
+            current=current,
+            power=voltage * current,  # assumes a pure resistive load
         )
 
     def get_connection_info(self) -> JSONDict:

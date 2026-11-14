@@ -20,7 +20,20 @@ class TuyaPowerConsumer(PowerConsumer):
             access_id: str,
             access_secret: str,
             device_id: str,
+            *,
+            voltage_scale_factor: float = 0.1,
+            current_scale_factor: float = 0.001,
+            power_scale_factor: float = 0.1,
     ) -> None:
+        """
+        Args:
+            voltage_scale_factor: The multiplier to convert the device 'cur_voltage' to volts.
+            current_scale_factor: The multiplier to convert the device 'cur_current' to amperes.
+            power_scale_factor: The multiplier to convert the device 'cur_power' to watts.
+        """
+        self._voltage_scale_factor: float = voltage_scale_factor
+        self._current_scale_factor: float = current_scale_factor
+        self._power_scale_factor: float = power_scale_factor
         self._tuya = TuyaOpenAPI(
             API_ENDPOINT,
             access_id,
@@ -34,7 +47,9 @@ class TuyaPowerConsumer(PowerConsumer):
         self._connection_info: JSONDict = {
             'connection': 'Tuya',
             'access_id': access_id,
-            'device_id': device_id,
+            'voltage_scale_factor': self._voltage_scale_factor,
+            'current_scale_factor': self._current_scale_factor,
+            'power_scale_factor': self._power_scale_factor,
         }
 
         # Cache `__get_device_status` for 0.01s each call.
@@ -56,8 +71,9 @@ class TuyaPowerConsumer(PowerConsumer):
     async def get_status(self) -> ConsumerStatus:
         device_status: JSONDict = await self._cache()
         return ConsumerStatus(
-            voltage=json_num(device_status['cur_voltage']) / 10,
-            current=json_num(device_status['cur_current']) / 1000,
+            voltage=json_num(device_status['cur_voltage']) * self._voltage_scale_factor,
+            current=json_num(device_status['cur_current']) * self._current_scale_factor,
+            power=json_num(device_status['cur_power']) * self._power_scale_factor,
         )
 
     def get_connection_info(self) -> JSONDict:
@@ -95,4 +111,5 @@ class TuyaPowerConsumer(PowerConsumer):
                 'error': str(err),
                 'cur_voltage': float('nan'),
                 'cur_current': float('nan'),
+                'cur_power': float('nan'),
             }

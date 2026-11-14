@@ -79,6 +79,10 @@ class TuyaConnection(BaseModel):
     access_secret: str
     device_id: str
 
+    voltage_scale_factor: float = 0.1
+    current_scale_factor: float = 0.001
+    power_scale_factor: float = 0.1
+
 
 class OpenMeteoConnection(BaseModel):
     TYPE: ClassVar[Literal['open_meteo']] = 'open_meteo'

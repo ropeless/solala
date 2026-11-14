@@ -15,17 +15,12 @@ class ConsumerStatus:
     Attributes:
         voltage: The measured voltage in volts.
         current: The measured current in amperes.
+        power: The measured power in watts.
     """
 
     voltage: float
     current: float
-
-    @property
-    def power(self) -> float:
-        """
-        Return the calculated power consumption in watts.
-        """
-        return self.voltage * self.current
+    power: float
 
     def to_json(self) -> JSONDict:
         """

@@ -8,14 +8,22 @@ class DummyPowerConsumer(PowerConsumer):
             self,
             voltage: float = 240,
             current: float = 0,
+            power: float | None = None,
     ) -> None:
+        if power is None:
+            power = voltage * current
+        if power > voltage * current:
+            raise ValueError('power > voltage * current')
+
         self.status = ConsumerStatus(
             voltage=voltage,
-            current=current
+            current=current,
+            power=power,
         )
         self._register_bank = RegisterBank({
             'voltage': CallRegister(lambda: self.status.voltage, float),
             'current': CallRegister(lambda: self.status.current, float),
+            'power': CallRegister(lambda: self.status.power, float),
         })
 
     async def get_registers(self) -> RegisterBank:
@@ -29,6 +37,7 @@ class DummyPowerConsumer(PowerConsumer):
             'connection': self.__class__.__name__,
             'voltage': self.status.voltage,
             'current': self.status.current,
+            'power': self.status.power,
         }
 
     async def close(self) -> None:

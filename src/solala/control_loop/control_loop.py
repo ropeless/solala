@@ -1361,6 +1361,9 @@ def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
             access_id=consumer_connection.access_id,
             access_secret=consumer_connection.access_secret,
             device_id=consumer_connection.device_id,
+            voltage_scale_factor=consumer_connection.voltage_scale_factor,
+            current_scale_factor=consumer_connection.current_scale_factor,
+            power_scale_factor=consumer_connection.power_scale_factor,
         )
     except Exception as err:
         raise ControlLoopError('could not connect to the Tuya device', errors=[str(err)])
