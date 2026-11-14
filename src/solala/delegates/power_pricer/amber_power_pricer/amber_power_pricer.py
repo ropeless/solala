@@ -31,7 +31,7 @@ class AmberPowerPricer(PowerPricer):
         Initialise the pricer for an Amber electricity site.
 
         Args:
-            api_token: Amber API authentication token.
+            api_token: Amber API authentication token (secret information).
             nmi: National Metering Identifier of the site to retrieve.
         """
         self._api_token: str = api_token
@@ -49,7 +49,7 @@ class AmberPowerPricer(PowerPricer):
     @property
     def site_id(self) -> str:
         """
-        Get the Amber identifier of the configured site.
+        Get the Amber identifier of the configured site, for the configured NMI.
         """
         return self._site_id
 
@@ -97,7 +97,7 @@ class AmberPowerPricer(PowerPricer):
             if site['nmi'] == self._nmi:
                 return site
 
-        raise ValueError(f'NMI not found in sites')
+        raise ValueError(f'NMI not found in sites: {self._nmi!r}')
 
     async def get_demand_window(self, day: date) -> tuple[datetime, datetime] | None:
         day_str: str = f'{day.year:04d}-{day.month:02d}-{day.day:02d}'
@@ -205,7 +205,7 @@ def _parse_response(response_json: Sequence[JSONDict], price_f: _PriceExtract) -
 
 def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _PriceExtract) -> Price:
     """
-    Create a Price from a pair of Amber price channels.
+    Create a Price from a pair of contemporary Amber price channels.
 
     Args:
         start_time: Start of the pricing interval.
