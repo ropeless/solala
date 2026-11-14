@@ -398,6 +398,8 @@ class ModbusPowerController(PowerController):
         LOGGER.info(f'{_START} {name}')
         try:
             yield
+        except Exception as err:
+            LOGGER.error(err)
         finally:
             LOGGER.info(f'{_STOP} {name}')
             self._log_set_get = previous
