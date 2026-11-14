@@ -74,5 +74,5 @@ async def _async_run_server(
     )
 
 
-def _loop_factory():
+def _loop_factory() -> asyncio.AbstractEventLoop:
     return asyncio.SelectorEventLoop(selectors.SelectSelector())
