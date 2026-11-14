@@ -34,11 +34,11 @@ def ensure_date(obj: date, tz: tzinfo | None = None) -> date:
     returned unchanged.
 
     Args:
-        obj: Date or datetime to convert.
-        tz: Optional timezone used when the input is a datetime.
+        obj: an object of type `date` or `datetime` to convert.
+        tz: Optional timezone, which is used when the input is a datetime.
 
     Returns:
-        Date corresponding to the input.
+        Date corresponding to `obj`.
     """
     if isinstance(obj, datetime):
         if tz is not None:
@@ -50,18 +50,14 @@ def ensure_date(obj: date, tz: tzinfo | None = None) -> date:
 
 def date_to_datetime(obj: date, tz: tzinfo | None = None) -> datetime:
     """
-    Convert a date to a datetime at midnight.
-
-    The initial datetime is naive. If a timezone is provided, `astimezone()`
-    converts it from the system's local timezone to the requested timezone.
+    Convert a date to a datetime at midnight (morning).
 
     Args:
         obj: Date to convert.
         tz: Optional target timezone.
 
     Returns:
-        Midnight as a naive datetime, or a timezone-aware converted datetime
-        when `tz` is supplied.
+        Midnight (morning) as a timezone-aware datetime object.
     """
     result = datetime.combine(ensure_date(obj), time.min)
     if tz is not None:
