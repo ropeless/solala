@@ -30,12 +30,41 @@ Here are the implemented control policies.
 - Inverter Manual: Zero Export (try to not export to or import from the grid).
 - Inverter Auto: Negative Feed-in Tariff ⇒ Zero Export (force zero export if the feed-in tariff is negative).
 
-As it is a personal project, there are a few limitations.
+Supported Integrations and Limitations
+======================================
 
-- There is only support for Fronius GEN4 inverters.
-- There is only support for Amber as the power price provider.
-- The web app is very basic.
-- The web app needs to run on the same LAN as the inverters.
+Solala is a personal project developed for a particular home solar installation.
+It is shared for experimentation and adaptation rather than as a turnkey
+solution for arbitrary systems.
+
+- **Inverters and batteries:** The supplied power-controller implementation
+  targets Fronius inverters through Modbus and SunSpec registers. Support for
+  other manufacturers would require another `PowerController` implementation.
+  Compatibility with other Fronius models and firmware versions has not been
+  established.
+- **Multiple inverters:** The Modbus controller supports a master inverter and
+  optional slave inverters. Battery control is performed through the master.
+  Power curtailment is applied to the master by default; controlling slaves
+  is configurable and depends on the installation's capabilities.
+- **Electricity prices:** Amber is the implemented live pricing provider.
+  A dummy pricing provider is available for demonstrations.
+- **Forecasting and monitored loads:** Open-Meteo supplies solar forecasts.
+  Optional power-consumer integrations include Tesla Wall Connector and Tuya
+  devices; their availability depends on device compatibility and configuration.
+- **Web interface:** NiceGUI provides monitoring, forecasts, historical charts,
+  diagnostics and manual or policy-driven controls. The interface is designed
+  for this project and is not a general-purpose installation or administration
+  tool.
+- **Network access:** The server needs network connectivity to the inverter
+  and other configured devices; it does not necessarily have to run on the
+  same physical LAN if routing and device access are correctly configured.
+  Remote browser access should be secured appropriately.
+- **Persistence:** Historical measurement storage requires a configured
+  PostgreSQL database. The dummy demonstration runs without database writes.
+
+Inverter control affects real electrical equipment. Validate compatibility,
+permissions and control behaviour on your installation before relying on
+automatic policies.
 
 Software Architecture and Design
 ================================
