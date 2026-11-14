@@ -1,13 +1,9 @@
 from collections.abc import Awaitable, Callable
 from time import monotonic
-from typing import cast
 
+from solala.utils.sentinel import Sentinel
 
-class _Unset:
-    pass
-
-
-_UNSET = _Unset()
+_UNSET = Sentinel('_UNSET')
 
 
 class _BaseMicroCache:
@@ -38,14 +34,14 @@ class MicroCache[T](_BaseMicroCache):
     ) -> None:
         super().__init__(cache_time)
         self._f = f
-        self._cache: T | _Unset = _UNSET
+        self._cache: T | Sentinel = _UNSET
 
     def __call__(self) -> T:
-        if self._is_expired() or isinstance(self._cache, _Unset):
+        if self._is_expired() or self._cache is _UNSET:
             self._cache = self._f()
             self._update_timestamp()
 
-        return cast(T, self._cache)
+        return self._cache
 
 
 class AsyncMicroCache[T](_BaseMicroCache):
@@ -60,11 +56,11 @@ class AsyncMicroCache[T](_BaseMicroCache):
     ) -> None:
         super().__init__(cache_time)
         self._f = f
-        self._cache: T | _Unset = _UNSET
+        self._cache: T | Sentinel = _UNSET
 
     async def __call__(self) -> T:
-        if self._is_expired() or isinstance(self._cache, _Unset):
+        if self._is_expired() or self._cache is _UNSET:
             self._cache = await self._f()
             self._update_timestamp()
 
-        return cast(T, self._cache)
+        return self._cache

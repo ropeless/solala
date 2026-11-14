@@ -2,8 +2,12 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, KeysView, Mapping
 from typing import final
 
+from solala.utils.sentinel import Sentinel
+
 type RegisterValue = str | int | float | bool
 type RegisterType = type[str] | type[int] | type[float] | type[bool]
+
+_NONE = Sentinel('_NONE')
 
 
 class ReadOnlyError(AttributeError):
@@ -36,7 +40,7 @@ def check_type(t: object) -> RegisterType:
         return float
     if t is bool:
         return bool
-    raise TypeError(f'not a valid register type: {t}')
+    raise TypeError(f'not a valid register type: {t!r}')
 
 
 def check_value(v: object) -> RegisterValue:
@@ -96,7 +100,7 @@ class Register(ABC):
             writable: Whether the register can be written to.
         """
         if register_type not in (str, int, float, bool):
-            raise TypeError(f'Unexpected register type: {register_type}')
+            raise TypeError(f'Unexpected register type: {register_type!r}')
         self._register_type = register_type
         self._writable = writable
 
@@ -191,15 +195,18 @@ class ConstantRegister(ReadOnlyRegister):
     The value is set when the register is created and cannot be changed.
     """
 
-    def __init__(self, value: RegisterValue) -> None:
+    def __init__(self, value: RegisterValue, register_type: RegisterType | None = None) -> None:
         """
         Initialise the register with its constant value.
 
         Args:
             value: The value returned whenever the register is read.
+            register_type: The register value type. If omitted, it is inferred
+                from the give value.
         """
-        register_type: RegisterType = type(value)
-        if not value_okay(value, register_type):
+        if register_type is None:
+            register_type: RegisterType = check_type(type(value))
+        elif not value_okay(value, register_type):
             raise TypeError(f'Expected {register_type}, got {type(value)}')
 
         super().__init__(register_type)
@@ -227,7 +234,9 @@ class CallRegister(ReadOnlyRegister):
                 from the function's return value.
         """
         if register_type is None:
-            register_type = type(f())
+            register_type: RegisterType = check_type(type(f()))
+
+        register_type: RegisterType
         super().__init__(register_type)
         self._f: Callable[[], RegisterValue] = f
 
@@ -276,7 +285,7 @@ class RegisterBank:
                 Constant values are wrapped in ConstantRegister instances.
         """
         if isinstance(registers, Mapping):
-            registers = registers.items()
+            registers: Iterable[tuple[str, Register | RegisterValue]] = registers.items()
 
         registers: Iterable[tuple[str, Register | RegisterValue]]
         self._registers: Mapping[str, Register] = {
@@ -327,10 +336,11 @@ class RegisterBank:
         Returns:
             The register value, or the default if the register does not exist.
         """
-        got: Register | None = self._registers.get(key, None)
-        if got is None:
+        got: Register | Sentinel = self._registers.get(key, _NONE)
+        if got is _NONE:
             return default
         else:
+            assert type(got) is Register
             return await got.get()
 
     async def set(self, key: str, value: RegisterValue) -> None:
@@ -346,8 +356,9 @@ class RegisterBank:
             ReadOnlyError: If the register is read-only.
             TypeError: If the value is not of the expected type.
         """
-        got: Register | None = self._registers.get(key, None)
-        if got is None:
+        got: Register | Sentinel = self._registers.get(key, _NONE)
+        if got is _NONE:
             raise KeyError(key)
         else:
+            assert type(got) is Register
             await got.set(value)
