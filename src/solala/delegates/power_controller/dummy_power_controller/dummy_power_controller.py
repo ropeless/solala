@@ -36,8 +36,9 @@ class DummyPowerController(PowerController):
     and a battery. The simulation updates power flows according to the selected
     battery and inverter modes and accumulates energy between updates.
 
-    Public fields may be updated by the client at any time. The method `update_status`
-    should be called after changes.
+    Public fields may be updated by the client at any time. Changes do not
+    automatically update the simulated power flows; `update_status()` should
+    be called after making changes.
     """
 
     def __init__(
