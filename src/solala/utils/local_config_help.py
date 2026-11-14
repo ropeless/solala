@@ -24,21 +24,21 @@ Variable names must be a valid Python identifier. Only valid
 value types are supported, as per the function `valid_value`.
 
 Usage:
-    from {...}.local_config_help import config
+    from solala.utils.local_config_help import config
 
     # assume `local_config.py` is in the PYTHONPATH and contains:
     #    ABC = 123
     #    DEF = 456
 
     val = config.ABC                  # val = 123
-    val = config.XYZ                  # will raise an exception
+    val = config.XYZ                  # raises AttributeError
     val = config.get('ABC')           # val = 123
     val = config['DEF']               # val = 456
     val = config['XYZ']               # will raise an exception
     val = config.get('XYZ')           # val = None
     val = config.get('XYZ', 999)      # val = 999
 
-    from {...}.local_config import get_params
+    from solala.utils.local_config_help import get_params
 
     val = get_params('ABC')                  # val = ('ABC', 123)
     val = get_params('ABC', 'DEF')           # val = (('ABC', 123), ('DEF', 456))
@@ -148,12 +148,17 @@ class Config:
 
     def __getattr__(self, key: str) -> Any:
         """
-        Get the value of the given configuration variable.
-        If the configuration variable is not available, raise a KeyError.
+        Retrieve a configuration value as an attribute.
+
+        Raises:
+            AttributeError: If the configuration name is undefined.
         """
-        value = self.get(key, _NIL)
+        try:
+            value = self.get(key, _NIL)
+        except KeyError as err:
+            raise AttributeError(f'invalid local configuration parameter: {key!r}') from err
         if value is _NIL:
-            raise KeyError(f'undefined local configuration parameter: {key}')
+            raise AttributeError(f'undefined local configuration parameter: {key}')
         return value
 
 
@@ -264,7 +269,7 @@ def update_config(
             ...
 
         if __name__ == '__main__':
-            update_config(sys.argv, ['in_name', 'out_name'])
+            update_config(sys.argv[1:], ['in_name', 'out_name'])
             main()
 
     Args:
