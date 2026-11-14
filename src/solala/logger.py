@@ -1,4 +1,6 @@
-"""Provide the shared named logger used throughout Solala."""
+"""
+Provide the shared named logger used throughout Solala.
+"""
 
 import logging
 
