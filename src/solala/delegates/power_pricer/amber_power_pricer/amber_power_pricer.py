@@ -22,8 +22,18 @@ type _PriceExtract = Callable[[JSONDict], float]
 
 
 class AmberPowerPricer(PowerPricer):
+    """
+    Retrieves electricity prices and tariff information from the Amber API.
+    """
 
     def __init__(self, api_token: str, nmi: str) -> None:
+        """
+        Initialise the pricer for an Amber electricity site.
+
+        Args:
+            api_token: Amber API authentication token.
+            nmi: National Metering Identifier of the site to retrieve.
+        """
         self._api_token: str = api_token
         self._nmi: str = nmi
         self._site: JSONDict = self._get_site()
@@ -31,10 +41,16 @@ class AmberPowerPricer(PowerPricer):
 
     @property
     def nmi(self) -> str:
+        """
+        Get the National Metering Identifier of the configured site.
+        """
         return self._nmi
 
     @property
     def site_id(self) -> str:
+        """
+        Get the Amber identifier of the configured site.
+        """
         return self._site_id
 
     def get_connection_info(self) -> JSONDict:
@@ -58,6 +74,15 @@ class AmberPowerPricer(PowerPricer):
         return _parse_response(response, _get_predicted)
 
     def _get_site(self) -> JSONDict:
+        """
+        Retrieve the Amber site matching the configured NMI.
+
+        Returns:
+            The matching site information.
+
+        Raises:
+            ValueError: If no site matches the configured NMI.
+        """
         url = f'{API}/sites'
         headers = {
             'accept': 'application/json',
@@ -101,6 +126,20 @@ class AmberPowerPricer(PowerPricer):
             return prices[0].start_time, prices[-1].end_time
 
     async def _get(self, resolution: Literal[5, 30], forecasts: int) -> JSONDict:
+        """
+        Retrieve current and forecast prices from the Amber API.
+
+        Args:
+            resolution: Pricing interval in minutes (5 or 30).
+            forecasts: Number of forecast intervals to request after the current
+                interval.
+
+        Returns:
+            The API response containing the price channels.
+
+        Raises:
+            IOError: If the API request fails.
+        """
         url = f'{API}/sites/{self._site_id}/prices/current'
         headers = {
             'accept': 'application/json',
@@ -119,6 +158,23 @@ class AmberPowerPricer(PowerPricer):
 
 
 def _parse_response(response_json: Sequence[JSONDict], price_f: _PriceExtract) -> list[Price]:
+    """
+    Parse Amber price channels into chronologically ordered prices.
+
+    Channels are paired by their start time. Each interval must contain one
+    general channel and one feed-in channel.
+
+    Args:
+        response_json: Price channel records returned by the Amber API.
+        price_f: Function used to extract a price from a channel.
+
+    Returns:
+        Prices ordered by interval start time.
+
+    Raises:
+        IOError: If an interval contains duplicate channels or is missing either
+            channel type.
+    """
     # Parse the response
     parsed: dict[datetime, _ChannelPair] = {}
     for channel in response_json:
@@ -148,6 +204,20 @@ def _parse_response(response_json: Sequence[JSONDict], price_f: _PriceExtract) -
 
 
 def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _PriceExtract) -> Price:
+    """
+    Create a Price from a pair of Amber price channels.
+
+    Args:
+        start_time: Start of the pricing interval.
+        channel_pair: General and feed-in channel data for the interval.
+        price_f: Function used to extract a price from a channel.
+
+    Returns:
+        The price for the interval, including tariff information.
+
+    Raises:
+        IOError: If either channel is missing.
+    """
     general: JSONDict = channel_pair.general
     feed_in: JSONDict = channel_pair.feed_in
     if len(general) == 0:
@@ -175,14 +245,37 @@ def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _Pric
 
 
 def _get_no_price(_: JSONDict) -> float:
+    """
+    Return zero when a price value is not required.
+    """
     return 0.0
 
 
 def _get_perKwh(data: JSONDict) -> float:
+    """
+    Extract the per-kWh price from an Amber channel.
+
+    Args:
+        data: Amber price channel data.
+
+    Returns:
+        The per-kWh price.
+    """
     return json_num(data['perKwh'])
 
 
 def _get_predicted(data: JSONDict) -> float:
+    """
+    Extract the predicted price from an Amber channel when available.
+
+    Falls back to the per-kWh price if the advanced prediction is unavailable.
+
+    Args:
+        data: Amber price channel data.
+
+    Returns:
+        The predicted or fallback per-kWh price.
+    """
     try:
         return json_num(json_dict(data['advancedPrice'])['predicted'])
     except (KeyError, ValueError, TypeError):
@@ -190,4 +283,13 @@ def _get_predicted(data: JSONDict) -> float:
 
 
 def _get_datetime(date_str: str) -> datetime:
+    """
+    Parse an ISO-formatted datetime and convert it to the local timezone.
+
+    Args:
+        date_str: ISO-formatted datetime string.
+
+    Returns:
+        The parsed datetime in the local timezone.
+    """
     return datetime.fromisoformat(date_str).astimezone()
