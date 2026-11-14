@@ -6,7 +6,9 @@ from solala.utils.datetime_extras import now
 
 
 class BatteryMode(Enum):
-    """Operating modes supported by the dummy battery simulation."""
+    """
+    Operating modes supported by the dummy battery simulation.
+    """
 
     ENABLE = auto()
     DISABLE = auto()
@@ -17,7 +19,9 @@ class BatteryMode(Enum):
 
 
 class InverterMode(Enum):
-    """Operating modes supported by the dummy inverter simulation."""
+    """
+    Operating modes supported by the dummy inverter simulation.
+    """
 
     ENABLE = auto()
     DISABLE = auto()
