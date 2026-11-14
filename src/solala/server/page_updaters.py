@@ -49,7 +49,7 @@ class InverterButtonUpdater(StatusListener):
             inverter_disable: Button,
             inverter_zero_export: Button,
             inverter_neg_feed_in_zero_export: Button,
-    ):
+    ) -> None:
         super().__init__()
         self.inverter_enable = inverter_enable.on_click(partial(
             self._click, InverterMode.ENABLE, InverterPolicy.MANUAL
@@ -92,7 +92,7 @@ class InverterButtonUpdater(StatusListener):
             inverter_policy = ''
         self._visual_update(inverter_mode, inverter_policy)
 
-    def _visual_update(self, inverter_mode: str, inverter_policy: str):
+    def _visual_update(self, inverter_mode: str, inverter_policy: str) -> None:
         inverter_button = (
             inverter_policy
             if inverter_policy != InverterPolicy.MANUAL.name
@@ -120,7 +120,7 @@ class BatteryButtonUpdater(StatusListener):
             battery_charge_only: Button,
             battery_discharge_only: Button,
             battery_cheap_force_discharge: Button,
-    ):
+    ) -> None:
         super().__init__()
         self.battery_enable = battery_enable.on_click(partial(
             self._click, BatteryMode.ENABLE, BatteryPolicy.MANUAL
@@ -172,7 +172,7 @@ class BatteryButtonUpdater(StatusListener):
             battery_policy = ''
         self._visual_update(battery_mode, battery_policy)
 
-    def _visual_update(self, battery_mode: str, battery_policy: str):
+    def _visual_update(self, battery_mode: str, battery_policy: str) -> None:
         battery_button = (
             battery_policy
             if battery_policy != BatteryPolicy.MANUAL.name
@@ -196,7 +196,7 @@ class StatusUpdater(StatusListener):
     def __init__(
             self,
             status_element: ContentElement,
-    ):
+    ) -> None:
         super().__init__()
         self.status_element = status_element
 
@@ -207,7 +207,7 @@ class StatusUpdater(StatusListener):
 
 
 class InfographicUpdater(StatusListener):
-    def __init__(self, infographic_element: ContentElement):
+    def __init__(self, infographic_element: ContentElement) -> None:
         super().__init__()
         self.infographic_element = infographic_element
         self.infographic = Infographic()
@@ -219,7 +219,7 @@ class InfographicUpdater(StatusListener):
 
 class RegistersUpdater(LoopListener):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
         self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
@@ -242,7 +242,7 @@ class RegistersUpdater(LoopListener):
 
 
 class PriceForecastUpdater(LoopListener):
-    def __init__(self, element: ui.element):
+    def __init__(self, element: ui.element) -> None:
         super().__init__()
         self._prev = None
         self._element = element
@@ -316,7 +316,7 @@ class PriceForecastUpdater(LoopListener):
 
 class SolarForecastUpdater(LoopListener):
 
-    def __init__(self, element: ui.element, session: PageSession):
+    def __init__(self, element: ui.element, session: PageSession) -> None:
         super().__init__()
         self._session = session
         self._prev: DailySolarForecast | None = None
