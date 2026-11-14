@@ -1409,6 +1409,7 @@ def _connect_dummy_consumer(consumer_connection: DummyConsumerConnection) -> Pow
     return DummyPowerConsumer(
         voltage=consumer_connection.voltage,
         current=consumer_connection.current,
+        power=consumer_connection.power,
     )
 
 

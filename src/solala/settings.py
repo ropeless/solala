@@ -23,7 +23,7 @@ class DummyControllerConnection(BaseModel):
 
 class DummyPricerConnection(BaseModel):
     """
-    Configure simulated electricity prices and an optional demand window.
+    Configure simulated pricer and an optional demand window.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -45,11 +45,12 @@ class DummyConsumerConnection(BaseModel):
 
     voltage: float = 240
     current: float = 0
+    power: float | None = None
 
 
 class DummySolarForecasterConnection(BaseModel):
     """
-    Configure a simulated solar forecaster's panel and inverter capacities.
+    Configure a simulated solar forecaster.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -60,7 +61,7 @@ class DummySolarForecasterConnection(BaseModel):
 
 class ModbusControllerConnection(BaseModel):
     """
-    Configure Modbus controller addresses and device identifiers.
+    Configure Modbus power controller.
 
     Attributes:
         address: Master and optional slave MAC or IP addresses, in that order,
