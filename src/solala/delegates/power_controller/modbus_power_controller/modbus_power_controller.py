@@ -328,7 +328,7 @@ class ModbusPowerController(PowerController):
                 LOGGER.info(f'using hunting method: gamma = {_GAMMA}, delta_pct = {delta_pct}, history = {history_log}')
 
                 new_pct = round(max(0, min(cur_pct + delta_pct, 100)), 2)
-                new_power = cur_power + grid_power * (cur_pct - new_pct) / 100
+                new_power = cur_power + max_power * (new_pct - cur_pct) / 100
                 new_power = max(0, min(new_power, max_power))
 
             else:
