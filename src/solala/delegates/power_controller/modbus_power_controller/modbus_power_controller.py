@@ -279,9 +279,12 @@ class ModbusPowerController(PowerController):
             await self._set_power_pct(0, change_duration)
 
     async def _is_force_discharge_enabled(self) -> bool:
-        """Determine forced discharge from the inverter's current settings."""
+        """
+        Infer if forced discharge is enabled based on the inverter's current settings.
+        """
         mode = await self._get(self._StorCtl_Mod)
-        charge_rate = await self._get(self._InWRte)
+        assert isinstance(mode, int)
+        charge_rate: float = await self._get(self._InWRte)
         return bool(mode & 1) and charge_rate < 0
 
     async def zero_export(self, *, change_duration: int) -> None:
