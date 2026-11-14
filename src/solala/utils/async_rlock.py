@@ -47,8 +47,6 @@ class AsyncRLock:
         """
         Release one level of ownership held by the current task.
 
-        The underlying lock is released when the hold count reaches zero.
-
         Raises:
             RuntimeError: If the current task does not own the lock.
         """
