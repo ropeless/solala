@@ -139,7 +139,7 @@ class _ControlState:
     consumers: dict[str, PowerConsumer] = field(default_factory=dict)
     database_connections: SolalaDatabaseConnections | None = None
 
-    # Keep track of the settings use to connect to the solar power system.
+    # Keep track of the settings used to connect to the solar power system.
     controller_settings: ControllerConnection | None = None
     pricer_settings: PricerConnection | None = None
     forecaster_settings: ForecasterConnection | None = None
@@ -526,8 +526,8 @@ async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> d
         match: A compiled regular expression or an iterable of register names.
 
     Returns:
-        A dictionary mapping each register name to its value or None if as
-        specific register name was requested that is not available.
+        A dictionary mapping each register name to its value, or to None if
+        a specifically requested register is unavailable.
     """
     registers: RegisterBank = _CONTROL_STATE.registers  # no need to lock as RegisterBank is stable.
     if isinstance(match, re.Pattern):
@@ -1282,7 +1282,10 @@ def _get_sleep_time() -> float:
 
 async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
     """
-    Log values of registers matching the configured pattern.
+    Log numeric and text values of registers matching the configured pattern.
+
+    Boolean values are stored as 1 or 0 alongside numeric values. String
+    values are stored separately as text.
 
     Args:
         cur_log_registers: Compiled name pattern, or None to skip logging.
