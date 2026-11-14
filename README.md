@@ -5,6 +5,8 @@ Solala is a Python package and web app for controlling solar power inverters and
 
 This is currently a personal project being shared in case others find it useful.
 
+![Solala Power dashboard](doc_images/screenshot%20-%20Power.PNG)
+
 The aim of the project is to provide:
 
 - datatype-aware reading and writing of Modbus registers using high-level register names
