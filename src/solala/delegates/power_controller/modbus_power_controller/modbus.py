@@ -31,7 +31,7 @@ class ModbusRegister(Register):
         return self._access.set(self._context, value)
 
 
-type ModbusDevices = Mapping[str | None, ModbusDevice]
+type ModbusDevices = Mapping[str, ModbusDevice] | Mapping[str | None, ModbusDevice] | Mapping[None, ModbusDevice]
 
 
 class Modbus(RegisterBank):
