@@ -2,7 +2,7 @@
 This module provides access to local configuration variables.
 
 Local configuration variables are {variable} = {value} pairs that
-are defined externally to Solala to adapt it to the local
+are defined externally to the application to adapt it to the local
 installation environment. They are not intended to change
 application algorithms.
 
@@ -24,7 +24,7 @@ Variable names must be a valid Python identifier. Only valid
 value types are supported, as per the function `valid_value`.
 
 Usage:
-    from solala.utils.local_config_help import config
+    from {...}.local_config_help import config
 
     # assume `local_config.py` is in the PYTHONPATH and contains:
     #    ABC = 123
@@ -38,7 +38,7 @@ Usage:
     val = config.get('XYZ')           # val = None
     val = config.get('XYZ', 999)      # val = 999
 
-    from solala.utils.local_config_help import get_params
+    from {...}.local_config import get_params
 
     val = get_params('ABC')                  # val = ('ABC', 123)
     val = get_params('ABC', 'DEF')           # val = (('ABC', 123), ('DEF', 456))
@@ -50,8 +50,8 @@ Usage:
 import inspect
 import os
 from ast import literal_eval
-from itertools import chain
 from collections.abc import Iterable, Sequence
+from itertools import chain
 from typing import Any
 
 try:
@@ -224,23 +224,23 @@ def get_params(
         the requested parameter values.
     """
     if delim is not None:
-        keys = (elem for iterable in (key.split(delim) for key in keys) for elem in iterable)
+        keys = tuple(elem for key in keys for elem in key.split(delim))
         if sep is None:
             sep = '='
 
     if sep is None:
-        items = ((key, local_config[key]) for key in keys)
-    else:
-        items = (f'{key}{sep}{local_config[key]!r}' for key in keys)
+        pairs = tuple((key, local_config[key]) for key in keys)
+        if len(pairs) == 1:
+            return pairs[0]
+        return pairs
 
-    if delim is None:
-        result = tuple(items)
-        if len(result) == 1:
-            result = result[0]
-    else:
-        result = delim.join(str(item) for item in items)
+    values = tuple(f'{key}{sep}{local_config[key]!r}' for key in keys)
 
-    return result
+    if delim is not None:
+        return delim.join(values)
+    if len(values) == 1:
+        return values[0]
+    return values
 
 
 def update_config(
