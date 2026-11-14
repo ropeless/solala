@@ -1,5 +1,7 @@
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from types import TracebackType
+from typing import Self
 
 from pymodbus.client import ModbusTcpClient
 
@@ -169,11 +171,16 @@ class Modbus(RegisterBank):
         for client in self._clients:
             client.close()
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         self.connect()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            traceback: TracebackType | None,
+    ) -> None:
         self.close()
 
 
