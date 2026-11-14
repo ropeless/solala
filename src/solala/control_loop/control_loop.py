@@ -91,6 +91,9 @@ MATCH_ALL: re.Pattern[str] = re.compile('.*')  # regular expression to match any
 
 @dataclass(frozen=True)
 class _DateKey:
+    """
+    Immutable calendar date used as a key for daily forecast caches.
+    """
     year: int
     month: int
     day: int
@@ -109,6 +112,12 @@ class _PrevControl:
     control_mode: ControlMode = field(default_factory=ControlMode)
 
     def reset(self, controller: PowerController | None) -> None:
+        """
+        Reset tracked modes and policies when the controller changes.
+
+        Args:
+            controller: Controller associated with the new tracking state.
+        """
         self.controller = controller
         self.control_mode.battery_mode = BatteryMode.UNKNOWN
         self.control_mode.inverter_mode = InverterMode.UNKNOWN
@@ -118,6 +127,11 @@ class _PrevControl:
 
 @dataclass
 class _ControlState:
+    """
+    Hold delegate connections, cached readings, control settings, and loop state.
+
+    Access to mutable shared state is coordinated through `_control_state()`.
+    """
     # These are the work objects for accessing the solar power system
     controller: PowerController | None = None
     pricer: PowerPricer | None = None
@@ -1165,6 +1179,13 @@ async def _database_loop() -> None:
 
 
 async def _insert_measurement(dt_now: datetime, db: SolalaDatabase) -> None:
+    """
+    Collect current system readings and write a database measurement.
+
+    Args:
+        dt_now: Timestamp of the measurement.
+        db: Database interface used to store the measurement.
+    """
     LOGGER.info(f'{_LOG_SRC}Gathering a measurement for the database')
     today = dt_now.astimezone(local_time_zone()).date()
 
@@ -1259,6 +1280,12 @@ def _get_sleep_time() -> float:
 
 
 async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
+    """
+    Log numeric values of registers matching the configured pattern.
+
+    Args:
+        cur_log_registers: Compiled name pattern, or None to skip logging.
+    """
     if cur_log_registers is not None:
         timestamp = now()
         registers = await get_registers(cur_log_registers)
@@ -1508,6 +1535,18 @@ def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
 
 
 def _connect_open_meteo_forecaster(forecaster_connection: OpenMeteoConnection) -> SolarForecaster:
+    """
+    Construct an Open-Meteo solar forecaster without changing control state.
+
+    Args:
+        forecaster_connection: Open-Meteo forecast configuration.
+
+    Returns:
+        The configured solar forecaster.
+
+    Raises:
+        ControlLoopError: If the forecaster cannot be constructed.
+    """
     try:
         return OpenMeteoForecaster(
             latitude=forecaster_connection.latitude,
@@ -1525,6 +1564,9 @@ def _connect_open_meteo_forecaster(forecaster_connection: OpenMeteoConnection) -
 
 @dataclass
 class _Address:
+    """
+    Track an input address and its resolved MAC and IP addresses.
+    """
     raw_address: str
     mac_address: str = ''
     ip_address: str = ''
@@ -1532,16 +1574,16 @@ class _Address:
 
 def _resolve_addresses(raw_addresses: list[str]) -> list[_Address]:
     """
-    Resolve a list of MAC or IP address.
+    Resolve MAC or IP addresses to their corresponding IP addresses.
 
     Args:
-        raw_addresses: a list of MAC or IP addresses.
+        raw_addresses: Input MAC or IP addresses.
 
     Returns:
-        the resolved address
+        Resolved addresses in the same order as the input.
 
     Raises:
-        ControlLoopError: if any of the addresses are invalid
+        ControlLoopError: If an address is invalid or a MAC address cannot be resolved.
     """
     addresses: list[_Address] = [_Address(address) for address in raw_addresses]
     invalid_addresses: list[str] = []
@@ -1596,6 +1638,9 @@ def _update_listeners(listeners: Iterable[LoopListener]) -> None:
 
 
 class PowerRegister(ReadOnlyRegister):
+    """
+    Expose a power status field as a read-only register.
+    """
 
     def __init__(self, field_name: str, register_type: RegisterType) -> None:
         self._field_name = field_name
@@ -1606,6 +1651,9 @@ class PowerRegister(ReadOnlyRegister):
 
 
 class PriceRegister(ReadOnlyRegister):
+    """
+    Expose a current electricity price field as a read-only register.
+    """
 
     def __init__(self, field_name: str, register_type: RegisterType) -> None:
         self._field_name = field_name
@@ -1616,6 +1664,9 @@ class PriceRegister(ReadOnlyRegister):
 
 
 class ConsumerRegister(ReadOnlyRegister):
+    """
+    Expose a consumer status field as a read-only register.
+    """
 
     def __init__(self, consumer: PowerConsumer, field_name: str, register_type: RegisterType) -> None:
         self._field_name = field_name
@@ -1692,8 +1743,13 @@ async def _reconfigure_registers(state: _ControlState) -> None:
 
 def _get_dataclass_properties(cls: type) -> Iterator[tuple[str, Any]]:
     """
-    Get all "properties" of the given class and iterator over
-    tuples (property_name, property_type).
+    Iterate over properties defined on a class and their return types.
+
+    Args:
+        cls: Class whose properties are to be inspected.
+
+    Yields:
+        Property name and annotated getter return type.
     """
     for name, member in getmembers(cls):
         if isinstance(member, property) and member.fget is not None:
@@ -1703,8 +1759,15 @@ def _get_dataclass_properties(cls: type) -> Iterator[tuple[str, Any]]:
 
 def _get_settings(state: _ControlState) -> Settings:
     """
-    Take a snapshot of the current settings.
-    Assumes the control state lock is held.
+    Build settings from the current control state.
+
+    The caller must hold the control state lock.
+
+    Args:
+        state: Current control state.
+
+    Returns:
+        Settings representing the current connections and control configuration.
     """
     control_mode = state.control_mode
     return Settings(
