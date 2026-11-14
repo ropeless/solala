@@ -6,8 +6,8 @@ class DummyPowerConsumer(PowerConsumer):
     """
     Simulated power consumer with configurable electrical status.
 
-    The public `status` attribute can be replaced after construction to update
-    the voltage, current, and power reported by the consumer.
+    The public `status` attribute can be updated after construction
+    (with care) to change the voltage, current, and power reported by the consumer.
     """
 
     def __init__(
