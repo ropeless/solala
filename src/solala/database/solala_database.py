@@ -12,6 +12,8 @@ from solala.database.measurement import Measurement
 
 _ENUM_FIELDS: dict[type[BaseModel], list[tuple[str, type[Enum]]]] = {}
 
+type Row = dict[str, Any]
+
 
 class SolalaDatabase:
     def __init__(self, connection: AsyncConnection) -> None:
@@ -21,11 +23,13 @@ class SolalaDatabase:
         await self._insert('measurement', measurement)
 
     async def insert_registers_numeric(
-        self,
-        timestamp: datetime,
-        registers: Mapping[str, int | float],
+            self,
+            timestamp: datetime,
+            registers: Mapping[str, int | float],
     ) -> None:
-        """Insert numeric register values into the database."""
+        """
+        Insert numeric register values into the database.
+        """
         if not registers:
             return
 
@@ -34,19 +38,21 @@ class SolalaDatabase:
             for name, value in registers.items()
         ]
         query = """
-            INSERT INTO register_numeric (timestamp, name, value)
-            VALUES (%(timestamp)s, %(name)s, %(value)s)
-        """
+                INSERT INTO register_numeric (timestamp, name, value)
+                VALUES (%(timestamp)s, %(name)s, %(value)s) \
+                """
         async with self._connection.transaction():
             async with self._connection.cursor() as cur:
                 await cur.executemany(query, params)
 
     async def insert_registers_text(
-        self,
-        timestamp: datetime,
-        registers: Mapping[str, str],
+            self,
+            timestamp: datetime,
+            registers: Mapping[str, str],
     ) -> None:
-        """Insert text register values into the database."""
+        """
+        Insert text register values into the database.
+        """
         if not registers:
             return
 
@@ -55,17 +61,17 @@ class SolalaDatabase:
             for name, value in registers.items()
         ]
         query = """
-            INSERT INTO register_text (timestamp, name, value)
-            VALUES (%(timestamp)s, %(name)s, %(value)s)
-        """
+                INSERT INTO register_text (timestamp, name, value)
+                VALUES (%(timestamp)s, %(name)s, %(value)s) \
+                """
         async with self._connection.transaction():
             async with self._connection.cursor() as cur:
                 await cur.executemany(query, params)
 
     async def get_measurements(
-        self,
-        day: date,
-        include_boundaries: bool = True,
+            self,
+            day: date,
+            include_boundaries: bool = True,
     ) -> Sequence[Measurement]:
         """
         Get the measurements for a given day. Optionally include the boundary
@@ -77,58 +83,58 @@ class SolalaDatabase:
 
         if include_boundaries:
             query = """
-                SELECT * FROM (
-                    (
-                        SELECT *
-                        FROM measurement
-                        WHERE timestamp < %(day_start)s
-                        ORDER BY timestamp DESC
-                        LIMIT 1
-                    )
-                    UNION ALL
-                    (
-                        SELECT *
-                        FROM measurement
-                        WHERE timestamp >= %(day_start)s
-                          AND timestamp < %(next_day_start)s
-                    )
-                    UNION ALL
-                    (
-                        SELECT *
-                        FROM measurement
-                        WHERE timestamp >= %(next_day_start)s
-                        ORDER BY timestamp ASC
-                        LIMIT 1
-                    )
-                ) AS combined
-                ORDER BY timestamp ASC
-            """
+                    SELECT *
+                    FROM ((SELECT *
+                           FROM measurement
+                           WHERE timestamp < %(day_start)s
+                           ORDER BY timestamp DESC
+                               LIMIT 1)
+                          UNION ALL
+                          (SELECT *
+                           FROM measurement
+                           WHERE timestamp >= %(day_start)s
+                             AND timestamp
+                               < %(next_day_start)s)
+                          UNION ALL
+                          (SELECT *
+                           FROM measurement
+                           WHERE timestamp >= %(next_day_start)s
+                           ORDER BY timestamp ASC
+                               LIMIT 1)) AS combined
+                    ORDER BY timestamp ASC \
+                    """
         else:
             query = """
-                SELECT *
-                FROM measurement
-                WHERE timestamp >= %(day_start)s
-                  AND timestamp < %(next_day_start)s
-                ORDER BY timestamp ASC
-            """
+                    SELECT *
+                    FROM measurement
+                    WHERE timestamp >= %(day_start)s
+                      AND timestamp
+                        < %(next_day_start)s
+                    ORDER BY timestamp ASC \
+                    """
 
         async with self._connection.cursor(row_factory=dict_row) as cur:
             await cur.execute(query, params)
-            rows = await cur.fetchall()
+            rows: list[Row] = await cur.fetchall()
             return [_model_from_dict(row, Measurement) for row in rows]
 
     async def get_latest_measurement(self) -> Measurement | None:
-        """Get the latest measurement (if there is one)."""
-        query = """
-            SELECT *
-            FROM measurement
-            ORDER BY timestamp DESC
-            LIMIT 1
         """
+        Get the latest measurement (if there is one).
+        """
+        query = """
+                SELECT *
+                FROM measurement
+                ORDER BY timestamp DESC
+                    LIMIT 1 \
+                """
         async with self._connection.cursor(row_factory=dict_row) as cur:
             await cur.execute(query)
-            row = await cur.fetchone()
-            return _model_from_dict(row, Measurement) if row is not None else None
+            row: Row | None = await cur.fetchone()
+            if row is None:
+                return None
+            else:
+                return _model_from_dict(row, Measurement)
 
     async def _insert(self, table: str, data: BaseModel) -> None:
         dumped = data.model_dump()
@@ -148,8 +154,10 @@ class SolalaDatabase:
             await cur.execute(query, list(dumped.values()))
 
 
-def _model_from_dict[ModelT: BaseModel](row: dict[str, Any], model_type: type[ModelT]) -> ModelT:
-    """Convert a database row dictionary to a Pydantic object of type `model_type`."""
+def _model_from_dict[ModelT: BaseModel](row: Row, model_type: type[ModelT]) -> ModelT:
+    """
+    Convert a database row dictionary to a Pydantic object of type `model_type`.
+    """
     for field_name, enum_type in _get_enum_fields(model_type):
         raw_val = row.get(field_name)
         if isinstance(raw_val, str):

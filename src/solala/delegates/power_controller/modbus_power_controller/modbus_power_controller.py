@@ -1,5 +1,5 @@
-from contextlib import contextmanager
 from collections.abc import Iterable
+from contextlib import contextmanager
 
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import ModbusError
@@ -8,12 +8,14 @@ from solala.logger import LOGGER
 from solala.registers import RegisterBank, Register, AsyncCallRegister
 from solala.utils.json_extras import JSONDict, JSONValue
 
+
 class _DEFAULT:
     """
     Critical registers and their default values.
     """
     MinRsvPct = 7  # Minimum reserve battery percentage
     WMaxLimPct_RvrtTms = 11  # Control reversion time in seconds
+
 
 # Prefixes used for logging
 _START = '>>>'
@@ -25,6 +27,7 @@ _SMALL_CHANGE_TOLERANCE = 2000  # Watts  Grid power threshold to change to "hunt
 _GAMMA = 0.1  # Hunting method parameter
 
 _INVERTER_LIMIT_NAME: str = 'inverter_limit'
+
 
 class ModbusPowerController(PowerController):
     """

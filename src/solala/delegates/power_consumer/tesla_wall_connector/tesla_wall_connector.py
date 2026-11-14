@@ -11,6 +11,7 @@ from solala.utils.micro_cache import AsyncMicroCache
 
 NAME: str = 'Tesla Wall Charger'
 
+
 class TeslaWallConnector(PowerConsumer):
     """
     Implementation of the CarCharger interface for Tesla Wall Connector.

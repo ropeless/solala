@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Self
 from urllib.parse import quote_plus
 
 from psycopg import AsyncConnection
@@ -116,7 +117,7 @@ class SolalaDatabaseConnections:
     async def close(self) -> None:
         await self._pool.close()
 
-    async def __aenter__(self) -> 'SolalaDatabaseConnections':
+    async def __aenter__(self) -> Self:
         await self.open(wait=True)
         return self
 

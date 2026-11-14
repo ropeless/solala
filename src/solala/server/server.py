@@ -1,6 +1,7 @@
 import asyncio
 import selectors
 from pathlib import Path
+
 import uvicorn
 from fastapi import FastAPI
 
@@ -44,6 +45,7 @@ def run_server(
             runner.run(_async_run_server(host, port, settings_path, settings, force_settings, database_write))
     except KeyboardInterrupt:
         LOGGER.info(f'killed by keyboard interrupt')
+
 
 async def _async_run_server(
         host: str,

@@ -1,6 +1,6 @@
 import asyncio
-from datetime import date, timedelta
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import date, timedelta
 
 from nicegui import ui, events
 from nicegui.element import Element
@@ -170,6 +170,7 @@ class DayNavigator:
                 observe();
             }})();
         """)
+
     def get_elements(self) -> Sequence[Element]:
         """
         What element need a listener to update them

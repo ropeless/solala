@@ -12,6 +12,7 @@ from solala.utils.micro_cache import AsyncMicroCache
 
 API_ENDPOINT = "https://openapi.tuyaeu.com"
 
+
 class TuyaPowerConsumer(PowerConsumer):
 
     def __init__(

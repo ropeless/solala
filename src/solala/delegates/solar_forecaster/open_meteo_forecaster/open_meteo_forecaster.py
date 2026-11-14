@@ -10,6 +10,7 @@ from solala.utils.json_extras import JSONDict
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
 
+
 class OpenMeteoForecaster(SolarForecaster):
     """
     A basic solar forecaster that uses the Open-Meteo API and a simple
@@ -174,6 +175,7 @@ class OpenMeteoForecaster(SolarForecaster):
         ac_watts = max(0.0, min(dc_watts * self._inverter_efficiency, self._inverter_limit))
 
         return ac_watts
+
 
 def _weather(code: int, is_day: bool) -> WeatherCode:
     """

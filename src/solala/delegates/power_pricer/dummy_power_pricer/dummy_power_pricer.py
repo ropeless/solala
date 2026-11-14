@@ -8,6 +8,7 @@ from solala.utils.json_extras import JSONDict
 
 _FIVE_MINUTES: timedelta = timedelta(minutes=5)
 
+
 class DummyPowerPricer(PowerPricer):
     """
     A dummy power pricer for testing and demonstration purposes.
@@ -171,6 +172,7 @@ class DummyPowerPricer(PowerPricer):
 
     def _get_feed_in_price(self, buy_price: float) -> float:
         return buy_price - self.feed_in_price_discount_min - random.random() * self.feed_in_price_discount_range
+
 
 def _average_price(prices: list[Price]) -> Price:
     return Price(

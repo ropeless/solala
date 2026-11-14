@@ -1,6 +1,6 @@
 import re
 
-_ADDRESS_DELIMITERS_PATTERN = re.compile(r"[,;&\\s]+")
+_ADDRESS_DELIMITERS_PATTERN = re.compile(r'[,;&\s]+')
 
 
 def split_addresses(addresses: str) -> list[str]:

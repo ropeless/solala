@@ -126,6 +126,7 @@ type ForecasterConnection = Annotated[
     Field(discriminator='type')
 ]
 
+
 class Settings(BaseModel):
     """
     A class to hold user settings for the control loop.

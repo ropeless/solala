@@ -1,6 +1,6 @@
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, date
-from collections.abc import Callable, Sequence
 from typing import Literal
 
 import requests
@@ -11,12 +11,15 @@ from solala.utils.json_extras import JSONDict, json_str, json_num, json_bool, js
 
 API = 'https://api.amber.com.au/v1'
 
+
 @dataclass
 class _ChannelPair:
     general: JSONDict
     feed_in: JSONDict
 
+
 type _PriceExtract = Callable[[JSONDict], float]
+
 
 class AmberPowerPricer(PowerPricer):
 
@@ -114,17 +117,18 @@ class AmberPowerPricer(PowerPricer):
             raise IOError(f'error accessing Amber prices: {response}')
         return response.json()
 
+
 def _parse_response(response_json: Sequence[JSONDict], price_f: _PriceExtract) -> list[Price]:
     # Parse the response
     parsed: dict[datetime, _ChannelPair] = {}
     for channel in response_json:
-        start_time = _get_datetime(channel['startTime'])
+        start_time = _get_datetime(json_str(channel['startTime']))
         pair = parsed.get(start_time)
         if pair is None:
             pair = _ChannelPair({}, {})
             parsed[start_time] = pair
 
-        channel_type = channel['channelType']
+        channel_type: str = json_str(channel['channelType'])
         if channel_type == 'general':
             if len(pair.general) == 0:
                 pair.general = channel
@@ -141,6 +145,7 @@ def _parse_response(response_json: Sequence[JSONDict], price_f: _PriceExtract) -
         for start_time, pair in sorted(parsed.items())
     ]
     return result
+
 
 def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _PriceExtract) -> Price:
     general: JSONDict = channel_pair.general
@@ -168,17 +173,21 @@ def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _Pric
         tariff_demand_window=json_bool(tariff_info['demandWindow']),
     )
 
+
 def _get_no_price(_: JSONDict) -> float:
     return 0.0
 
+
 def _get_perKwh(data: JSONDict) -> float:
     return json_num(data['perKwh'])
+
 
 def _get_predicted(data: JSONDict) -> float:
     try:
         return json_num(json_dict(data['advancedPrice'])['predicted'])
     except (KeyError, ValueError, TypeError):
         return _get_perKwh(data)
+
 
 def _get_datetime(date_str: str) -> datetime:
     return datetime.fromisoformat(date_str).astimezone()

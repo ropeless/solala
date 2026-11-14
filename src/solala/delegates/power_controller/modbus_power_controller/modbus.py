@@ -1,5 +1,5 @@
-from dataclasses import dataclass
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 
 from pymodbus.client import ModbusTcpClient
 
@@ -10,10 +10,12 @@ from solala.delegates.power_controller.modbus_power_controller.modbus_registers 
 from solala.logger import LOGGER
 from solala.registers import Register, RegisterValue, RegisterBank
 
+
 @dataclass
 class ModbusDevice:
     client: ModbusTcpClient
     device_id: int
+
 
 class ModbusRegister(Register):
 
@@ -28,7 +30,9 @@ class ModbusRegister(Register):
     async def _set(self, value: RegisterValue) -> None:
         return self._access.set(self._context, value)
 
+
 type ModbusDevices = Mapping[str | None, ModbusDevice]
+
 
 class Modbus(RegisterBank):
     """
@@ -168,6 +172,7 @@ class Modbus(RegisterBank):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+
 def _find_devices(client: ModbusTcpClient) -> Iterable[int]:
     address = 40000
     for device_id in range(1, 256):
@@ -179,6 +184,7 @@ def _find_devices(client: ModbusTcpClient) -> Iterable[int]:
             # Not `SunS`
             continue
         yield device_id
+
 
 def _find_model_offsets(client: ModbusTcpClient, device_id: int) -> dict[MODBUS_MODEL, int]:
     result: dict[MODBUS_MODEL, int] = {

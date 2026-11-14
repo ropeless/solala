@@ -4,6 +4,7 @@ from solala.delegates.power_controller.power_controller import PowerController, 
 from solala.registers import RegisterBank, CallRegister
 from solala.utils.datetime_extras import now
 
+
 class BatteryMode(Enum):
     ENABLE = auto()
     DISABLE = auto()
@@ -12,10 +13,12 @@ class BatteryMode(Enum):
     CHARGE_ONLY = auto()
     DISCHARGE_ONLY = auto()
 
+
 class InverterMode(Enum):
     ENABLE = auto()
     DISABLE = auto()
     ZERO_EXPORT = auto()
+
 
 class DummyPowerController(PowerController):
     """

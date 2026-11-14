@@ -7,6 +7,7 @@ from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.datetime_extras import ensure_date, date_to_datetime
 from solala.utils.json_extras import JSONDict
 
+
 class DummySolarForecaster(SolarForecaster):
     def __init__(self, panel_capacity: float, inverter_limit: float):
         self.panel_capacity: float = panel_capacity

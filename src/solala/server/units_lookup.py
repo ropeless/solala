@@ -50,5 +50,3 @@ CONNECTION_UNITS: Mapping[str, str] = {
     'panel_temperature_coefficient': Units.CELSIUS,
     'inverter_limit': Units.WATTS,
 }
-
-

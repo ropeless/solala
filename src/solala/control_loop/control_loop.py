@@ -8,7 +8,7 @@ from datetime import datetime, UTC, timedelta, date
 from inspect import getmembers
 from pathlib import Path
 from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
-from typing import get_type_hints
+from typing import get_type_hints, Type
 
 from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
@@ -467,7 +467,7 @@ async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> d
     Get the values of registers, optionally limited to names that match a pattern.
     """
     registers: RegisterBank = _CONTROL_STATE.registers  # no need to lock as RegisterBank is stable.
-    if isinstance(match, re.Pattern[str]):
+    if isinstance(match, re.Pattern):
         return {
             name: await registers.get(name)
             for name in registers.keys()
