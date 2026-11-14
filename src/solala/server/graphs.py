@@ -1,7 +1,3 @@
-"""
-Construct and update NiceGUI ECharts for Solala measurements and forecasts.
-"""
-
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,13 +18,15 @@ DASHED = [3, 3]
 @dataclass
 class SeriesData:
     """
-    Hold coindexed chart series and an optional demand-window interval.
+    Hold chart series and an optional demand-window interval.
+    The series are coindexed with their corresponding definitions in the NiceGui EChart.
+    The data points of each series are coindexed with the x-axis timestamps.
 
     Attributes:
         data: One sequence of graph values for each configured chart series.
         demand_window: Optional interval to highlight on the chart.
     """
-    data: Sequence[list[float] | list[int]]
+    data: Sequence[list[float | int]]
     demand_window: tuple[datetime, datetime] | None = None
 
 
@@ -39,6 +37,7 @@ class SolalaChart(ABC):
     Subclasses define their series configuration and implement
     `_get_series_data()` to supply values in the same series order.
     """
+
     def __init__(
             self,
             name: str,
@@ -222,7 +221,7 @@ class PriceChart(SolalaChart):
 
 class ChargeChart(SolalaChart):
     """
-    Display battery state of charge as a percentage.
+    Plot battery state of charge as a percentage.
     """
     def __init__(self, colours: Colours) -> None:
         super().__init__(
@@ -277,7 +276,7 @@ def _create_series(
         area_alpha: float = 0.1,
 ) -> JSONDict:
     """
-    Create an ECharts line series with optional area fill.
+    Create an EChart line series with optional area fill.
     """
     options: dict[str, JSONValue] = {
         'name': name,
@@ -327,7 +326,7 @@ def _graph_tooltip(units: str) -> JSONDict:
 
 def _grid(legend_space: bool) -> JSONDict:
     """
-    Configure chart margins, allowing extra top space for a legend.
+    Configure chart margins, optionally allowing extra top space for a legend.
     """
     return {
         'left': 0,
@@ -340,7 +339,7 @@ def _grid(legend_space: bool) -> JSONDict:
 
 def _legend() -> JSONDict:
     """
-    Configure the horizontal chart legend.
+    Configure a horizontal chart legend.
     """
     return {
         'type': 'plain',
@@ -359,7 +358,7 @@ def _legend() -> JSONDict:
 
 def _x_axis() -> JSONDict:
     """
-    Configure the category axis used for formatted time labels.
+    Configure a category axis used for formatted time labels.
     """
     return {
         'type': 'category',
