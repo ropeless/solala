@@ -6,8 +6,10 @@ class WeatherCode(Enum):
     Weather conditions represented in Solala solar forecasts.
     """
 
-    # Night and clear conditions.
+    # Night (generally uninteresting to solar forecasting).
     NIGHT = auto()
+
+    # Clear conditions.
     CLEAR_DAY = auto()
 
     # Cloud cover.
