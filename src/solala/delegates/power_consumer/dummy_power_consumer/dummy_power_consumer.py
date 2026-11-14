@@ -3,6 +3,12 @@ from solala.registers import RegisterBank, CallRegister
 
 
 class DummyPowerConsumer(PowerConsumer):
+    """
+    Simulated power consumer with configurable electrical status.
+
+    The public `status` attribute can be replaced after construction to update
+    the voltage, current, and power reported by the consumer.
+    """
 
     def __init__(
             self,
@@ -10,6 +16,18 @@ class DummyPowerConsumer(PowerConsumer):
             current: float = 0,
             power: float | None = None,
     ) -> None:
+        """
+        Initialise the simulated consumer.
+
+        Args:
+            voltage: Supply voltage in volts.
+            current: Current draw in amperes.
+            power: Active power in watts. Defaults to voltage multiplied by
+                current when omitted.
+
+        Raises:
+            ValueError: If power exceeds voltage multiplied by current.
+        """
         if power is None:
             power = voltage * current
         if power > voltage * current:
