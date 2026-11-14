@@ -1,11 +1,12 @@
 from functools import partial
+
+import httpx
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.logger import LOGGER
 from solala.registers import RegisterBank, check_type, RegisterType, \
     AsyncCallRegister, RegisterValue, check_value
-from solala.utils.httpx_extras import async_get
 from solala.utils.json_extras import JSONDict, json_dict, json_num
 from solala.utils.micro_cache import AsyncMicroCache
 
@@ -33,6 +34,7 @@ class TeslaWallConnector(PowerConsumer):
         """
         # noinspection HttpUrlsUsage
         self._api = f'http://{host}/api/1/'
+        self._client = httpx.AsyncClient()
         self._connection_info = {
             'connection': 'Tesla Wall Connector',
             'host': host,
@@ -70,7 +72,7 @@ class TeslaWallConnector(PowerConsumer):
         return self._connection_info
 
     async def close(self) -> None:
-        pass
+        await self._client.aclose()
 
     async def _get_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
         """
@@ -112,7 +114,7 @@ class TeslaWallConnector(PowerConsumer):
         """
         try:
             url = self._api + 'vitals'
-            response = await async_get(url)
+            response = await self._client.get(url)
             return json_dict(response.json())
         except Exception as err:
             LOGGER.error(f'{self.__class__.__name__} {self._connection_info["host"]!r}: {err!r}')
