@@ -409,9 +409,10 @@ async def get_settings() -> Settings:
 async def add_control_loop_listener(listener: LoopListener) -> None:
     """
     Register a listener for control loop iterations, moving an existing listener to the end.
+    Registering the same listener multiple times causes no problems.
 
     Args:
-        listener: Listener to register.
+        listener: Listener to be updated each control loop iteration.
     """
     async with _control_state() as state:
         try:
@@ -424,6 +425,7 @@ async def add_control_loop_listener(listener: LoopListener) -> None:
 async def remove_control_loop_listener(listener: LoopListener) -> None:
     """
     Unregister a control loop listener, if present.
+    No error is raised if the listener is not registers.
 
     Args:
         listener: Listener to unregister.
@@ -437,10 +439,11 @@ async def remove_control_loop_listener(listener: LoopListener) -> None:
 
 async def add_database_loop_listener(listener: LoopListener) -> None:
     """
-    Register a listener for database loop iterations, moving an existing listener to the end.
+    Register a listener for database loop iterations.
+    Registering the same listener multiple times causes no problems.
 
     Args:
-        listener: Listener to register.
+        listener: Listener to be updated each database loop iteration.
     """
     async with _control_state() as state:
         try:
@@ -453,6 +456,7 @@ async def add_database_loop_listener(listener: LoopListener) -> None:
 async def remove_database_loop_listener(listener: LoopListener) -> None:
     """
     Unregister a database loop listener, if present.
+    No error is raised if the listener is not registers.
 
     Args:
         listener: Listener to unregister.
@@ -482,7 +486,9 @@ async def get_prev_control_mode() -> ControlMode:
 
 async def get_power_status() -> PowerStatus:
     """
-    Get the cached power status, fetching it from the controller if invalidated.
+    Get the power status.
+    If a valid cache exists of the power status, the cased value is returned
+    otherwise power status is obtained (and cached) it from the power controller.
 
     Returns:
         The current cached status, or the default status if no controller is connected.
@@ -501,6 +507,12 @@ async def get_power_status() -> PowerStatus:
 async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> dict[str, RegisterValue | None]:
     """
     Get the values of registers, optionally limited to names that match a pattern.
+
+    Args:
+        match: either a compiled regular expression or collection of register names.
+
+    Returns:
+         a dicitonary of register name to register value.
     """
     registers: RegisterBank = _CONTROL_STATE.registers  # no need to lock as RegisterBank is stable.
     if isinstance(match, re.Pattern):
@@ -557,6 +569,13 @@ async def get_price_now_no_estimate(max_tries: int = 10) -> Price:
 
     The returned price may be an estimate if the pricer is not available or could not
     provide a non-estimate price within the given number of tries.
+
+    Args:
+        max_tries: the maximum number of attempts should the pricer return a price estimate.
+
+    Returns:
+        A price for the current time. The returned price may still be an estimate if
+        `max_tries` was exhausted.
     """
     price: Price = await get_price_now()
     max_tries -= 1
@@ -638,10 +657,10 @@ async def get_price_forecast() -> Sequence[Price]:
 
 async def get_consumers_status() -> dict[str, ConsumerStatus]:
     """
-    Get the electrical status of each connected power consumer.
+    Get the status of each registered power consumer.
 
     Returns:
-        A mapping from consumer names to their electrical status.
+        A mapping from each consumer name to its status.
     """
     async with _control_state() as state:
         names = state.consumers.keys()
@@ -654,7 +673,7 @@ async def get_consumers_status() -> dict[str, ConsumerStatus]:
 
 async def get_connection_info() -> JSONDict:
     """
-    Get connection information for the configured system delegates.
+    Get connection information for the configured system delegates and the database.
 
     Returns:
         A JSON-compatible dictionary of connection information.
@@ -673,7 +692,7 @@ async def get_connection_info() -> JSONDict:
 
 async def get_status() -> JSONDict:
     """
-    Take a snapshot of the current status.
+    Take a snapshot of the current overall status, as a JSON dictionary.
     """
     control_mode: ControlMode
     power_status: PowerStatus
@@ -708,7 +727,7 @@ async def get_status() -> JSONDict:
 
 async def get_solar_forecast(day: date) -> DailySolarForecast:
     """
-    Get the forecast solar power.
+    Get the daily forecast for solar power, for the given date.
     """
     async with _control_state() as state:
         forecaster = state.forecaster
@@ -767,14 +786,6 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
     await database_connections.open(wait=False)
     db: SolalaDatabase = await database_connections.get_db()
 
-    # DEBUG
-    LOGGER.debug('{_LOG_SRC}Obtained DB connection from pool')
-    stats = database_connections.get_stats()
-    LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
-    LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
-    LOGGER.debug(f'{_LOG_SRC}Waiting:   {stats["requests_waiting"]}')
-    LOGGER.debug(f'{_LOG_SRC}Requests:  {stats["requests_waiting"]}')
-
     # Release the control state lock, then provide the database connection
     try:
         yield db
@@ -785,7 +796,8 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
             if database_connections is not state.database_connections:
                 raise ConnectionError('Database pool closed while in use')
             await database_connections.put_db(db, commit_on_close)
-        LOGGER.debug('{_LOG_SRC}Returned DB connection to pool')
+
+        # DEBUG
         stats = database_connections.get_stats()
         LOGGER.debug(f'{_LOG_SRC}Pool size: {stats["pool_size"]}')
         LOGGER.debug(f'{_LOG_SRC}Available: {stats["pool_available"]}')
@@ -795,7 +807,8 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
     """
-    Read measurements for a day, returning an empty sequence on connection errors.
+    Read measurements for a day, returning an empty sequence
+    if there are no measurement available for the given day.
 
     Args:
         day: Local date for which to retrieve measurements.
@@ -825,10 +838,10 @@ async def set_control(
         stop_charge_price_threshold: float | None = None,
 ) -> None:
     """
-    Set the control loop modes, policies, and price thresholds.
+    Set the control loop modes, policies, and policy parameters.
 
-    Parameters left as None retain their current values. Export and charge
-    thresholds must each be ordered to provide hysteresis.
+    Parameters left as None retain their current values.
+    Export and charge thresholds should each be ordered to provide hysteresis.
 
     Args:
         battery_mode: Requested battery operating mode.
@@ -878,17 +891,21 @@ async def set_control(
         LOGGER.info(f'{_LOG_SRC}Control: {json.dumps(state.control_mode.to_json())}')
 
 
-async def log_registers(match: str | None) -> None:
+async def log_registers(match: str | re.Pattern[str] | None) -> None:
     """
     Select registers to log to the database.
 
     Args:
         match: Regular expression matching register names, or None to disable logging.
+            Use `MATCH_ALL` to match all registers.
     """
     async with _control_state() as state:
         if match is None:
             state.registers_to_log = None
             state.registers_to_log_str = None
+        elif isinstance(match, re.Pattern):
+            state.registers_to_log = match
+            state.registers_to_log_str = match.pattern
         else:
             state.registers_to_log = re.compile(match)
             state.registers_to_log_str = match
