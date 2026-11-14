@@ -340,7 +340,7 @@ class RegisterBank:
         if got is _NONE:
             return default
         else:
-            assert type(got) is Register
+            assert isinstance(got, Register)
             return await got.get()
 
     async def set(self, key: str, value: RegisterValue) -> None:
@@ -360,5 +360,5 @@ class RegisterBank:
         if got is _NONE:
             raise KeyError(key)
         else:
-            assert type(got) is Register
+            assert isinstance(got, Register)
             await got.set(value)
