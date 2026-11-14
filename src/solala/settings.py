@@ -152,10 +152,3 @@ class Settings(BaseModel):
     stop_charge_price_threshold: float | None = None
 
     registers_to_log: str | None = None
-
-
-def consumers(**kwargs: ConsumerConnection) -> dict[str, ConsumerConnection]:
-    """
-    Helper to keep type inference tidy.
-    """
-    return kwargs

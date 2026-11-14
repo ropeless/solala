@@ -2,28 +2,29 @@ from solala.utils.local_config_help import config
 from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
-    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, consumers, TuyaConnection
+    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, TuyaConnection, ConsumerConnection
 from solala_demo.log import configure_logger
 
 
 def main():
     configure_logger(level=config.APP_LOG_LEVEL)
 
-    # Optional initial control loop parameters.
-    # These will be used if the settings file cannot be loaded or force_settings is True.
-    settings = Settings(
+    consumers: dict[str, ConsumerConnection] = {}
+    tesla_charger: str | None = config.get('TESLA_WALL_CONNECTOR_ADDR')
+    if tesla_charger:
+        consumers['tesla_charger'] = TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR)
+    outlet_charger: str | None = config.get('POWER_POINT_DEVICE')
+    if outlet_charger:
+        consumers['outlet_charger'] = TuyaConnection(
+            access_id=config.POWER_POINT_ACCESS_ID,
+            access_secret=config.POWER_POINT_ACCESS_SECRET,
+            device_id=config.POWER_POINT_DEVICE,
+        )
 
+    settings = Settings(
         controller=ModbusControllerConnection(address=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}'),
         pricer=AmberPricerConnection(api_token=config.AMBER_API_TOKEN, nmi=config.NMI),
-        consumers=consumers(
-            tesla_charger=TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR),
-            outlet_charger=TuyaConnection(
-                access_id=config.POWER_POINT_ACCESS_ID,
-                access_secret=config.POWER_POINT_ACCESS_SECRET,
-                device_id=config.POWER_POINT_DEVICE,
-            ),
-        ),
-
+        consumers=consumers,
         forecaster=OpenMeteoConnection(
             latitude=config.LATITUDE,
             longitude=config.LONGITUDE,
@@ -34,7 +35,6 @@ def main():
             inverter_limit=config.INVERTER_LIMIT,
             inverter_efficiency=config.INVERTER_EFFICIENCY,
         ),
-
         database=DatabaseConnection(
             role=config.DATABASE_APP_ROLE,
             password=config.DATABASE_APP_PASSWORD,
