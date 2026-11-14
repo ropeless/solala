@@ -400,6 +400,7 @@ class ModbusPowerController(PowerController):
             yield
         except Exception as err:
             LOGGER.error(err)
+            raise
         finally:
             LOGGER.info(f'{_STOP} {name}')
             self._log_set_get = previous
