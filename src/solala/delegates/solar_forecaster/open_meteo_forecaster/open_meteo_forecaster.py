@@ -15,8 +15,7 @@ class OpenMeteoForecaster(SolarForecaster):
     """
     Solar forecaster that retrieves hourly weather and irradiance forecasts
     from the Open-Meteo API and estimates solar power output using the panel
-    and inverter characteristics. API timestamps are converted from UTC to
-    the local timezone.
+    and inverter characteristics.
     """
 
     def __init__(
@@ -32,12 +31,12 @@ class OpenMeteoForecaster(SolarForecaster):
             inverter_efficiency: float = DEFAULT_INVERTER_EFFICIENCY,
     ) -> None:
         """
-        Initialise the Open-Meteo solar forecaster.
+        Initialise an Open-Meteo solar forecaster.
 
         Args:
             latitude: Latitude of the location in decimal degrees.
             longitude: Longitude of the location in decimal degrees.
-            panel_orientation: Panel orientation in degrees, as expected by the Open-Meteo API.
+            panel_orientation: Panel orientation in degrees relative to true North.
             panel_tilt: Panel tilt from horizontal in degrees.
             panel_capacity: Capacity of the solar panels in W.
             panel_temperature_coefficient: Panel temperature coefficient in 1/°C.
@@ -54,13 +53,10 @@ class OpenMeteoForecaster(SolarForecaster):
         self._panel_temperature_coefficient = panel_temperature_coefficient
 
     async def get_forecast(self, day: date) -> DailySolarForecast:
-        """
-        Retrieve an hourly forecast for the requested local date.
+        # Forecast data is requested from the Open-Meteo API using UTC
+        # timestamps, which are converted to the local timezone before
+        # selecting the requested day.
 
-        Forecast data is requested from the Open-Meteo API using UTC
-        timestamps, which are converted to the local timezone before
-        selecting the requested day.
-        """
         day: date = ensure_date(day)
         start_date = day - timedelta(days=1)
         end_date = day + timedelta(days=1)
@@ -133,13 +129,6 @@ class OpenMeteoForecaster(SolarForecaster):
         return DailySolarForecast(forecasts)
 
     def get_connection_info(self) -> JSONDict:
-        """
-        Return the Open-Meteo connection and solar system configuration.
-
-        Returns:
-            A dictionary containing the connection name, location, panel
-            configuration, and inverter configuration.
-        """
         return {
             'connection': 'Open-Meteo',
             'latitude': self._latitude,
