@@ -248,7 +248,7 @@ def _to_json(
     return result
 
 
-def _ignore(value: object) -> bool:
+def _ignore(value: Any) -> bool:
     """
     These value types cause problems.
     """
