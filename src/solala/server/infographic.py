@@ -12,7 +12,7 @@ CLICK_ID_SUN = 'click_sun'
 CLICK_ID_GRID = 'click_grid'
 CLICK_ID_HOME = 'click_home'
 CLICK_ID_BATTERY = 'click_battery'
-CLICK_ID_INVERTER = 'click_battery'
+CLICK_ID_INVERTER = 'click_inverter'
 
 LINE_SPACE = 20
 ICON_OFFSET = 50
