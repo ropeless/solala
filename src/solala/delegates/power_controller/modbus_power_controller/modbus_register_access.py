@@ -331,7 +331,7 @@ class RegisterAccessStr(RegisterAccess):
         Initialise string register access.
 
         Args:
-            addr: Relative address of the first register.
+            addr: Relative address of the first register (relative to the SunSpec model start, counting from one).
             count: Number of 16-bit registers occupied by the string.
         """
         super().__init__(register_type=str, writable=False)

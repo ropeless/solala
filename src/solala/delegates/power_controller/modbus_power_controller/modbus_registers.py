@@ -1,9 +1,9 @@
 """
 SunSpec model definitions and register access layouts used by the Modbus controller.
 
-MODELS maps SunSpec model IDs to their named register definitions. Register
-addresses are relative to the start of each model, and each definition specifies
-the register's data type, scaling, and write permissions.
+MODELS maps each SunSpec model ID to it's named register definitions. Register
+addresses are relative to the start of each model (counting from one). Each definition
+specifies the register's data type, optional scaling, and write permissions.
 """
 
 from collections.abc import Iterator, Mapping
@@ -126,10 +126,10 @@ def mppt_modules(number_of_modules: int) -> Iterator[tuple[str, RegisterAccess]]
     Each module occupies a 20-register block in the MPPT model.
 
     Args:
-        number_of_modules: Number of MPPT modules reported by the device.
+        number_of_modules: Number of MPPT modules (as reported by the device).
 
     Yields:
-        Pairs of register names and their access definitions for each module.
+        Pairs (register_name, access) definitions for each module.
     """
     for i in range(number_of_modules):
         module_id = i + 1
