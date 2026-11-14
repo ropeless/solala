@@ -1,11 +1,10 @@
-from abc import ABC, abstractmethod
+from typing import Protocol
 
 
-class LoopListener(ABC):
+class LoopListener(Protocol):
     """
-    Abstract base class for listeners that want to be notified each loop iteration.
+    Protocol for listeners that are notified on each control loop iteration.
     """
 
-    @abstractmethod
     async def update(self) -> None:
         ...
