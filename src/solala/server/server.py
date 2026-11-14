@@ -1,3 +1,7 @@
+"""
+Start the Solala web server and control loop on a configured event loop.
+"""
+
 import asyncio
 import selectors
 from pathlib import Path
@@ -22,23 +26,20 @@ def run_server(
         database_write: bool = True,
 ) -> None:
     """
-    Run the server in the current thread.
-    Spawns a thread for the control loop.
+    Run the web server and control loop in the current thread.
+
+    Both coroutines run concurrently on the same asyncio event loop, created
+    using a selector-based loop factory.
 
     Args:
         host: Host address to bind the server to.
         port: Port to bind the server to.
-
-        settings_path: Path to the settings file, if settings are to be persisted. If provided, the control
-            loop will attempt to load settings from the file.
-
-        settings: Settings object to use if the settings file cannot be loaded.
-
-        force_settings: If True, the given settings object will always override any settings loaded from the file.
-            Note that if settings are provided, they will override any settings loaded from the file. This includes
-            modes and policies if the power controller is reloaded.
-
-        database_write: If False, the control loop will not write to the database. This is useful for testing.
+        settings_path: Optional settings file path used by the control loop.
+        settings: Optional settings supplied to the control loop.
+        force_settings: Whether to force the supplied settings rather than
+            using values loaded from the settings file.
+        database_write: Whether the control loop writes measurements to the
+            database. Disabling writes is useful for testing.
     """
     try:
         with asyncio.Runner(loop_factory=_loop_factory) as runner:
@@ -55,6 +56,17 @@ async def _async_run_server(
         force_settings: bool = False,
         database_write: bool = True,
 ) -> None:
+    """
+    Initialise NiceGUI and run the HTTP server alongside the control loop.
+
+    Args:
+        host: Network interface or address to bind.
+        port: HTTP listening port.
+        settings_path: Optional settings file path for the control loop.
+        settings: Optional control-loop settings.
+        force_settings: Whether supplied settings override loaded settings.
+        database_write: Whether to persist measurements to the database.
+    """
     app = FastAPI()
     favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
     ui.run_with(app, title=Constants.APP_NAME, favicon=favicon)
@@ -75,4 +87,10 @@ async def _async_run_server(
 
 
 def _loop_factory() -> asyncio.AbstractEventLoop:
+    """
+    Create a selector-based asyncio event loop for the server.
+
+    Returns:
+        A new selector event loop.
+    """
     return asyncio.SelectorEventLoop(selectors.SelectSelector())
