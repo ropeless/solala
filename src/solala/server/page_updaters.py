@@ -275,6 +275,7 @@ class PriceForecastUpdater(LoopListener):
 
     The table is rebuilt when the forecast sequence object changes.
     """
+
     def __init__(self, element: ui.element) -> None:
         super().__init__()
         self._prev: Sequence[Price] | None = None
