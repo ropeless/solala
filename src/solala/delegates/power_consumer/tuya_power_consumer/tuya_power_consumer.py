@@ -47,6 +47,7 @@ class TuyaPowerConsumer(PowerConsumer):
         self._connection_info: JSONDict = {
             'connection': 'Tuya',
             'access_id': access_id,
+            'device_id': device_id,
             'voltage_scale_factor': self._voltage_scale_factor,
             'current_scale_factor': self._current_scale_factor,
             'power_scale_factor': self._power_scale_factor,
