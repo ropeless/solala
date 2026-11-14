@@ -73,9 +73,6 @@ class GraphingInterpolator:
     def battery_charge(self) -> list[float]:
         values = [m.battery_charge for m in self._measurements]
         return self._interpolate_linear(self._ts_m, values)
-        """
-        Interpolate onto the daily time grid using straight-line segments.
-        """
 
     @property
     def accumulated_solar_energy(self) -> list[float]:
@@ -150,9 +147,6 @@ class GraphingInterpolator:
     def buy_price(self) -> list[float]:
         values = [m.buy_price for m in self._measurements]
         return self._interpolate_nearest(self._ts_m, values)
-        """
-        Sample values at the nearest source timestamp.
-        """
 
     @property
     def feed_in_price(self) -> list[float]:
@@ -173,9 +167,6 @@ class GraphingInterpolator:
     def forecast_solar_power(self) -> list[float]:
         values = [forecast.power / 1000 for forecast in self._solar_forecast]
         return _ensure_non_negative(self._interpolate_cubic(self._ts_s, values, left=0, right=0))
-        """
-        Interpolate onto the daily time grid using a cubic spline.
-        """
 
     @property
     def forecast_accumulated_solar_energy(self) -> list[float]:
@@ -235,6 +226,9 @@ class GraphingInterpolator:
             left: float | None = np.nan,
             right: float | None = np.nan,
     ) -> list[float]:
+        """
+        Interpolate onto the daily time grid using straight-line segments.
+        """
         if len(values) == 0:
             return []
         y_values = np.array(values)
@@ -248,6 +242,9 @@ class GraphingInterpolator:
             left: float | None = np.nan,
             right: float | None = np.nan,
     ) -> list[float]:
+        """
+        Interpolate onto the daily time grid using a cubic spline.
+        """
         if len(values) == 0:
             return []
 
@@ -279,6 +276,9 @@ class GraphingInterpolator:
             left: float | None = np.nan,
             right: float | None = np.nan,
     ) -> list[float]:
+        """
+        Sample values at the nearest source timestamp.
+        """
         if len(values) == 0:
             return []
 
@@ -365,8 +365,8 @@ def _accumulate(data: Iterable[float]) -> list[float]:
 def _diff(data: list[float], times: Sequence[datetime]) -> list[float]:
     """
     Convert successive energy differences to hourly rates in place.
-    
-        The last output value is NaN because no following timestamp is available.
+
+    The last output value is NaN because no following timestamp is available.
     """
     end = len(data) - 1
     for i in range(end):
