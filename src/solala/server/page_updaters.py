@@ -117,10 +117,10 @@ class InverterButtonUpdater(StatusListener):
         def on_props(_on: str) -> str:
             return 'color=blue dense' if inverter_button == _on else 'color=grey dense'
 
-        self.inverter_enable.props(on_props('ENABLE'))
-        self.inverter_disable.props(on_props('DISABLE'))
-        self.inverter_zero_export.props(on_props('ZERO_EXPORT'))
-        self.inverter_neg_feed_in_zero_export.props(on_props('NEG_FEED_IN_ZERO_EXPORT'))
+        self.inverter_enable.props(on_props(InverterMode.ENABLE.name))
+        self.inverter_disable.props(on_props(InverterMode.DISABLE.name))
+        self.inverter_zero_export.props(on_props(InverterMode.ZERO_EXPORT.name))
+        self.inverter_neg_feed_in_zero_export.props(on_props(InverterPolicy.NEG_FEED_IN_ZERO_EXPORT.name))
 
 
 class BatteryButtonUpdater(StatusListener):
@@ -200,13 +200,13 @@ class BatteryButtonUpdater(StatusListener):
         def on_props(_on: str) -> str:
             return 'color=blue dense' if battery_button == _on else 'color=grey dense'
 
-        self.battery_enable.props(on_props('ENABLE'))
-        self.battery_disable.props(on_props('DISABLE'))
-        self.battery_force_charge.props(on_props('FORCE_CHARGE'))
-        self.battery_force_discharge.props(on_props('FORCE_DISCHARGE'))
-        self.battery_charge_only.props(on_props('CHARGE_ONLY'))
-        self.battery_discharge_only.props(on_props('DISCHARGE_ONLY'))
-        self.battery_cheap_force_charge.props(on_props('CHEAP_FORCE_DISCHARGE'))
+        self.battery_enable.props(on_props(BatteryMode.ENABLE.name))
+        self.battery_disable.props(on_props(BatteryMode.DISABLE.name))
+        self.battery_force_charge.props(on_props(BatteryMode.FORCE_CHARGE.name))
+        self.battery_force_discharge.props(on_props(BatteryMode.FORCE_DISCHARGE.name))
+        self.battery_charge_only.props(on_props(BatteryMode.CHARGE_ONLY.name))
+        self.battery_discharge_only.props(on_props(BatteryMode.DISCHARGE_ONLY.name))
+        self.battery_cheap_force_charge.props(on_props(BatteryPolicy.CHEAP_CHARGE.name))
 
 
 class StatusUpdater(StatusListener):
