@@ -315,6 +315,9 @@ class ModbusPowerController(PowerController):
             abs_grid_power = abs(grid_power)
             # Account for existing output if the inverter is oversupplying.
             max_power = max(max_power, cur_power)
+            if max_power <= 0:
+                LOGGER.warning('cannot adjust zero-export limit: inverter power capacity is zero')
+                return
 
             if abs_grid_power < _POWER_CHANGE_TOLERANCE:
                 # Not worth changing power settings
