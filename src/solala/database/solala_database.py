@@ -16,6 +16,12 @@ type Row = dict[str, Any]
 
 
 class SolalaDatabase:
+    """
+    Provide asynchronous access to Solala measurements and register history.
+
+    The instance holds a database connection until it is transferred to its
+    owner or released. Measurement model enum fields are stored by member name.
+    """
     def __init__(self, connection: AsyncConnection) -> None:
         self.__connection: AsyncConnection | None = connection
 
@@ -27,11 +33,26 @@ class SolalaDatabase:
         return connection
 
     def _take_connection(self) -> AsyncConnection:
+        """
+        Transfer ownership of the connection out of this database wrapper.
+
+        Returns:
+            The underlying database connection.
+
+        Raises:
+            RuntimeError: If the connection has already been transferred.
+        """
         connection = self._connection
         self.__connection = None
         return connection
 
     async def insert_measurement(self, measurement: Measurement) -> None:
+        """
+        Store a power-system measurement.
+
+        Args:
+            measurement: Measurement to insert.
+        """
         await self._insert('measurement', measurement)
 
     async def insert_registers_numeric(
@@ -41,6 +62,12 @@ class SolalaDatabase:
     ) -> None:
         """
         Insert numeric register values into the database.
+
+        All values share the supplied timestamp. An empty mapping is ignored.
+
+        Args:
+            timestamp: Time associated with the register readings.
+            registers: Register names mapped to numeric values.
         """
         if not registers:
             return
@@ -64,6 +91,12 @@ class SolalaDatabase:
     ) -> None:
         """
         Insert text register values into the database.
+
+        All values share the supplied timestamp. An empty mapping is ignored.
+
+        Args:
+            timestamp: Time associated with the register readings.
+            registers: Register names mapped to text values.
         """
         if not registers:
             return
@@ -86,8 +119,18 @@ class SolalaDatabase:
             include_boundaries: bool = True,
     ) -> Sequence[Measurement]:
         """
-        Get the measurements for a given day. Optionally include the boundary
-        measurements of the previous and next days to support interpolation.
+        Retrieve measurements for a day in ascending timestamp order.
+
+        Optionally include the nearest measurement before the day and the
+        nearest measurement on or after the next day's start, to support
+        interpolation at the day boundaries.
+
+        Args:
+            day: Date for which measurements are requested.
+            include_boundaries: Whether to include the surrounding measurements.
+
+        Returns:
+            Measurements in timestamp order, or an empty sequence if none exist.
         """
         day_start = datetime.combine(day, time.min)
         next_day_start = day_start + timedelta(days=1)
@@ -137,7 +180,10 @@ class SolalaDatabase:
 
     async def get_latest_measurement(self) -> Measurement | None:
         """
-        Get the latest measurement (if there is one).
+        Retrieve the most recent measurement by timestamp.
+
+        Returns:
+            The latest measurement, or None if the database contains none.
         """
         query = """
             SELECT *
@@ -154,6 +200,15 @@ class SolalaDatabase:
                 return _model_from_dict(row, Measurement)
 
     async def _insert(self, table: str, data: BaseModel) -> None:
+        """
+        Insert a Pydantic model into a table using its field names as columns.
+
+        Enum fields are stored by member name for later reconstruction.
+
+        Args:
+            table: Destination database table.
+            data: Model containing the values to insert.
+        """
         dumped = data.model_dump()
         # Store enums by member name to match _model_from_dict deserialization
         for field_name, _ in _get_enum_fields(type(data)):
@@ -173,7 +228,17 @@ class SolalaDatabase:
 
 def _model_from_dict[ModelT: BaseModel](row: Row, model_type: type[ModelT]) -> ModelT:
     """
-    Convert a database row dictionary to a Pydantic object of type `model_type`.
+    Validate a database row as a Pydantic model.
+
+    Convert enum member names back to enum values before validation. The input
+    dictionary is modified in place for those fields.
+
+    Args:
+        row: Database row keyed by column name.
+        model_type: Pydantic model class to construct.
+
+    Returns:
+        Validated model instance.
     """
     for field_name, enum_type in _get_enum_fields(model_type):
         raw_val = row.get(field_name)
@@ -184,7 +249,15 @@ def _model_from_dict[ModelT: BaseModel](row: Row, model_type: type[ModelT]) -> M
 
 def _get_enum_fields(model_type: type[BaseModel]) -> list[tuple[str, type[Enum]]]:
     """
-    Get all Enum (including Optional[Enum]) fields in the given Pydantic model.
+    Find enum-typed fields in a Pydantic model, including optional enums.
+
+    Results are cached by model class.
+
+    Args:
+        model_type: Pydantic model class to inspect.
+
+    Returns:
+        Pairs of field names and enum classes.
     """
     cached = _ENUM_FIELDS.get(model_type)
     if cached is not None:
