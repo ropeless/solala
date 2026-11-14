@@ -1,11 +1,34 @@
+"""
+Map analytics identifiers and weather conditions to static asset icon paths.
+"""
+
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 
 
 def analytics_name_to_icon_url(analytics_name: str) -> str:
+    """
+    Build the SVG asset URL for an analytics identifier.
+
+    Args:
+        analytics_name: Analytics identifier, converted to lowercase in the path.
+
+    Returns:
+        URL under `/images/analytics-icons/` ending in `.svg`.
+    """
     return f'/images/analytics-icons/{analytics_name.lower()}.svg'
 
 
 def weather_code_to_icon_url(code: WeatherCode, animated: bool = False) -> str | None:
+    """
+    Build the URL of a weather icon asset for a forecast condition.
+
+    Args:
+        code: Weather condition to represent.
+        animated: Use the animated icon directory instead of the static one.
+
+    Returns:
+        SVG asset URL, or None if the weather code has no icon mapping.
+    """
     subdirectory = 'animated' if animated else 'static'
     icon_name: str | None = weather_code_to_icon_name(code)
     if icon_name is None:
@@ -16,8 +39,16 @@ def weather_code_to_icon_url(code: WeatherCode, animated: bool = False) -> str |
 
 def weather_code_to_icon_name(code: WeatherCode) -> str | None:
     """
-    Given a Solala WeatherCode, return the name of the corresponding weather icon
-    as from https://github.com/Makin-Things/weather-icons.
+    Map a Solala weather code to a weather-icons asset name.
+
+    Icon names correspond to the assets from
+    https://github.com/Makin-Things/weather-icons.
+
+    Args:
+        code: Weather condition to look up.
+
+    Returns:
+        Icon name without the `.svg` suffix, or None for an unmapped code.
     """
     match code:
         case WeatherCode.CLEAR_DAY:
