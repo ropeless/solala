@@ -96,7 +96,7 @@ MODELS: Mapping[MODBUS_MODEL, dict[str, RegisterAccess]] = {
         'WchaMax': scaled_uint16(3, _WChaMax_SF, writable=True),
         'WchaGra': scaled_uint16(4, _WChaDisChaGra_SF, writable=True),
         'WdisChaGra': scaled_uint16(5, _WChaDisChaGra_SF, writable=True),
-        'StorCtl_Mod': uint16(6, writable=True),  # 0 or 1
+        'StorCtl_Mod': uint16(6, writable=True),  # Bitmask: 1 = charge limit, 2 = discharge limit
         'MinRsvPct': scaled_uint16(8, _MinRsvPct_SF, writable=True),
         'ChaState': scaled_uint16(9, _ChaState_SF),
         'OutWRte': scaled_int16(13, _InOutWRte_SF, writable=True),
