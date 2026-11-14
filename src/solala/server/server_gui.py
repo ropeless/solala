@@ -42,25 +42,18 @@ _HEAD_HTML = r'''
 '''
 
 
-def _page_header(ext: str = '', link: bool = True) -> None:
+def _page_header() -> None:
     """
     NiceGui snippet to add the Solala title to the page.
-    Args:
-        ext: A string to append to the title.
-        link: Whether to create a link to the home page or not
     """
     with ui.element('div').classes('solala-header'):
 
         with ui.element('div').classes('solala-brand'):
-            if link:
-                with ui.link(target='/'):
-                    image = ui.image('/images/solala.svg')
-            else:
-                image = ui.image('/images/solala.svg')
+            image = ui.image('/images/solala.svg')
             image.classes('w-12 h-12 bg-transparent')
 
             with ui.element('div'):
-                ui.label(f'{Constants.APP_NAME}{ext}').classes('solala-brand-name')
+                ui.label(f'{Constants.APP_NAME}').classes('solala-brand-name')
                 ui.label(Constants.APP_SUBTITLE).classes('solala-brand-subtitle')
 
 
@@ -441,13 +434,12 @@ class TabSelector:
             button_container: Element,
             content_container: Element,
     ) -> None:
-        self.button_container: Element = button_container
         self.content_container: Element = content_container
 
         self.buttons: dict[str, Button] = {}
         self.builder: dict[str, Builder] = {}
 
-        with self.button_container:
+        with button_container:
             for tab_def in _TABS:
                 with ui.button().classes('solala-tab-button').props('color=white text-color=black') as button:
                     ui.image(tab_def.icon_url).classes('solala-tab-icon').style(
@@ -556,7 +548,7 @@ async def root_page() -> None:
     colours: Colours = await css_colours()  # must come directly after add_head_html.
 
     with ui.element('div').classes('solala-page'):
-        _page_header(link=False)
+        _page_header()
 
         with ui.element('div').classes('dashboard-card tab-navigation'):
             button_container = ui.grid(columns=3).classes('w-full gap-2')
