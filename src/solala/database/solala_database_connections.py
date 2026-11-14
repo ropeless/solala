@@ -19,6 +19,19 @@ def make_connection_string(
         port: int,
         database_name: str | None = None,
 ) -> str:
+    """
+    Build a PostgreSQL connection URI with encoded credentials.
+
+    Args:
+        role: Database user name.
+        password: Database password.
+        host: Database server host.
+        port: Database server port.
+        database_name: Database name, or None to omit it from the URI.
+
+    Returns:
+        PostgreSQL connection URI.
+    """
     safe_role = quote_plus(role)
     safe_password = quote_plus(password)
     db_path = f'/{database_name}' if database_name else ''
@@ -27,13 +40,16 @@ def make_connection_string(
 
 class SolalaDatabaseConnections:
     """
-    Manages a pool of connections to the Solala database.
+    Manage a pool of asynchronous connections to the Solala database.
 
-    Example usage:
+    Use the pool as an asynchronous context manager to open and close it.
+    Individual database wrappers can be borrowed with `solala_database()`
+    or with the paired `get_db()` and `put_db()` methods.
 
-    async with SolalaDatabaseConnections(...) as pool:
-        async with pool.solala_database() as db:
-            # use the database
+    Example:
+        async with SolalaDatabaseConnections(...) as pool:
+            async with pool.solala_database() as db:
+                # Use the database.
     """
 
     def __init__(
@@ -46,6 +62,18 @@ class SolalaDatabaseConnections:
             min_pool_size: int = 2,
             max_pool_size: int = 8,
     ) -> None:
+        """
+        Configure the connection pool without opening it.
+
+        Args:
+            role: Database user name.
+            password: Database password.
+            host: Database server host.
+            port: Database server port.
+            database_name: Database name.
+            min_pool_size: Minimum number of pooled connections.
+            max_pool_size: Maximum number of pooled connections.
+        """
         connection_string = make_connection_string(
             role=role,
             password=password,
@@ -67,6 +95,12 @@ class SolalaDatabaseConnections:
         }
 
     def get_connection_info(self) -> JSONDict:
+        """
+        Return connection settings without the password.
+
+        Returns:
+            Connection role, host, port, and database name.
+        """
         return self._connection_info
 
     @asynccontextmanager
@@ -76,14 +110,17 @@ class SolalaDatabaseConnections:
             timeout: float | None = None,
     ) -> AsyncIterator[SolalaDatabase]:
         """
-        Yields a SolalaDatabase instance backed by a pooled connection.
+        Borrow a database wrapper from the pool for a managed scope.
+
+        On normal exit, commit or roll back according to `commit_on_close`.
+        The pooled connection is returned when the context exits.
 
         Args:
-            commit_on_close: Whether to commit changes on exit (rolls back if False).
-            timeout: Connection acquisition timeout in seconds.
+            commit_on_close: Commit on normal exit if True; otherwise roll back.
+            timeout: Maximum time to wait for a connection, in seconds.
 
-        Returns:
-            A SolalaDatabase instance.
+        Yields:
+            Database wrapper backed by a pooled connection.
         """
         async with self._pool.connection(timeout=timeout) as conn:
             db = SolalaDatabase(conn)
@@ -98,10 +135,26 @@ class SolalaDatabaseConnections:
                 db._take_connection()
 
     async def get_db(self, timeout: float | None = None) -> SolalaDatabase:
+        """
+        Borrow a database wrapper that must later be returned with `put_db()`.
+
+        Args:
+            timeout: Maximum time to wait for a connection, in seconds.
+
+        Returns:
+            Database wrapper backed by a pooled connection.
+        """
         conn: AsyncConnection = await self._pool.getconn(timeout=timeout)
         return SolalaDatabase(conn)
 
     async def put_db(self, db: SolalaDatabase, commit_on_close: bool = True) -> None:
+        """
+        Finalize a borrowed database connection and return it to the pool.
+
+        Args:
+            db: Database wrapper previously obtained with `get_db()`.
+            commit_on_close: Commit changes if True; otherwise roll back.
+        """
         # noinspection PyProtectedMember
         conn: AsyncConnection = db._take_connection()
         try:
@@ -113,12 +166,28 @@ class SolalaDatabaseConnections:
             await self._pool.putconn(conn)
 
     def get_stats(self) -> dict[str, int]:
+        """
+        Return the underlying connection pool's statistics.
+
+        Returns:
+            Pool statistics keyed by metric name.
+        """
         return self._pool.get_stats()
 
     async def open(self, wait: bool = False, timeout: float = 30.0) -> None:
+        """
+        Open the connection pool.
+
+        Args:
+            wait: Whether to wait for the minimum pool size to be ready.
+            timeout: Maximum wait time in seconds when `wait` is True.
+        """
         await self._pool.open(wait=wait, timeout=timeout)
 
     async def close(self) -> None:
+        """
+        Close the connection pool and release its connections.
+        """
         await self._pool.close()
 
     async def __aenter__(self) -> Self:
