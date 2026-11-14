@@ -299,6 +299,12 @@ Click the infographic "grid" icon to see the forecast of power prices.
 Click the infographic "sun" icon to see the forecast of solar power.
 
 
+More Information
+================
+
+For questions about Solala, further technical information, or development
+inquiries, contact the lead developer at [barry@ropeless.com](mailto:barry@ropeless.com).
+
 License
 =======
 
