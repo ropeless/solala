@@ -12,7 +12,7 @@ _NONE = Sentinel('_NONE')
 
 class ReadOnlyError(AttributeError):
     """
-    Raised when requesting to write to a read-only register.
+    Raised when attempting to write to a read-only register.
     """
 
     def __init__(self) -> None:
@@ -21,7 +21,7 @@ class ReadOnlyError(AttributeError):
 
 def check_type(t: object) -> RegisterType:
     """
-    Check that the given type is a valid register type.
+    Validate that a type is one of `str`, `int`, `float`, or `bool`.
 
     Args:
         t: The type to check.
@@ -45,7 +45,7 @@ def check_type(t: object) -> RegisterType:
 
 def check_value(v: object) -> RegisterValue:
     """
-    Check that the given value is a valid register value.
+    Validate that a value is a string, integer, float, or boolean.
 
     Args:
         v: The value to check.
@@ -54,7 +54,7 @@ def check_value(v: object) -> RegisterValue:
         The value.
 
     Raises:
-        TypeError: If the type of value is not a valid register type.
+        TypeError: If the value has an unsupported type.
     """
     if isinstance(v, (str, int, float, bool)):
         return v
@@ -66,9 +66,9 @@ def value_okay(value: RegisterValue, register_type: RegisterType) -> bool:
     """
     Check whether the value is acceptable for the given register type.
 
-    Note that this explicitly allows:
-    * `bool` values can be used for `int` and `float` register types
-    * `int` values can be used for `float` register types.
+    Because `bool` is a subclass of `int`, boolean values are accepted by
+    integer and floating-point registers. Integer values are also accepted by
+    floating-point registers.
 
     Args:
         value: The value to check.
@@ -202,7 +202,7 @@ class ConstantRegister(ReadOnlyRegister):
         Args:
             value: The value returned whenever the register is read.
             register_type: The register value type. If omitted, it is inferred
-                from the give value.
+                from the given value.
         """
         if register_type is None:
             register_type: RegisterType = check_type(type(value))
@@ -218,10 +218,10 @@ class ConstantRegister(ReadOnlyRegister):
 
 class CallRegister(ReadOnlyRegister):
     """
-    A read-only register whose value is obtained by calling a synchronous function.
+    A read-only register backed by a synchronous function.
 
-    If the register type is not specified, the function is called once during
-    initialisation to determine the type of its return value.
+    The function is called on each read. If no register type is supplied,
+    the function is also called during initialisation to infer its return type.
     """
 
     def __init__(self, f: Callable[[], RegisterValue], register_type: RegisterType | None = None) -> None:
@@ -246,7 +246,9 @@ class CallRegister(ReadOnlyRegister):
 
 class AsyncCallRegister(ReadOnlyRegister):
     """
-    A read-only register whose value is obtained by awaiting an asynchronous function.
+    A read-only register backed by an asynchronous function.
+
+    The function is awaited on each read.
     """
 
     def __init__(self, f: Callable[[], Awaitable[RegisterValue]], register_type: RegisterType) -> None:
@@ -268,8 +270,8 @@ class RegisterBank:
     """
     A collection of named registers.
 
-    The set of registers cannot be changed after initialisation, but the
-    values held by those registers may change.
+    Register names are fixed after initialisation, but individual register
+    values may change. The `registers` property exposes the underlying mapping.
     """
 
     def __init__(
@@ -317,7 +319,9 @@ class RegisterBank:
 
     async def items(self) -> AsyncIterator[tuple[str, RegisterValue]]:
         """
-        Iterate over the register names and their current values.
+        Asynchronously iterate over register names and their current values.
+
+        Each register is read when its entry is yielded.
 
         Yields:
             A tuple containing a register name and its current value.
