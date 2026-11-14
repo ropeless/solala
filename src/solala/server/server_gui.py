@@ -82,13 +82,13 @@ async def _ui_control_buttons(session: PageSession) -> None:
             battery_force_discharge = ui.button('FORCE DISCHARGE').classes('solala-button')
             battery_charge_only = ui.button('CHARGE ONLY').classes('solala-button')
             battery_discharge_only = ui.button('DISCHARGE ONLY').classes('solala-button')
-            battery_cheap_force_discharge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
+            battery_cheap_force_charge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
 
             battery_force_charge.classes('wide')
             battery_force_discharge.classes('wide')
             battery_charge_only.classes('wide')
             battery_discharge_only.classes('wide')
-            battery_cheap_force_discharge.classes('wide')
+            battery_cheap_force_charge.classes('wide')
 
         updater = BatteryButtonUpdater(
             battery_enable=battery_enable,
@@ -97,7 +97,7 @@ async def _ui_control_buttons(session: PageSession) -> None:
             battery_force_discharge=battery_force_discharge,
             battery_charge_only=battery_charge_only,
             battery_discharge_only=battery_discharge_only,
-            battery_cheap_force_discharge=battery_cheap_force_discharge,
+            battery_cheap_force_charge=battery_cheap_force_charge,
         )
         await updater.update()  # call synchronously to avoid flicker
         await session.add_control_listener(updater)

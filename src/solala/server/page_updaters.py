@@ -35,8 +35,8 @@ from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json,
 
 class StatusListener(LoopListener):
     """
-    A partial implementation of a LoopListener where an updater requires
-    the result of `control_loop.get_status()`
+    A partial abstract implementation of a LoopListener where an updater requires
+    the result of `control_loop.get_status()`.
 
     Subclasses implement `_update()` to refresh their own page elements.
     """
@@ -137,7 +137,7 @@ class BatteryButtonUpdater(StatusListener):
             battery_force_discharge: Button,
             battery_charge_only: Button,
             battery_discharge_only: Button,
-            battery_cheap_force_discharge: Button,
+            battery_cheap_force_charge: Button,
     ) -> None:
         super().__init__()
         self.battery_enable = battery_enable.on_click(partial(
@@ -158,13 +158,13 @@ class BatteryButtonUpdater(StatusListener):
         self.battery_discharge_only = battery_discharge_only.on_click(partial(
             self._click, BatteryMode.DISCHARGE_ONLY, BatteryPolicy.MANUAL
         ))
-        self.battery_cheap_force_discharge = battery_cheap_force_discharge.on_click(partial(
+        self.battery_cheap_force_charge = battery_cheap_force_charge.on_click(partial(
             self._click, None, BatteryPolicy.CHEAP_CHARGE
         ))
 
         for button in [
             battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
-            battery_charge_only, battery_discharge_only, battery_cheap_force_discharge
+            battery_charge_only, battery_discharge_only, battery_cheap_force_charge
         ]:
             button.style('padding-top: 1px; padding-bottom: 1px;')
             button.classes('py-0 px-2 text-xs')
@@ -206,7 +206,7 @@ class BatteryButtonUpdater(StatusListener):
         self.battery_force_discharge.props(on_props('FORCE_DISCHARGE'))
         self.battery_charge_only.props(on_props('CHARGE_ONLY'))
         self.battery_discharge_only.props(on_props('DISCHARGE_ONLY'))
-        self.battery_cheap_force_discharge.props(on_props('CHEAP_FORCE_DISCHARGE'))
+        self.battery_cheap_force_charge.props(on_props('CHEAP_FORCE_DISCHARGE'))
 
 
 class StatusUpdater(StatusListener):
@@ -231,6 +231,7 @@ class InfographicUpdater(StatusListener):
     """
     Render the SVG power-flow infographic in a page element.
     """
+    
     def __init__(self, infographic_element: ContentElement) -> None:
         super().__init__()
         self.infographic_element = infographic_element
