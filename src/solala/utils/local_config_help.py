@@ -2,10 +2,9 @@
 This module provides access to local configuration variables.
 
 Local configuration variables are {variable} = {value} pairs that
-are defined externally to CK for the purposes of adapting
-to the local environment that CK is installed in. Local
-configuration variables are not expected to modify the
-behaviour of algorithms implemented in CK.
+are defined externally to Solala to adapt it to the local
+installation environment. They are not intended to change
+application algorithms.
 
 The primary method to access local configuration is `get`. Various
 other getter methods wrap `get`.
@@ -25,7 +24,7 @@ Variable names must be a valid Python identifier. Only valid
 value types are supported, as per the function `valid_value`.
 
 Usage:
-    from {...}.local_config_help import config
+    from solala.utils.local_config_help import config
 
     # assume `local_config.py` is in the PYTHONPATH and contains:
     #    ABC = 123
@@ -39,7 +38,7 @@ Usage:
     val = config.get('XYZ')           # val = None
     val = config.get('XYZ', 999)      # val = 999
 
-    from {...}.local_config import get_params
+    from solala.utils.local_config_help import get_params
 
     val = get_params('ABC')                  # val = ('ABC', 123)
     val = get_params('ABC', 'DEF')           # val = (('ABC', 123), ('DEF', 456))
@@ -66,14 +65,29 @@ _NIL = object()
 
 
 class Config:
+    """
+    Resolve local settings from overrides, a module, or environment variables.
+
+    Programmatic overrides take precedence over `local_config.py`, followed
+    by operating-system environment variables. Environment values are strings.
+    """
 
     def __init__(self) -> None:
         self._programmatic_config: dict[str, Any] = {}
 
     def get(self, key: str, default: Any = None) -> Any:
         """
-        Get the value of the given local configuration variable.
-        If the configuration variable is not available, return the given default value.
+        Retrieve a configuration value using the configured precedence.
+
+        Args:
+            key: Configuration name, which must be a Python identifier.
+            default: Value returned when the name is not defined.
+
+        Returns:
+            The resolved value or the supplied default.
+
+        Raises:
+            KeyError: If the name is invalid or the module value is unsupported.
         """
         if not key.isidentifier():
             raise KeyError(f'invalid local configuration parameter: {key!r}')
@@ -104,7 +118,15 @@ class Config:
 
     def __setitem__(self, key: str, value: Any) -> None:
         """
-        Programmatically overwrite a local configuration variable.
+        Set a programmatic configuration override.
+
+        Args:
+            key: Configuration name, which must be a Python identifier.
+            value: Configuration value to store.
+
+        Raises:
+            KeyError: If the name is not a valid Python identifier.
+            ValueError: If the value is unsupported.
         """
         if not key.isidentifier():
             raise KeyError(f'invalid local configuration parameter: {key!r}')
@@ -114,8 +136,10 @@ class Config:
 
     def __getitem__(self, key: str) -> Any:
         """
-        Get the value of the given configuration variable.
-        If the configuration variable is not available, raise a KeyError.
+        Retrieve a required configuration value by name.
+
+        Raises:
+            KeyError: If the configuration name is undefined or invalid.
         """
         value = self.get(key, _NIL)
         if value is _NIL:
@@ -139,8 +163,16 @@ config = Config()
 
 def valid_value(value: Any) -> bool:
     """
-    Does the given value have an acceptable type for
-    a configuration variable?
+    Check whether a value is permitted in local configuration.
+
+    Collections are checked recursively. Callable objects and modules are
+    rejected; other values are accepted.
+
+    Args:
+        value: Value to validate.
+
+    Returns:
+        True if the value is accepted.
     """
     if isinstance(value, (list, tuple, set)):
         return all(valid_value(elem) for elem in value)
@@ -159,7 +191,7 @@ def get_params(
         local_config: Config = config,
 ) -> str | tuple[tuple[str, Any], ...] | tuple[str, ...] | tuple[str, Any]:
     """
-    Return one or more configuration parameter as key-value pairs.
+    Return configuration parameters as key-value pairs or formatted strings.
 
     If `sep` is None then each key-value pair is returned as a tuple, otherwise
     each key-value pair is returned as a string with `sep` as the separator.
@@ -172,7 +204,7 @@ def get_params(
     are returned as a single string with `delim` as the delimiter. If
     `delim` is not None then the default value for `sep` is '='.
 
-    For example, assume `config.py` contains: `ABC = 123` and `DEF = 456`,
+    For example, assume `local_config.py` contains: `ABC = 123` and `DEF = 456`,
     then::
 
         get_params('ABC') -> ('ABC', 123)
@@ -186,7 +218,7 @@ def get_params(
         keys: the names of variables to access.
         sep: the separator character between {variable} and {value}.
         delim: the delimiter character between key-value pairs.
-        local_config: a Config instance to update. Default is the global `config` object.
+        local_config: Config instance to read from; defaults to the global `config`.
 
     Returns:
         the requested parameter values.
@@ -226,7 +258,7 @@ def update_config(
 
     Example usage:
         import sys
-        from {...}.local_config import update_config
+        from solala.utils.local_config_help import update_config
 
         def main():
             ...
@@ -236,8 +268,8 @@ def update_config(
             main()
 
     Args:
-        argv: a collection of strings in the form '{variable}={value}'.
-            Variables not in `valid_keys` will raise a ValueError.
+        argv: Strings in the form '{variable}={value}', without the executable
+            name. Names not in `valid_keys` raise KeyError.
         valid_keys: an optional collection of strings that are valid variables to
             process from argv, or None to accept all variables.
         sep: the separator character between {variable} and {value}.
@@ -245,7 +277,12 @@ def update_config(
         strip_whitespace: If True, then whitespace is stripped from
             the value before updating the config. Whitespace is always stripped
             from the variable name.
-        local_config: a Config instance to update. Default is the global config.
+        local_config: Config instance to update; defaults to the global config.
+
+    Raises:
+        ValueError: If an argument cannot be split using `sep`, or a parsed
+            value is not permitted by the configuration.
+        KeyError: If a variable name is invalid or not in `valid_keys`.
     """
     if valid_keys is not None:
         valid_keys = set(valid_keys)
