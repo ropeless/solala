@@ -15,7 +15,7 @@ class Measurement(BaseModel):
     timestamp identifies when the snapshot was collected.
 
     Attributes:
-        timestamp: Time at which the measurement was taken.
+        timestamp: Time at which the measurement was taken, with timezone.
         solar_power: Solar generation power.
         grid_power: Power exchanged with the grid.
         house_power: Household consumption power.
