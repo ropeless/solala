@@ -2,7 +2,7 @@
 Define display units for formatted Solala status and configuration values.
 
 Each mapping associates a JSON field name with the unit suffix used by the
-server's JSON renderer. Status units include the policy parameter units.
+server's JSON renderer.
 """
 from collections.abc import Mapping
 
@@ -36,7 +36,7 @@ STATUS_UNITS: Mapping[str, str] = dict_merge(
         'capacity': Units.WATTS,
         'forecast_generation': Units.KILOWATT_HOURS,
     },
-    PARAMETERS_UNITS,
+    PARAMETERS_UNITS, # status JSON includes policy parameters.
 )
 # Unit suffixes for control-loop timing and forecast constants.
 CONSTANTS_UNITS: Mapping[str, str] = {
