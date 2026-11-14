@@ -1,3 +1,7 @@
+"""
+Draw the Solala power-flow infographic as an SVG with clickable regions.
+"""
+
 from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text, TSpan
 
 from solala.constants import Constants
@@ -18,7 +22,16 @@ HEIGHT = 350 + (LINE_SPACE if Constants.INFOGRAPHIC_INCLUDE_RENEWABLES else 0)
 
 
 class Infographic:
+    """
+    Render system power flows, battery charge, and electricity pricing.
+
+    The static SVG background is reused when `make()` redraws the current
+    measurements. Clickable areas use the module's `CLICK_ID_*` constants.
+    """
     def __init__(self) -> None:
+        """
+        Create the SVG canvas and its reusable background elements.
+        """
         self.canvas = Drawing(width=WIDTH, height=HEIGHT, origin=(-150, -150))
 
         # Make the static parts (background)
@@ -58,6 +71,15 @@ class Infographic:
         )
 
     def make_from_status(self, status: JSONDict, power_scale: float = 2000) -> None:
+        """
+        Redraw the infographic using the power and price status dictionaries.
+
+        Missing individual values use defaults before being passed to `make()`.
+
+        Args:
+            status: Status containing `power` and `price` dictionaries.
+            power_scale: Reference power in the units supplied by the status.
+        """
         power_dict: JSONDict = json_dict(status['power'])
         price_dict: JSONDict = json_dict(status['price'])
         self.make(
@@ -90,18 +112,23 @@ class Infographic:
             is_estimate: bool,
     ) -> None:
         """
+        Redraw the infographic with current power flows and pricing.
+
+        Chevron widths are scaled against the largest absolute power or
+        `power_scale`; their signs determine the indicated flow direction.
+
         Args:
-            state_of_charge: percentage charge: 0 to 100
-            solar_power: kW
-            grid_power: kW
-            house_power: kW
-            battery_power: kW
-            power_scale: default max kW for a power flow arrow.
-            buy_price: c/kWh
-            feed_in_price: c/kWh
-            renewables: %
-            is_demand_window: Boolean flag to indicate whether demand window is active or not.
-            is_estimate: Boolean flag to indicate whether the price is an estimate or not.
+            state_of_charge: Battery state of charge as a percentage (0–100).
+            solar_power: Solar generation power in kW.
+            grid_power: Signed grid power in kW.
+            house_power: House power in kW.
+            battery_power: Signed battery power in kW.
+            power_scale: Minimum reference power in kW for flow arrow scaling.
+            buy_price: Electricity purchase price in cents per kWh.
+            feed_in_price: Electricity export price in cents per kWh.
+            renewables: Renewable energy percentage.
+            is_demand_window: Whether the demand window is active.
+            is_estimate: Whether displayed electricity prices are estimates.
         """
         canvas = self.canvas
 
@@ -205,10 +232,16 @@ class Infographic:
             canvas.append(feed_in_text)
 
     def as_svg(self) -> str:
+        """
+        Return the current infographic as SVG markup.
+        """
         return self.canvas.as_svg()
 
 
 def _to_dollars(price: float) -> str:
+    """
+    Format cents per kWh as dollars with two decimal places.
+    """
     price /= 100
     price_str = f'{price:0.2f}'
     if price_str == '-0.00':
@@ -217,6 +250,9 @@ def _to_dollars(price: float) -> str:
 
 
 def _to_cents(price: float) -> str:
+    """
+    Format cents per kWh with one decimal place.
+    """
     price_str = f'{price:0.1f}'
     if price_str == '-0.0':
         price_str = '0.0'
@@ -224,6 +260,9 @@ def _to_cents(price: float) -> str:
 
 
 def _to_watts(power: float) -> str:
+    """
+    Format the absolute power magnitude using W or kW units.
+    """
     power = abs(power)
     if power < 1000:
         return f'{int(round(power))}{Units.WATTS}'
@@ -232,10 +271,16 @@ def _to_watts(power: float) -> str:
 
 
 def _to_pct(state_of_charge: float) -> str:
+    """
+    Round battery state of charge to a whole percentage.
+    """
     return f'{int(round(state_of_charge))}{Units.PERCENT}'
 
 
 def _click_area(name: str, x: float, y: float) -> Rectangle:
+    """
+    Create a transparent SVG rectangle for click handling.
+    """
     return Rectangle(
         id=name,
         x=x, y=y, width=90, height=140,
@@ -245,6 +290,9 @@ def _click_area(name: str, x: float, y: float) -> Rectangle:
 
 
 class Shape(Group):
+    """
+    Base SVG group positioned, scaled, and rotated by a transform.
+    """
     def __init__(
             self,
             *,
@@ -267,6 +315,9 @@ class Shape(Group):
 
 
 class House(Shape):
+    """
+    Draw the house icon using the Solala house CSS colour.
+    """
     def __init__(
             self,
             *,
@@ -276,14 +327,13 @@ class House(Shape):
             stroke_width: float = 5,
     ) -> None:
         """
-        Draw a simple house icon with no windows.
+        Draw a simple house icon with a roof, door, and no windows.
 
-        Parameters
-        ----------
-        size : float
-            Width and height of the icon.
-        stroke_width : float
-            Stroke width, scaled relative to the icon size.
+        Args:
+            size: Width and height relative to the original 64-unit design.
+            x: Horizontal position.
+            y: Vertical position.
+            stroke_width: Stroke width, scaled relative to the icon size.
         """
         super().__init__(x=x, y=y)
 
@@ -330,6 +380,9 @@ class House(Shape):
 
 
 class Inverter(Shape):
+    """
+    Draw a diamond-shaped inverter symbol containing a sine wave.
+    """
 
     def __init__(
             self,
@@ -380,6 +433,9 @@ class Inverter(Shape):
 
 
 class Battery(Shape):
+    """
+    Draw a battery with a fill level based on its state of charge.
+    """
 
     def __init__(
             self,
@@ -433,6 +489,9 @@ class Battery(Shape):
 
 
 class Sun(Shape):
+    """
+    Draw the solar generation icon with rays and a central disc.
+    """
     def __init__(
             self,
             *,
@@ -457,6 +516,9 @@ class Sun(Shape):
 
 
 class Grid(Shape):
+    """
+    Draw the electricity grid icon as a utility pole.
+    """
     def __init__(
             self,
             *,
@@ -531,6 +593,9 @@ class Grid(Shape):
 
 
 class Chevron(Shape):
+    """
+    Draw a power-flow arrow whose width and sign encode flow magnitude and direction.
+    """
     def __init__(
             self,
             *,
