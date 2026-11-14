@@ -1,7 +1,3 @@
-"""
-Read Solala theme colours from browser CSS and format RGB colours.
-"""
-
 from dataclasses import dataclass
 
 from nicegui import ui
@@ -10,7 +6,7 @@ from nicegui import ui
 @dataclass
 class Colours:
     """
-    Hold the computed colours used by the Solala interface.
+    Hold the loaded colours used by the Solala interface.
 
     Each field corresponds to a `--solala-*-color` CSS custom property.
     Values are strings returned by the browser's computed style.
@@ -35,7 +31,7 @@ async def css_colours() -> Colours:
     This function requires an active NiceGUI client context.
 
     Returns:
-        Computed CSS colour values for the Solala interface.
+        Loaded CSS colour values for the Solala interface.
     """
     colour_dict = await ui.run_javascript("""
         (() => {
