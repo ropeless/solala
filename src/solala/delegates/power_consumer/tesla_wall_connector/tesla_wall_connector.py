@@ -17,7 +17,10 @@ class TeslaWallConnector(PowerConsumer):
     Power consumer implementation for a Tesla Wall Connector.
 
     Reads the connector's local HTTP API to retrieve electrical measurements
-    and expose the available vitals as registers.
+    and expose the available data as registers.
+
+    Important: the active power is estimated as voltage multiplied by current, assuming
+    a purely resistive load.
     """
 
     def __init__(self, host: str, mac_address: str = ''):
@@ -54,12 +57,6 @@ class TeslaWallConnector(PowerConsumer):
             return self._register_bank
 
     async def get_status(self) -> ConsumerStatus:
-        """
-        Get the connector's electrical status.
-
-        The active power is estimated as voltage multiplied by current, assuming
-        a purely resistive load.
-        """
         data: JSONDict = await self._cache()
         voltage: float = json_num(data['voltageA_v'])
         current: float = json_num(data['currentA_a'])
@@ -70,12 +67,6 @@ class TeslaWallConnector(PowerConsumer):
         )
 
     def get_connection_info(self) -> JSONDict:
-        """
-        Get the connector's connection details.
-
-        Returns:
-            The connection type and host, and the MAC address if supplied.
-        """
         return self._connection_info
 
     async def close(self) -> None:
