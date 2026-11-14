@@ -512,7 +512,7 @@ async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> d
         match: A compiled regular expression or an iterable of register names.
 
     Returns:
-        A dictionary mapping register names to their values.
+        A dictionary mapping each register name to its values.
     """
     registers: RegisterBank = _CONTROL_STATE.registers  # no need to lock as RegisterBank is stable.
     if isinstance(match, re.Pattern):
@@ -807,7 +807,7 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
     """
-    Read measurements for a day.
+    Read measurements for a day from the applicaiton database.
 
     Return an empty sequence if no measurements are available or if database
     access fails with a connection or database error.
