@@ -151,8 +151,6 @@ class PageSession:
         """
         Release registered resources in reverse registration order.
 
-        Multiple calls to `close()` for the same page session is acceptable.
-
         Clean-up exceptions are logged and remaining callbacks still run.
         Subsequent calls have no effect.
         """
