@@ -6,11 +6,12 @@ from solala.utils.json_extras import JSONDict, to_json
 
 @dataclass(frozen=True)
 class Price:
+    start_time: datetime  # date + time + timezone
+    end_time: datetime  # date + time + timezone
+
     buy_price: float  # c per kWh
     feed_in_price: float  # c per kWh
     renewables: float  # percentage
-    start_time: datetime  # date + time + timezone
-    end_time: datetime  # date + time + timezone
     is_estimate: bool  # whether the price is an estimate or not
 
     # Optional tariff information.
