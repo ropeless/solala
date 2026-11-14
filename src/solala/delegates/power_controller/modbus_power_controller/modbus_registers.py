@@ -1,3 +1,11 @@
+"""
+SunSpec model definitions and register access layouts used by the Modbus controller.
+
+MODELS maps SunSpec model IDs to their named register definitions. Register
+addresses are relative to the start of each model, and each definition specifies
+the register's data type, scaling, and write permissions.
+"""
+
 from collections.abc import Iterator, Mapping
 
 from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import NEXT_SF as _NEXT_SF, \
@@ -113,7 +121,15 @@ MODELS: Mapping[MODBUS_MODEL, dict[str, RegisterAccess]] = {
 
 def mppt_modules(number_of_modules: int) -> Iterator[tuple[str, RegisterAccess]]:
     """
-    Additional registers for MPPT modules.
+    Generate register definitions for the MPPT modules in a device.
+
+    Each module occupies a 20-register block in the MPPT model.
+
+    Args:
+        number_of_modules: Number of MPPT modules reported by the device.
+
+    Yields:
+        Pairs of register names and their access definitions for each module.
     """
     for i in range(number_of_modules):
         module_id = i + 1
