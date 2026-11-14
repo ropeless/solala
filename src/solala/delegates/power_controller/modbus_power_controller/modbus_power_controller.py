@@ -390,6 +390,8 @@ class ModbusPowerController(PowerController):
             assert len(power_limits) == len(inverter_limits)
 
             total_limit: float = sum(inverter_limits)
+            if total_limit <= 0:
+                raise ValueError('cannot calculate power limit: total inverter capacity is zero')
             avg_limit: float = 0.0
             for limit, limit_enabled, inverter_limit in zip(power_limits, power_limits_enabled, inverter_limits):
                 if not limit_enabled:
