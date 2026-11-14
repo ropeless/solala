@@ -7,6 +7,9 @@ from solala.utils.json_extras import JSONDict
 
 
 class BatteryMode(Enum):
+    """
+    Operating modes requested for the battery.
+    """
     UNKNOWN = auto()  # The battery has not been configured by the control loop yet
     ENABLE = auto()  # The battery is configured for normal operation, charge and discharge
     DISABLE = auto()  # The battery is logically disconnected, no charge or discharge
@@ -17,6 +20,9 @@ class BatteryMode(Enum):
 
 
 class InverterMode(Enum):
+    """
+    Operating modes requested for the inverter.
+    """
     UNKNOWN = auto()  # The inverter has not been configured by the control loop yet
     ENABLE = auto()  # The inverter is configured for normal operation for grid import and export
     DISABLE = auto()  # The inverter is configured to not produce power
@@ -24,11 +30,17 @@ class InverterMode(Enum):
 
 
 class BatteryPolicy(Enum):
+    """
+    Policies for selecting the battery mode automatically or manually.
+    """
     MANUAL = auto()
     CHEAP_CHARGE = auto()  # set battery mode to FORCE_CHARGE if power buy price is low
 
 
 class InverterPolicy(Enum):
+    """
+    Policies for selecting the inverter mode automatically or manually.
+    """
     MANUAL = auto()
     NEG_FEED_IN_ZERO_EXPORT = auto()  # set inverter mode to ZERO_EXPORT if feed-in price is negative
 
@@ -36,7 +48,17 @@ class InverterPolicy(Enum):
 @dataclass
 class ControlMode:
     """
-    This defines what the control loop is aiming to do for the user.
+    Specify the operating modes, policies, and price thresholds requested by the user.
+
+    Attributes:
+        battery_mode: Requested battery operating mode.
+        inverter_mode: Requested inverter operating mode.
+        battery_policy: Policy governing automatic battery mode selection.
+        inverter_policy: Policy governing automatic inverter mode selection.
+        disable_export_price_threshold: Feed-in price below which export is disabled.
+        enable_export_price_threshold: Feed-in price above which export is re-enabled.
+        start_charge_price_threshold: Buy price below which forced charging starts.
+        stop_charge_price_threshold: Buy price above which forced charging stops.
     """
     battery_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_mode: InverterMode = InverterMode.UNKNOWN
@@ -50,6 +72,13 @@ class ControlMode:
     stop_charge_price_threshold: float = DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
 
     def to_json(self) -> JSONDict:
+        """
+        Convert the control settings to a JSON-compatible dictionary.
+
+        Returns:
+            A dictionary containing separate battery and inverter settings,
+            with modes and policies represented by their enum names.
+        """
         battery: JSONDict = {
             'mode': self.battery_mode.name,
             'policy': self.battery_policy.name,
