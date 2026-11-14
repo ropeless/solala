@@ -72,7 +72,7 @@ class Infographic:
 
     def make_from_status(self, status: JSONDict, power_scale: float = 2000) -> None:
         """
-        Redraw the infographic using the power and price status dictionaries.
+        Redraw the infographic using the status dictionary.
 
         Missing individual values use defaults before being passed to `make()`.
 
@@ -261,7 +261,7 @@ def _to_cents(price: float) -> str:
 
 def _to_watts(power: float) -> str:
     """
-    Format the absolute power magnitude using W or kW units.
+    Format the absolute power magnitude, dynamically using W or kW units.
     """
     power = abs(power)
     if power < 1000:
@@ -272,7 +272,7 @@ def _to_watts(power: float) -> str:
 
 def _to_pct(state_of_charge: float) -> str:
     """
-    Round battery state of charge to a whole percentage.
+    Round battery state of charge to a whole percentage and render as a string.
     """
     return f'{int(round(state_of_charge))}{Units.PERCENT}'
 
@@ -490,7 +490,7 @@ class Battery(Shape):
 
 class Sun(Shape):
     """
-    Draw the solar generation icon with rays and a central disc.
+    Draw the solar generation icon using the Solala logo.
     """
     def __init__(
             self,
