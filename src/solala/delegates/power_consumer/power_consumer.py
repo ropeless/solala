@@ -1,36 +1,10 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from types import TracebackType
 from typing import Self
 
+from solala.delegates.power_consumer.conslumer_status import ConsumerStatus
 from solala.registers import RegisterBank
-from solala.utils.json_extras import JSONDict, to_json
-
-
-@dataclass(frozen=True)
-class ConsumerStatus:
-    """
-    Represents the electrical status of a power consumer.
-
-    Attributes:
-        voltage: The measured voltage in volts.
-        current: The measured current in amperes.
-        power: The active power in watts, measured where available or estimated
-            where the device does not provide a direct measurement.
-    """
-
-    voltage: float
-    current: float
-    power: float
-
-    def to_json(self) -> JSONDict:
-        """
-        Convert the status to a JSON-compatible dictionary.
-
-        Returns:
-            The status represented as a JSON-compatible dictionary.
-        """
-        return to_json(self)
+from solala.utils.json_extras import JSONDict
 
 
 class PowerConsumer(ABC):
@@ -89,10 +63,10 @@ class PowerConsumer(ABC):
         return self
 
     async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            traceback: TracebackType | None,
     ) -> None:
         """
         Exit the asynchronous context manager and close the consumer.
