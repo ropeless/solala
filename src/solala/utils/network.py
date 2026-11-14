@@ -1,3 +1,7 @@
+"""
+Discover local IPv4 addresses and devices using network routing and ARP.
+"""
+
 import socket
 from collections.abc import Iterable
 
@@ -7,7 +11,21 @@ from scapy.sendrecv import srp
 
 def find_ip_by_mac(mac_addresses: Iterable[str], timeout: float = 3) -> dict[str, str]:
     """
-    Scans the local network for the specific MAC addresses and returns a mapping to their IP address.
+    Find IPv4 addresses associated with the requested MAC addresses.
+
+    Broadcast an ARP request across the /24 subnet inferred from the local
+    IPv4 address. MAC address matching is case-insensitive, but the returned
+    dictionary uses the original input strings as keys. Devices outside that
+    subnet, or devices that do not respond to ARP, are not discovered.
+
+    Args:
+        mac_addresses: MAC addresses to look up.
+        timeout: Number of seconds to wait for ARP responses.
+
+    Returns:
+        Mapping from matched input MAC addresses to discovered IPv4 addresses.
+        Unmatched addresses are omitted. An empty input returns an empty mapping
+        without performing a network scan.
     """
     mac_addresses: list[str] = list(mac_addresses)
     if len(mac_addresses) == 0:
@@ -39,7 +57,15 @@ def find_ip_by_mac(mac_addresses: Iterable[str], timeout: float = 3) -> dict[str
 
 def get_local_ip() -> str:
     """
-    Dynamically fetches the local IP address of this machine.
+    Determine the local IPv4 address selected for an outbound UDP route.
+
+    Connecting a UDP socket to 8.8.8.8:80 selects a local interface without
+    sending application data or establishing a connection. This does not
+    necessarily identify the interface used for every local network.
+
+    Returns:
+        The selected local IPv4 address, or '192.168.1.1' if the socket
+        operation raises an OSError.
     """
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
