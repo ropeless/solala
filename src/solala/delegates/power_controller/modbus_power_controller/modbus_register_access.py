@@ -19,7 +19,17 @@ _DEBUG_LOG = False
 
 class ModbusError(IOError):
     """
-    Raised when a Modbus IO error occurs.
+    Raised when a Modbus read or write operation returns an error.
+
+    Attributes:
+        device: Modbus device ID.
+        modbus_model: SunSpec model containing the register.
+        addr: Register's relative address within the model.
+        physical_addr: Absolute Modbus address used for the operation.
+        count: Number of registers involved in the operation.
+        read_write: Whether the failed operation was a read or write.
+        result: Modbus response containing the error.
+        modbus_message: Description of the Modbus exception code.
     """
 
     def __init__(
@@ -48,6 +58,17 @@ class ModbusError(IOError):
 
 @dataclass
 class RegisterContext:
+    """
+    Identify the Modbus device and address context for a register operation.
+
+    Attributes:
+        client: Modbus TCP client used to communicate with the device.
+        device_id: Modbus device ID.
+        modbus_model: SunSpec model containing the register.
+        address_offset: Offset added to a relative register address to obtain
+            its physical, zero-based Modbus address.
+    """
+
     client: ModbusTcpClient
     device_id: int
     modbus_model: MODBUS_MODEL
@@ -209,6 +230,15 @@ def _read_byte_array(
 
 
 def _registers_to_bytearray(registers: Sequence[int]) -> bytearray:
+    """
+    Convert 16-bit register values to a big-endian byte array.
+
+    Args:
+        registers: Register values to convert.
+
+    Returns:
+        The register contents as a byte array.
+    """
     byte_array = bytearray()
     for reg_result in registers:
         byte_array.extend(reg_result.to_bytes(2, byteorder='big'))
@@ -289,8 +319,18 @@ def check_valid_int(value: int, count: int, signed: bool) -> None:
 
 
 class RegisterAccessStr(RegisterAccess):
+    """
+    Read-only access to a string stored across consecutive Modbus registers.
+    """
 
     def __init__(self, addr: int, count: int) -> None:
+        """
+        Initialise string register access.
+
+        Args:
+            addr: Relative address of the first register.
+            count: Number of 16-bit registers occupied by the string.
+        """
         super().__init__(register_type=str, writable=False)
         self.addr = addr
         self.count = count
@@ -304,8 +344,20 @@ class RegisterAccessStr(RegisterAccess):
 
 
 class RegisterAccessInt(RegisterAccess):
+    """
+    Access an integer stored across one or more consecutive Modbus registers.
+    """
 
     def __init__(self, addr: int, count: int, signed: bool, writable: bool) -> None:
+        """
+        Initialise integer register access.
+
+        Args:
+            addr: Relative address of the first register.
+            count: Number of 16-bit registers occupied by the integer.
+            signed: Whether the integer is signed.
+            writable: Whether the register can be written.
+        """
         super().__init__(register_type=int, writable=writable)
         self.addr = addr
         self.count = count
@@ -326,8 +378,24 @@ class RegisterAccessInt(RegisterAccess):
 
 
 class RegisterAccessScaled(RegisterAccess):
+    """
+    Access an integer register whose value is adjusted by a scale factor.
+
+    The scale factor is a signed 16-bit integer representing a power of ten.
+    """
 
     def __init__(self, addr: int, scale_addr: int, count: int, signed: bool, writable: bool) -> None:
+        """
+        Initialise scaled integer register access.
+
+        Args:
+            addr: Relative address of the first value register.
+            scale_addr: Relative address of the scale-factor register, or
+                NEXT_SF to use the register immediately after the value.
+            count: Number of 16-bit registers occupied by the value.
+            signed: Whether the value is signed.
+            writable: Whether the register can be written.
+        """
         super().__init__(register_type=float, writable=writable)
         self.addr = addr
         self.scale_addr = (addr + 1) if scale_addr == NEXT_SF else scale_addr
@@ -399,5 +467,11 @@ class RegisterAccessScaled(RegisterAccess):
 
 
 def _log(msg: str) -> None:
+    """
+    Write a debug message when Modbus register-access logging is enabled.
+
+    Args:
+        msg: Message to log.
+    """
     if _DEBUG_LOG:
         LOGGER.debug(f'{_LOG_SRC}{msg}')  # type: ignore[PyUnreachableCode]
