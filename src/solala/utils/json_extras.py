@@ -28,7 +28,16 @@ _DICT_ENTRY_SEPARATOR_PATTERN = re.compile(r'(\s*[\w+"]): ')
 
 def json_str(value: JSONValue) -> str:
     """
-    Get a JSON value that is a string.
+    Validate and return a JSON string value.
+
+    Args:
+        value: JSON value to check.
+
+    Returns:
+        The string value.
+
+    Raises:
+        TypeError: If the value is not a string.
     """
     if isinstance(value, str):
         return value
@@ -38,7 +47,18 @@ def json_str(value: JSONValue) -> str:
 
 def json_num(value: JSONValue) -> int | float:
     """
-    Get a JSON value that is a number.
+    Validate and return a JSON numeric value.
+
+    Booleans are also accepted because `bool` is a subclass of `int`.
+
+    Args:
+        value: JSON value to check.
+
+    Returns:
+        The integer or float value.
+
+    Raises:
+        TypeError: If the value is not numeric.
     """
     if isinstance(value, (int, float)):
         return value
@@ -48,7 +68,16 @@ def json_num(value: JSONValue) -> int | float:
 
 def json_bool(value: JSONValue) -> bool:
     """
-    Get a JSON value that is a boolean.
+    Validate and return a JSON boolean value.
+
+    Args:
+        value: JSON value to check.
+
+    Returns:
+        The boolean value.
+
+    Raises:
+        TypeError: If the value is not a boolean.
     """
     if isinstance(value, bool):
         return value
@@ -58,7 +87,16 @@ def json_bool(value: JSONValue) -> bool:
 
 def json_dict(value: JSONValue) -> JSONDict:
     """
-    Get a JSON value that is a dict.
+    Validate and return a JSON mapping.
+
+    Args:
+        value: JSON value to check.
+
+    Returns:
+        The mapping, without copying it.
+
+    Raises:
+        TypeError: If the value is not a mapping.
     """
     if isinstance(value, Mapping):
         return value
@@ -68,13 +106,21 @@ def json_dict(value: JSONValue) -> JSONDict:
 
 def follow_json(data: JSONDict, path: str | None) -> JSONValue:
     """
-    Follow a path through a JSON dictionary.
+    Follow a slash-separated sequence of keys through a JSON mapping.
+
+    A `None` path returns the original mapping. Path components select
+    dictionary keys, not list indices.
+
+    Args:
+        data: Mapping from which to start.
+        path: Slash-separated key path, or None.
 
     Returns:
-         the value (if the path exists).
+        The value at the selected path.
+
     Raises:
-        KeyError if the path does not exist in `data`.
-        TypeError if a key in the path is not a selector for a dictionary.
+        KeyError: If a path component is not found.
+        TypeError: If an intermediate value is not a mapping.
     """
     if path is not None:
         parts: list[str] = path.split('/')
@@ -89,7 +135,15 @@ def follow_json(data: JSONDict, path: str | None) -> JSONValue:
 
 def filter_json(data: JSONDict, match: str | None) -> JSONDict:
     """
-    Filter a JSON dictionary by keys containing a given substring.
+    Select top-level entries whose keys contain a substring.
+
+    Args:
+        data: Mapping to filter.
+        match: Substring to match, or None to return the original mapping.
+
+    Returns:
+        A new mapping of matching entries, or the original mapping if
+        `match` is None.
     """
     if match is None:
         return data
@@ -103,16 +157,21 @@ def filter_json(data: JSONDict, match: str | None) -> JSONDict:
 
 def flatten(data: JSONContainer, sep: str = '/', prefix: str = '') -> dict[str, JSONPrimitive]:
     """
-    Flatten keys in nested JSON dictionaries. Lists are treated as dictionaries with
-    integer keys (converted to strings).
+    Flatten nested JSON mappings and sequences into path-keyed values.
+
+    Sequence indices become string path components. Only leaf values are
+    included; empty containers do not produce entries.
 
     Args:
-        data: either a JSON dict or list.
-        sep: path separator.
-        prefix: prefix to prepend to all keys.
+        data: JSON mapping or sequence to flatten.
+        sep: Separator inserted between path components.
+        prefix: Prefix prepended to generated keys.
 
     Returns:
-        a JSON dictionary with flattened keys.
+        A dictionary mapping flattened paths to primitive values.
+
+    Raises:
+        TypeError: If the top-level value is not a supported container.
     """
     if isinstance(data, (dict, Mapping)):
         return dict(_flatten(data.items(), sep, prefix))
@@ -194,7 +253,22 @@ def to_json(
         date_format: str = '%Y-%m-%d',
 ) -> JSONDict:
     """
-    Support for converting classes and object with fields into JSON.
+    Extract public attributes and properties into a JSON-compatible mapping.
+
+    Supports Pydantic models, classes, and objects with a `__dict__`.
+    Private names, excluded entries, and unsupported value types are skipped.
+    Enum values are represented by their names; dates and datetimes are
+    formatted as strings.
+
+    Args:
+        thing: Object or class whose attributes should be extracted.
+        exclude_names: Attribute names to omit.
+        exclude_values: Attribute values to omit.
+        datetime_format: Format used for datetime values.
+        date_format: Format used for date values.
+
+    Returns:
+        A mapping of extracted attribute names to converted values.
     """
     return _to_json(thing, exclude_names, exclude_values, datetime_format, date_format)
 
@@ -250,7 +324,11 @@ def _to_json(
 
 def _ignore(value: Any) -> bool:
     """
-    These value types cause problems.
+    Identify runtime objects that should be omitted from JSON extraction.
+
+    Returns:
+        True for code, callable, generator, coroutine, and related runtime
+        objects that cannot be represented as JSON data.
     """
     return (
             inspect.iscode(value)
@@ -339,4 +417,13 @@ def _stringify_values(
 
 
 def _remove_underscores(value: str) -> str:
+    """
+    Replace underscores with spaces in display text.
+
+    Args:
+        value: Text to transform.
+
+    Returns:
+        Text with underscores replaced by spaces.
+    """
     return value.replace('_', ' ')
