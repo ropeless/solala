@@ -35,6 +35,9 @@ class DummyPowerController(PowerController):
     Simulates a simple power system with a fixed house load, a solar inverter,
     and a battery. The simulation updates power flows according to the selected
     battery and inverter modes and accumulates energy between updates.
+
+    Public fields may be updated by the client at any time. The method `update_status`
+    should be called after changes.
     """
 
     def __init__(
@@ -47,7 +50,7 @@ class DummyPowerController(PowerController):
 
     ) -> None:
         """
-        Initialise the dummy power system.
+        Initialise a dummy power system.
 
         Args:
             inverter_limit: Maximum simulated inverter output power, in watts.
