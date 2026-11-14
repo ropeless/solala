@@ -9,6 +9,9 @@ from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, In
 
 
 class DummyControllerConnection(BaseModel):
+    """
+    Configure a simulated power controller and its power limits.
+    """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
 
@@ -19,6 +22,9 @@ class DummyControllerConnection(BaseModel):
 
 
 class DummyPricerConnection(BaseModel):
+    """
+    Configure simulated electricity prices and an optional demand window.
+    """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
 
@@ -31,6 +37,9 @@ class DummyPricerConnection(BaseModel):
 
 
 class DummyConsumerConnection(BaseModel):
+    """
+    Configure a simulated power consumer's voltage and current.
+    """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
 
@@ -39,6 +48,9 @@ class DummyConsumerConnection(BaseModel):
 
 
 class DummySolarForecasterConnection(BaseModel):
+    """
+    Configure a simulated solar forecaster's panel and inverter capacities.
+    """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
 
@@ -47,6 +59,16 @@ class DummySolarForecasterConnection(BaseModel):
 
 
 class ModbusControllerConnection(BaseModel):
+    """
+    Configure Modbus controller addresses and device identifiers.
+
+    Attributes:
+        address: Master and optional slave MAC or IP addresses, in that order,
+            separated by commas, semicolons, ampersands, or whitespace.
+        master_device_id: Modbus device identifier for the master inverter.
+        meter_device_id: Modbus device identifier for the meter.
+        slave_device_id: Modbus device identifier for the slave inverter.
+    """
     TYPE: ClassVar[Literal['modbus']] = 'modbus'
     type: Literal['modbus'] = 'modbus'
 
@@ -57,6 +79,13 @@ class ModbusControllerConnection(BaseModel):
 
 
 class AmberPricerConnection(BaseModel):
+    """
+    Configure Amber electricity pricing API access.
+
+    Attributes:
+        api_token: Amber API authentication token.
+        nmi: National Metering Identifier for the electricity connection.
+    """
     TYPE: ClassVar[Literal['amber']] = 'amber'
     type: Literal['amber'] = 'amber'
 
@@ -65,6 +94,9 @@ class AmberPricerConnection(BaseModel):
 
 
 class TeslaWallConnectorConnection(BaseModel):
+    """
+    Configure a Tesla Wall Connector using its MAC or IP address.
+    """
     TYPE: ClassVar[Literal['tesla']] = 'tesla'
     type: Literal['tesla'] = 'tesla'
 
@@ -72,6 +104,17 @@ class TeslaWallConnectorConnection(BaseModel):
 
 
 class TuyaConnection(BaseModel):
+    """
+    Configure Tuya API access and electrical measurement scaling.
+
+    Attributes:
+        access_id: Tuya API access identifier.
+        access_secret: Tuya API authentication secret.
+        device_id: Identifier of the Tuya device.
+        voltage_scale_factor: Multiplier applied to reported voltage values.
+        current_scale_factor: Multiplier applied to reported current values.
+        power_scale_factor: Multiplier applied to reported power values.
+    """
     TYPE: ClassVar[Literal['tuya']] = 'tuya'
     type: Literal['tuya'] = 'tuya'
 
@@ -85,6 +128,19 @@ class TuyaConnection(BaseModel):
 
 
 class OpenMeteoConnection(BaseModel):
+    """
+    Configure the Open-Meteo solar forecast and photovoltaic system model.
+
+    Attributes:
+        latitude: Site latitude in degrees.
+        longitude: Site longitude in degrees.
+        panel_orientation: Panel azimuth in degrees.
+        panel_tilt: Panel inclination in degrees.
+        panel_capacity: Rated photovoltaic panel capacity in watts.
+        panel_temperature_coefficient: Panel power temperature coefficient.
+        inverter_limit: Maximum inverter output in watts.
+        inverter_efficiency: Inverter conversion efficiency as a fraction.
+    """
     TYPE: ClassVar[Literal['open_meteo']] = 'open_meteo'
     type: Literal['open_meteo'] = 'open_meteo'
 
@@ -99,6 +155,9 @@ class OpenMeteoConnection(BaseModel):
 
 
 class DatabaseConnection(BaseModel):
+    """
+    Configure PostgreSQL connection credentials and server details.
+    """
     role: str
     password: str
     host: str = DEFAULT_DB_HOST
@@ -133,7 +192,10 @@ type ForecasterConnection = Annotated[
 
 class Settings(BaseModel):
     """
-    A class to hold user settings for the control loop.
+    Hold delegate connections, operating modes, policies, and control settings.
+
+    Optional connection fields identify configured services. Policy thresholds
+    and register logging settings control the behaviour of the control loop.
     """
 
     controller: ControllerConnection | None = None
@@ -160,6 +222,12 @@ class Settings(BaseModel):
 
 def consumers(**kwargs: ConsumerConnection) -> dict[str, ConsumerConnection]:
     """
-    Helper to keep type inference tidy.
+    Build a mapping of named power consumer connections.
+
+    Args:
+        **kwargs: Consumer names mapped to their connection configurations.
+
+    Returns:
+        A dictionary of consumer connection configurations.
     """
     return kwargs
