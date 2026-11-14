@@ -508,7 +508,7 @@ class ModbusPowerController(PowerController):
             names: Names of the registers to read.
 
         Returns:
-            Register values in the same order as the supplied names.
+            Register values are returned coindexed with the given names.
         """
         return [
             await self._get(name) for name in names
