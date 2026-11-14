@@ -2,7 +2,7 @@
 This module provides access to local configuration variables.
 
 Local configuration variables are {variable} = {value} pairs that
-are defined externally to Solala to adapt it to the local
+are defined externally to the application to adapt it to the local
 installation environment. They are not intended to change
 application algorithms.
 
@@ -31,7 +31,7 @@ Usage:
     #    DEF = 456
 
     val = config.ABC                  # val = 123
-    val = config.XYZ                  # will raise an exception
+    val = config.XYZ                  # raises AttributeError
     val = config.get('ABC')           # val = 123
     val = config['DEF']               # val = 456
     val = config['XYZ']               # will raise an exception
@@ -50,9 +50,11 @@ Usage:
 import inspect
 import os
 from ast import literal_eval
-from itertools import chain
 from collections.abc import Iterable, Sequence
+from itertools import chain
 from typing import Any
+
+from solala.utils.sentinel import Sentinel
 
 try:
     # Try to import the user's `local_config.py`
@@ -61,7 +63,7 @@ except ImportError:
     _local_config = None
 
 # Sentinel object
-_NIL = object()
+_NIL = Sentinel('_NIL')
 
 
 class Config:
@@ -148,12 +150,17 @@ class Config:
 
     def __getattr__(self, key: str) -> Any:
         """
-        Get the value of the given configuration variable.
-        If the configuration variable is not available, raise a KeyError.
+        Retrieve a configuration value as an attribute.
+
+        Raises:
+            AttributeError: If the configuration name is undefined.
         """
-        value = self.get(key, _NIL)
+        try:
+            value = self.get(key, _NIL)
+        except KeyError as err:
+            raise AttributeError(f'invalid local configuration parameter: {key!r}') from err
         if value is _NIL:
-            raise KeyError(f'undefined local configuration parameter: {key}')
+            raise AttributeError(f'undefined local configuration parameter: {key}')
         return value
 
 
@@ -224,23 +231,23 @@ def get_params(
         the requested parameter values.
     """
     if delim is not None:
-        keys = (elem for iterable in (key.split(delim) for key in keys) for elem in iterable)
+        keys = tuple(elem for key in keys for elem in key.split(delim))
         if sep is None:
             sep = '='
 
     if sep is None:
-        items = ((key, local_config[key]) for key in keys)
-    else:
-        items = (f'{key}{sep}{local_config[key]!r}' for key in keys)
+        pairs = tuple((key, local_config[key]) for key in keys)
+        if len(pairs) == 1:
+            return pairs[0]
+        return pairs
 
-    if delim is None:
-        result = tuple(items)
-        if len(result) == 1:
-            result = result[0]
-    else:
-        result = delim.join(str(item) for item in items)
+    values = tuple(f'{key}{sep}{local_config[key]!r}' for key in keys)
 
-    return result
+    if delim is not None:
+        return delim.join(values)
+    if len(values) == 1:
+        return values[0]
+    return values
 
 
 def update_config(

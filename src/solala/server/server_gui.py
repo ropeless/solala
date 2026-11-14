@@ -1,8 +1,13 @@
+"""
+Implement the NiceGUI interface.
+"""
+
 import asyncio
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from functools import partial
-from collections.abc import Awaitable, Callable, Sequence
+from typing import Coroutine, Any
 
 from nicegui import ui, app, events
 from nicegui.element import Element
@@ -37,29 +42,28 @@ _HEAD_HTML = r'''
 '''
 
 
-def _page_header(ext: str = '', link: bool = True) -> None:
+def _page_header() -> None:
     """
     NiceGui snippet to add the Solala title to the page.
-    Args:
-        ext: A string to append to the title.
-        link: Whether to create a link to the home page or not
     """
     with ui.element('div').classes('solala-header'):
 
         with ui.element('div').classes('solala-brand'):
-            if link:
-                with ui.link(target='/'):
-                    image = ui.image('/images/solala.svg')
-            else:
-                image = ui.image('/images/solala.svg')
+            image = ui.image('/images/solala.svg')
             image.classes('w-12 h-12 bg-transparent')
 
             with ui.element('div'):
-                ui.label(f'{Constants.APP_NAME}{ext}').classes('solala-brand-name')
+                ui.label(Constants.APP_NAME).classes('solala-brand-name')
                 ui.label(Constants.APP_SUBTITLE).classes('solala-brand-subtitle')
 
 
 def _control_header(title: str) -> None:
+    """
+    Add a titled header to a dashboard control card.
+
+    Args:
+        title: Heading displayed above the controls.
+    """
     with ui.element('div').classes('control-header'):
         with ui.element('div').classes('dashboard-card-title'):
             ui.label(title)
@@ -67,7 +71,10 @@ def _control_header(title: str) -> None:
 
 async def _ui_control_buttons(session: PageSession) -> None:
     """
-    Add the control buttons to the UI.
+    Build battery and inverter controls and register their status listeners.
+
+    Args:
+        session: Session that owns the control listeners.
     """
     # ======================================================
     # BATTERY
@@ -82,13 +89,13 @@ async def _ui_control_buttons(session: PageSession) -> None:
             battery_force_discharge = ui.button('FORCE DISCHARGE').classes('solala-button')
             battery_charge_only = ui.button('CHARGE ONLY').classes('solala-button')
             battery_discharge_only = ui.button('DISCHARGE ONLY').classes('solala-button')
-            battery_cheap_force_discharge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
+            battery_cheap_force_charge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
 
             battery_force_charge.classes('wide')
             battery_force_discharge.classes('wide')
             battery_charge_only.classes('wide')
             battery_discharge_only.classes('wide')
-            battery_cheap_force_discharge.classes('wide')
+            battery_cheap_force_charge.classes('wide')
 
         updater = BatteryButtonUpdater(
             battery_enable=battery_enable,
@@ -97,7 +104,7 @@ async def _ui_control_buttons(session: PageSession) -> None:
             battery_force_discharge=battery_force_discharge,
             battery_charge_only=battery_charge_only,
             battery_discharge_only=battery_discharge_only,
-            battery_cheap_force_discharge=battery_cheap_force_discharge,
+            battery_cheap_force_charge=battery_cheap_force_charge,
         )
         await updater.update()  # call synchronously to avoid flicker
         await session.add_control_listener(updater)
@@ -128,17 +135,35 @@ async def _ui_control_buttons(session: PageSession) -> None:
         await session.add_control_listener(updater)
 
 
-def _infographic_click(element: events.GenericEventArguments, select_tab: Callable[[str], Awaitable[None]]) -> None:
+def _infographic_click(
+        element: events.GenericEventArguments,
+        select_tab: Callable[[str], Coroutine[Any, Any, None]],
+) -> None:
+    """
+    Navigate to the price or solar tab when its infographic region is clicked.
+
+    Args:
+        element: Click event containing the SVG region identifier.
+        select_tab: Asynchronous tab-selection callback.
+    """
     click_id: str | None = element.args
     if click_id == CLICK_ID_GRID:
         asyncio.create_task(select_tab(_PRICE_TAB))
     elif click_id == CLICK_ID_SUN:
         asyncio.create_task(select_tab(_SOLAR_TAB))
     elif click_id in (CLICK_ID_INVERTER, CLICK_ID_HOME, CLICK_ID_BATTERY):
+        # More may be implemented in the future
         pass
 
 
 def _update_loop_status(loop_status_light: Element, loop_status_label: Label) -> None:
+    """
+    Refresh the control-loop health indicator using `control_loop.loop_check_overdue()`.
+
+    Args:
+        loop_status_light: Element displaying the health indicator colour.
+        loop_status_label: Label displaying the loop health text.
+    """
     overdue: float = control_loop.loop_check_overdue()
     if overdue > Constants.LOOP_TIME:
         loop_status_light.classes(
@@ -163,67 +188,6 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
         pass
 
 
-def _day_navigation(
-        swipe_area: ui.Area,
-        change_day: Callable[[int], Awaitable[None]],
-        set_day: Callable[[date], Awaitable[None]],
-) -> None:
-    # Handler for swipe actions
-    async def handle_swipe(event: events.GenericEventArguments) -> None:
-        direction = event.args
-        if direction == 'left':
-            await change_day(1)
-        elif direction == 'right':
-            await change_day(-1)
-
-    swipe_area.on(
-        'touchstart',
-        js_handler="""(e) => {
-            if (!e.changedTouches.length) return;
-
-            const touch = e.changedTouches[0];
-            e.currentTarget.dataset.startX = touch.clientX;
-            e.currentTarget.dataset.startY = touch.clientY;
-        }""",
-    )
-
-    swipe_area.on(
-        'touchend',
-        handle_swipe,
-        js_handler="""(e) => {
-            if (!e.changedTouches.length) return;
-
-            const touch = e.changedTouches[0];
-            const startX = Number(e.currentTarget.dataset.startX);
-            const startY = Number(e.currentTarget.dataset.startY);
-
-            // Ignore gestures if the starting position was not recorded.
-            if (!Number.isFinite(startX) ||
-                !Number.isFinite(startY)) return;
-
-            const dx = touch.clientX - startX;
-            const dy = touch.clientY - startY;
-
-            // Require a deliberate horizontal swipe.
-            if (Math.abs(dx) >= 60 &&
-                Math.abs(dx) > Math.abs(dy) * 1.5) {
-                emit(dx < 0 ? 'left' : 'right');
-            }
-        }""",
-    )
-
-    async def handle_key(e: events.KeyEventArguments) -> None:
-        if e.action.keydown:
-            if e.key.arrow_left:
-                await change_day(-1)
-            elif e.key.arrow_right:
-                await change_day(1)
-            elif e.key.home:
-                await set_day(date.today())
-
-    ui.keyboard(on_key=handle_key, repeating=False)
-
-
 # ====================================================================
 #  Tabbed application
 # ====================================================================
@@ -235,6 +199,9 @@ app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manif
 
 
 async def _build_power_page(container: Element, session: PageSession) -> None:
+    """
+    Build the power-flow infographic, loop health indicator, and controls.
+    """
     with container:
         with ui.element('div').classes('dashboard-card infographic-card'):
             with ui.row().classes('w-full items-center justify-between'):
@@ -287,6 +254,9 @@ async def _build_power_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_solar_page(container: Element, session: PageSession) -> None:
+    """
+    Build the date-navigable solar forecast with session-owned listeners.
+    """
     with container:
         navigator = DayNavigator(enable_swipe_content=True, auto_height=True, title='Solar Forecast')
         updaters = [
@@ -301,6 +271,9 @@ async def _build_solar_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_price_page(container: Element, session: PageSession) -> None:
+    """
+    Build the price forecast table and register its refresh listener.
+    """
     with container:
         ui.label('Price Forecast').classes('dashboard-card-title')
 
@@ -311,6 +284,9 @@ async def _build_price_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_graphs_page(container: Element, session: PageSession) -> None:
+    """
+    Build daily charts with date navigation and database-loop updates.
+    """
     with container:
         swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
         with swipe_area:
@@ -327,6 +303,9 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_status_page(container: Element, session: PageSession) -> None:
+    """
+    Build the formatted control-loop status display.
+    """
     with container:
         with ui.card().classes('w-full'):
             ui.label('Status').classes('dashboard-card-title')
@@ -338,6 +317,9 @@ async def _build_status_page(container: Element, session: PageSession) -> None:
 
 
 async def _build_connection_page(container: Element, _: PageSession) -> None:
+    """
+    Display the current connection information as formatted JSON.
+    """
     with container:
         with ui.card().classes('w-full'):
             ui.label('Connection').classes('dashboard-card-title')
@@ -350,6 +332,9 @@ async def _build_connection_page(container: Element, _: PageSession) -> None:
 
 
 async def _build_parameters_page(container: Element, _: PageSession) -> None:
+    """
+    Display the active control policy and configured constants.
+    """
     with container:
         with ui.column().classes('w-full'):
             with ui.card().classes('w-full'):
@@ -371,6 +356,9 @@ async def _build_parameters_page(container: Element, _: PageSession) -> None:
 
 
 async def _build_registers_page(container: Element, session: PageSession) -> None:
+    """
+    Build the register display and register its refresh listener.
+    """
     with container:
         with ui.card().classes('w-full'):
             ui.label('Registers').classes('dashboard-card-title')
@@ -380,6 +368,9 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
 
 
 async def _build_log_page(container: Element, session: PageSession) -> None:
+    """
+    Build the log console and unregister it when the session closes.
+    """
     with container:
         with ui.row().classes('w-full items-center justify-between'):
             ui.label('Log Console').classes('dashboard-card-title')
@@ -397,11 +388,15 @@ async def _build_log_page(container: Element, session: PageSession) -> None:
     session.add_cleanup(partial(server_log.remove, log_ui))
 
 
+# Asynchronous builder for a tab's content and session resources.
 type Builder = Callable[[Element, PageSession], Awaitable[None]]
 
 
 @dataclass
 class Tab:
+    """
+    Describe a tab's label, icon presentation, and content builder.
+    """
     name: str
     icon_scale: float  # for visually balancing the size of the icons.
     icon_url: str
@@ -426,19 +421,26 @@ _PRICE_TAB: str = _TABS[2].name
 
 
 class TabSelector:
+    """
+    Manage tab selection, asynchronous construction, and session clean-up.
+
+    Tab transitions are serialised by a lock. Each selected tab receives a
+    new `PageSession`, and any previous build and session are closed before
+    the next tab is constructed.
+    """
+
     def __init__(
             self,
             colours: Colours,
             button_container: Element,
             content_container: Element,
     ) -> None:
-        self.button_container: Element = button_container
         self.content_container: Element = content_container
 
         self.buttons: dict[str, Button] = {}
         self.builder: dict[str, Builder] = {}
 
-        with self.button_container:
+        with button_container:
             for tab_def in _TABS:
                 with ui.button().classes('solala-tab-button').props('color=white text-color=black') as button:
                     ui.image(tab_def.icon_url).classes('solala-tab-icon').style(
@@ -456,6 +458,12 @@ class TabSelector:
         self._transition_lock = asyncio.Lock()
 
     async def select_tab(self, tab_name: str) -> None:
+        """
+        Select a tab, cancelling and cleaning up the previous tab first.
+
+        Args:
+            tab_name: Name of a configured tab.
+        """
         async with self._transition_lock:
             if tab_name == self.active_tab:
                 return
@@ -478,10 +486,16 @@ class TabSelector:
             self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
 
     async def close_active_session(self) -> None:
+        """
+        Close the active tab session, serialised with tab transitions.
+        """
         async with self._transition_lock:
             await self._close_active_session()
 
     async def _cancel_active_build(self) -> None:
+        """
+        Cancel and await an unfinished tab construction task.
+        """
         task = self._build_task
         self._build_task = None
         if task is None or task.done():
@@ -494,6 +508,9 @@ class TabSelector:
             pass
 
     async def _close_active_session(self) -> None:
+        """
+        Stop tab construction and release resources owned by its session.
+        """
         await self._cancel_active_build()
         if self.active_session is not None:
             session = self.active_session
@@ -501,6 +518,9 @@ class TabSelector:
             await session.close()
 
     async def _build_tab(self, tab_name: str, session: PageSession) -> None:
+        """
+        Build a tab and display an error panel if construction fails.
+        """
         builder = self.builder[tab_name]
         try:
             await builder(self.content_container, session)
@@ -520,11 +540,16 @@ class TabSelector:
 
 @ui.page('/')
 async def root_page() -> None:
+    """
+    Initialise the root page and select its initial tab.
+
+    The active session is closed when the NiceGUI client disconnects.
+    """
     ui.add_head_html(_HEAD_HTML)
     colours: Colours = await css_colours()  # must come directly after add_head_html.
 
     with ui.element('div').classes('solala-page'):
-        _page_header(link=False)
+        _page_header()
 
         with ui.element('div').classes('dashboard-card tab-navigation'):
             button_container = ui.grid(columns=3).classes('w-full gap-2')

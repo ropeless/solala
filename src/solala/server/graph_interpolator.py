@@ -12,7 +12,12 @@ from solala.utils.datetime_extras import local_time_zone, ensure_date, date_to_d
 
 class GraphingInterpolator:
     """
-    Interpolates measurements data to specific 5-minute timepoints for graphing.
+    Interpolate measurements and forecasts onto a five-minute daily time grid.
+
+    The grid contains 288 local-time timestamps. Power and energy properties
+    produce graph-ready values; price properties use nearest-neighbour lookup.
+    Missing input series produce empty lists, while some interpolation paths
+    use NaN for values outside the available observations.
     """
 
     def __init__(
@@ -23,6 +28,16 @@ class GraphingInterpolator:
             solar_forecast: DailySolarForecast,
             demand_window: tuple[datetime, datetime] | None
     ) -> None:
+        """
+        Prepare the daily time grid and source timestamps.
+
+        Args:
+            day: Date to graph in the local time zone.
+            measurements: Historical measurements used for actual graph series.
+            price_forecast: Price intervals used for forecast price series.
+            solar_forecast: Solar power and energy forecast intervals.
+            demand_window: Optional start and end of the demand window.
+        """
         tz = local_time_zone()
         day = ensure_date(day, tz)
         day_as_datetime: datetime = date_to_datetime(day, tz)
@@ -45,6 +60,9 @@ class GraphingInterpolator:
 
     @property
     def demand_window(self) -> tuple[datetime, datetime] | None:
+        """
+        Return the optional demand-window time interval.
+        """
         return self._demand_window
 
     @property
@@ -157,13 +175,17 @@ class GraphingInterpolator:
 
     def _energy_to_power(self, data: list[float], boundary_value: float) -> list[float]:
         """
-        Convert accumulated energy to average power for each period.
+        Convert accumulated energy differences to average power in kW.
+
+        Uses the final measurement as a boundary point when it falls after the
+        last graph timestamp. The input list is modified by the conversion.
+
         Args:
-            data: the accumulated energy values, co-indexed with self.timestamps.
-            boundary_value: the energy value of self._measurements[-1]
+            data: Accumulated energy values in kWh, coindexed with `timestamps`.
+            boundary_value: Accumulated energy at the final measurement.
 
         Returns:
-            power values, co-indexed with self.timestamps.
+            Average power values in kW, coindexed with `timestamps`.
         """
         times = self.timestamps
         boundary_time = self._measurements[-1].timestamp
@@ -180,10 +202,16 @@ class GraphingInterpolator:
         return data
 
     def _accumulated_daily_energy(self, field: str) -> list[float]:
+        """
+        Interpolate an accumulated energy field and offset so the first value is zero.
+        """
         values = [getattr(m, field) for m in self._measurements]
         return _ensure_monotonic(_zero(x / 1000 for x in self._interpolate_linear(self._ts_m, values)))
 
     def _instantaneous_power(self, field: str) -> list[float]:
+        """
+        Linearly interpolate a measured power field, converting watts to kW.
+        """
         values = [getattr(m, field) for m in self._measurements]
         return [x / 1000 for x in self._interpolate_linear(self._ts_m, values)]
 
@@ -194,6 +222,9 @@ class GraphingInterpolator:
             left: float | None = np.nan,
             right: float | None = np.nan,
     ) -> list[float]:
+        """
+        Interpolate `values` onto the daily time grid using straight-line segments.
+        """
         if len(values) == 0:
             return []
         y_values = np.array(values)
@@ -207,6 +238,9 @@ class GraphingInterpolator:
             left: float | None = np.nan,
             right: float | None = np.nan,
     ) -> list[float]:
+        """
+        Interpolate `values` onto the daily time grid using a cubic spline.
+        """
         if len(values) == 0:
             return []
 
@@ -238,6 +272,9 @@ class GraphingInterpolator:
             left: float | None = np.nan,
             right: float | None = np.nan,
     ) -> list[float]:
+        """
+        Interpolate `values` onto the daily time grid using the "nearest neighbour" algorithm.
+        """
         if len(values) == 0:
             return []
 
@@ -267,6 +304,9 @@ class GraphingInterpolator:
 
 
 def _ensure_monotonic(data: Iterable[float]) -> list[float]:
+    """
+    Replace decreasing values with the greatest value seen so far.
+    """
     m = float('-inf')
     result: list[float] = []
     for x in data:
@@ -276,6 +316,9 @@ def _ensure_monotonic(data: Iterable[float]) -> list[float]:
 
 
 def _ensure_non_negative(data: Iterable[float]) -> list[float]:
+    """
+    Clamp negative values to zero.
+    """
     return [
         max(0, x)
         for x in data
@@ -283,6 +326,9 @@ def _ensure_non_negative(data: Iterable[float]) -> list[float]:
 
 
 def _zero(data: Iterable[float]) -> list[float]:
+    """
+    Subtract the first non-NaN value, preserving leading NaNs.
+    """
     it = iter(data)
     result: list[float] = []
     try:
@@ -301,6 +347,9 @@ def _zero(data: Iterable[float]) -> list[float]:
 
 
 def _accumulate(data: Iterable[float]) -> list[float]:
+    """
+    Return running totals of the supplied values.
+    """
     result: list[float] = []
     acc = 0
     for x in data:
@@ -310,6 +359,11 @@ def _accumulate(data: Iterable[float]) -> list[float]:
 
 
 def _diff(data: list[float], times: Sequence[datetime]) -> list[float]:
+    """
+    Convert successive energy differences to hourly rates in place.
+
+    The last output value is NaN because no following timestamp is available.
+    """
     end = len(data) - 1
     for i in range(end):
         seconds = (times[i + 1].timestamp() - times[i].timestamp())

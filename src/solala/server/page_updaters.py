@@ -1,3 +1,7 @@
+"""
+Provides page updaters for NiceGUI pages.
+"""
+
 import asyncio
 from abc import abstractmethod
 from datetime import datetime, date
@@ -30,6 +34,12 @@ from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json,
 
 
 class StatusListener(LoopListener):
+    """
+    A partial abstract implementation of a LoopListener where an updater requires
+    the result of `control_loop.get_status()`.
+
+    Subclasses implement `_update()` to refresh their own page elements.
+    """
 
     @final
     async def update(self) -> None:
@@ -42,6 +52,10 @@ class StatusListener(LoopListener):
 
 
 class InverterButtonUpdater(StatusListener):
+    """
+    Updater for inverter control buttons so that buttons reflect the
+    selected mode and policy.
+    """
 
     def __init__(
             self,
@@ -103,13 +117,17 @@ class InverterButtonUpdater(StatusListener):
         def on_props(_on: str) -> str:
             return 'color=blue dense' if inverter_button == _on else 'color=grey dense'
 
-        self.inverter_enable.props(on_props('ENABLE'))
-        self.inverter_disable.props(on_props('DISABLE'))
-        self.inverter_zero_export.props(on_props('ZERO_EXPORT'))
-        self.inverter_neg_feed_in_zero_export.props(on_props('NEG_FEED_IN_ZERO_EXPORT'))
+        self.inverter_enable.props(on_props(InverterMode.ENABLE.name))
+        self.inverter_disable.props(on_props(InverterMode.DISABLE.name))
+        self.inverter_zero_export.props(on_props(InverterMode.ZERO_EXPORT.name))
+        self.inverter_neg_feed_in_zero_export.props(on_props(InverterPolicy.NEG_FEED_IN_ZERO_EXPORT.name))
 
 
 class BatteryButtonUpdater(StatusListener):
+    """
+    Updater for battery control buttons so that buttons reflect the
+    selected mode and policy.
+    """
 
     def __init__(
             self,
@@ -119,7 +137,7 @@ class BatteryButtonUpdater(StatusListener):
             battery_force_discharge: Button,
             battery_charge_only: Button,
             battery_discharge_only: Button,
-            battery_cheap_force_discharge: Button,
+            battery_cheap_force_charge: Button,
     ) -> None:
         super().__init__()
         self.battery_enable = battery_enable.on_click(partial(
@@ -140,13 +158,13 @@ class BatteryButtonUpdater(StatusListener):
         self.battery_discharge_only = battery_discharge_only.on_click(partial(
             self._click, BatteryMode.DISCHARGE_ONLY, BatteryPolicy.MANUAL
         ))
-        self.battery_cheap_force_discharge = battery_cheap_force_discharge.on_click(partial(
+        self.battery_cheap_force_charge = battery_cheap_force_charge.on_click(partial(
             self._click, None, BatteryPolicy.CHEAP_CHARGE
         ))
 
         for button in [
             battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
-            battery_charge_only, battery_discharge_only, battery_cheap_force_discharge
+            battery_charge_only, battery_discharge_only, battery_cheap_force_charge
         ]:
             button.style('padding-top: 1px; padding-bottom: 1px;')
             button.classes('py-0 px-2 text-xs')
@@ -182,16 +200,19 @@ class BatteryButtonUpdater(StatusListener):
         def on_props(_on: str) -> str:
             return 'color=blue dense' if battery_button == _on else 'color=grey dense'
 
-        self.battery_enable.props(on_props('ENABLE'))
-        self.battery_disable.props(on_props('DISABLE'))
-        self.battery_force_charge.props(on_props('FORCE_CHARGE'))
-        self.battery_force_discharge.props(on_props('FORCE_DISCHARGE'))
-        self.battery_charge_only.props(on_props('CHARGE_ONLY'))
-        self.battery_discharge_only.props(on_props('DISCHARGE_ONLY'))
-        self.battery_cheap_force_discharge.props(on_props('CHEAP_FORCE_DISCHARGE'))
+        self.battery_enable.props(on_props(BatteryMode.ENABLE.name))
+        self.battery_disable.props(on_props(BatteryMode.DISABLE.name))
+        self.battery_force_charge.props(on_props(BatteryMode.FORCE_CHARGE.name))
+        self.battery_force_discharge.props(on_props(BatteryMode.FORCE_DISCHARGE.name))
+        self.battery_charge_only.props(on_props(BatteryMode.CHARGE_ONLY.name))
+        self.battery_discharge_only.props(on_props(BatteryMode.DISCHARGE_ONLY.name))
+        self.battery_cheap_force_charge.props(on_props(BatteryPolicy.CHEAP_CHARGE.name))
 
 
 class StatusUpdater(StatusListener):
+    """
+    Render the control-loop status as formatted JSON in a page element.
+    """
 
     def __init__(
             self,
@@ -207,6 +228,10 @@ class StatusUpdater(StatusListener):
 
 
 class InfographicUpdater(StatusListener):
+    """
+    Render the SVG power-flow infographic in a page element.
+    """
+    
     def __init__(self, infographic_element: ContentElement) -> None:
         super().__init__()
         self.infographic_element = infographic_element
@@ -218,6 +243,9 @@ class InfographicUpdater(StatusListener):
 
 
 class RegistersUpdater(LoopListener):
+    """
+    Fetch and display register values, including display of an initial "loading" label.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -242,6 +270,12 @@ class RegistersUpdater(LoopListener):
 
 
 class PriceForecastUpdater(LoopListener):
+    """
+    Render a price forecast table with demand-window row highlighting.
+
+    The table is rebuilt when the forecast sequence object changes.
+    """
+
     def __init__(self, element: ui.element) -> None:
         super().__init__()
         self._prev: Sequence[Price] | None = None
@@ -315,6 +349,12 @@ class PriceForecastUpdater(LoopListener):
 
 
 class SolarForecastUpdater(LoopListener):
+    """
+    Render a selected day's solar forecast and estimated generation.
+
+    A call to `set_day()` will change the day and schedule a page-owned refresh task.
+    Displays a "loading" message until the forecast is available.
+    """
 
     def __init__(self, element: ui.element, session: PageSession) -> None:
         super().__init__()
@@ -336,6 +376,12 @@ class SolarForecastUpdater(LoopListener):
         return self._day
 
     async def set_day(self, day: date) -> None:
+        """
+        Select a forecast date and schedule a refresh of its table.
+
+        Args:
+            day: Date to display.
+        """
         self._show_loading()
         self._day = day
         self._session.add_task(asyncio.create_task(self.update()))
@@ -415,6 +461,11 @@ class SolarForecastUpdater(LoopListener):
 
 
 class ChartUpdater(LoopListener):
+    """
+    Fetch and display charts for the selected day.
+
+    Chart data are fetched concurrently and combined using a `GraphingInterpolator`.
+    """
 
     def __init__(self, element: ui.element, session: PageSession) -> None:
         super().__init__()
@@ -439,6 +490,12 @@ class ChartUpdater(LoopListener):
         return self._day
 
     async def set_day(self, day: date) -> None:
+        """
+        Select a chart date and schedule a refresh of the graphs.
+
+        Args:
+            day: Date to display.
+        """
         self._show_loading()
         self._day = day
         self._session.add_task(asyncio.create_task(self.update()))
@@ -476,6 +533,9 @@ class ChartUpdater(LoopListener):
 
 
 def _buy_price_class(price: float) -> str:
+    """
+    Select the CSS class for the configured electricity purchase price bands.
+    """
     if price >= Constants.BUY_PRICE_RED:
         return 'price-buy-high'
     elif price >= Constants.BUY_PRICE_AMBER:
@@ -485,6 +545,9 @@ def _buy_price_class(price: float) -> str:
 
 
 def _feed_in_price_class(price: float) -> str:
+    """
+    Select the CSS class for nonnegative or negative feed-in prices.
+    """
     if price >= 0:
         return 'price-feed-in-okay'
     else:

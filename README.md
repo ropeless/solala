@@ -1,62 +1,82 @@
 Solala
 ======
 
-Solala is a Python package and web app for controlling solar power inverters and battery.
+Solala is a Python package and web app for monitoring and controlling home solar
+power inverters and batteries. It is a personal project shared in case others
+find it useful.
 
-This is currently a personal project being shared in case others find it useful.
+![Solala Power dashboard](docs/images/screenshot%20-%20Power.PNG)
 
-The aim of the project is to provide:
+Features
+========
 
-- datatype-aware reading and writing of Modbus registers using high-level register names
-  potentially using multiple Modbus devices with multiple IP addresses
-- high-level inverter and battery status and control
-- high-level power pricing and forecasting API
-- high-level system control and control policies
-- a web app for monitoring and controlling the system.
+- Monitor solar generation, household consumption, battery usage and grid power.
+- Control inverter and battery operating modes manually or through price-driven policies.
+- Read and write typed, named Modbus registers, including across multiple devices.
+- View electricity price and solar generation forecasts, historical charts and diagnostics.
+- Use a NiceGUI web interface, with dummy integrations available for development and demos.
 
-Here are the implemented control policies.
+Supported Integrations and Limitations
+======================================
 
-- Battery Manual: Enable (the normal condition, allow charge and discharge).
-- Battery Manual: Disable (neither charge nor discharge is allowed).
-- Battery Manual: Force Charge.
-- Battery Manual: Force Discharge.
-- Battery Auto: Cheap Energy ⇒ Force Charge (force charge if energy is cheap).
-- Inverter Manual: Enable (the normal condition, allow export to the grid).
-- Inverter Manual: Disable (stop inverter providing solar power).
-- Inverter Manual: Zero Export (try to not export to or import from the grid).
-- Inverter Auto: Negative Feed-in Tariff ⇒ Zero Export (force zero export if the feed-in tariff is negative).
+Solala is designed for a particular home installation, not as a turnkey
+solution for every solar system.
 
-As it is a personal project, there are a few limitations.
+- **Inverters and batteries:** Fronius through Modbus/SunSpec, with master and
+  optional slave inverters. Compatibility with other models and firmware is
+  not established; slave power curtailment depends on configuration.
+- **Electricity prices and forecasts:** Amber for live electricity pricing
+  and Open-Meteo for solar forecasting.
+- **Other devices:** Optional Tesla Wall Connector and Tuya integrations.
+- **History:** PostgreSQL for measurement storage.
+- **Networking:** The server needs access to configured devices, locally or
+  through suitable network routing; remote browser access should be secured.
 
-- There is only support for Fronius GEN4 inverters.
-- There is only support for Amber as the power price provider.
-- The web app is very basic.
-- The web app needs to run on the same LAN as the inverters.
+**Caution:** Solala can change inverter and battery operation. Validate
+compatibility and control behaviour before using automatic policies.
 
-Getting Started
-===============
+Quick Start
+===========
 
-See the demonstration scripts in the `src/solala_demo` directory.
+Solala requires Python 3.13 or later and uses Poetry for dependency management.
 
-A web app can be started using the `src/solala_demo/demo_server.py` script or `scripts/run_solala.sh`.
-Those scripts will start the web app with real connections to the inverters and power pricer.
-You can also start the web app with dummy connections using the `src/solala_demo/demo_dummy_server.py` script.
+```sh
+git clone https://github.com/ropeless/solala.git
+cd solala
+poetry install
+```
 
-For the demos, private constants are declared in a file `local_config.py`
-which needs to be in your Python path. An example is provided in the file
-`src/solala_demo/_example_local_config.py`.
+To try the web app without solar hardware, prepare a `local_config.py` from
+`src/solala_demo/_example_local_config.py`, set the required local paths,
+and make `src/` and the configuration directory available on `PYTHONPATH`.
+Then run:
 
-GUI User Hints
-==============
-On the landing page, the "Power" panel shows a live infographic of power and pricing information.
+```sh
+poetry run python -m solala_demo.demo_dummy_server
+```
 
-Click the infographic "grid" icon to see the forecast of power prices.
+See the [Getting Started guide](docs/getting_started.md) for configuration,
+step-by-step instructions and running with real hardware.
 
-Click the infographic "sun" icon to see the forecast of solar power.
+Documentation
+=============
 
+- [Getting Started](docs/getting_started.md) — installation, configuration,
+  demo servers and web interface hints.
+- [Control Modes and Policies](docs/control.md) — manual modes, automatic
+  policies and price thresholds.
+- [Software Architecture and Design](docs/architecture.md) — components,
+  delegates, data flow and design principles.
+- [Development and Testing](docs/development.md) — tests and adding new
+  hardware or service integrations.
+
+More Information
+================
+
+For questions about Solala, further technical information, or development
+inquiries, contact the lead developer at [barry@ropeless.com](mailto:barry@ropeless.com).
 
 License
 =======
 
-MIT license (see the file `LICENSE.txt`).
-
+MIT license (see the file [LICENSE.txt](LICENSE.txt)).
