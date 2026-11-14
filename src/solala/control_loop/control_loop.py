@@ -8,7 +8,7 @@ from datetime import datetime, UTC, timedelta, date
 from inspect import getmembers
 from pathlib import Path
 from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
-from typing import get_type_hints, Type
+from typing import get_type_hints
 
 from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
@@ -1549,7 +1549,7 @@ async def _reconfigure_registers(state: _ControlState) -> None:
     state.registers = RegisterBank(registers)
 
 
-def get_dataclass_properties(cls: Type) -> Iterator[tuple[str, type]]:
+def get_dataclass_properties(cls: type) -> Iterator[tuple[str, type]]:
     for name, member in getmembers(cls):
         if isinstance(member, property):
             prop = getattr(cls, name)
