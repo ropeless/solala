@@ -27,7 +27,7 @@ def find_ip_by_mac(
         mac_addresses: MAC addresses to look up.
         timeout: Number of seconds to wait for ARP responses.
         subnet_mask: CIDR prefix length (e.g. 23) or dotted-decimal subnet mask
-            (e.g. '255.255.254.0'). Defaults to 24 for backward compatibility.
+            (e.g. '255.255.254.0'). Defaults to 24.
 
     Returns:
         Mapping from matched input MAC addresses to discovered IPv4 addresses.
