@@ -95,8 +95,9 @@ class LifecycleCache[T]:
 
     The cache tracks the latest result state and its monotonic timestamp.
     Age is the elapsed time since that result was received. This timestamp
-    advances for VALID, INTERIM, and ERROR alike; it may therefore be newer
-    than the last usable cached value.
+    advances for VALID, INTERIM, and ERROR alike. The timestamp of the last
+    usable value is tracked separately so ERROR refreshes cannot extend its
+    lifetime.
 
     Three age thresholds control refreshes: retry, young, and old.
     They must satisfy retry <= young <= old. If omitted, young defaults
@@ -115,14 +116,14 @@ class LifecycleCache[T]:
         Await the wrapped function; if it reports ERROR, use an unexpired
         cached value or the default, or raise NoResult if neither exists.
 
-    INTERIM, age < retry and age < old:
+    INTERIM, result age < retry and cached-value age < old:
         Return the cached provisional value.
 
-    INTERIM, retry <= age < old:
+    INTERIM, retry <= result age and cached-value age < old:
         Await the wrapped function; the provisional value remains usable
         if the refresh reports ERROR.
 
-    INTERIM, old <= age:
+    INTERIM, old <= cached-value age:
         Expire the cached value, then await the wrapped function. If it
         reports ERROR, return the default or raise NoResult.
 
@@ -180,6 +181,7 @@ class LifecycleCache[T]:
         self._cache: T | Sentinel = default
         self._state: LifecycleState | Sentinel = _INITIAL
         self._timestamp: float = float('-inf')
+        self._cache_timestamp: float = float('-inf')
         self._error_log: Callable[[str], None] = error_log
         self._info_log: Callable[[str], None] = info_log
         self._interim_message: str = interim_message
@@ -194,6 +196,11 @@ class LifecycleCache[T]:
         Returns:
             The cached or newly computed value.
         """
+        # Expire usable values independently of the latest refresh result.
+        # ERROR refreshes update _timestamp but do not extend cache lifetime.
+        if monotonic() - self._cache_timestamp >= self._old:
+            self._cache = self._default
+
         if self._state is _INITIAL:
             return await self._call_f()
         elif self._state is LifecycleState.VALID:
@@ -207,11 +214,12 @@ class LifecycleCache[T]:
             else:
                 return await self._call_f()
         else:
-            # LifecycleState.ERROR | LifecycleState.INTERIM:
+            # LifecycleState.ERROR | LifecycleState.INTERIM
+            if self._state is LifecycleState.INTERIM and monotonic() - self._cache_timestamp >= self._old:
+                return await self._call_f()
             if monotonic() < self._timestamp + self._retry:
                 return self._cached_or_error()
-            else:
-                return await self._call_f()
+            return await self._call_f()
 
     def _cached_or_error(self) -> T:
         """
@@ -257,4 +265,5 @@ class LifecycleCache[T]:
         if self._state == LifecycleState.INTERIM:
             self._info_log(self._interim_message.format(value=value))
         self._cache = value
+        self._cache_timestamp = self._timestamp
         self._task = None
