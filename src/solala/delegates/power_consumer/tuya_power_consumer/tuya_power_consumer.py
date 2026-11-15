@@ -1,3 +1,4 @@
+import asyncio
 from functools import partial
 from collections.abc import AsyncIterator, Awaitable, Callable
 
@@ -32,7 +33,7 @@ class TuyaPowerConsumer(PowerConsumer):
             cache_duration: float = 300,
     ) -> None:
         """
-        Initialise the Tuya API connection and configure device measurements.
+        Configure the Tuya API client and device measurements.
 
         Args:
             access_id: Tuya project access ID.
@@ -46,9 +47,6 @@ class TuyaPowerConsumer(PowerConsumer):
                 'cur_power' value to watts.
             cache_duration: How long to cache the device status. Use this to reduce how often the
                 API is called. The default value is 300 seconds (5 minutes).
-
-        Raises:
-            ConnectionError: If the Tuya API connection cannot be established.
         """
         self._voltage_scale_factor: float = voltage_scale_factor
         self._current_scale_factor: float = current_scale_factor
@@ -58,10 +56,6 @@ class TuyaPowerConsumer(PowerConsumer):
             access_id,
             access_secret,
         )
-        response = self._tuya.connect()
-        if not response.get('success', False):
-            raise ConnectionError(response)
-
         self._status_url: str = f'/v1.0/iot-03/devices/{device_id}/status'
         self._connection_info: JSONDict = {
             'connection': 'Tuya',
@@ -77,6 +71,12 @@ class TuyaPowerConsumer(PowerConsumer):
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
+
+    async def connect(self) -> None:
+        """Establish the Tuya API connection without blocking the event loop."""
+        response = await asyncio.to_thread(self._tuya.connect)
+        if not response.get('success', False):
+            raise ConnectionError(response)
 
     async def get_registers(self) -> RegisterBank:
         if self._register_bank is None:
@@ -148,7 +148,7 @@ class TuyaPowerConsumer(PowerConsumer):
             returned.
         """
         try:
-            response = self._tuya.get(self._status_url)
+            response = await asyncio.to_thread(self._tuya.get, self._status_url)
             if not response.get('success', False):
                 raise ConnectionError(response)
             return {
