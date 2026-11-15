@@ -19,6 +19,11 @@ class TuyaPowerConsumer(PowerConsumer):
     Power consumer implementation for a device connected through the Tuya IoT API.
 
     Retrieves device status and exposes supported status fields as registers.
+
+    API failures return fallback readings, which are cached for the full cache
+    duration. Callers should expect recovery to be delayed until cache expiry.
+    Concurrent first calls to get_registers() may build separate register banks;
+    callers should initialise registers before accessing them concurrently.
     """
 
     def __init__(
