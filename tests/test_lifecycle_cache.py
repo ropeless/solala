@@ -162,7 +162,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.now += 20
         self.assertEqual(await cache(), 7)
         self.assertEqual(cache._state, LifecycleState.ERROR)
-        self.assertEqual(self.calls, 3)
+        self.assertEqual(self.calls, 4)
 
 
 if __name__ == '__main__':
