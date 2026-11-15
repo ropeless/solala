@@ -251,5 +251,115 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls, 2)
 
 
+    async def test_foreground_exception_propagates_and_allows_retry(self) -> None:
+        async def wrapped():
+            self.calls += 1
+            if self.calls == 1:
+                raise ValueError('unexpected failure')
+            return valid(42)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            default=7, error_log=self.error_log, info_log=self.info_log,
+        )
+        with self.assertRaisesRegex(ValueError, 'unexpected failure'):
+            await cache()
+        await asyncio.sleep(0)  # Allow the task completion callback to run.
+        self.assertIsNone(cache._task)
+        self.assertNotIsInstance(cache._state, LifecycleState)  # Still INITIAL.
+        self.assertEqual(cache._timestamp, float('-inf'))
+        self.assertEqual(cache._cache_timestamp, float('-inf'))
+        self.assertEqual(cache._cache, 7)
+        self.error_log.assert_called_once()
+        self.assertIn('ValueError: unexpected failure', self.error_log.call_args.args[0])
+        self.assertEqual(await cache(), 42)
+        self.assertEqual(self.calls, 2)
+
+    async def test_background_exception_is_logged_and_cache_preserved(self) -> None:
+        started = asyncio.Event()
+
+        async def wrapped():
+            self.calls += 1
+            if self.calls == 1:
+                return valid(12)
+            started.set()
+            raise RuntimeError('background failure')
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            default=7, error_log=self.error_log, info_log=self.info_log,
+        )
+        self.assertEqual(await cache(), 12)
+        timestamp = cache._timestamp
+        cache_timestamp = cache._cache_timestamp
+        self.now += 10
+        self.assertEqual(await cache(), 12)
+        await asyncio.wait_for(started.wait(), timeout=1)
+        await asyncio.sleep(0)  # Allow the completion callback to run.
+        self.assertIsNone(cache._task)
+        self.assertEqual(cache._state, LifecycleState.VALID)
+        self.assertEqual(cache._timestamp, timestamp)
+        self.assertEqual(cache._cache_timestamp, cache_timestamp)
+        self.assertEqual(cache._cache, 12)
+        self.error_log.assert_called_once()
+        self.assertIn('RuntimeError: background failure', self.error_log.call_args.args[0])
+
+    async def test_expired_value_not_restored_after_exception(self) -> None:
+        async def wrapped():
+            self.calls += 1
+            if self.calls == 1:
+                return valid(12)
+            if self.calls == 2:
+                raise ValueError('refresh failed')
+            return valid(42)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            default=7, error_log=self.error_log, info_log=self.info_log,
+        )
+        self.assertEqual(await cache(), 12)
+        timestamp = cache._timestamp
+        self.now += 30
+        with self.assertRaisesRegex(ValueError, 'refresh failed'):
+            await cache()
+        await asyncio.sleep(0)
+        self.assertIsNone(cache._task)
+        self.assertEqual(cache._cache, 7)
+        self.assertEqual(cache._state, LifecycleState.VALID)
+        self.assertEqual(cache._timestamp, timestamp)
+        self.assertEqual(await cache(), 42)
+        self.assertEqual(self.calls, 3)
+
+    async def test_concurrent_foreground_callers_receive_same_exception(self) -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def wrapped():
+            self.calls += 1
+            started.set()
+            await release.wait()
+            raise ValueError('shared failure')
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            error_log=self.error_log, info_log=self.info_log,
+        )
+        callers = [asyncio.create_task(cache()) for _ in range(3)]
+        try:
+            await asyncio.wait_for(started.wait(), timeout=1)
+            await asyncio.sleep(0)
+            self.assertEqual(self.calls, 1)
+        finally:
+            release.set()
+        results = await asyncio.wait_for(
+            asyncio.gather(*callers, return_exceptions=True), timeout=1,
+        )
+        self.assertTrue(all(isinstance(result, ValueError) for result in results))
+        self.assertTrue(all(str(result) == 'shared failure' for result in results))
+        await asyncio.sleep(0)
+        self.assertIsNone(cache._task)
+        self.assertEqual(self.calls, 1)
+        self.error_log.assert_called_once()
+
 if __name__ == '__main__':
     unittest.main()
