@@ -137,7 +137,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await cache(), 12)
         self.now += 1
         self.assertEqual(await cache(), 7)
-        self.assertEqual(self.calls, 3)
+        self.assertEqual(self.calls, 2)
 
     async def test_error_retries_only_after_retry_interval(self) -> None:
         self.results = [error('unavailable'), valid(15)]
@@ -154,9 +154,12 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.results = [valid(12), error('first'), error('second'), error('third')]
         cache = self.make_cache(default=7)
         self.assertEqual(await cache(), 12)
-        self.now += 30
-        self.assertEqual(await cache(), 7)
         self.now += 5
+        # Force a refresh without changing the age of the cached value.
+        self.assertEqual(await cache._call_f(), 12)
+        self.now += 5
+        self.assertEqual(await cache(), 12)
+        self.now += 20
         self.assertEqual(await cache(), 7)
         self.assertEqual(cache._state, LifecycleState.ERROR)
         self.assertEqual(self.calls, 3)
