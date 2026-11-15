@@ -94,8 +94,8 @@ class LifecycleCache[T]:
     yet been received. Successful results have LifecycleState.VALID or
     LifecycleState.INTERIM; ErrorReturn uses the internal _ERROR sentinel.
     After a result is received, the cache state reflects that result, even
-    if __call__() subsequently raises NoResult. It does not return to _INITIAL.
-    None is a legitimate cached value or default; only _NONE denotes absence.
+    if `__call__()` subsequently raises NoResult. It does not return to _INITIAL.
+    None maybe a legitimate value of `T` or default; only _NONE denotes absence.
     Sentinel instances are not valid successful results.
 
     Both VALID and INTERIM cached values expire at age 'old'. Expiration
@@ -338,18 +338,11 @@ class LifecycleCache[T]:
         Called only by `_get_or_create_refresh_task()`.
         """
         lifecycle_return: LifecycleReturn[T] = await self._f()
+
+        if isinstance(lifecycle_return, ObjectReturn):
+            value: T = lifecycle_return.value
+            if isinstance(value, Sentinel):
+                raise ValueError(f'{value!r} is not a valid function return value')
+
         self._timestamp = monotonic()
         self._state = lifecycle_return.state
-
-        if isinstance(lifecycle_return, ErrorReturn):
-            self._error_log(self._error_message.format(message=lifecycle_return.message))
-            return
-
-        lifecycle_return: ObjectReturn
-        value: T = lifecycle_return.value
-        if isinstance(value, Sentinel):
-            raise ValueError(f'{value!r} is not a valid function return value')
-        if self._state == LifecycleState.INTERIM:
-            self._info_log(self._interim_message.format(value=value))
-        self._cache = value
-        self._cache_timestamp = self._timestamp
