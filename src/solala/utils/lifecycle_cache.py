@@ -148,9 +148,21 @@ class LifecycleCache[T]:
     it or starting another refresh. If the cached value has reached old,
     it must expire before awaiting the task.
 
-    ERROR represents an expected inability to obtain a result, not a
-    request to suppress arbitrary programming exceptions. Handling of
-    unexpected exceptions and cancellation is not specified here.
+    The wrapped function is responsible for catching exceptions it
+    considers non-fatal and returning LifecycleReturn(ERROR) instead.
+    Other exceptions raised by the wrapped function propagate to
+    foreground callers. If a refresh runs in the background, unexpected
+    exceptions are logged, including their traceback.
+
+    An unexpected exception does not change the lifecycle state,
+    timestamps, or cached value. Any cache expiration performed before
+    the refresh remains effective, so an expired value is not restored.
+    The cache remains internally consistent, and subsequent calls can
+    attempt another refresh.
+
+    asyncio.CancelledError represents cancellation, not a lifecycle
+    ERROR, and is not converted into one. Cancelling an individual
+    foreground caller must not cancel a refresh shared with other callers.
     """
 
     def __init__(
