@@ -4,47 +4,54 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from time import monotonic
 from traceback import format_exception
-from typing import Callable, Coroutine, Any
+from typing import Callable, Coroutine, Any, ClassVar
 
 from solala.utils.sentinel import Sentinel
 
 _NONE = Sentinel('_NONE')
 _INITIAL = Sentinel('_INITIAL')
+_ERROR = Sentinel('_ERROR')
 
 
 class LifecycleState(Enum):
     VALID = auto()
     INTERIM = auto()
-    ERROR = auto()
 
 
 @dataclass
-class LifecycleReturn[T]:
-    value: T | None
+class ObjectReturn[T]:
+    value: T
     state: LifecycleState
-    message: str = ''
 
 
-def valid[T](value: T) -> LifecycleReturn[T]:
+@dataclass
+class ErrorReturn:
+    message: str
+    state: ClassVar[Sentinel] = _ERROR
+
+
+def valid[T](value: T) -> ObjectReturn[T]:
     """
     Support a wrapped function to return a VALID object.
     """
-    return LifecycleReturn(value, state=LifecycleState.VALID)
+    return ObjectReturn(value, LifecycleState.VALID)
 
 
-def interim[T](value: T) -> LifecycleReturn[T]:
+def interim[T](value: T) -> ObjectReturn[T]:
     """
     Support a wrapped function to return an INTERIM object.
     """
-    return LifecycleReturn(value, state=LifecycleState.INTERIM)
+    return ObjectReturn(value, LifecycleState.INTERIM)
 
 
-def error[T](message: str) -> LifecycleReturn[T]:
+def error(message: str) -> ErrorReturn:
     """
     Support a wrapped function to return an error condition.
     """
-    return LifecycleReturn(None, state=LifecycleState.ERROR, message=message)
+    return ErrorReturn(message)
 
+
+type LifecycleReturn[T] = ObjectReturn[T] | ErrorReturn
 
 type WrappedFunction[T] = Callable[[], Coroutine[Any, Any, LifecycleReturn[T]]]
 
@@ -154,7 +161,8 @@ class LifecycleCache[T]:
     considers non-fatal and returning LifecycleReturn(ERROR) instead.
     Other exceptions raised by the wrapped function propagate to
     foreground callers. Unexpected refresh exceptions are also logged
-    with their traceback, whether or not a foreground caller awaits them.
+    with their traceback, regardless of whether a foreground caller awaits
+    them or not.
 
     An unexpected exception does not change the lifecycle state,
     timestamps, or cached value. Any cache expiration performed before
@@ -235,7 +243,7 @@ class LifecycleCache[T]:
         elif self._state is LifecycleState.INTERIM and old_cache:
             return await self._call_f()
         elif now < self._timestamp + self._retry:
-            # LifecycleState.ERROR | LifecycleState.INTERIM with usable cache
+            # _ERROR | INTERIM with usable cache
             return self._cached_or_error()
         else:
             return await self._call_f()
@@ -293,10 +301,11 @@ class LifecycleCache[T]:
         self._timestamp = monotonic()
         self._state = lifecycle_return.state
 
-        if self._state == LifecycleState.ERROR:
+        if isinstance(lifecycle_return, ErrorReturn):
             self._error_log(self._error_message.format(message=lifecycle_return.message))
             return
 
+        lifecycle_return: ObjectReturn[T]
         value = lifecycle_return.value
         if value is _NONE:
             raise ValueError(f'{_NONE!r} is not a valid function return value')
