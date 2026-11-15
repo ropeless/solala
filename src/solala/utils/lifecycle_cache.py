@@ -205,15 +205,13 @@ class LifecycleCache[T]:
         if self._state is _INITIAL:
             return await self._call_f()
         elif self._state is LifecycleState.VALID:
-            assert self._cache is not _NONE
-            age: float = monotonic() - self._timestamp
-            if age < self._young:
-                return self._cache
-            elif age < self._old:
-                self._create_background_update()
-                return self._cache
-            else:
+            if old_cache:
                 return await self._call_f()
+            elif monotonic() - self._timestamp < self._young:
+                return self._cached_or_error()
+            else:
+                self._create_background_update()
+                return self._cached_or_error()
         elif self._state is LifecycleState.INTERIM and old_cache:
             return await self._call_f()
         elif monotonic() < self._timestamp + self._retry:
