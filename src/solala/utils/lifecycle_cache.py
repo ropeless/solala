@@ -198,7 +198,8 @@ class LifecycleCache[T]:
         """
         # Expire usable values independently of the latest refresh result.
         # ERROR refreshes update _timestamp but do not extend cache lifetime.
-        if monotonic() - self._cache_timestamp >= self._old:
+        old_cache: bool = monotonic() - self._cache_timestamp >= self._old
+        if old_cache:
             self._cache = self._default
 
         if self._state is _INITIAL:
@@ -213,12 +214,12 @@ class LifecycleCache[T]:
                 return self._cache
             else:
                 return await self._call_f()
+        elif self._state is LifecycleState.INTERIM and old_cache:
+            return await self._call_f()
+        elif monotonic() < self._timestamp + self._retry:
+            # LifecycleState.ERROR | LifecycleState.INTERIM with usable cache
+            return self._cached_or_error()
         else:
-            # LifecycleState.ERROR | LifecycleState.INTERIM
-            if self._state is LifecycleState.INTERIM and monotonic() - self._cache_timestamp >= self._old:
-                return await self._call_f()
-            if monotonic() < self._timestamp + self._retry:
-                return self._cached_or_error()
             return await self._call_f()
 
     def _cached_or_error(self) -> T:
