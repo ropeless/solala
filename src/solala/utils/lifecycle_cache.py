@@ -377,8 +377,8 @@ class LifecycleCache[T]:
             self._state = LifecycleState.ERROR
             return
 
-        lifecycle_return: ObjectReturn[T]
-        value = lifecycle_return.value
+        lifecycle_return: ObjectReturn
+        value: T = lifecycle_return.value
         if lifecycle_return.state is LifecycleState.INTERIM:
             self._info_log(self._interim_message.format(value=value))
         self._cache = value
