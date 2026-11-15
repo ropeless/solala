@@ -55,71 +55,72 @@ class NoDefaultResult(RuntimeError):
 
 class LifecycleCache[T]:
     """
-    A LifecycleCache caches the result of a function, where the cache
-    has an associated 'state' and 'timestamp'. The 'age' of the cache
-    is `now() - timestamp`.
+    Cache results of an asynchronous function using lifecycle states and age thresholds.
 
-    Depending on the state and age of the cache, the wrapped function will
-    be called to refresh the cache. The wrapped function returns a `LifecycleReturn[T]`
-    object which encode the state of the freshly computed object. In reality
-    the wrapped function should create its LifecycleReturn object by calling
-    either: `valid(...)`, `interim(...)`, or `error(...)`. A timestamp is
-    associated with a cached object for calculating its age.
+    The wrapped function takes no arguments and returns a LifecycleReturn[T]:
+    VALID indicates a usable result; INTERIM indicates a usable but provisional
+    result; ERROR indicates that a result could not be obtained (for example,
+    because of a network, resource, or configuration problem). An ERROR result
+    is not an exception raised by LifecycleCache.__call__(). It signals that
+    refreshing should be retried later while an available cached or default
+    value is used in the meantime.
 
-    A LifecycleCache keeps track of three age thresholds, the 'young' age, the
-    'old' age, and the 'retry' age. A LifecycleCache optionally keeps a 'default'
-    object to be used as a stand-in for error conditions.
+    A separate failure occurs when LifecycleCache.__call__() cannot supply a
+    value: the wrapped function has not provided a usable result and neither
+    a cached value nor a configured default is available. In that case,
+    __call__() raises NoDefaultResult.
 
-    The following must be true of the ages: retry <= young <= old.
+    The cache initially has an INVALID internal state, meaning no refresh
+    has completed. Successful VALID and INTERIM results supply values that
+    are cached and returned. A refresh reporting ERROR does not supply a
+    replacement value. The most recently cached usable value is preferred
+    over the configured default when a fallback is required.
 
-    Calling a LifecycleCache cache, `__call__()`, will do the following according
-    to the state and age of the cache. The initial state is INVALID.
+    The cache tracks a state and a monotonic timestamp. Its age is the
+    elapsed time since that timestamp. The timestamp is updated when a
+    wrapped-function result is received, including ERROR, so retry timing
+    is measured from the most recent refresh result rather than necessarily
+    from the creation of the stored value.
 
-    Whenever `__call__()` gets a LifecycleReturn from the wrapped function, it will
-    Set the current state as per the returned LifecycleReturn and update the timestamp.
+    Three age thresholds control refreshes: retry, young, and old.
+    They must satisfy retry <= young <= old. If omitted, young defaults
+    to old and retry defaults to young.
 
-    If the new state is VALID or INTERIM then the supplied object will be cached, and the
-    object is returned to the caller.
-
-    If the new state is INVALID or ERROR then either: a default object is available
-     which is then cached and returned, or no default object is available and an error
-    is raised.
-
-    The following describes when and how the wrapped function is called and the
-    cached object is used.
-
+    The intended behaviour of __call__() is:
 
     INVALID, any age:
-    Call and await on the wrapped function.
+        Await the wrapped function.
 
     ERROR, age < retry:
-    If have cached object then return the cached object,
-    otherwise raise an exception.
+        Return the cached value or default; if neither exists, raise
+        NoDefaultResult.
 
     ERROR, retry <= age:
-    Call and await on the wrapped function.
+        Await the wrapped function; use a fallback if it reports ERROR.
 
     INTERIM, age < retry:
-    If have cached object then return the cached object,
-    otherwise raise an exception.
+        Return the cached interim value.
 
     INTERIM, retry <= age:
-    Call and await on the wrapped function.
+        Await the wrapped function.
 
     VALID, age < young:
-    In this case there should be a cached object
-    Return the cached object
+        Return the cached value.
 
     VALID, young <= age < old:
-    In this case there should be a cached object
-    Create a background task to call the wrapped function asynchronously.
-    Return the cached object.
+        Start a background refresh and return the cached value.
 
     VALID, old <= age:
-    Call and await on the wrapped function.
+        Await the wrapped function.
 
-    If the wrapped function is called asynchronously while a background task is working
-    then the background task is cancelled. Only one background task can be running at a time.
+    A background refresh is intended to run at most once at a time.
+    If a synchronous refresh is required while a background refresh is
+    running, the documented policy is to cancel the background task.
+    Coordination of overlapping refreshes remains part of the implementation.
+
+    The ERROR result described here is an expected inability to obtain a
+    value, not a request to hide arbitrary programming exceptions. Behaviour
+    for unexpected exceptions and task cancellation is not specified here.
     """
 
     def __init__(
