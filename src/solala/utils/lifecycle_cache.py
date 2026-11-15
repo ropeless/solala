@@ -223,8 +223,6 @@ class LifecycleCache[T]:
         # Consistency checks
         if not 0 < retry <= young <= old:
             raise ValueError(f'ensure: `0 < retry <= young <= old`')
-        if isinstance(default, Sentinel) and default is not NO_VALUE:
-            raise ValueError(f'cannot use a Sentinel as a default object: {default!r}')
 
         self._f: WrappedFunction[T] = f
         self._retry: float = retry
