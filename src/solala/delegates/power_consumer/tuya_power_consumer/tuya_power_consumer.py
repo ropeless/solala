@@ -72,7 +72,7 @@ class TuyaPowerConsumer(PowerConsumer):
             'power_scale_factor': self._power_scale_factor,
         }
 
-        # Cache Tuya device status for five minutes to limit cloud API usage.
+        # Cache Tuya device status for the requested duration to limit cloud API usage.
         self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_device_status, cache_duration)
 
         # Created on first call to `get_registers`
