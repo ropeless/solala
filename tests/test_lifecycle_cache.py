@@ -157,7 +157,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await cache(), 12)
         self.now += 5
         # Force a refresh without changing the age of the cached value.
-        self.assertEqual(await cache._call_f(), 12)
+        self.assertEqual(await cache._refresh_and_get(), 12)
         self.now += 5
         self.assertEqual(await cache(), 12)
         self.now += 20
