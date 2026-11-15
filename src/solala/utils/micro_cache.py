@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Awaitable, Callable
 from time import monotonic
 
@@ -69,7 +70,8 @@ class AsyncMicroCache[T](_BaseMicroCache):
 
     The function is awaited on first access and again after the cache expires.
     Exceptions propagate to the caller without updating the expiry time.
-    Concurrent callers are not explicitly managed and may refresh the cache separately.
+    Concurrent callers share a refresh: waiting callers recheck expiry after
+    acquiring the lock. A failed refresh does not update the cached value.
     """
 
     def __init__(
@@ -80,6 +82,7 @@ class AsyncMicroCache[T](_BaseMicroCache):
         super().__init__(cache_duration)
         self._f = f
         self._cache: T | Sentinel = _UNSET
+        self._lock = asyncio.Lock()
 
     async def __call__(self) -> T:
         """
@@ -89,7 +92,11 @@ class AsyncMicroCache[T](_BaseMicroCache):
             The cached or newly computed value.
         """
         if self._is_expired() or self._cache is _UNSET:
-            self._cache = await self._f()
-            self._update_timestamp()
+            async with self._lock:
+                # Another caller may have refreshed the cache while we waited.
+                if self._is_expired() or self._cache is _UNSET:
+                    value = await self._f()
+                    self._cache = value
+                    self._update_timestamp()
 
         return self._cache
