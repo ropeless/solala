@@ -29,6 +29,7 @@ class TuyaPowerConsumer(PowerConsumer):
             voltage_scale_factor: float = 0.1,
             current_scale_factor: float = 0.001,
             power_scale_factor: float = 0.1,
+            cache_duration: float = 300,
     ) -> None:
         """
         Initialise the Tuya API connection and configure device measurements.
@@ -43,6 +44,8 @@ class TuyaPowerConsumer(PowerConsumer):
                 'cur_current' value to amperes.
             power_scale_factor: Multiplier converting the device's
                 'cur_power' value to watts.
+            cache_duration: How long to cache the device status. Use this to reduce how often the
+                API is called. The default value is 300 seconds (5 minutes).
 
         Raises:
             ConnectionError: If the Tuya API connection cannot be established.
@@ -70,7 +73,7 @@ class TuyaPowerConsumer(PowerConsumer):
         }
 
         # Cache Tuya device status for five minutes to limit cloud API usage.
-        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_device_status, 300)
+        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_device_status, cache_duration)
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
