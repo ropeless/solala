@@ -1,3 +1,4 @@
+import asyncio
 from functools import partial
 
 import httpx
@@ -23,8 +24,6 @@ class TeslaWallConnector(PowerConsumer):
     Important: the active power is estimated as voltage multiplied by current, assuming
     a purely resistive load.
 
-    Concurrent first calls to get_registers() may build separate register banks;
-    callers should initialise registers before accessing them concurrently.
     """
 
     def __init__(self, host: str, mac_address: str = ''):
@@ -50,16 +49,17 @@ class TeslaWallConnector(PowerConsumer):
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
+        self._register_bank_lock = asyncio.Lock()
 
     async def get_registers(self) -> RegisterBank:
         if self._register_bank is None:
-            self._register_bank = reg_bank = RegisterBank({
-                key: AsyncCallRegister((partial(self._get_register_value, key)), reg_type)
-                async for key, reg_type in self._get_register_keys()
-            })
-            return reg_bank
-        else:
-            return self._register_bank
+            async with self._register_bank_lock:
+                if self._register_bank is None:
+                    self._register_bank = RegisterBank({
+                        key: AsyncCallRegister(partial(self._get_register_value, key), reg_type)
+                        async for key, reg_type in self._get_register_keys()
+                    })
+        return self._register_bank
 
     async def get_status(self) -> ConsumerStatus:
         data: JSONDict = await self._cache()
