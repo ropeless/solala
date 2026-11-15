@@ -243,16 +243,3 @@ class Settings(BaseModel):
     stop_charge_price_threshold: float | None = None
 
     registers_to_log: str | None = None
-
-
-def consumers(**kwargs: ConsumerConnection) -> dict[str, ConsumerConnection]:
-    """
-    Build a mapping of named power consumer connections.
-
-    Args:
-        **kwargs: Consumer names mapped to their connection configurations.
-
-    Returns:
-        A dictionary of consumer connection configurations.
-    """
-    return kwargs

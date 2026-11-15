@@ -450,7 +450,7 @@ class RegisterAccessScaled(RegisterAccess):
         _log(f'write scale int: read scale={scale}')
 
         if isinstance(value, float):
-            scaled_value = int(value * (10 ** -scale) + 0.5)  # add 0.5 for rounding
+            scaled_value = round(value * (10 ** -scale))
             _write_int(
                 context, self.addr, value=scaled_value, count=self.count, signed=self.signed
             )

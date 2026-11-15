@@ -72,7 +72,6 @@ class ModbusPowerController(PowerController):
         self._meter = meter
         self._log_set_get: bool = False
         self._hunt_history: list[float] = []
-        self._is_force_discharge: bool = False
 
         # Important registers
         self._ChaState: str = f'{master}/ChaState'
@@ -94,6 +93,11 @@ class ModbusPowerController(PowerController):
             self._power_controllers: list[str] = self._inverters
         else:
             self._power_controllers: list[str] = [master]
+        # The controlled inverters are always a prefix of self._inverters.
+        # This allows zero_export() to select their limits by slicing.
+        assert self._inverters[:len(self._power_controllers)] == self._power_controllers
+
+        self._W: list[str] = [f'{inverter}/W' for inverter in self._power_controllers]
         self._WMaxLim_Ena: list[str] = [f'{inverter}/WMaxLim_Ena' for inverter in self._power_controllers]
         self._WMaxLimPct: list[str] = [f'{inverter}/WMaxLimPct' for inverter in self._power_controllers]
         self._WMaxLimPct_RvrtTms: list[str] = [f'{inverter}/WMaxLimPct_RvrtTms' for inverter in self._power_controllers]
@@ -197,7 +201,6 @@ class ModbusPowerController(PowerController):
             await self._set(self._OutWRte, 100)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = False
 
     async def disable_battery(self) -> None:
         with self._log_it('disable_battery'):
@@ -207,17 +210,15 @@ class ModbusPowerController(PowerController):
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = False
 
     async def force_charge(self) -> None:
         with self._log_it('force_charge'):
             await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
             await self._set(self._InWRte, 100)
-            await self._set(self._OutWRte, 0)  # Don't try to discharge at the same time as charging
+            await self._set(self._OutWRte, -100)  # Force charging at the maximum permitted rate
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 1)
-            await self._set(self._MinRsvPct, 100)
-            self._is_force_discharge = False
+            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
 
     async def force_discharge(self) -> None:
         with self._log_it('force_discharge'):
@@ -227,7 +228,6 @@ class ModbusPowerController(PowerController):
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = True
 
     async def charge_only(self) -> None:
         with self._log_it('charge_only'):
@@ -237,7 +237,6 @@ class ModbusPowerController(PowerController):
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = False
 
     async def discharge_only(self) -> None:
         with self._log_it('discharge_only'):
@@ -247,7 +246,6 @@ class ModbusPowerController(PowerController):
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
-            self._is_force_discharge = False
 
     # =================================================
     #  Grid Export Control
@@ -280,6 +278,15 @@ class ModbusPowerController(PowerController):
         with self._log_it('disable_inverter'):
             await self._set_power_pct(0, change_duration)
 
+    async def _is_force_discharge_enabled(self) -> bool:
+        """
+        Infer if forced discharge is enabled based on the inverter's current settings.
+        """
+        mode = await self._get(self._StorCtl_Mod)
+        assert isinstance(mode, int)
+        charge_rate: float = await self._get(self._InWRte)
+        return bool(mode & 1) and charge_rate < 0
+
     async def zero_export(self, *, change_duration: int) -> None:
         """
         Curtail the inverter output power to minimise grid export.
@@ -295,18 +302,24 @@ class ModbusPowerController(PowerController):
             cur_pct: float
             cur_pct, _ = await self._get_power_limit()
             grid_power: float = await self._get(self._grid_power)
-            max_power: float = await self.get_inverter_limit()
-            cur_power: float = await self._get_sum(self._inverter_power)
+            # Only inverters receiving the power-limit command are controllable.
+            controlled_limits = await self._get_inverter_limit_array()
+            controlled_limits = controlled_limits[:len(self._power_controllers)]
+            max_power: float = sum(controlled_limits)
+            cur_power: float = await self._get_sum(self._W)
 
             # Include normal battery discharge when calculating available power.
             # Forced discharge is handled separately.
-            if not self._is_force_discharge:
+            if not await self._is_force_discharge_enabled():
                 discharge_power = await self._get(self._discharge_power)
                 cur_power += discharge_power
 
             abs_grid_power = abs(grid_power)
             # Account for existing output if the inverter is oversupplying.
             max_power = max(max_power, cur_power)
+            if max_power <= 0:
+                LOGGER.warning('cannot adjust zero-export limit: inverter power capacity is zero')
+                return
 
             if abs_grid_power < _POWER_CHANGE_TOLERANCE:
                 # Not worth changing power settings
@@ -328,7 +341,7 @@ class ModbusPowerController(PowerController):
                 LOGGER.info(f'using hunting method: gamma = {_GAMMA}, delta_pct = {delta_pct}, history = {history_log}')
 
                 new_pct = round(max(0, min(cur_pct + delta_pct, 100)), 2)
-                new_power = cur_power + grid_power * (cur_pct - new_pct) / 100
+                new_power = cur_power + max_power * (new_pct - cur_pct) / 100
                 new_power = max(0, min(new_power, max_power))
 
             else:
@@ -377,6 +390,8 @@ class ModbusPowerController(PowerController):
             assert len(power_limits) == len(inverter_limits)
 
             total_limit: float = sum(inverter_limits)
+            if total_limit <= 0:
+                raise ValueError('cannot calculate power limit: total inverter capacity is zero')
             avg_limit: float = 0.0
             for limit, limit_enabled, inverter_limit in zip(power_limits, power_limits_enabled, inverter_limits):
                 if not limit_enabled:
@@ -393,11 +408,17 @@ class ModbusPowerController(PowerController):
         Args:
             name: Name of the operation to include in the log messages.
         """
+        previous = self._log_set_get
         self._log_set_get = True
         LOGGER.info(f'{_START} {name}')
-        yield
-        LOGGER.info(f'{_STOP} {name}')
-        self._log_set_get = False
+        try:
+            yield
+        except Exception as err:
+            LOGGER.error(err)
+            raise
+        finally:
+            LOGGER.info(f'{_STOP} {name}')
+            self._log_set_get = previous
 
     def _logger_get_set(self, message: str) -> None:
         """

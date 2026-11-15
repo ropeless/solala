@@ -210,7 +210,7 @@ async def _build_power_page(container: Element, session: PageSession) -> None:
                     loop_status_light = ui.element('div').classes(
                         'solala-loop-status-light solala-loop-status-stale'
                     )
-                    loop_status_label = ui.label('active').classes(
+                    loop_status_label = ui.label('connecting').classes(
                         'solala-loop-status-label solala-loop-status-stale'
                     )
 
@@ -275,9 +275,12 @@ async def _build_price_page(container: Element, session: PageSession) -> None:
     Build the price forecast table and register its refresh listener.
     """
     with container:
-        ui.label('Price Forecast').classes('dashboard-card-title')
+        # Match the Solar Forecast's title/content wrapper so the date rows
+        # start at the same vertical position.
+        with ui.element('div'):
+            ui.label('Price Forecast').classes('dashboard-card-title')
+            element = ui.element('div')
 
-        element = ui.element('div')
         updater = PriceForecastUpdater(element=element)
         session.add_task(asyncio.create_task(updater.update()))
         await session.add_control_listener(updater)
