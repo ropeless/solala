@@ -48,9 +48,9 @@ def error[T](message: str) -> LifecycleReturn[T]:
 type WrappedFunction[T] = Callable[[], Coroutine[Any, Any, LifecycleReturn[T]]]
 
 
-class NoDefaultResult(RuntimeError):
+class NoResult(RuntimeError):
     def __init__(self) -> None:
-        super().__init__('no usable result from the wrapped function and no default result available')
+        super().__init__('no usable result from the wrapped function, no cached result, and no default result available')
 
 
 class LifecycleCache[T]:
@@ -61,14 +61,14 @@ class LifecycleCache[T]:
     VALID indicates a usable result; INTERIM indicates a usable but provisional
     result; ERROR indicates that a result could not be obtained (for example,
     because of a network, resource, or configuration problem). An ERROR result
-    is not an exception raised by LifecycleCache.__call__(). It signals that
+    is not an exception raised by `LifecycleCache.__call__()`. It signals that
     refreshing should be retried later while an available cached or default
     value is used in the meantime.
 
-    A separate failure occurs when LifecycleCache.__call__() cannot supply a
+    A separate failure occurs when `L`ifecycleCache.__call__()` cannot supply a
     value: the wrapped function has not provided a usable result and neither
     a cached value nor a configured default is available. In that case,
-    __call__() raises NoDefaultResult.
+    `__call__()` raises `NoResult`.
 
     The cache initially has an INVALID internal state, meaning no refresh
     has completed. Successful VALID and INTERIM results supply values that
@@ -86,14 +86,14 @@ class LifecycleCache[T]:
     They must satisfy retry <= young <= old. If omitted, young defaults
     to old and retry defaults to young.
 
-    The intended behaviour of __call__() is:
+    The intended behaviour of `__call__()` is:
 
     INVALID, any age:
         Await the wrapped function.
 
     ERROR, age < retry:
         Return the cached value or default; if neither exists, raise
-        NoDefaultResult.
+        NoResult.
 
     ERROR, retry <= age:
         Await the wrapped function; use a fallback if it reports ERROR.
@@ -113,9 +113,9 @@ class LifecycleCache[T]:
     VALID, old <= age:
         Await the wrapped function.
 
-    A background refresh is intended to run at most once at a time.
+    A background refresh is intended to run at most one at a time.
     If a synchronous refresh is required while a background refresh is
-    running, the documented policy is to cancel the background task.
+    running, the policy is to cancel the background task.
     Coordination of overlapping refreshes remains part of the implementation.
 
     The ERROR result described here is an expected inability to obtain a
@@ -194,7 +194,7 @@ class LifecycleCache[T]:
         Return the cached value or raise an exception if there is no cached value.
         """
         if self._cache is _NONE:
-            raise NoDefaultResult()
+            raise NoResult()
         else:
             return self._cache
 
@@ -207,23 +207,12 @@ class LifecycleCache[T]:
         Call the wrapped function asynchronously, updating the
         cache according to the returned result.
         """
-        lifecycle_return: LifecycleReturn[T] = await self._f()
-        now = monotonic()
-        state = lifecycle_return.state
-
-        if state == LifecycleState.ERROR:
-            self._error_log(self._error_message.format(message=lifecycle_return.message))
-            return self._cached_or_error()
-
-        value = lifecycle_return.value
-        if value is _NONE:
-            raise ValueError(f'{_NONE!r} is not a valid function return value')
-        if state == LifecycleState.INTERIM:
-            self._info_log(self._interim_message.format(value=value))
-        self._timestamp = now
-        self._state = state
-        self._cache = value
-        return value
+        if self._task is not None:
+            # Rather than cancel the task, let it run async
+            await self._task
+        else:
+            await self._update()
+        return self._cached_or_error()
 
     async def _update(self) -> None:
         """
@@ -235,6 +224,7 @@ class LifecycleCache[T]:
 
         if state == LifecycleState.ERROR:
             self._error_log(self._error_message.format(message=lifecycle_return.message))
+            self._task = None
             return
 
         value = lifecycle_return.value
@@ -245,3 +235,4 @@ class LifecycleCache[T]:
         self._timestamp = now
         self._state = state
         self._cache = value
+        self._task = None
