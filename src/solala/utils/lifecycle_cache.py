@@ -254,7 +254,7 @@ class LifecycleCache[T]:
         Call the wrapped function asynchronously, updating the
         cache according to the returned result.
         """
-        await self._create_background_update()
+        await asyncio.shield(self._create_background_update())
         return self._cached_or_error()
 
     def _create_background_update(self) -> Task[None]:
