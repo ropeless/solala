@@ -102,7 +102,7 @@ class LifecycleCache[T]:
     lifetime.
 
     Three age thresholds control refreshes: retry, young, and old.
-    They must satisfy retry <= young <= old. If omitted, young defaults
+    They must satisfy 0 < retry <= young <= old. If omitted, young defaults
     to old and retry defaults to young.
 
     The intended behaviour of __call__() is:
