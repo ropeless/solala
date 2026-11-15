@@ -235,19 +235,24 @@ class LifecycleCache[T]:
         else:
             return self._cache
 
-    def _create_background_update(self) -> None:
-        if self._task is None:
-            self._task = asyncio.create_task(self._update())
-
     async def _call_f(self) -> T:
         """
         Call the wrapped function asynchronously, updating the
         cache according to the returned result.
         """
-        self._create_background_update()
-        assert self._task is not None
-        await self._task
+        await self._create_background_update()
         return self._cached_or_error()
+
+    def _create_background_update(self) -> Task[None]:
+        """
+        Get the existing background update task or create a new one as needed.
+        """
+        if self._task is None:
+            task = asyncio.create_task(self._update())
+            self._task = task
+            return task
+        else:
+            return self._task
 
     async def _update(self) -> None:
         """
