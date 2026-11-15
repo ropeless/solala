@@ -51,7 +51,8 @@ type WrappedFunction[T] = Callable[[], Coroutine[Any, Any, LifecycleReturn[T]]]
 
 class NoResult(RuntimeError):
     def __init__(self) -> None:
-        super().__init__('no usable result from the wrapped function, no cached result, and no default result available')
+        super().__init__(
+            'no usable result from the wrapped function, no cached result, and no default result available')
 
 
 class LifecycleCache[T]:
@@ -262,8 +263,8 @@ class LifecycleCache[T]:
         """
         if self._task is None:
             task = asyncio.create_task(self.__update())
-            self._task = task
             task.add_done_callback(self._refresh_done)
+            self._task = task
             return task
         else:
             return self._task
@@ -278,8 +279,10 @@ class LifecycleCache[T]:
             return
         exception = task.exception()
         if exception is not None:
-            self._error_log('unexpected exception refreshing cache:\n'
-                            + ''.join(format_exception(exception)))
+            self._error_log(
+                'unexpected exception refreshing cache:\n'
+                + ''.join(format_exception(exception))
+            )
 
     async def __update(self) -> None:
         """
