@@ -137,6 +137,11 @@ class LifecycleCache[T]:
         Expire the cached value, then await the wrapped function. If it
         reports ERROR, return the default or raise NoResult.
 
+    This cache assumes all callers use the same asyncio event loop and
+    normal (non-eager) asyncio task scheduling. It is not thread-safe.
+    Refresh task creation relies on these assumptions and does not use
+    an explicit lock.
+
     At most one background refresh is intended to run at a time. If a
     foreground refresh is needed while a background refresh is running,
     the foreground caller awaits that existing task instead of cancelling
