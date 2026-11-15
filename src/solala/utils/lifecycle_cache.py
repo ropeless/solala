@@ -3,6 +3,7 @@ from asyncio import Task
 from dataclasses import dataclass
 from enum import Enum, auto
 from time import monotonic
+from traceback import format_exception
 from typing import Callable, Coroutine, Any
 
 from solala.utils.sentinel import Sentinel
@@ -151,8 +152,8 @@ class LifecycleCache[T]:
     The wrapped function is responsible for catching exceptions it
     considers non-fatal and returning LifecycleReturn(ERROR) instead.
     Other exceptions raised by the wrapped function propagate to
-    foreground callers. If a refresh runs in the background, unexpected
-    exceptions are logged, including their traceback.
+    foreground callers. Unexpected refresh exceptions are also logged
+    with their traceback, whether or not a foreground caller awaits them.
 
     An unexpected exception does not change the lifecycle state,
     timestamps, or cached value. Any cache expiration performed before
@@ -262,30 +263,41 @@ class LifecycleCache[T]:
         if self._task is None:
             task = asyncio.create_task(self.__update())
             self._task = task
+            task.add_done_callback(self._refresh_done)
             return task
         else:
             return self._task
 
+    def _refresh_done(self, task: Task[None]) -> None:
+        """
+        Clear the completed refresh task and log unexpected failures.
+        """
+        if self._task is task:
+            self._task = None
+        if task.cancelled():
+            return
+        exception = task.exception()
+        if exception is not None:
+            self._error_log('unexpected exception refreshing cache:\\n'
+                            + ''.join(format_exception(exception)))
+
     async def __update(self) -> None:
         """
-        Update the cached value and release the refresh task on completion.
+        Update the cached value.
         This should only ever be called by `_create_background_update()`.
         """
-        try:
-            lifecycle_return: LifecycleReturn[T] = await self._f()
-            self._timestamp = monotonic()
-            self._state = lifecycle_return.state
+        lifecycle_return: LifecycleReturn[T] = await self._f()
+        self._timestamp = monotonic()
+        self._state = lifecycle_return.state
 
-            if self._state == LifecycleState.ERROR:
-                self._error_log(self._error_message.format(message=lifecycle_return.message))
-                return
+        if self._state == LifecycleState.ERROR:
+            self._error_log(self._error_message.format(message=lifecycle_return.message))
+            return
 
-            value = lifecycle_return.value
-            if value is _NONE:
-                raise ValueError(f'{_NONE!r} is not a valid function return value')
-            if self._state == LifecycleState.INTERIM:
-                self._info_log(self._interim_message.format(value=value))
-            self._cache = value
-            self._cache_timestamp = self._timestamp
-        finally:
-            self._task = None
+        value = lifecycle_return.value
+        if value is _NONE:
+            raise ValueError(f'{_NONE!r} is not a valid function return value')
+        if self._state == LifecycleState.INTERIM:
+            self._info_log(self._interim_message.format(value=value))
+        self._cache = value
+        self._cache_timestamp = self._timestamp
