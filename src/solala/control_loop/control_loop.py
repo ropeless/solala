@@ -1035,7 +1035,7 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
             consumer = _connect_tesla_wall_connector(consumer_connection)
         elif consumer_connection.type == TuyaConnection.TYPE:
             assert isinstance(consumer_connection, TuyaConnection)
-            consumer = _connect_tuya(consumer_connection)
+            consumer = await _connect_tuya(consumer_connection)
         else:
             raise ControlLoopError(
                 'unknown consumer connection type',
@@ -1524,7 +1524,7 @@ def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnect
         raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
 
 
-def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
+async def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
     """
     Establish a power consumer connection using Tuya.
 
@@ -1534,7 +1534,7 @@ def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
         ControlLoopError: a connection cannot be established.
     """
     try:
-        return TuyaPowerConsumer(
+        consumer = TuyaPowerConsumer(
             access_id=consumer_connection.access_id,
             access_secret=consumer_connection.access_secret,
             device_id=consumer_connection.device_id,
@@ -1543,6 +1543,8 @@ def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
             power_scale_factor=consumer_connection.power_scale_factor,
             cache_duration=consumer_connection.cache_duration,
         )
+        await consumer.connect()
+        return consumer
     except Exception as err:
         raise ControlLoopError('could not connect to the Tuya device', errors=[str(err)])
 
