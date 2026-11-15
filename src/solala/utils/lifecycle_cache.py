@@ -268,22 +268,23 @@ class LifecycleCache[T]:
 
     async def _update(self) -> None:
         """
-        Called as a background tasks to update the cached value.
+        Update the cached value and release the refresh task on completion.
         """
-        lifecycle_return: LifecycleReturn[T] = await self._f()
-        self._timestamp = monotonic()
-        self._state = lifecycle_return.state
+        try:
+            lifecycle_return: LifecycleReturn[T] = await self._f()
+            self._timestamp = monotonic()
+            self._state = lifecycle_return.state
 
-        if self._state == LifecycleState.ERROR:
-            self._error_log(self._error_message.format(message=lifecycle_return.message))
+            if self._state == LifecycleState.ERROR:
+                self._error_log(self._error_message.format(message=lifecycle_return.message))
+                return
+
+            value = lifecycle_return.value
+            if value is _NONE:
+                raise ValueError(f'{_NONE!r} is not a valid function return value')
+            if self._state == LifecycleState.INTERIM:
+                self._info_log(self._interim_message.format(value=value))
+            self._cache = value
+            self._cache_timestamp = self._timestamp
+        finally:
             self._task = None
-            return
-
-        value = lifecycle_return.value
-        if value is _NONE:
-            raise ValueError(f'{_NONE!r} is not a valid function return value')
-        if self._state == LifecycleState.INTERIM:
-            self._info_log(self._interim_message.format(value=value))
-        self._cache = value
-        self._cache_timestamp = self._timestamp
-        self._task = None
