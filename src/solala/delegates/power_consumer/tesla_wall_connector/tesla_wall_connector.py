@@ -22,6 +22,9 @@ class TeslaWallConnector(PowerConsumer):
 
     Important: the active power is estimated as voltage multiplied by current, assuming
     a purely resistive load.
+
+    Concurrent first calls to get_registers() may build separate register banks;
+    callers should initialise registers before accessing them concurrently.
     """
 
     def __init__(self, host: str, mac_address: str = ''):
