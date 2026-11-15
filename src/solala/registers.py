@@ -7,7 +7,7 @@ from solala.utils.sentinel import Sentinel
 type RegisterValue = str | int | float | bool
 type RegisterType = type[str] | type[int] | type[float] | type[bool]
 
-_NONE = Sentinel('_NONE')
+_NONE = Sentinel('NO_VALUE')
 
 
 class ReadOnlyError(AttributeError):

@@ -251,7 +251,6 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await asyncio.wait_for(caller, timeout=1), 42)
         self.assertEqual(self.calls, 2)
 
-
     async def test_foreground_exception_propagates_and_allows_retry(self) -> None:
         async def wrapped():
             self.calls += 1
@@ -424,7 +423,6 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cache._state, LifecycleState.VALID)
         self.assertEqual(await cache(), 42)
         self.assertEqual(self.calls, 1)
-
 
     async def test_valid_none_is_cached(self) -> None:
         async def wrapped():

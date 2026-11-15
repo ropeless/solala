@@ -4,30 +4,33 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from time import monotonic
 from traceback import format_exception
-from typing import Callable, Coroutine, Any, ClassVar
+from typing import Callable, Coroutine, Any, ClassVar, Literal
 
 from solala.utils.sentinel import Sentinel
 
-_NONE = Sentinel('_NONE')
-_INITIAL = Sentinel('_INITIAL')
-_ERROR = Sentinel('_ERROR')
+NO_VALUE = Sentinel('NO_VALUE')
 
 
 class LifecycleState(Enum):
+    INITIAL = auto()
     VALID = auto()
     INTERIM = auto()
+    ERROR = auto()
+
+
+type ReturnState = Literal[LifecycleState.VALID, LifecycleState.INTERIM]
 
 
 @dataclass
 class ObjectReturn[T]:
     value: T
-    state: LifecycleState
+    state: ReturnState
 
 
 @dataclass
 class ErrorReturn:
     message: str
-    state: ClassVar[Sentinel] = _ERROR
+    state: ClassVar[LifecycleState] = LifecycleState.ERROR
 
 
 def valid[T](value: T) -> ObjectReturn[T]:
@@ -77,7 +80,7 @@ class LifecycleCache[T]:
     result does not replace the last usable cached value. The cache retains
     that value for fallback only while it remains younger than old. Once
     the cached value reaches old, it expires and is replaced by the
-    configured default (or _NONE if no default was configured).
+    configured default (or NO_VALUE if no default was configured).
 
     If neither an unexpired cached value nor a configured default is
     available, __call__() raises NoResult. This means the cache cannot
@@ -90,12 +93,12 @@ class LifecycleCache[T]:
     does not cover unexpected exceptions raised by the wrapped function,
     logging callbacks, or other programming errors.
 
-    The internal _INITIAL sentinel means that no wrapped-function result has
-    yet been received. Successful results have LifecycleState.VALID or
-    LifecycleState.INTERIM; ErrorReturn uses the internal _ERROR sentinel.
+    The internal INITIAL sentinel means that no wrapped-function result has
+    yet been received. Successful results have ReturnState.VALID or
+    ReturnState.INTERIM; ErrorReturn uses the internal ERROR sentinel.
     After a result is received, the cache state reflects that result, even
-    if `__call__()` subsequently raises NoResult. It does not return to _INITIAL.
-    None maybe a legitimate value of `T` or default; only _NONE denotes absence.
+    if `__call__()` subsequently raises NoResult. It does not return to INITIAL.
+    None maybe a legitimate value of `T` or default; only NO_VALUE denotes absence.
     Sentinel instances are not valid successful results.
 
     Both VALID and INTERIM cached values expire at age 'old'. Expiration
@@ -116,14 +119,14 @@ class LifecycleCache[T]:
 
     The intended behaviour of __call__() is:
 
-    _INITIAL, any age:
+    INITIAL, any age:
         Await the wrapped function.
 
-    _ERROR, age < retry:
+    ERROR, age < retry:
         Return an unexpired cached value or the default; if neither
         exists, raise NoResult.
 
-    _ERROR, retry <= age:
+    ERROR, retry <= age:
         Await the wrapped function; if it reports ERROR, use an unexpired
         cached value or the default, or raise NoResult if neither exists.
 
@@ -186,12 +189,12 @@ class LifecycleCache[T]:
             old: float,
             young: float | None = None,
             retry: float | None = None,
-            default: T | Sentinel = _NONE,
+            default: T | Sentinel = NO_VALUE,
             interim_message: str = 'interim value received: {value!r}',
             error_message: str = 'error calling cached function: {message!r}',
     ) -> None:
         """
-        Initialize the lifecycle cache and its refresh policy.
+        Initialise the lifecycle cache and its refresh policy.
 
         Args:
             f: Asynchronous function providing ObjectReturn or ErrorReturn.
@@ -203,7 +206,7 @@ class LifecycleCache[T]:
             retry: Minimum interval between interim or error refresh attempts.
                 Defaults to young.
             default: Fallback value when no unexpired cached value is available.
-                None is valid; _NONE means no default.
+                None is valid; NO_VALUE means no default.
             interim_message: Format string for logging provisional values.
             error_message: Format string for logging expected refresh errors.
 
@@ -220,7 +223,7 @@ class LifecycleCache[T]:
         # Consistency checks
         if not 0 < retry <= young <= old:
             raise ValueError(f'ensure: `0 < retry <= young <= old`')
-        if isinstance(default, Sentinel) and default is not _NONE:
+        if isinstance(default, Sentinel) and default is not NO_VALUE:
             raise ValueError(f'cannot use a Sentinel as a default object: {default!r}')
 
         self._f: WrappedFunction[T] = f
@@ -229,14 +232,37 @@ class LifecycleCache[T]:
         self._old: float = old
         self._default: T | Sentinel = default
         self._cache: T | Sentinel = default
-        self._state: LifecycleState | Sentinel = _INITIAL
-        self._timestamp: float = float('-inf')
-        self._cache_timestamp: float = float('-inf')
+        self._state: LifecycleState = LifecycleState.INITIAL
+        self._timestamp: float = monotonic()
+        self._cache_timestamp: float = self._timestamp
         self._error_log: Callable[[str], None] = error_log
         self._info_log: Callable[[str], None] = info_log
         self._interim_message: str = interim_message
         self._error_message: str = error_message
         self._task: Task[None] | None = None
+
+    @property
+    def state(self) -> LifecycleState:
+        return self._state
+
+    @property
+    def timestamp(self) -> float:
+        """
+        When was the current cache value set.
+
+        The age of the cache in seconds is `monotonic() - self.timestamp`.
+        """
+        return self._timestamp
+
+    @property
+    def default(self) -> T | Sentinel:
+        """
+        Get the default cache value.
+
+        Returns:
+            The default value, if provided, or the Sentinel `NO_VALUE`.
+        """
+        return self._default
 
     async def __call__(self) -> T:
         """
@@ -253,7 +279,7 @@ class LifecycleCache[T]:
         if old_cache:
             self._cache = self._default
 
-        if self._state is _INITIAL:
+        if self._state is LifecycleState.INITIAL:
             return await self._refresh_and_get()
         elif self._state is LifecycleState.VALID:
             if old_cache:
@@ -266,7 +292,7 @@ class LifecycleCache[T]:
         elif self._state is LifecycleState.INTERIM and old_cache:
             return await self._refresh_and_get()
         elif now < self._timestamp + self._retry:
-            # _ERROR | INTERIM with usable cache
+            # ERROR | INTERIM with usable cache
             return self._get_cached_value()
         else:
             return await self._refresh_and_get()
@@ -281,7 +307,7 @@ class LifecycleCache[T]:
         Raises:
             NoResult: If no cached value or default is available.
         """
-        if self._cache is _NONE:
+        if self._cache is NO_VALUE:
             raise NoResult()
         else:
             return self._cache
@@ -341,7 +367,7 @@ class LifecycleCache[T]:
 
         if isinstance(lifecycle_return, ObjectReturn):
             value: T = lifecycle_return.value
-            if isinstance(value, Sentinel):
+            if value is NO_VALUE:
                 raise ValueError(f'{value!r} is not a valid function return value')
 
         self._timestamp = monotonic()
