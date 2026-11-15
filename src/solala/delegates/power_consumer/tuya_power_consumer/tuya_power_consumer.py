@@ -1,3 +1,4 @@
+import asyncio
 from functools import partial
 from collections.abc import AsyncIterator, Awaitable, Callable
 
@@ -7,7 +8,7 @@ from solala.delegates.power_consumer.power_consumer import PowerConsumer, Consum
 from solala.logger import LOGGER
 from solala.registers import RegisterBank, RegisterType, check_type, AsyncCallRegister, check_value, \
     RegisterValue
-from solala.utils.json_extras import JSONDict, json_num
+from solala.utils.json_extras import JSONDict, json_num, json_bool
 from solala.utils.micro_cache import AsyncMicroCache
 
 API_ENDPOINT = "https://openapi.tuyaeu.com"
@@ -18,6 +19,11 @@ class TuyaPowerConsumer(PowerConsumer):
     Power consumer implementation for a device connected through the Tuya IoT API.
 
     Retrieves device status and exposes supported status fields as registers.
+
+    API failures return fallback readings, which are cached for the full cache
+    duration. Callers should expect recovery to be delayed until cache expiry.
+    Concurrent first calls to get_registers() may build separate register banks;
+    callers should initialise registers before accessing them concurrently.
     """
 
     def __init__(
@@ -29,9 +35,10 @@ class TuyaPowerConsumer(PowerConsumer):
             voltage_scale_factor: float = 0.1,
             current_scale_factor: float = 0.001,
             power_scale_factor: float = 0.1,
+            cache_duration: float = 300,
     ) -> None:
         """
-        Initialise the Tuya API connection and configure device measurements.
+        Configure the Tuya API client and device measurements.
 
         Args:
             access_id: Tuya project access ID.
@@ -43,9 +50,8 @@ class TuyaPowerConsumer(PowerConsumer):
                 'cur_current' value to amperes.
             power_scale_factor: Multiplier converting the device's
                 'cur_power' value to watts.
-
-        Raises:
-            ConnectionError: If the Tuya API connection cannot be established.
+            cache_duration: How long to cache the device status. Use this to reduce how often the
+                API is called. The default value is 300 seconds (5 minutes).
         """
         self._voltage_scale_factor: float = voltage_scale_factor
         self._current_scale_factor: float = current_scale_factor
@@ -55,10 +61,7 @@ class TuyaPowerConsumer(PowerConsumer):
             access_id,
             access_secret,
         )
-        response = self._tuya.connect()
-        if not response.get('success', False):
-            raise ConnectionError(response)
-
+        self._connected: bool = False
         self._status_url: str = f'/v1.0/iot-03/devices/{device_id}/status'
         self._connection_info: JSONDict = {
             'connection': 'Tuya',
@@ -69,11 +72,21 @@ class TuyaPowerConsumer(PowerConsumer):
             'power_scale_factor': self._power_scale_factor,
         }
 
-        # Cache `__get_device_status` for 0.01s each call.
-        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_device_status, 0.01)
+        # Cache Tuya device status for the requested duration to limit cloud API usage.
+        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_device_status, cache_duration)
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
+
+    async def _connect(self) -> None:
+        """
+        Establish the Tuya API connection without blocking the event loop.
+        """
+        if not self._connected:
+            response = await asyncio.to_thread(self._tuya.connect)
+            if not response.get('success', False):
+                raise ConnectionError(response)
+            self._connected = True
 
     async def get_registers(self) -> RegisterBank:
         if self._register_bank is None:
@@ -87,10 +100,15 @@ class TuyaPowerConsumer(PowerConsumer):
 
     async def get_status(self) -> ConsumerStatus:
         device_status: JSONDict = await self._cache()
+        voltage: float = json_num(device_status['cur_voltage']) * self._voltage_scale_factor
+        current: float = json_num(device_status['cur_current']) * self._current_scale_factor
+        power: float = json_num(device_status['cur_power']) * self._power_scale_factor
+        on: bool = json_bool(device_status['switch_1'])
         return ConsumerStatus(
-            voltage=json_num(device_status['cur_voltage']) * self._voltage_scale_factor,
-            current=json_num(device_status['cur_current']) * self._current_scale_factor,
-            power=json_num(device_status['cur_power']) * self._power_scale_factor,
+            voltage=voltage,
+            current=current,
+            power=power,
+            on=on,
         )
 
     def get_connection_info(self) -> JSONDict:
@@ -140,7 +158,8 @@ class TuyaPowerConsumer(PowerConsumer):
             returned.
         """
         try:
-            response = self._tuya.get(self._status_url)
+            await self._connect()
+            response = await asyncio.to_thread(self._tuya.get, self._status_url)
             if not response.get('success', False):
                 raise ConnectionError(response)
             return {
@@ -154,4 +173,5 @@ class TuyaPowerConsumer(PowerConsumer):
                 'cur_voltage': float('nan'),
                 'cur_current': float('nan'),
                 'cur_power': float('nan'),
+                'switch_1': False,
             }

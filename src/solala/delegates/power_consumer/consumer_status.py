@@ -9,15 +9,17 @@ class ConsumerStatus:
     Represents the electrical status of a power consumer.
 
     Attributes:
+        on: Whether the consumer device is switched on or not.
         voltage: The measured voltage in volts.
         current: The measured current in amperes.
         power: The active power in watts, measured where available or estimated
             where the device does not provide a direct measurement.
     """
 
+    on: bool
+    power: float
     voltage: float
     current: float
-    power: float
 
     def to_json(self) -> JSONDict:
         """

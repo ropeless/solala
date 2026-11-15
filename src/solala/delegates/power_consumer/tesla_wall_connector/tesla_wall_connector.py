@@ -1,13 +1,14 @@
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
 import httpx
-from collections.abc import AsyncIterator, Awaitable, Callable
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.logger import LOGGER
 from solala.registers import RegisterBank, check_type, RegisterType, \
     AsyncCallRegister, RegisterValue, check_value
-from solala.utils.json_extras import JSONDict, json_dict, json_num
+from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
 from solala.utils.micro_cache import AsyncMicroCache
 
 NAME: str = 'Tesla Wall Charger'
@@ -22,6 +23,7 @@ class TeslaWallConnector(PowerConsumer):
 
     Important: the active power is estimated as voltage multiplied by current, assuming
     a purely resistive load.
+
     """
 
     def __init__(self, host: str, mac_address: str = ''):
@@ -47,25 +49,31 @@ class TeslaWallConnector(PowerConsumer):
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
+        self._register_bank_lock = asyncio.Lock()
 
     async def get_registers(self) -> RegisterBank:
-        if self._register_bank is None:
-            self._register_bank = reg_bank = RegisterBank({
-                key: AsyncCallRegister((partial(self._get_register_value, key)), reg_type)
-                async for key, reg_type in self._get_register_keys()
-            })
-            return reg_bank
-        else:
-            return self._register_bank
+        reg_bank = self._register_bank
+        if reg_bank is None:
+            async with self._register_bank_lock:
+                reg_bank = self._register_bank
+                if reg_bank is None:
+                    reg_bank = RegisterBank({
+                        key: AsyncCallRegister(partial(self._get_register_value, key), reg_type)
+                        async for key, reg_type in self._get_register_keys()
+                    })
+                    self._register_bank = reg_bank
+        return reg_bank
 
     async def get_status(self) -> ConsumerStatus:
         data: JSONDict = await self._cache()
         voltage: float = json_num(data['voltageA_v'])
         current: float = json_num(data['currentA_a'])
+        on: bool = json_bool(data['contactor_closed'])
         return ConsumerStatus(
             voltage=voltage,
             current=current,
             power=voltage * current,  # assumes a pure resistive load
+            on=on,
         )
 
     def get_connection_info(self) -> JSONDict:
@@ -110,7 +118,7 @@ class TeslaWallConnector(PowerConsumer):
 
         Returns:
             The vitals response as a JSON dictionary. If the request fails, an
-            error message and NaN voltage and current values are returned.
+            error message, NaN voltage and current, and a false contactor state are returned.
         """
         try:
             url = self._api + 'vitals'
@@ -122,4 +130,5 @@ class TeslaWallConnector(PowerConsumer):
                 'error': str(err),
                 'voltageA_v': float('nan'),
                 'currentA_a': float('nan'),
+                'contactor_closed': False,
             }
