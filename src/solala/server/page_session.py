@@ -135,6 +135,12 @@ class PageSession:
             finally:
                 await unregister(wrapped)
 
+        if self._closed:
+            # The session may have closed while registration was in progress.
+            # Its cleanup loop cannot own this listener, so release it here.
+            await cleanup()
+            raise RuntimeError('Cannot add resources to a closed page session')
+
         self.add_cleanup(cleanup)
 
     async def add_control_listener(self, listener: LoopListener) -> None:
