@@ -59,6 +59,7 @@ class DummyConsumerConnection(BaseModel):
         current: Simulated current in amperes.
         power: Active power in watts. Defaults to voltage multiplied by
                 current when omitted. If not None, then must be <= voltage * current.
+        on: Is the device switched on. Defaults to True.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -66,6 +67,7 @@ class DummyConsumerConnection(BaseModel):
     voltage: float = 240
     current: float = 0
     power: float | None = None
+    on: bool = True
 
 
 class DummySolarForecasterConnection(BaseModel):
@@ -139,6 +141,9 @@ class TuyaConnection(BaseModel):
         voltage_scale_factor: Multiplier applied to reported voltage values.
         current_scale_factor: Multiplier applied to reported current values.
         power_scale_factor: Multiplier applied to reported power values.
+        cache_duration: How long to cache the device status. Use this to reduce how often the
+                API is called. The default value is 300 seconds (5 minutes).
+
     """
     TYPE: ClassVar[Literal['tuya']] = 'tuya'
     type: Literal['tuya'] = 'tuya'
@@ -150,6 +155,7 @@ class TuyaConnection(BaseModel):
     voltage_scale_factor: float = 0.1
     current_scale_factor: float = 0.001
     power_scale_factor: float = 0.1
+    cache_duration: float = 300
 
 
 class OpenMeteoConnection(BaseModel):

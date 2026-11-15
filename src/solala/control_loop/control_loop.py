@@ -1410,6 +1410,7 @@ def _connect_dummy_consumer(consumer_connection: DummyConsumerConnection) -> Pow
         voltage=consumer_connection.voltage,
         current=consumer_connection.current,
         power=consumer_connection.power,
+        on=consumer_connection.on,
     )
 
 
@@ -1540,6 +1541,7 @@ def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
             voltage_scale_factor=consumer_connection.voltage_scale_factor,
             current_scale_factor=consumer_connection.current_scale_factor,
             power_scale_factor=consumer_connection.power_scale_factor,
+            cache_duration=consumer_connection.cache_duration,
         )
     except Exception as err:
         raise ControlLoopError('could not connect to the Tuya device', errors=[str(err)])
