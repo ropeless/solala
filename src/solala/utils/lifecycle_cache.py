@@ -66,10 +66,12 @@ class LifecycleCache[T]:
     because of a network, resource, or configuration problem. It is a refresh
     outcome, not an exception raised by LifecycleCache.__call__(). An ERROR
     result does not replace the last usable cached value. The cache retains
-    that value for fallback, preferring it over the configured default.
+    that value for fallback only while it remains younger than old. Once
+    the cached value reaches old, it expires and is replaced by the
+    configured default (or _NONE if no default was configured).
 
-    If neither a cached value nor a configured default is available,
-    __call__() raises NoResult. This is a distinct failure: the cache cannot
+    If neither an unexpired cached value nor a configured default is
+    available, __call__() raises NoResult. This is a distinct failure: the cache cannot
     provide a result, even though the wrapped function has reported ERROR.
     Such a failure does not prevent future refresh attempts.
 
@@ -78,6 +80,12 @@ class LifecycleCache[T]:
     function. After a result is received, the cache state is always the state
     returned by the wrapped function, including ERROR even if __call__()
     subsequently raises NoResult. The cache does not return to INITIAL.
+
+    Both VALID and INTERIM cached values expire at age old. Expiration
+    replaces the cached value with the configured default; it does not
+    change the lifecycle state or its timestamp. A default value never
+    expires. An expired value must not be returned even if a refresh
+    subsequently reports ERROR.
 
     The cache tracks the latest result state and its monotonic timestamp.
     Age is the elapsed time since that result was received. This timestamp
@@ -94,18 +102,23 @@ class LifecycleCache[T]:
         Await the wrapped function.
 
     ERROR, age < retry:
-        Return the last cached usable value or the default; if neither
+        Return an unexpired cached value or the default; if neither
         exists, raise NoResult.
 
     ERROR, retry <= age:
-        Await the wrapped function; if it reports ERROR, use a fallback
-        or raise NoResult if none is available.
+        Await the wrapped function; if it reports ERROR, use an unexpired
+        cached value or the default, or raise NoResult if neither exists.
 
-    INTERIM, age < retry:
+    INTERIM, age < retry and age < old:
         Return the cached provisional value.
 
-    INTERIM, retry <= age:
-        Await the wrapped function.
+    INTERIM, retry <= age < old:
+        Await the wrapped function; the provisional value remains usable
+        if the refresh reports ERROR.
+
+    INTERIM, old <= age:
+        Expire the cached value, then await the wrapped function. If it
+        reports ERROR, return the default or raise NoResult.
 
     VALID, age < young:
         Return the cached value.
@@ -114,12 +127,14 @@ class LifecycleCache[T]:
         Start a background refresh and return the cached value.
 
     VALID, old <= age:
-        Await the wrapped function.
+        Expire the cached value, then await the wrapped function. If it
+        reports ERROR, return the default or raise NoResult.
 
     At most one background refresh is intended to run at a time. If a
     foreground refresh is needed while a background refresh is running,
     the foreground caller awaits that existing task instead of cancelling
-    it or starting another refresh.
+    it or starting another refresh. If the cached value has reached old,
+    it must expire before awaiting the task.
 
     ERROR represents an expected inability to obtain a result, not a
     request to suppress arbitrary programming exceptions. Handling of
