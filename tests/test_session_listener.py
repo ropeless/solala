@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 
-from solala.server.page_session import _SessionListener
+from solala.server.page_session import PageSession, _SessionListener
 
 
 class _BlockingListener:
@@ -53,3 +53,32 @@ class SessionListenerTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(listener.calls, 3)
         self.assertTrue(all(task.cancelled() for task in tasks))
+
+    async def test_registration_completing_after_session_close_is_cleaned_up(self) -> None:
+        registration_started = asyncio.Event()
+        allow_registration = asyncio.Event()
+        registered: list[object] = []
+
+        async def register(listener: object) -> None:
+            registration_started.set()
+            await allow_registration.wait()
+            registered.append(listener)
+
+        async def unregister(listener: object) -> None:
+            registered.remove(listener)
+
+        async def select_tab(_name: str) -> None:
+            pass
+
+        session = PageSession(None, select_tab)  # type: ignore[arg-type]
+        listener = _BlockingListener()
+        registration_task = asyncio.create_task(
+            session._add_listener(listener, register, unregister)
+        )
+        await registration_started.wait()
+        await session.close()
+        allow_registration.set()
+
+        with self.assertRaisesRegex(RuntimeError, 'closed page session'):
+            await registration_task
+        self.assertEqual(registered, [])
