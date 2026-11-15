@@ -8,7 +8,7 @@ from typing import Callable, Coroutine, Any
 from solala.utils.sentinel import Sentinel
 
 _NONE = Sentinel('_NONE')
-_INVALID = Sentinel('_INVALID')
+_INITIAL = Sentinel('_INITIAL')
 
 
 class LifecycleState(Enum):
@@ -65,12 +65,12 @@ class LifecycleCache[T]:
     refreshing should be retried later while an available cached or default
     value is used in the meantime.
 
-    A separate failure occurs when `L`ifecycleCache.__call__()` cannot supply a
+    A separate failure occurs when `LifecycleCache.__call__()` cannot supply a
     value: the wrapped function has not provided a usable result and neither
     a cached value nor a configured default is available. In that case,
     `__call__()` raises `NoResult`.
 
-    The cache initially has an INVALID internal state, meaning no refresh
+    The cache initially has an INITIAL internal state, meaning no refresh
     has completed. Successful VALID and INTERIM results supply values that
     are cached and returned. A refresh reporting ERROR does not supply a
     replacement value. The most recently cached usable value is preferred
@@ -88,7 +88,7 @@ class LifecycleCache[T]:
 
     The intended behaviour of `__call__()` is:
 
-    INVALID, any age:
+    INITIAL, any age:
         Await the wrapped function.
 
     ERROR, age < retry:
@@ -154,7 +154,7 @@ class LifecycleCache[T]:
         self._old: float = old
         self._default: T | Sentinel = default
         self._cache: T | Sentinel = _NONE
-        self._state: LifecycleState | Sentinel = _INVALID
+        self._state: LifecycleState | Sentinel = _INITIAL
         self._timestamp: float = float('-inf')
         self._error_log: Callable[[str], None] = error_log
         self._info_log: Callable[[str], None] = info_log
@@ -170,7 +170,7 @@ class LifecycleCache[T]:
         Returns:
             The cached or newly computed value.
         """
-        if self._state is _INVALID:
+        if self._state is _INITIAL:
             return await self._call_f()
         elif self._state is LifecycleState.VALID:
             assert self._cache is not _NONE
