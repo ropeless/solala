@@ -315,8 +315,9 @@ class PriceForecastUpdater(LoopListener):
 
             forecast_date = price_forecast[0].start_time.date()
 
-            with ui.row().classes('items-center gap-2 mb-5'):
-                ui.icon('calendar_today').classes('text-lg text-gray-500')
+            with ui.row().classes('items-center gap-2 mb-5 h-[42px]'):
+                with ui.element('div').classes('w-8 h-8 flex items-center justify-center shrink-0'):
+                    ui.icon('calendar_today', size='20px').classes('text-gray-500')
                 ui.label(forecast_date.strftime(GUI_DATE_FORMAT)).classes('text-sm text-gray-500')
 
             # Forecast table

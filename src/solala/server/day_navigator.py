@@ -73,9 +73,13 @@ class DayNavigator:
             with navigator_row:
                 # Date
                 ui.button(
-                    icon='calendar_today',
+                    icon='calendar_month',
                     on_click=self._show_dialog,
-                ).props('flat round').style('color: #6b7280 !important')
+                ).props(
+                    'flat round icon-size=20px'
+                ).classes(
+                    '!w-8 !h-8 !min-h-0 min-w-0 shrink-0'
+                ).style('color: #6b7280 !important')
                 self.date_element = ui.label().classes('text-sm w-30 text-gray-500')
 
                 button_classes = '!w-8 !h-8 min-w-0 shrink-0'
@@ -115,13 +119,13 @@ class DayNavigator:
         if self._auto_height_id is not None:
             carousel.props(f'id={self._auto_height_id}')
         with carousel as self._carousel:
-            with ui.carousel_slide('0'):
+            with ui.carousel_slide('0').classes('!p-0'):
                 element_0 = ui.element('div').classes('w-full')
-            with ui.carousel_slide('1'):
+            with ui.carousel_slide('1').classes('!p-0'):
                 element_1 = ui.element('div').classes('w-full')
-            with ui.carousel_slide('2'):
+            with ui.carousel_slide('2').classes('!p-0'):
                 element_2 = ui.element('div').classes('w-full')
-        self._elements: tuple(Element, Element, Element) = (element_0, element_1, element_2)
+        self._elements: tuple[Element, Element, Element] = (element_0, element_1, element_2)
 
         self._carousel.on_value_change(self._on_slide_change)
         self._carousel.on('transition', self._on_carousel_transition)
