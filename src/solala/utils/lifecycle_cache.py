@@ -156,7 +156,7 @@ class LifecycleCache[T]:
         self._young: float = young
         self._old: float = old
         self._default: T | Sentinel = default
-        self._cache: T | Sentinel = _NONE
+        self._cache: T | Sentinel = default
         self._state: LifecycleState | Sentinel = _INITIAL
         self._timestamp: float = float('-inf')
         self._error_log: Callable[[str], None] = error_log
