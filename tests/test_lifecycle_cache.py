@@ -164,7 +164,6 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cache._state, LifecycleState.ERROR)
         self.assertEqual(self.calls, 4)
 
-
     async def test_concurrent_initial_callers_share_one_refresh(self) -> None:
         started = asyncio.Event()
         release = asyncio.Event()
@@ -250,6 +249,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
             release.set()
         self.assertEqual(await asyncio.wait_for(caller, timeout=1), 42)
         self.assertEqual(self.calls, 2)
+
 
 if __name__ == '__main__':
     unittest.main()
