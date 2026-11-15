@@ -361,5 +361,69 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls, 1)
         self.error_log.assert_called_once()
 
+    async def test_cancelling_one_caller_preserves_shared_refresh(self) -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def wrapped():
+            self.calls += 1
+            started.set()
+            await release.wait()
+            return valid(42)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            error_log=self.error_log, info_log=self.info_log,
+        )
+        callers = [asyncio.create_task(cache()) for _ in range(3)]
+        try:
+            await asyncio.wait_for(started.wait(), timeout=1)
+            await asyncio.sleep(0)  # Let the remaining callers join the refresh.
+            callers[0].cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await callers[0]
+            self.assertEqual(self.calls, 1)
+            self.assertIsNotNone(cache._task)
+            self.assertFalse(cache._task.done())
+        finally:
+            release.set()
+        results = await asyncio.wait_for(asyncio.gather(*callers[1:]), timeout=1)
+        self.assertEqual(results, [42, 42])
+        await asyncio.sleep(0)
+        self.assertIsNone(cache._task)
+        self.assertEqual(self.calls, 1)
+
+    async def test_cancelling_only_caller_does_not_cancel_refresh(self) -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def wrapped():
+            self.calls += 1
+            started.set()
+            await release.wait()
+            return valid(42)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            error_log=self.error_log, info_log=self.info_log,
+        )
+        caller = asyncio.create_task(cache())
+        try:
+            await asyncio.wait_for(started.wait(), timeout=1)
+            caller.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await caller
+            self.assertIsNotNone(cache._task)
+            self.assertFalse(cache._task.done())
+        finally:
+            release.set()
+        await asyncio.wait_for(cache._task, timeout=1)
+        await asyncio.sleep(0)
+        self.assertIsNone(cache._task)
+        self.assertEqual(cache._state, LifecycleState.VALID)
+        self.assertEqual(await cache(), 42)
+        self.assertEqual(self.calls, 1)
+
+
 if __name__ == '__main__':
     unittest.main()
