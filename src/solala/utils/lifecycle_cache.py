@@ -62,28 +62,29 @@ type WrappedFunction[T] = Callable[[], Coroutine[Any, Any, LifecycleReturn[T]]]
 class NoResult(RuntimeError):
     def __init__(self) -> None:
         super().__init__(
-            'no usable result from the wrapped function, no cached result, and no default result available')
+            'no usable result from the wrapped function, no cached result, and no default result available'
+        )
 
 
 class LifecycleCache[T]:
     """
     Cache results of an asynchronous function using lifecycle states and age thresholds.
 
-    The wrapped function takes no arguments and returns a LifecycleReturn[T].
+    The wrapped function takes no arguments and returns a `LifecycleReturn[T]`.
     VALID provides a usable result. INTERIM provides a usable but provisional
     result that should be retried sooner. Both replace any previously cached
     value, even when an INTERIM result follows a VALID result.
 
     An ErrorReturn means the wrapped function could not obtain a value,
     for example because of a network, resource, or configuration problem. It is a refresh
-    outcome, not an exception raised by LifecycleCache.__call__(). An error
+    outcome, not an exception raised by `LifecycleCache.__call__()`. An error
     result does not replace the last usable cached value. The cache retains
     that value for fallback only while it remains younger than old. Once
     the cached value reaches old, it expires and is replaced by the
     configured default (or NO_VALUE if no default was configured).
 
     If neither an unexpired cached value nor a configured default is
-    available, __call__() raises NoResult. This means the cache cannot
+    available, `__call__()` raises NoResult. This means the cache cannot
     provide a result, even though the wrapped function returned ErrorReturn.
     Such a failure does not prevent future refresh attempts.
 
@@ -94,12 +95,12 @@ class LifecycleCache[T]:
     logging callbacks, or other programming errors.
 
     The INITIAL lifecycle state means that no wrapped-function result has
-    yet been received. Successful results have LifecycleState.VALID or
-    LifecycleState.INTERIM; ErrorReturn uses LifecycleState.ERROR.
-    After a result is received, the cache state reflects that result, even
-    if `__call__()` subsequently raises NoResult. It does not return to INITIAL.
-    None may be a legitimate value of `T` or default; only NO_VALUE denotes absence.
-    Sentinel instances are valid values except for the reserved NO_VALUE sentinel.
+    yet been received. Successful results have VALID or INTERIM state;
+    ErrorReturn has ERROR state. After a result is received, the cache state
+    reflects that result, even     if `__call__()` subsequently raises NoResult.
+    It does not return to INITIAL. None may be a legitimate value of `T` or default;
+    only NO_VALUE denotes absence. Sentinel instances are valid values except
+    for the reserved NO_VALUE sentinel.
 
     Both VALID and INTERIM cached values expire at age 'old'. Expiration
     replaces the cached value with the configured default; it does not
@@ -108,16 +109,16 @@ class LifecycleCache[T]:
     subsequently returns ErrorReturn.
 
     The cache tracks the latest result state and its monotonic timestamp.
-    Age is the elapsed time since that result was received. This timestamp
-    advances for VALID, INTERIM, and ErrorReturn alike. The timestamp of the last
-    usable value is tracked separately so error refreshes cannot extend its
-    lifetime.
+    The age of the cache is the elapsed time since that result was received.
+    This timestamp advances for VALID, INTERIM, and ErrorReturn alike. The
+    timestamp of the last usable value is tracked separately so error refreshes
+    cannot extend its lifetime.
 
     Three age thresholds control refreshes: retry, young, and old.
-    They must satisfy 0 < retry <= young <= old. If omitted, young defaults
-    to old and retry defaults to young.
+    They must satisfy 0 < 'retry' <= 'young' <= 'old'. If omitted, 'young'
+    defaults to 'old' and 'retry' defaults to 'young'.
 
-    The intended behaviour of __call__() is:
+    The intended behaviour of `__call__()` is:
 
     INITIAL, any age:
         Await the wrapped function.
@@ -159,7 +160,7 @@ class LifecycleCache[T]:
     At most one background refresh is intended to run at a time. If a
     foreground refresh is needed while a background refresh is running,
     the foreground caller awaits that existing task instead of cancelling
-    it or starting another refresh. If the cached value has reached old,
+    it or starting another refresh. If the cached value has reached 'old',
     it must expire before awaiting the task.
 
     The wrapped function is responsible for catching exceptions it
@@ -176,7 +177,7 @@ class LifecycleCache[T]:
     The cache remains internally consistent, and subsequent calls can
     attempt another refresh.
 
-    asyncio.CancelledError represents cancellation, not a lifecycle
+    `asyncio.CancelledError` represents cancellation, not a lifecycle
     ERROR, and is not converted into one. Cancelling an individual
     foreground caller must not cancel a refresh shared with other callers.
     """
