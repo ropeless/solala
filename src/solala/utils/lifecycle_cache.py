@@ -278,7 +278,7 @@ class LifecycleCache[T]:
             return
         exception = task.exception()
         if exception is not None:
-            self._error_log('unexpected exception refreshing cache:\\n'
+            self._error_log('unexpected exception refreshing cache:\n'
                             + ''.join(format_exception(exception)))
 
     async def __update(self) -> None:
