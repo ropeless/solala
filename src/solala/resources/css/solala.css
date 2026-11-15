@@ -370,6 +370,16 @@ html {
 /* Forecast table */
 
 .price-table,
+.solar-table {
+    overflow: hidden;
+    width: 360px;
+    max-width: 100%;
+    background: var(--solala-card-bg);
+    border: 1px solid var(--solala-border);
+    border-radius: var(--solala-radius);
+    box-shadow: 0 2px 6px rgb(30 45 55 / 4%);
+}
+
 .price-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 2fr);
@@ -450,16 +460,6 @@ html {
 }
 
 /* Forecast table */
-
-.solar-table {
-    overflow: hidden;
-    width: 360px;
-    max-width: 100%;
-    background: var(--solala-card-bg);
-    border: 1px solid var(--solala-border);
-    border-radius: var(--solala-radius);
-    box-shadow: 0 2px 6px rgb(30 45 55 / 4%);
-}
 
 .solar-row {
     display: grid;
