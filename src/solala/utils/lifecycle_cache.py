@@ -75,6 +75,12 @@ class LifecycleCache[T]:
     provide a result, even though the wrapped function has reported ERROR.
     Such a failure does not prevent future refresh attempts.
 
+    If a default is configured, normal lifecycle operation never raises
+    NoResult: a usable cached value or the default is always available,
+    including after an ERROR result or cache expiration. This guarantee
+    does not cover unexpected exceptions raised by the wrapped function,
+    logging callbacks, or other programming errors.
+
     The internal INITIAL state means that no wrapped-function result has yet
     been received. INITIAL is not a LifecycleState returned by the wrapped
     function. After a result is received, the cache state is always the state
