@@ -244,11 +244,9 @@ class LifecycleCache[T]:
         Call the wrapped function asynchronously, updating the
         cache according to the returned result.
         """
-        if self._task is not None:
-            # Rather than cancel the task, let it run async
-            await self._task
-        else:
-            await self._update()
+        self._create_background_update()
+        assert self._task is not None
+        await self._task
         return self._cached_or_error()
 
     async def _update(self) -> None:
