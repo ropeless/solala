@@ -1,8 +1,8 @@
 import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
 import httpx
-from collections.abc import AsyncIterator, Awaitable, Callable
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.logger import LOGGER
@@ -52,14 +52,17 @@ class TeslaWallConnector(PowerConsumer):
         self._register_bank_lock = asyncio.Lock()
 
     async def get_registers(self) -> RegisterBank:
-        if self._register_bank is None:
+        reg_bank = self._register_bank
+        if reg_bank is None:
             async with self._register_bank_lock:
-                if self._register_bank is None:
-                    self._register_bank = RegisterBank({
+                reg_bank = self._register_bank
+                if reg_bank is None:
+                    reg_bank = RegisterBank({
                         key: AsyncCallRegister(partial(self._get_register_value, key), reg_type)
                         async for key, reg_type in self._get_register_keys()
                     })
-        return self._register_bank
+                    self._register_bank = reg_bank
+        return reg_bank
 
     async def get_status(self) -> ConsumerStatus:
         data: JSONDict = await self._cache()
