@@ -165,5 +165,91 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls, 4)
 
 
+    async def test_concurrent_initial_callers_share_one_refresh(self) -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def wrapped():
+            self.calls += 1
+            started.set()
+            await release.wait()
+            return valid(42)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            error_log=self.error_log, info_log=self.info_log,
+        )
+        callers = [asyncio.create_task(cache()) for _ in range(3)]
+        try:
+            await asyncio.wait_for(started.wait(), timeout=1)
+            # Allow all waiting callers to reach the shared task.
+            await asyncio.sleep(0)
+            self.assertEqual(self.calls, 1)
+            self.assertTrue(all(not task.done() for task in callers))
+        finally:
+            release.set()
+        self.assertEqual(await asyncio.wait_for(asyncio.gather(*callers), timeout=1), [42] * 3)
+        self.assertEqual(self.calls, 1)
+
+    async def test_concurrent_expired_callers_share_one_refresh(self) -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def wrapped():
+            self.calls += 1
+            if self.calls == 1:
+                return valid(12)
+            started.set()
+            await release.wait()
+            return valid(42)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            default=7, error_log=self.error_log, info_log=self.info_log,
+        )
+        self.assertEqual(await cache(), 12)
+        self.now += 30
+        callers = [asyncio.create_task(cache()) for _ in range(3)]
+        try:
+            await asyncio.wait_for(started.wait(), timeout=1)
+            await asyncio.sleep(0)
+            self.assertEqual(self.calls, 2)
+            self.assertTrue(all(not task.done() for task in callers))
+        finally:
+            release.set()
+        self.assertEqual(await asyncio.wait_for(asyncio.gather(*callers), timeout=1), [42] * 3)
+        self.assertEqual(self.calls, 2)
+
+    async def test_foreground_joins_existing_background_refresh(self) -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def wrapped():
+            self.calls += 1
+            if self.calls == 1:
+                return valid(12)
+            started.set()
+            await release.wait()
+            return valid(42)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            default=7, error_log=self.error_log, info_log=self.info_log,
+        )
+        self.assertEqual(await cache(), 12)
+        self.now += 10
+        self.assertEqual(await cache(), 12)  # Schedule background refresh.
+        await asyncio.wait_for(started.wait(), timeout=1)
+        self.now += 20  # Cached value is now expired.
+        caller = asyncio.create_task(cache())
+        try:
+            await asyncio.sleep(0)
+            self.assertEqual(self.calls, 2)
+            self.assertFalse(caller.done())
+        finally:
+            release.set()
+        self.assertEqual(await asyncio.wait_for(caller, timeout=1), 42)
+        self.assertEqual(self.calls, 2)
+
 if __name__ == '__main__':
     unittest.main()
