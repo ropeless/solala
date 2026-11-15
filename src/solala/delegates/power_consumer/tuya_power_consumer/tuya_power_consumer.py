@@ -159,4 +159,5 @@ class TuyaPowerConsumer(PowerConsumer):
                 'cur_voltage': float('nan'),
                 'cur_current': float('nan'),
                 'cur_power': float('nan'),
+                'switch_1': False,
             }
