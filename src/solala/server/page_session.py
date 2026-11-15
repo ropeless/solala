@@ -1,6 +1,5 @@
 import asyncio
 import inspect
-from functools import partial
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
@@ -16,6 +15,42 @@ class _CancellableTimer(Protocol):
     """
     def cancel(self) -> None:
         ...
+
+
+class _SessionListener:
+    """
+    Adapt a UI listener so its updates cannot outlive the owning page session.
+
+    The control loop may schedule updates from a previously captured listener
+    snapshot, so unregistering the listener alone is not sufficient.
+    """
+
+    def __init__(self, listener: LoopListener) -> None:
+        self._listener = listener
+        self._closed = False
+        self._tasks: set[asyncio.Task[Any]] = set()
+
+    async def update(self) -> None:
+        if self._closed:
+            return
+
+        task = asyncio.current_task()
+        assert task is not None
+        self._tasks.add(task)
+        try:
+            if not self._closed:
+                await self._listener.update()
+        finally:
+            self._tasks.discard(task)
+
+    async def close(self) -> None:
+        # Mark closed before yielding, including for already captured snapshots.
+        self._closed = True
+        tasks = tuple(self._tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 class PageSession:
@@ -66,17 +101,21 @@ class PageSession:
             raise RuntimeError('Cannot add resources to a closed page session')
         self._cleanup.append(cleanup)
 
-    async def add_control_listener(self, listener: LoopListener) -> None:
+    async def _add_listener(
+            self,
+            listener: LoopListener,
+            register: Callable[[LoopListener], Awaitable[None]],
+            unregister: Callable[[LoopListener], Awaitable[None]],
+    ) -> None:
         """
-        Register a control-loop listener for the lifetime of this page.
-
-        If registration is cancelled, await its completion and unregister the
-        listener if registration succeeded.
-
-        Args:
-            listener: Control-loop listener to register.
+        Register a session-owned listener and clean up in-flight notifications
+        before allowing its UI elements to be destroyed.
         """
-        registration = asyncio.create_task(control_loop.add_control_loop_listener(listener))
+        if self._closed:
+            raise RuntimeError('Cannot add resources to a closed page session')
+
+        wrapped = _SessionListener(listener)
+        registration = asyncio.create_task(register(wrapped))
         try:
             await asyncio.shield(registration)
         except asyncio.CancelledError:
@@ -85,32 +124,38 @@ class PageSession:
             except Exception:
                 pass
             else:
-                await control_loop.remove_control_loop_listener(listener)
+                await unregister(wrapped)
             raise
-        self.add_cleanup(partial(control_loop.remove_control_loop_listener, listener))
+
+        async def cleanup() -> None:
+            # Disable and drain callbacks before unregistering. This also
+            # protects against updates scheduled from an older snapshot.
+            try:
+                await wrapped.close()
+            finally:
+                await unregister(wrapped)
+
+        self.add_cleanup(cleanup)
+
+    async def add_control_listener(self, listener: LoopListener) -> None:
+        """
+        Register a control-loop listener for the lifetime of this page.
+        """
+        await self._add_listener(
+            listener,
+            control_loop.add_control_loop_listener,
+            control_loop.remove_control_loop_listener,
+        )
 
     async def add_database_listener(self, listener: LoopListener) -> None:
         """
         Register a database-loop listener for the lifetime of this page.
-
-        If registration is cancelled, await its completion and unregister the
-        listener if registration succeeded.
-
-        Args:
-            listener: Database-loop listener to register.
         """
-        registration = asyncio.create_task(control_loop.add_database_loop_listener(listener))
-        try:
-            await asyncio.shield(registration)
-        except asyncio.CancelledError:
-            try:
-                await registration
-            except Exception:
-                pass
-            else:
-                await control_loop.remove_database_loop_listener(listener)
-            raise
-        self.add_cleanup(partial(control_loop.remove_database_loop_listener, listener))
+        await self._add_listener(
+            listener,
+            control_loop.add_database_loop_listener,
+            control_loop.remove_database_loop_listener,
+        )
 
     def add_task(self, task: asyncio.Task[Any]) -> None:
         """
