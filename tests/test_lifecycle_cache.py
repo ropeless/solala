@@ -10,6 +10,7 @@ from solala.utils.lifecycle_cache import (
     error,
     interim,
     valid,
+    NO_VALUE,
 )
 
 
@@ -266,9 +267,9 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
             await cache()
         await asyncio.sleep(0)  # Allow the task completion callback to run.
         self.assertIsNone(cache._task)
-        self.assertNotIsInstance(cache._state, LifecycleState)  # Still INITIAL.
-        self.assertEqual(cache._timestamp, float('-inf'))
-        self.assertEqual(cache._cache_timestamp, float('-inf'))
+        self.assertIs(cache._state, LifecycleState.INITIAL)
+        self.assertEqual(cache._timestamp, 100.0)
+        self.assertEqual(cache._cache_timestamp, 100.0)
         self.assertEqual(cache._cache, 7)
         self.error_log.assert_called_once()
         self.assertIn('ValueError: unexpected failure', self.error_log.call_args.args[0])
@@ -465,13 +466,28 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cache._state, ErrorReturn.state)
         self.assertEqual(self.calls, 1)
 
-    async def test_successful_sentinel_result_is_rejected(self) -> None:
+    async def test_non_reserved_sentinel_can_be_cached(self) -> None:
         from solala.utils.sentinel import Sentinel
 
         for result_factory in (valid, interim):
             with self.subTest(result_factory=result_factory):
+                marker = Sentinel('allowed')
+
                 async def wrapped():
-                    return result_factory(Sentinel('invalid'))
+                    return result_factory(marker)
+
+                cache = LifecycleCache(
+                    wrapped, old=30, young=10, retry=5,
+                    error_log=self.error_log, info_log=self.info_log,
+                )
+                self.assertIs(await cache(), marker)
+                self.assertIs(await cache(), marker)
+
+    async def test_reserved_no_value_is_rejected_without_state_change(self) -> None:
+        for result_factory in (valid, interim):
+            with self.subTest(result_factory=result_factory):
+                async def wrapped():
+                    return result_factory(NO_VALUE)
 
                 cache = LifecycleCache(
                     wrapped, old=30, young=10, retry=5,
@@ -481,6 +497,10 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
                     await cache()
                 await asyncio.sleep(0)
                 self.assertIsNone(cache._task)
+                self.assertIs(cache.state, LifecycleState.INITIAL)
+                self.assertEqual(cache.timestamp, 100.0)
+                self.assertEqual(cache._cache_timestamp, 100.0)
+                self.assertIs(cache._cache, NO_VALUE)
 
 
 if __name__ == '__main__':
