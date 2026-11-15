@@ -28,7 +28,7 @@ class DummyPowerConsumer(PowerConsumer):
             on: Is the device switched on. Defaults to True.
 
         Raises:
-            ValueError: If power exceeds voltage multiplied by current.
+            ValueError: If power is negative or exceeds voltage multiplied by current.
         """
         self._voltage: float = 0
         self._current: float = 0
@@ -82,6 +82,8 @@ class DummyPowerConsumer(PowerConsumer):
     def power(self, value: float | None) -> None:
         if value is None:
             value = self.voltage * self._current
+        if value < 0:
+            raise ValueError('power < 0')
         if value > self.voltage * self._current:
             raise ValueError('power > voltage * current')
 
