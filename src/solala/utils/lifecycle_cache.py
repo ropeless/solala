@@ -97,7 +97,7 @@ class LifecycleCache[T]:
     The INITIAL lifecycle state means that no wrapped-function result has
     yet been received. Successful results have VALID or INTERIM state;
     ErrorReturn has ERROR state. After a result is received, the cache state
-    reflects that result, even     if `__call__()` subsequently raises NoResult.
+    reflects that result, even if `__call__()` subsequently raises NoResult.
     It does not return to INITIAL. None may be a legitimate value of `T` or default;
     only NO_VALUE denotes absence. Sentinel instances are valid values except
     for the reserved NO_VALUE sentinel.
@@ -171,8 +171,7 @@ class LifecycleCache[T]:
     them or not.
 
     An unexpected exception from the wrapped function or result validation
-    does not change the lifecycle state,
-    timestamps, or cached value. Any cache expiration performed before
+    does not change the lifecycle state, timestamps, or cached value. Any cache expiration performed before
     the refresh remains effective, so an expired value is not restored.
     The cache remains internally consistent, and subsequent calls can
     attempt another refresh.
