@@ -71,9 +71,9 @@ class LifecycleCache[T]:
     result that should be retried sooner. Both replace any previously cached
     value, even when an INTERIM result follows a VALID result.
 
-    ERROR means that the wrapped function could not obtain a value, for example
+    An ErrorReturn means that the wrapped function could not obtain a value, for example
     because of a network, resource, or configuration problem. It is a refresh
-    outcome, not an exception raised by LifecycleCache.__call__(). An ERROR
+    outcome, not an exception raised by LifecycleCache.__call__(). An error
     result does not replace the last usable cached value. The cache retains
     that value for fallback only while it remains younger than old. Once
     the cached value reaches old, it expires and is replaced by the
@@ -90,11 +90,13 @@ class LifecycleCache[T]:
     does not cover unexpected exceptions raised by the wrapped function,
     logging callbacks, or other programming errors.
 
-    The internal INITIAL state means that no wrapped-function result has yet
-    been received. INITIAL is not a LifecycleState returned by the wrapped
-    function. After a result is received, the cache state is always the state
-    returned by the wrapped function, including ERROR even if __call__()
-    subsequently raises NoResult. The cache does not return to INITIAL.
+    The internal _INITIAL sentinel means that no wrapped-function result has
+    yet been received. Successful results have LifecycleState.VALID or
+    LifecycleState.INTERIM; ErrorReturn uses the internal _ERROR sentinel.
+    After a result is received, the cache state reflects that result, even
+    if __call__() subsequently raises NoResult. It does not return to _INITIAL.
+    None is a legitimate cached value or default; only _NONE denotes absence.
+    Sentinel instances are not valid successful results.
 
     Both VALID and INTERIM cached values expire at age 'old'. Expiration
     replaces the cached value with the configured default; it does not
@@ -158,7 +160,7 @@ class LifecycleCache[T]:
     it must expire before awaiting the task.
 
     The wrapped function is responsible for catching exceptions it
-    considers non-fatal and returning LifecycleReturn(ERROR) instead.
+    considers non-fatal and returning ErrorReturn instead.
     Other exceptions raised by the wrapped function propagate to
     foreground callers. Unexpected refresh exceptions are also logged
     with their traceback, regardless of whether a foreground caller awaits
@@ -305,10 +307,11 @@ class LifecycleCache[T]:
             self._error_log(self._error_message.format(message=lifecycle_return.message))
             return
 
-        lifecycle_return: ObjectReturn[T]
+        if not isinstance(lifecycle_return, ObjectReturn):
+            raise TypeError(f'unexpected lifecycle result: {lifecycle_return!r}')
         value = lifecycle_return.value
-        if value is _NONE:
-            raise ValueError(f'{_NONE!r} is not a valid function return value')
+        if isinstance(value, Sentinel):
+            raise ValueError(f'{value!r} is not a valid function return value')
         if self._state == LifecycleState.INTERIM:
             self._info_log(self._interim_message.format(value=value))
         self._cache = value
