@@ -6,8 +6,11 @@ class DummyPowerConsumer(PowerConsumer):
     """
     Simulated power consumer with configurable electrical status.
 
-    The public `status` attribute can be updated after construction
-    (with care) to change the voltage, current, and power reported by the consumer.
+    Voltage, current, power, and on can be changed after construction.
+    Callers must keep voltage, current, and power consistent: changing voltage
+    does not adjust power, and changing current from zero does not restore a
+    previously zero power value. The power setter validates the relationship
+    power <= voltage * current when explicitly assigned.
     """
 
     def __init__(
