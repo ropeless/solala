@@ -222,10 +222,10 @@ class LifecycleCache[T]:
         Called as a background tasks to update the cached value.
         """
         lifecycle_return: LifecycleReturn[T] = await self._f()
-        now = monotonic()
-        state = lifecycle_return.state
+        self._timestamp = monotonic()
+        self._state = lifecycle_return.state
 
-        if state == LifecycleState.ERROR:
+        if self._state == LifecycleState.ERROR:
             self._error_log(self._error_message.format(message=lifecycle_return.message))
             self._task = None
             return
@@ -233,9 +233,7 @@ class LifecycleCache[T]:
         value = lifecycle_return.value
         if value is _NONE:
             raise ValueError(f'{_NONE!r} is not a valid function return value')
-        if state == LifecycleState.INTERIM:
+        if self._state == LifecycleState.INTERIM:
             self._info_log(self._interim_message.format(value=value))
-        self._timestamp = now
-        self._state = state
         self._cache = value
         self._task = None
