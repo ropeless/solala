@@ -307,9 +307,8 @@ class LifecycleCache[T]:
             self._error_log(self._error_message.format(message=lifecycle_return.message))
             return
 
-        if not isinstance(lifecycle_return, ObjectReturn):
-            raise TypeError(f'unexpected lifecycle result: {lifecycle_return!r}')
-        value = lifecycle_return.value
+        lifecycle_return: ObjectReturn
+        value: T = lifecycle_return.value
         if isinstance(value, Sentinel):
             raise ValueError(f'{value!r} is not a valid function return value')
         if self._state == LifecycleState.INTERIM:
