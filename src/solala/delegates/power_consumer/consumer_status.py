@@ -9,6 +9,7 @@ class ConsumerStatus:
     Represents the electrical status of a power consumer.
 
     Attributes:
+        on: Whether the consumer is switched on.
         voltage: The measured voltage in volts.
         current: The measured current in amperes.
         power: The active power in watts, measured where available or estimated
