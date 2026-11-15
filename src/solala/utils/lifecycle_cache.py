@@ -71,8 +71,8 @@ class LifecycleCache[T]:
     result that should be retried sooner. Both replace any previously cached
     value, even when an INTERIM result follows a VALID result.
 
-    An ErrorReturn means that the wrapped function could not obtain a value, for example
-    because of a network, resource, or configuration problem. It is a refresh
+    An ErrorReturn means the wrapped function could not obtain a value,
+    for example because of a network, resource, or configuration problem. It is a refresh
     outcome, not an exception raised by LifecycleCache.__call__(). An error
     result does not replace the last usable cached value. The cache retains
     that value for fallback only while it remains younger than old. Once
@@ -80,8 +80,8 @@ class LifecycleCache[T]:
     configured default (or _NONE if no default was configured).
 
     If neither an unexpired cached value nor a configured default is
-    available, __call__() raises NoResult. This is a distinct failure: the cache cannot
-    provide a result, even though the wrapped function has reported ERROR.
+    available, __call__() raises NoResult. This means the cache cannot
+    provide a result, even though the wrapped function returned ErrorReturn.
     Such a failure does not prevent future refresh attempts.
 
     If a default is configured, normal lifecycle operation never raises
@@ -102,12 +102,12 @@ class LifecycleCache[T]:
     replaces the cached value with the configured default; it does not
     change the lifecycle state or its timestamp. A default value never
     expires. An expired value must not be returned even if a refresh
-    subsequently reports ERROR.
+    subsequently returns ErrorReturn.
 
     The cache tracks the latest result state and its monotonic timestamp.
     Age is the elapsed time since that result was received. This timestamp
-    advances for VALID, INTERIM, and ERROR alike. The timestamp of the last
-    usable value is tracked separately so ERROR refreshes cannot extend its
+    advances for VALID, INTERIM, and ErrorReturn alike. The timestamp of the last
+    usable value is tracked separately so error refreshes cannot extend its
     lifetime.
 
     Three age thresholds control refreshes: retry, young, and old.
@@ -116,14 +116,14 @@ class LifecycleCache[T]:
 
     The intended behaviour of __call__() is:
 
-    INITIAL, any age:
+    _INITIAL, any age:
         Await the wrapped function.
 
-    ERROR, age < retry:
+    _ERROR, age < retry:
         Return an unexpired cached value or the default; if neither
         exists, raise NoResult.
 
-    ERROR, retry <= age:
+    _ERROR, retry <= age:
         Await the wrapped function; if it reports ERROR, use an unexpired
         cached value or the default, or raise NoResult if neither exists.
 
@@ -190,6 +190,27 @@ class LifecycleCache[T]:
             interim_message: str = 'interim value received: {value!r}',
             error_message: str = 'error calling cached function: {message!r}',
     ) -> None:
+        """
+        Initialize the lifecycle cache and its refresh policy.
+
+        Args:
+            f: Asynchronous function providing ObjectReturn or ErrorReturn.
+            error_log: Callback for refresh errors and unexpected failures.
+            info_log: Callback for provisional results.
+            old: Maximum age of a cached result in seconds.
+            young: Age at which a valid result triggers background refresh.
+                Defaults to old.
+            retry: Minimum interval between interim or error refresh attempts.
+                Defaults to young.
+            default: Fallback value when no unexpired cached value is available.
+                None is valid; _NONE means no default.
+            interim_message: Format string for logging provisional values.
+            error_message: Format string for logging expected refresh errors.
+
+        Raises:
+            ValueError: If age thresholds are invalid or the default is
+                an unsupported sentinel.
+        """
         # Default values
         if young is None:
             young: float = old
@@ -233,46 +254,60 @@ class LifecycleCache[T]:
             self._cache = self._default
 
         if self._state is _INITIAL:
-            return await self._call_f()
+            return await self._refresh_and_get()
         elif self._state is LifecycleState.VALID:
             if old_cache:
-                return await self._call_f()
+                return await self._refresh_and_get()
             elif now - self._timestamp < self._young:
-                return self._cached_or_error()
+                return self._get_cached_value()
             else:
-                self._create_background_update()
-                return self._cached_or_error()
+                self._get_or_create_refresh_task()
+                return self._get_cached_value()
         elif self._state is LifecycleState.INTERIM and old_cache:
-            return await self._call_f()
+            return await self._refresh_and_get()
         elif now < self._timestamp + self._retry:
             # _ERROR | INTERIM with usable cache
-            return self._cached_or_error()
+            return self._get_cached_value()
         else:
-            return await self._call_f()
+            return await self._refresh_and_get()
 
-    def _cached_or_error(self) -> T:
+    def _get_cached_value(self) -> T:
         """
-        Return the cached value or raise an exception if there is no cached value.
+        Return the cached value or configured default.
+
+        Returns:
+            The available value, which may be None.
+
+        Raises:
+            NoResult: If no cached value or default is available.
         """
         if self._cache is _NONE:
             raise NoResult()
         else:
             return self._cache
 
-    async def _call_f(self) -> T:
+    async def _refresh_and_get(self) -> T:
         """
-        Call the wrapped function asynchronously, updating the
-        cache according to the returned result.
-        """
-        await asyncio.shield(self._create_background_update())
-        return self._cached_or_error()
+        Await the shared refresh task and return the resulting cached value.
 
-    def _create_background_update(self) -> Task[None]:
+        Shielding prevents cancellation of this caller from cancelling the
+        shared refresh task.
+
+        Returns:
+            The refreshed value or an available fallback.
         """
-        Get the existing background update task or create a new one as needed.
+        await asyncio.shield(self._get_or_create_refresh_task())
+        return self._get_cached_value()
+
+    def _get_or_create_refresh_task(self) -> Task[None]:
+        """
+        Return the active refresh task, creating one if necessary.
+
+        Returns:
+            The shared refresh task.
         """
         if self._task is None:
-            task = asyncio.create_task(self.__update())
+            task = asyncio.create_task(self._refresh())
             task.add_done_callback(self._refresh_done)
             self._task = task
             return task
@@ -294,10 +329,13 @@ class LifecycleCache[T]:
                 + ''.join(format_exception(exception))
             )
 
-    async def __update(self) -> None:
+    async def _refresh(self) -> None:
         """
-        Update the cached value.
-        This should only ever be called by `_create_background_update()`.
+        Refresh the cache using the wrapped function.
+
+        Successful results replace the cached value. Error results update
+        the lifecycle state without replacing an existing usable value.
+        Called only by `_get_or_create_refresh_task()`.
         """
         lifecycle_return: LifecycleReturn[T] = await self._f()
         self._timestamp = monotonic()
