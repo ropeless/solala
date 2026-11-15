@@ -93,13 +93,13 @@ class LifecycleCache[T]:
     does not cover unexpected exceptions raised by the wrapped function,
     logging callbacks, or other programming errors.
 
-    The internal INITIAL sentinel means that no wrapped-function result has
-    yet been received. Successful results have ReturnState.VALID or
-    ReturnState.INTERIM; ErrorReturn uses the internal ERROR sentinel.
+    The INITIAL lifecycle state means that no wrapped-function result has
+    yet been received. Successful results have LifecycleState.VALID or
+    LifecycleState.INTERIM; ErrorReturn uses LifecycleState.ERROR.
     After a result is received, the cache state reflects that result, even
     if `__call__()` subsequently raises NoResult. It does not return to INITIAL.
-    None maybe a legitimate value of `T` or default; only NO_VALUE denotes absence.
-    Sentinel instances are not valid successful results.
+    None may be a legitimate value of `T` or default; only NO_VALUE denotes absence.
+    Sentinel instances are valid values except for the reserved NO_VALUE sentinel.
 
     Both VALID and INTERIM cached values expire at age 'old'. Expiration
     replaces the cached value with the configured default; it does not
@@ -169,7 +169,8 @@ class LifecycleCache[T]:
     with their traceback, regardless of whether a foreground caller awaits
     them or not.
 
-    An unexpected exception does not change the lifecycle state,
+    An unexpected exception from the wrapped function or result validation
+    does not change the lifecycle state,
     timestamps, or cached value. Any cache expiration performed before
     the refresh remains effective, so an expired value is not restored.
     The cache remains internally consistent, and subsequent calls can
@@ -211,8 +212,7 @@ class LifecycleCache[T]:
             error_message: Format string for logging expected refresh errors.
 
         Raises:
-            ValueError: If age thresholds are invalid or the default is
-                an unsupported sentinel.
+            ValueError: If age thresholds are invalid.
         """
         # Default values
         if young is None:
@@ -246,9 +246,10 @@ class LifecycleCache[T]:
     @property
     def timestamp(self) -> float:
         """
-        When was the current cache value set.
+        Return the monotonic time of the latest lifecycle result.
 
-        The age of the cache in seconds is `monotonic() - self.timestamp`.
+        This includes error results and may differ from the time the
+        current cached value was obtained.
         """
         return self._timestamp
 
@@ -359,6 +360,7 @@ class LifecycleCache[T]:
 
         Successful results replace the cached value. Error results update
         the lifecycle state without replacing an existing usable value.
+        NO_VALUE is reserved and cannot be returned as a successful value.
         Called only by `_get_or_create_refresh_task()`.
         """
         lifecycle_return: LifecycleReturn[T] = await self._f()
@@ -368,5 +370,18 @@ class LifecycleCache[T]:
             if value is NO_VALUE:
                 raise ValueError(f'{value!r} is not a valid function return value')
 
-        self._timestamp = monotonic()
+        timestamp = monotonic()
+        if isinstance(lifecycle_return, ErrorReturn):
+            self._error_log(self._error_message.format(message=lifecycle_return.message))
+            self._timestamp = timestamp
+            self._state = LifecycleState.ERROR
+            return
+
+        lifecycle_return: ObjectReturn[T]
+        value = lifecycle_return.value
+        if lifecycle_return.state is LifecycleState.INTERIM:
+            self._info_log(self._interim_message.format(value=value))
+        self._cache = value
+        self._cache_timestamp = timestamp
+        self._timestamp = timestamp
         self._state = lifecycle_return.state
