@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 from solala.utils.lifecycle_cache import (
     LifecycleCache,
     LifecycleState,
+    ErrorReturn,
     NoResult,
     error,
     interim,
@@ -54,7 +55,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.results = [error('unavailable')]
         cache = self.make_cache(default=7)
         self.assertEqual(await cache(), 7)
-        self.assertEqual(cache._state, LifecycleState.ERROR)
+        self.assertEqual(cache._state, ErrorReturn.state)
         self.assertEqual(self.calls, 1)
 
     async def test_initial_error_without_default_raises_no_result(self) -> None:
@@ -62,7 +63,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         cache = self.make_cache(has_default=False)
         with self.assertRaises(NoResult):
             await cache()
-        self.assertEqual(cache._state, LifecycleState.ERROR)
+        self.assertEqual(cache._state, ErrorReturn.state)
 
     async def test_valid_young_returns_without_refresh(self) -> None:
         self.results = [valid(12)]
@@ -106,7 +107,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await cache(), 12)
         self.now += 30
         self.assertEqual(await cache(), 7)
-        self.assertEqual(cache._state, LifecycleState.ERROR)
+        self.assertEqual(cache._state, ErrorReturn.state)
         self.assertEqual(self.calls, 2)
 
     async def test_valid_old_without_default_cannot_return_expired_value(self) -> None:
@@ -116,7 +117,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.now += 30
         with self.assertRaises(NoResult):
             await cache()
-        self.assertEqual(cache._state, LifecycleState.ERROR)
+        self.assertEqual(cache._state, ErrorReturn.state)
 
     async def test_interim_retries_at_retry_threshold(self) -> None:
         self.results = [interim(12), valid(15)]
@@ -161,7 +162,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await cache(), 12)
         self.now += 20
         self.assertEqual(await cache(), 7)
-        self.assertEqual(cache._state, LifecycleState.ERROR)
+        self.assertEqual(cache._state, ErrorReturn.state)
         self.assertEqual(self.calls, 4)
 
     async def test_concurrent_initial_callers_share_one_refresh(self) -> None:
@@ -423,6 +424,65 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cache._state, LifecycleState.VALID)
         self.assertEqual(await cache(), 42)
         self.assertEqual(self.calls, 1)
+
+
+    async def test_valid_none_is_cached(self) -> None:
+        async def wrapped():
+            self.calls += 1
+            return valid(None)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            error_log=self.error_log, info_log=self.info_log,
+        )
+        self.assertIsNone(await cache())
+        self.assertIsNone(await cache())
+        self.assertEqual(self.calls, 1)
+        self.assertEqual(cache._state, LifecycleState.VALID)
+
+    async def test_interim_none_is_cached(self) -> None:
+        async def wrapped():
+            self.calls += 1
+            return interim(None)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            error_log=self.error_log, info_log=self.info_log,
+        )
+        self.assertIsNone(await cache())
+        self.assertIsNone(await cache())
+        self.assertEqual(self.calls, 1)
+        self.assertEqual(cache._state, LifecycleState.INTERIM)
+
+    async def test_default_none_is_returned_on_error(self) -> None:
+        async def wrapped():
+            self.calls += 1
+            return error('unavailable')
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5, default=None,
+            error_log=self.error_log, info_log=self.info_log,
+        )
+        self.assertIsNone(await cache())
+        self.assertEqual(cache._state, ErrorReturn.state)
+        self.assertEqual(self.calls, 1)
+
+    async def test_successful_sentinel_result_is_rejected(self) -> None:
+        from solala.utils.sentinel import Sentinel
+
+        for result_factory in (valid, interim):
+            with self.subTest(result_factory=result_factory):
+                async def wrapped():
+                    return result_factory(Sentinel('invalid'))
+
+                cache = LifecycleCache(
+                    wrapped, old=30, young=10, retry=5,
+                    error_log=self.error_log, info_log=self.info_log,
+                )
+                with self.assertRaisesRegex(ValueError, 'not a valid function return value'):
+                    await cache()
+                await asyncio.sleep(0)
+                self.assertIsNone(cache._task)
 
 
 if __name__ == '__main__':
