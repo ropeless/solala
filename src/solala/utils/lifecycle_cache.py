@@ -87,7 +87,7 @@ class LifecycleCache[T]:
     returned by the wrapped function, including ERROR even if __call__()
     subsequently raises NoResult. The cache does not return to INITIAL.
 
-    Both VALID and INTERIM cached values expire at age old. Expiration
+    Both VALID and INTERIM cached values expire at age 'old'. Expiration
     replaces the cached value with the configured default; it does not
     change the lifecycle state or its timestamp. A default value never
     expires. An expired value must not be returned even if a refresh
@@ -260,15 +260,16 @@ class LifecycleCache[T]:
         Get the existing background update task or create a new one as needed.
         """
         if self._task is None:
-            task = asyncio.create_task(self._update())
+            task = asyncio.create_task(self.__update())
             self._task = task
             return task
         else:
             return self._task
 
-    async def _update(self) -> None:
+    async def __update(self) -> None:
         """
         Update the cached value and release the refresh task on completion.
+        This should only ever be called by `_create_background_update()`.
         """
         try:
             lifecycle_return: LifecycleReturn[T] = await self._f()
