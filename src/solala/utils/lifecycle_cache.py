@@ -187,8 +187,8 @@ class LifecycleCache[T]:
             retry: float = young
 
         # Consistency checks
-        if not retry <= young <= old:
-            raise ValueError(f'ensure: `retry <= young <= old`')
+        if not 0 < retry <= young <= old:
+            raise ValueError(f'ensure: `0 < retry <= young <= old`')
         if isinstance(default, Sentinel) and default is not _NONE:
             raise ValueError(f'cannot use a Sentinel as a default object: {default!r}')
 
