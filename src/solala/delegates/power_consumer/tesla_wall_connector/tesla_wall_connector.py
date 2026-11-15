@@ -112,7 +112,7 @@ class TeslaWallConnector(PowerConsumer):
 
         Returns:
             The vitals response as a JSON dictionary. If the request fails, an
-            error message and NaN voltage and current values are returned.
+            error message, NaN voltage and current, and a false contactor state are returned.
         """
         try:
             url = self._api + 'vitals'
@@ -124,4 +124,5 @@ class TeslaWallConnector(PowerConsumer):
                 'error': str(err),
                 'voltageA_v': float('nan'),
                 'currentA_a': float('nan'),
+                'contactor_closed': False,
             }
