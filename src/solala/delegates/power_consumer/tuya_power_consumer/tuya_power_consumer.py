@@ -7,7 +7,7 @@ from solala.delegates.power_consumer.power_consumer import PowerConsumer, Consum
 from solala.logger import LOGGER
 from solala.registers import RegisterBank, RegisterType, check_type, AsyncCallRegister, check_value, \
     RegisterValue
-from solala.utils.json_extras import JSONDict, json_num
+from solala.utils.json_extras import JSONDict, json_num, json_bool
 from solala.utils.micro_cache import AsyncMicroCache
 
 API_ENDPOINT = "https://openapi.tuyaeu.com"
@@ -87,10 +87,15 @@ class TuyaPowerConsumer(PowerConsumer):
 
     async def get_status(self) -> ConsumerStatus:
         device_status: JSONDict = await self._cache()
+        voltage: float = json_num(device_status['cur_voltage']) * self._voltage_scale_factor
+        current: float = json_num(device_status['cur_current']) * self._current_scale_factor
+        power: float = json_num(device_status['cur_power']) * self._power_scale_factor
+        on: bool = json_bool(device_status['switch_1'])
         return ConsumerStatus(
-            voltage=json_num(device_status['cur_voltage']) * self._voltage_scale_factor,
-            current=json_num(device_status['cur_current']) * self._current_scale_factor,
-            power=json_num(device_status['cur_power']) * self._power_scale_factor,
+            voltage=voltage,
+            current=current,
+            power=power,
+            on=on,
         )
 
     def get_connection_info(self) -> JSONDict:

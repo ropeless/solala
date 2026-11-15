@@ -15,9 +15,10 @@ class ConsumerStatus:
             where the device does not provide a direct measurement.
     """
 
+    on: bool
+    power: float
     voltage: float
     current: float
-    power: float
 
     def to_json(self) -> JSONDict:
         """

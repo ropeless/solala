@@ -7,7 +7,7 @@ from solala.delegates.power_consumer.power_consumer import PowerConsumer, Consum
 from solala.logger import LOGGER
 from solala.registers import RegisterBank, check_type, RegisterType, \
     AsyncCallRegister, RegisterValue, check_value
-from solala.utils.json_extras import JSONDict, json_dict, json_num
+from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
 from solala.utils.micro_cache import AsyncMicroCache
 
 NAME: str = 'Tesla Wall Charger'
@@ -62,10 +62,12 @@ class TeslaWallConnector(PowerConsumer):
         data: JSONDict = await self._cache()
         voltage: float = json_num(data['voltageA_v'])
         current: float = json_num(data['currentA_a'])
+        on: bool = json_bool(data['contactor_closed'])
         return ConsumerStatus(
             voltage=voltage,
             current=current,
             power=voltage * current,  # assumes a pure resistive load
+            on=on,
         )
 
     def get_connection_info(self) -> JSONDict:
