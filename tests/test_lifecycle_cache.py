@@ -179,6 +179,18 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.results = [error('still unavailable')]
         self.assertEqual(await cache(), 7)
 
+    async def test_until_time_rejects_naive_datetime(self) -> None:
+        from datetime import datetime
+
+        for result_factory in (valid, interim):
+            with self.subTest(result_factory=result_factory):
+                self.results = [result_factory(12, until_time=datetime(2026, 1, 1))]
+                cache = self.make_cache(default=7)
+                with self.assertRaisesRegex(ValueError, 'until_time must be a timezone-aware datetime'):
+                    await cache()
+                self.assertIs(cache.state, LifecycleState.INITIAL)
+                self.assertEqual(cache._cache, 7)
+
     async def test_error_retries_only_after_retry_interval(self) -> None:
         self.results = [error('unavailable'), valid(15)]
         cache = self.make_cache(default=7)
