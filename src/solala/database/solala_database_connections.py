@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, AsyncContextManager
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import TracebackType
-from typing import Self
+from typing import Self, AsyncContextManager
 from urllib.parse import quote_plus
 
-from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 from solala.constants import DEFAULT_DB_HOST, DEFAULT_DB_NAME, DEFAULT_DB_PORT
@@ -130,7 +129,7 @@ class SolalaDatabaseConnections:
 
     def _release_request(self) -> None:
         """
-        Finish a reservation after connection cleanup.
+        Finish a reservation after connection clean-up.
         """
         self._active_requests -= 1
         if self._active_requests == 0:
