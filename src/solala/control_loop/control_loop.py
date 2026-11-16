@@ -822,13 +822,22 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
 
 
 async def _get_solar_forecast(day: date) -> LifecycleReturn[DailySolarForecast]:
-    async with _control_state() as state:
-        forecaster = state.forecaster
-        if forecaster is None:
-            return error('Solar forecast not available. Error: solar forecaster not connected')
+    forecaster = _CONTROL_STATE.forecaster
+    if forecaster is None:
+        return error('Solar forecast not available. Error: solar forecaster not connected')
+
+    try:
         forecast: DailySolarForecast = await forecaster.get_forecast(day)
-        log_info(f'Updating solar forecast: day = {day.strftime("%Y-%m-%d")}')
-        return valid(forecast)
+    except Exception as err:
+        return error(f'Solar forecast not available. Error: {err}')
+
+    if forecaster is not _CONTROL_STATE.forecaster:
+        # The forecaster got changed, abandon the update.
+        # The issue will be corrected naturally when next polled.
+        return error('Solar forecast not available. Error: solar forecaster changed')
+
+    log_info(f'Updating solar forecast: day = {day.strftime("%Y-%m-%d")}')
+    return valid(forecast)
 
 
 @asynccontextmanager
