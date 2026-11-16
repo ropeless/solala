@@ -458,6 +458,9 @@ def _datetime_to_monotonic(target_dt: datetime) -> float:
     """
     Make best efforts to convert the given timezone-aware datetime to a monotonic time stamp.
     """
+    if target_dt.tzinfo is None or target_dt.utcoffset() is None:
+        raise ValueError('until_time must be a timezone-aware datetime')
+
     now_dt = datetime.now(UTC)
     now_mono = monotonic()
     delta_seconds = (target_dt - now_dt).total_seconds()
