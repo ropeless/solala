@@ -897,17 +897,29 @@ async def _get_solar_forecast(day: date) -> LifecycleReturn[DailySolarForecast]:
     return valid(forecast)
 
 
-async def _get_database_lease():
+@asynccontextmanager
+async def _database() -> AsyncIterator[SolalaDatabase]:
     """
-    Reserve the configured database pool before releasing the connections lock.
+    Borrow from the configured pool while coordinating pool replacement.
 
-    The caller must enter the lease as an asynchronous context manager.
+    Hold the connections-state lock through acquisition so a disconnect
+    cannot close the selected pool before its request has been registered.
+    Release that lock during the database operation and connection return.
     """
     async with _connections_state() as connections:
         pool = connections.database_connections
         if pool is None:
             raise ConnectionError('Database pool not connected')
-        return pool.reserve()
+        context = pool.solala_database()
+        db = await context.__aenter__()
+    try:
+        yield db
+    except BaseException as err:
+        suppress = await context.__aexit__(type(err), err, err.__traceback__)
+        if not suppress:
+            raise
+    else:
+        await context.__aexit__(None, None, None)
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
@@ -924,9 +936,8 @@ async def solala_database_measurements(day: date) -> Sequence[Measurement]:
         Measurements for the day, or an empty sequence if database access fails.
     """
     try:
-        async with await _get_database_lease() as lease:
-            async with lease.solala_database() as db:
-                return await db.get_measurements(day)
+        async with _database() as db:
+            return await db.get_measurements(day)
     except (ConnectionError, DatabaseError) as err:
         log_error(f'Database connection error: {err}')
         return []
@@ -1255,8 +1266,7 @@ async def _database_loop() -> None:
         iteration_start = now()
         if _CONTROL_STATE.database_write:
             try:
-                async with await _get_database_lease() as lease:
-                    async with lease.solala_database() as db:
+                async with _database() as db:
                         await _insert_measurement(iteration_start, db)
             except ConnectionError as err:
                 log_error(f'Database connection error: {err}')
