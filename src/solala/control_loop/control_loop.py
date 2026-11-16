@@ -1260,35 +1260,33 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
     Args:
         database_connection: Database connection configuration.
     """
-    async with _control_state() as state:
-        async with _connections_state():
-            database_connections = SolalaDatabaseConnections(
-                role=database_connection.role,
-                password=database_connection.password,
-                host=database_connection.host,
-                port=database_connection.port,
-                database_name=database_connection.database_name,
-            )
-            await disconnect_database()
-            await state.reset_database(database_connections, database_connection)
-            connection_info = database_connections.get_connection_info()
-            log_info(f'Database connection: {json.dumps(connection_info)}')
-            await _save_settings()
-            # no need to _reconfigure_registers(state)
+    async with _connections_state():
+        database_connections = SolalaDatabaseConnections(
+            role=database_connection.role,
+            password=database_connection.password,
+            host=database_connection.host,
+            port=database_connection.port,
+            database_name=database_connection.database_name,
+        )
+        await disconnect_database()
+        await _CONTROL_STATE.reset_database(database_connections, database_connection)
+        connection_info = database_connections.get_connection_info()
+        log_info(f'Database connection: {json.dumps(connection_info)}')
+        await _save_settings()
+        # no need to _reconfigure_registers(state)
 
 
 async def disconnect_database() -> None:
     """
     Close the database connection pool.
     """
-    async with _control_state() as state:
-        async with _connections_state():
-            if state.connections.database_connections is not None:
-                await state.connections.database_connections.close()
-                await state.reset_database(None, None)
-                log_info('Database disconnected')
-            await _save_settings()
-            # no need to _reconfigure_registers(state)
+    async with _connections_state():
+        if _CONTROL_STATE.connections.database_connections is not None:
+            await _CONTROL_STATE.connections.database_connections.close()
+            await _CONTROL_STATE.reset_database(None, None)
+            log_info('Database disconnected')
+        await _save_settings()
+        # no need to _reconfigure_registers(state)
 
 
 # =============================================================================
