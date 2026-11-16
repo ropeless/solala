@@ -275,7 +275,6 @@ class _CacheState:
     solar_forecast_cache: dict[_DateKey, _SolarForecastCache] = field(default_factory=dict)
 
 
-
 @dataclass
 class _ControlState:
     """
@@ -1011,7 +1010,7 @@ async def set_control(
     async with _connections_state():
         async with _control_settings_state() as state:
             control_mode = state.control_mode
-    
+
             if disable_export_price_threshold is None:
                 disable_export_price_threshold = control_mode.disable_export_price_threshold
             if enable_export_price_threshold is None:
@@ -1020,12 +1019,12 @@ async def set_control(
                 start_charge_price_threshold = control_mode.start_charge_price_threshold
             if stop_charge_price_threshold is None:
                 stop_charge_price_threshold = control_mode.stop_charge_price_threshold
-    
+
             if disable_export_price_threshold >= enable_export_price_threshold:
                 raise ControlLoopError('export price threshold: disable must be less than enable')
             if start_charge_price_threshold >= stop_charge_price_threshold:
                 raise ControlLoopError('charge price threshold: start must be less than stop')
-    
+
             if battery_mode is not None:
                 control_mode.battery_mode = battery_mode
             if inverter_mode is not None:
@@ -1034,13 +1033,13 @@ async def set_control(
                 control_mode.battery_policy = battery_policy
             if inverter_policy is not None:
                 control_mode.inverter_policy = inverter_policy
-    
+
             control_mode.disable_export_price_threshold = disable_export_price_threshold
             control_mode.enable_export_price_threshold = enable_export_price_threshold
             control_mode.start_charge_price_threshold = start_charge_price_threshold
             control_mode.stop_charge_price_threshold = stop_charge_price_threshold
-    
-            control_json = state.control.control_mode.to_json()
+
+            control_json = control_mode.to_json()
 
         # Saving takes the connections lock before the control-settings lock.
         # Do not call it while already holding the latter.
@@ -1478,8 +1477,8 @@ async def _control_step(state: _ControlState) -> None:
     async with _control_settings_state() as control_state:
         control_mode = copy.copy(control_state.control_mode)
         needs_price = (
-            control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
-            or control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
+                control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
+                or control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
         )
     price: Price | None = await get_price_now() if state.connections.pricer is not None and needs_price else None
 
