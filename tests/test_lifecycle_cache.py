@@ -650,5 +650,67 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls, 2)
 
 
+    async def test_valid_until_time_overrides_old_expiry(self) -> None:
+        from datetime import UTC, datetime
+
+        self.results = [valid(12, until_time=datetime.now(UTC)), error('unavailable')]
+        cache = self.make_cache(default=7)
+        with patch('solala.utils.lifecycle_cache._datetime_to_monotonic', return_value=120.0) as convert:
+            self.assertEqual(await cache(), 12)
+        convert.assert_called_once()
+        self.assertEqual(cache._invalid_timestamp, 120.0)
+        self.assertEqual(cache._refresh_timestamp, 110.0)
+        self.now = 120.0
+        self.assertEqual(await cache(), 7)
+        self.assertEqual(self.calls, 2)
+
+    async def test_until_time_accepts_aware_non_utc_timezone(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        target = datetime(2026, 1, 1, tzinfo=timezone(timedelta(hours=11)))
+        for result_factory in (valid, interim):
+            with self.subTest(result_factory=result_factory):
+                self.results = [result_factory(12, until_time=target)]
+                cache = self.make_cache(default=7)
+                with patch('solala.utils.lifecycle_cache._datetime_to_monotonic', return_value=115.0) as convert:
+                    self.assertEqual(await cache(), 12)
+                convert.assert_called_once_with(target)
+                expected = cache._invalid_timestamp if result_factory is valid else cache._refresh_timestamp
+                self.assertEqual(expected, 115.0)
+
+    async def test_invalidate_allows_new_refresh_before_old_refresh_finishes(self) -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def wrapped():
+            self.calls += 1
+            if self.calls == 1:
+                started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    await release.wait()
+                return valid(12)
+            return valid(42)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            default=7, log_error=self.error_log, log_info=self.info_log,
+        )
+        old_caller = asyncio.create_task(cache())
+        await asyncio.wait_for(started.wait(), timeout=1)
+        invalidation = asyncio.create_task(cache.invalidate())
+        await asyncio.sleep(0)
+        self.assertEqual(cache._generation, 1)
+        self.assertEqual(await cache(), 42)
+        self.assertFalse(invalidation.done())
+        release.set()
+        await asyncio.wait_for(invalidation, timeout=1)
+        with self.assertRaises(asyncio.CancelledError):
+            await old_caller
+        self.assertEqual(cache._cache, 42)
+        self.assertEqual(self.calls, 2)
+
+
 if __name__ == '__main__':
     unittest.main()
