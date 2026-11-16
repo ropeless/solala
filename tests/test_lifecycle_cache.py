@@ -40,8 +40,8 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
             old=30,
             young=10,
             retry=5,
-            error_log=self.error_log,
-            info_log=self.info_log,
+            log_error=self.error_log,
+            log_info=self.info_log,
             **options,
         )
 
@@ -88,7 +88,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            default=7, error_log=self.error_log, info_log=self.info_log,
+            default=7, log_error=self.error_log, log_info=self.info_log,
         )
         self.assertEqual(await cache(), 12)
         self.now += 10
@@ -178,7 +178,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            error_log=self.error_log, info_log=self.info_log,
+            log_error=self.error_log, log_info=self.info_log,
         )
         callers = [asyncio.create_task(cache()) for _ in range(3)]
         try:
@@ -206,7 +206,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            default=7, error_log=self.error_log, info_log=self.info_log,
+            default=7, log_error=self.error_log, log_info=self.info_log,
         )
         self.assertEqual(await cache(), 12)
         self.now += 30
@@ -235,7 +235,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            default=7, error_log=self.error_log, info_log=self.info_log,
+            default=7, log_error=self.error_log, log_info=self.info_log,
         )
         self.assertEqual(await cache(), 12)
         self.now += 10
@@ -261,7 +261,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            default=7, error_log=self.error_log, info_log=self.info_log,
+            default=7, log_error=self.error_log, log_info=self.info_log,
         )
         with self.assertRaisesRegex(ValueError, 'unexpected failure'):
             await cache()
@@ -288,7 +288,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            default=7, error_log=self.error_log, info_log=self.info_log,
+            default=7, log_error=self.error_log, log_info=self.info_log,
         )
         self.assertEqual(await cache(), 12)
         timestamp = cache._timestamp
@@ -316,7 +316,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            default=7, error_log=self.error_log, info_log=self.info_log,
+            default=7, log_error=self.error_log, log_info=self.info_log,
         )
         self.assertEqual(await cache(), 12)
         timestamp = cache._timestamp
@@ -343,7 +343,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            error_log=self.error_log, info_log=self.info_log,
+            log_error=self.error_log, log_info=self.info_log,
         )
         callers = [asyncio.create_task(cache()) for _ in range(3)]
         try:
@@ -374,7 +374,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            error_log=self.error_log, info_log=self.info_log,
+            log_error=self.error_log, log_info=self.info_log,
         )
         callers = [asyncio.create_task(cache()) for _ in range(3)]
         try:
@@ -406,7 +406,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            error_log=self.error_log, info_log=self.info_log,
+            log_error=self.error_log, log_info=self.info_log,
         )
         caller = asyncio.create_task(cache())
         try:
@@ -432,7 +432,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            error_log=self.error_log, info_log=self.info_log,
+            log_error=self.error_log, log_info=self.info_log,
         )
         self.assertIsNone(await cache())
         self.assertIsNone(await cache())
@@ -446,7 +446,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5,
-            error_log=self.error_log, info_log=self.info_log,
+            log_error=self.error_log, log_info=self.info_log,
         )
         self.assertIsNone(await cache())
         self.assertIsNone(await cache())
@@ -460,7 +460,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         cache = LifecycleCache(
             wrapped, old=30, young=10, retry=5, default=None,
-            error_log=self.error_log, info_log=self.info_log,
+            log_error=self.error_log, log_info=self.info_log,
         )
         self.assertIsNone(await cache())
         self.assertEqual(cache._state, ErrorReturn.state)
@@ -478,7 +478,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
                 cache = LifecycleCache(
                     wrapped, old=30, young=10, retry=5,
-                    error_log=self.error_log, info_log=self.info_log,
+                    log_error=self.error_log, log_info=self.info_log,
                 )
                 self.assertIs(await cache(), marker)
                 self.assertIs(await cache(), marker)
@@ -491,7 +491,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
                 cache = LifecycleCache(
                     wrapped, old=30, young=10, retry=5,
-                    error_log=self.error_log, info_log=self.info_log,
+                    log_error=self.error_log, log_info=self.info_log,
                 )
                 with self.assertRaisesRegex(ValueError, 'not a valid function return value'):
                     await cache()

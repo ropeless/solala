@@ -1,6 +1,7 @@
 import asyncio
 from asyncio import Task
 from dataclasses import dataclass
+from datetime import datetime, UTC
 from enum import Enum, auto
 from time import monotonic
 from traceback import format_exception
@@ -25,6 +26,7 @@ type ReturnState = Literal[LifecycleState.VALID, LifecycleState.INTERIM]
 class ObjectReturn[T]:
     value: T
     state: ReturnState
+    until_time: datetime | None
 
 
 @dataclass
@@ -33,18 +35,18 @@ class ErrorReturn:
     state: ClassVar[LifecycleState] = LifecycleState.ERROR
 
 
-def valid[T](value: T) -> ObjectReturn[T]:
+def valid[T](value: T, until_time: datetime | None = None) -> ObjectReturn[T]:
     """
     Support a wrapped function to return a VALID object.
     """
-    return ObjectReturn(value, LifecycleState.VALID)
+    return ObjectReturn(value, LifecycleState.VALID, until_time)
 
 
-def interim[T](value: T) -> ObjectReturn[T]:
+def interim[T](value: T, until_time: datetime | None = None) -> ObjectReturn[T]:
     """
     Support a wrapped function to return an INTERIM object.
     """
-    return ObjectReturn(value, LifecycleState.INTERIM)
+    return ObjectReturn(value, LifecycleState.INTERIM, until_time)
 
 
 def error(message: str) -> ErrorReturn:
@@ -107,6 +109,11 @@ class LifecycleCache[T]:
     change the lifecycle state or its timestamp. A default value never
     expires. An expired value must not be returned even if a refresh
     subsequently returns ErrorReturn.
+
+    The wrapped function can override the definition of old age, by
+    explicitly returning 'until_time' in its result.
+
+    An external caller can invalidate a cached (make it old) at any time.
 
     The cache tracks the latest result state and its monotonic timestamp.
     The age of the cache is the elapsed time since that result was received.
@@ -185,22 +192,23 @@ class LifecycleCache[T]:
             self,
             f: WrappedFunction[T],
             *,
-            error_log: Callable[[str], None],
-            info_log: Callable[[str], None],
+            log_error: Callable[[str], None],
+            log_info: Callable[[str], None],
             old: float,
             young: float | None = None,
             retry: float | None = None,
             default: T | Sentinel = NO_VALUE,
+            valid_message: str = '',
             interim_message: str = 'interim value received: {value!r}',
-            error_message: str = 'error calling cached function: {message!r}',
+            error_message: str = '{message}',
     ) -> None:
         """
         Initialise the lifecycle cache and its refresh policy.
 
         Args:
             f: Asynchronous function providing ObjectReturn or ErrorReturn.
-            error_log: Callback for refresh errors and unexpected failures.
-            info_log: Callback for provisional results.
+            log_error: Callback for refresh errors and unexpected failures.
+            log_info: Callback for provisional results.
             old: Maximum age of a cached result in seconds.
             young: Age at which a valid result triggers background refresh.
                 Defaults to old.
@@ -208,8 +216,9 @@ class LifecycleCache[T]:
                 Defaults to young.
             default: Fallback value when no unexpired cached value is available.
                 None is valid; NO_VALUE means no default.
-            interim_message: Format string for logging provisional values.
-            error_message: Format string for logging expected refresh errors.
+            valid_message: Format string for logging valid values, including {value}.
+            interim_message: Format string for logging provisional values, including {value}.
+            error_message: Format string for logging expected refresh errors, including {message}.
 
         Raises:
             ValueError: If age thresholds are invalid.
@@ -232,9 +241,10 @@ class LifecycleCache[T]:
         self._cache: T | Sentinel = default
         self._state: LifecycleState = LifecycleState.INITIAL
         self._timestamp: float = monotonic()
-        self._cache_timestamp: float = self._timestamp
-        self._error_log: Callable[[str], None] = error_log
-        self._info_log: Callable[[str], None] = info_log
+        self._invalid_timestamp: float = self._timestamp
+        self._error_log: Callable[[str], None] = log_error
+        self._info_log: Callable[[str], None] = log_info
+        self._valid_message: str = valid_message
         self._interim_message: str = interim_message
         self._error_message: str = error_message
         self._task: Task[None] | None = None
@@ -263,6 +273,24 @@ class LifecycleCache[T]:
         """
         return self._default
 
+    async def invalidate(self) -> None:
+        """
+        Invalidate the cache.
+        Cancel any active refresh and reset the cache to its initial state.
+        """
+        task = self._task
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        self._cache = self._default
+        self._state = LifecycleState.INITIAL
+        self._timestamp = monotonic()
+        self._invalid_timestamp = self._timestamp
+
     async def __call__(self) -> T:
         """
         Return the cached value, managing refreshing of the cache
@@ -274,7 +302,7 @@ class LifecycleCache[T]:
         # Expire usable values independently of the latest refresh result.
         # ERROR refreshes update _timestamp but do not extend cache lifetime.
         now: float = monotonic()
-        old_cache: bool = now - self._cache_timestamp >= self._old
+        old_cache: bool = now >= self._invalid_timestamp
         if old_cache:
             self._cache = self._default
 
@@ -372,16 +400,40 @@ class LifecycleCache[T]:
 
         timestamp = monotonic()
         if isinstance(lifecycle_return, ErrorReturn):
-            self._error_log(self._error_message.format(message=lifecycle_return.message))
+            if self._error_message != '':
+                self._error_log(self._error_message.format(message=lifecycle_return.message))
             self._timestamp = timestamp
             self._state = LifecycleState.ERROR
             return
 
         lifecycle_return: ObjectReturn
         value: T = lifecycle_return.value
+
         if lifecycle_return.state is LifecycleState.INTERIM:
-            self._info_log(self._interim_message.format(value=value))
+            if self._interim_message != '':
+                self._info_log(self._interim_message.format(value=value))
+                if lifecycle_return.until_time is None:
+                    self._invalid_timestamp = timestamp + self._retry
+                else:
+                    self._invalid_timestamp = _datetime_to_monotonic(lifecycle_return.until_time)
+        elif lifecycle_return.state is LifecycleState.VALID:
+            if self._valid_message != '':
+                self._info_log(self._valid_message.format(value=value))
+                if lifecycle_return.until_time is None:
+                    self._invalid_timestamp = timestamp + self._old
+                else:
+                    self._invalid_timestamp = _datetime_to_monotonic(lifecycle_return.until_time)
+
         self._cache = value
-        self._cache_timestamp = timestamp
         self._timestamp = timestamp
         self._state = lifecycle_return.state
+
+
+def _datetime_to_monotonic(target_dt: datetime) -> float:
+    """
+    Make best efforts to convert the given timezone-aware datetime to a monotonic time stamp.
+    """
+    now_dt = datetime.now(UTC)
+    now_mono = monotonic()
+    delta_seconds = (target_dt - now_dt).total_seconds()
+    return now_mono + delta_seconds
