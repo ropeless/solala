@@ -691,6 +691,7 @@ async def _get_demand_window(day: date) -> LifecycleReturn[PossibleDemandWindow]
         # The issue will be corrected naturally when next polled.
         return error('Price update not available. Error: power pricer changed')
 
+    log_info(f'Updated price demand window: day = {day.strftime("%Y-%m-%d")}')
     return valid(demand_window)
 
 
@@ -734,6 +735,7 @@ async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
         # The issue will be corrected naturally when next polled.
         return error('Price forecast not available. Error: power pricer changed')
 
+    log_info(f'Updated price forecast')
     return valid(prices, refresh_at=prices[0].end_time)
 
 
@@ -836,7 +838,7 @@ async def _get_solar_forecast(day: date) -> LifecycleReturn[DailySolarForecast]:
         # The issue will be corrected naturally when next polled.
         return error('Solar forecast not available. Error: solar forecaster changed')
 
-    log_info(f'Updating solar forecast: day = {day.strftime("%Y-%m-%d")}')
+    log_info(f'Updated solar forecast: day = {day.strftime("%Y-%m-%d")}')
     return valid(forecast)
 
 
