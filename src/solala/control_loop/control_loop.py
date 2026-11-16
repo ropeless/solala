@@ -150,7 +150,6 @@ class _PriceForecastCache(LifecycleCache[Sequence[Price]]):
             log_error=log_error,
             log_info=log_info,
             old=Constants.PRICE_FORECAST_OLD,
-            retry=Constants.PRICE_SETTLE_CHECK,
             default=(),
         )
 
@@ -614,19 +613,27 @@ async def get_price_now() -> Price:
 
 
 async def _get_price_now() -> LifecycleReturn[Price]:
-    async with _control_state() as state:
-        pricer = state.pricer
-        if pricer is None:
-            return error('Price update not available. Error: power pricer not connected')
+    pricer = _CONTROL_STATE.pricer
+    if pricer is None:
+        return error('Price update not available. Error: power pricer not connected')
 
+    try:
         price: Price = await pricer.get_price()
-        note = ' (estimate)' if price.is_estimate else ''
-        log_info(f'Updated current price: {price.buy_price} {price.feed_in_price} {note}')
+    except Exception as err:
+        return error(f'Price update not available. {err!r}')
 
-        if price.is_estimate:
-            return interim(price)
-        else:
-            return valid(price, until_time=price.end_time)
+    if pricer is not _CONTROL_STATE.pricer:
+        # The pricer got changed, abandon the update
+        # The issue will be corrected naturally when next polled.
+        return error('Price update not available. Error: power pricer changed')
+
+    note = ' (estimate)' if price.is_estimate else ''
+    log_info(f'Updated current price: {price.buy_price} {price.feed_in_price} {note}')
+
+    if price.is_estimate:
+        return interim(price)
+    else:
+        return valid(price, until_time=price.end_time)
 
 
 async def get_price_now_no_estimate(max_tries: int = 10) -> Price:
@@ -669,12 +676,21 @@ async def get_demand_window(day: date) -> PossibleDemandWindow:
 
 
 async def _get_demand_window(day: date) -> LifecycleReturn[PossibleDemandWindow]:
-    async with _control_state() as state:
-        pricer = state.pricer
-        if pricer is None:
-            return error('Demand window not available. Error: power pricer not connected')
+    pricer = _CONTROL_STATE.pricer
+    if pricer is None:
+        return error('Demand window not available. Error: power pricer not connected')
+
+    try:
         demand_window = await pricer.get_demand_window(day)
-        return valid(demand_window)
+    except Exception as err:
+        return error(f'Demand window not available. Error: {err!r}')
+
+    if pricer is not _CONTROL_STATE.pricer:
+        # The pricer got changed, abandon the update
+        # The issue will be corrected naturally when next polled.
+        return error('Price update not available. Error: power pricer changed')
+
+    return valid(demand_window)
 
 
 async def get_price_forecast() -> Sequence[Price]:
@@ -687,31 +703,37 @@ async def get_price_forecast() -> Sequence[Price]:
 
     Errors will be logged but should not raise an exception.
     """
-    return await _CONTROL_STATE.price_forecast_cache()  # defers to _get_price_forecast()
+    prices: Sequence[Price] = await _CONTROL_STATE.price_forecast_cache()  # defers to _get_price_forecast()
+
+    # A race condition or error may mean that the first forecast is already in the past.
+    # Don't bother to update `next_price_forecast_check` as it is no more than 5 minutes in the future.
+    while len(prices) > 0 and prices[0].end_time < now():
+        log_info('Price forecast contains old data: {prices[0]}')
+        prices = prices[1:]
+
+    needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
+    return prices[:needed_forecasts]
 
 
 async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
-    async with _control_state() as state:
-        pricer = state.pricer
-        if pricer is None:
-            return error('Price forecast not available. Error: power pricer not connected')
+    pricer = _CONTROL_STATE.pricer
+    if pricer is None:
+        return error('Price forecast not available. Error: power pricer not connected')
 
+    try:
         needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
+        # Plus one to account for possible race condition
+        prices: list[Price] = await pricer.get_price_forecast(needed_forecasts + 1)
+        log_info('Price forecast updated')
+    except Exception as err:
+        return error(f'Price forecast not available. Error: {err}')
 
-        try:
-            # Plus one to account for possible race condition (see below).
-            prices: list[Price] = await pricer.get_price_forecast(needed_forecasts + 1)
-            log_info('Price forecast updated')
-        except Exception as err:
-            return error(f'Price forecast not available. Error: {err}')
+    if pricer is not _CONTROL_STATE.pricer:
+        # The pricer got changed, abandon the update
+        # The issue will be corrected naturally when next polled.
+        return error('Price forecast not available. Error: power pricer changed')
 
-        # A race condition or error may mean that the first forecast is already in the past.
-        # Don't bother to update `next_price_forecast_check` as it is no more than 5 minutes in the future.
-        while len(prices) > 0 and prices[0].end_time < now():
-            log_info('Price forecast contains old data: {prices[0]}')
-            prices = prices[1:]
-
-    return valid(prices[:needed_forecasts])
+    return valid(prices, until_time=prices[0].end_time)
 
 
 async def get_consumers_status() -> dict[str, ConsumerStatus]:
