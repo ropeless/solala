@@ -1162,46 +1162,44 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
         name: Name identifying the consumer.
         consumer_connection: Power consumer connection configuration.
     """
-    async with _control_state() as state:
-        async with _connections_state():
-            consumer: PowerConsumer
+    async with _connections_state():
+        consumer: PowerConsumer
 
-            if consumer_connection.type == DummyConsumerConnection.TYPE:
-                assert isinstance(consumer_connection, DummyConsumerConnection)
-                consumer = _connect_dummy_consumer(consumer_connection)
-            elif consumer_connection.type == TeslaWallConnectorConnection.TYPE:
-                assert isinstance(consumer_connection, TeslaWallConnectorConnection)
-                consumer = _connect_tesla_wall_connector(consumer_connection)
-            elif consumer_connection.type == TuyaConnection.TYPE:
-                assert isinstance(consumer_connection, TuyaConnection)
-                consumer = _connect_tuya(consumer_connection)
-            else:
-                raise ControlLoopError(
-                    'unknown consumer connection type',
-                    errors={'name': name, 'type': consumer_connection.type}
-                )
+        if consumer_connection.type == DummyConsumerConnection.TYPE:
+            assert isinstance(consumer_connection, DummyConsumerConnection)
+            consumer = _connect_dummy_consumer(consumer_connection)
+        elif consumer_connection.type == TeslaWallConnectorConnection.TYPE:
+            assert isinstance(consumer_connection, TeslaWallConnectorConnection)
+            consumer = _connect_tesla_wall_connector(consumer_connection)
+        elif consumer_connection.type == TuyaConnection.TYPE:
+            assert isinstance(consumer_connection, TuyaConnection)
+            consumer = _connect_tuya(consumer_connection)
+        else:
+            raise ControlLoopError(
+                'unknown consumer connection type',
+                errors={'name': name, 'type': consumer_connection.type}
+            )
 
-            await disconnect_consumer(name)
-            await state.reset_consumer(name, consumer, consumer_connection)
-            connection_info = consumer.get_connection_info()
-            log_info(f'Power consumer {name!r} connection: {json.dumps(connection_info)}')
-            await _save_settings()
-            await _reconfigure_registers(state)
+        await disconnect_consumer(name)
+        await _CONTROL_STATE.reset_consumer(name, consumer, consumer_connection)
+        connection_info = consumer.get_connection_info()
+        log_info(f'Power consumer {name!r} connection: {json.dumps(connection_info)}')
+        await _save_settings()
+        await _reconfigure_registers(_CONTROL_STATE)
 
 
 async def disconnect_consumer(name: str) -> None:
     """
     Close a power consumer connection.
     """
-    async with _control_state() as state:
-        async with _connections_state():
-            consumer: PowerConsumer | None = state.connections.consumers.get(name)
-            if consumer is not None:
-                await consumer.close()
-                await state.reset_consumer(name, None, None)
-                log_info('Power consumer {name!r} disconnected')
-            await _save_settings()
-            await _reconfigure_registers(state)
+    async with _connections_state():
+        consumer: PowerConsumer | None = _CONTROL_STATE.connections.consumers.get(name)
+        if consumer is not None:
+            await consumer.close()
+            await _CONTROL_STATE.reset_consumer(name, None, None)
+            log_info('Power consumer {name!r} disconnected')
+        await _save_settings()
+        await _reconfigure_registers(_CONTROL_STATE)
 
 
 async def connect_forecaster(forecaster_connection: ForecasterConnection) -> None:
