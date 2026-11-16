@@ -152,6 +152,69 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
         first.pool._pool.close.assert_awaited_once()
         self.assertIs(control._CONTROL_STATE.connections.database_connections, second.pool)
 
+    async def _borrow_needing_connections_lock(self, fixture, proceed):
+        """
+        Hold a reservation while waiting to reacquire the connections lock.
+        """
+        async with control._database():
+            fixture.entered.set()
+            await proceed.wait()
+            async with control._connections_state():
+                pass
+
+    async def test_disconnect_while_borrower_needs_connections_lock(self) -> None:
+        old = self._pool()
+        self._install(old)
+        old.allow_acquisition.set()
+        proceed = asyncio.Event()
+        borrower = asyncio.create_task(
+            self._borrow_needing_connections_lock(old, proceed)
+        )
+        await asyncio.wait_for(old.entered.wait(), 2)
+
+        disconnecting = asyncio.create_task(control.disconnect_database())
+        # Wait until shutdown has acquired the lock and started draining.
+        async with asyncio.timeout(2):
+            while not old.pool._closing:
+                await asyncio.sleep(0)
+
+        proceed.set()
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(borrower, disconnecting), 1
+            )
+        finally:
+            for task in (borrower, disconnecting):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(borrower, disconnecting, return_exceptions=True)
+
+    async def test_replace_while_borrower_needs_connections_lock(self) -> None:
+        old, new = self._pool(), self._pool()
+        self._install(old)
+        old.allow_acquisition.set()
+        proceed = asyncio.Event()
+        borrower = asyncio.create_task(
+            self._borrow_needing_connections_lock(old, proceed)
+        )
+        await asyncio.wait_for(old.entered.wait(), 2)
+
+        replacing = asyncio.create_task(self._replace(new))
+        async with asyncio.timeout(2):
+            while not old.pool._closing:
+                await asyncio.sleep(0)
+
+        proceed.set()
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(borrower, replacing), 1
+            )
+        finally:
+            for task in (borrower, replacing):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(borrower, replacing, return_exceptions=True)
+
     async def test_replacement_after_cancelled_request(self) -> None:
         old, new = self._pool(), self._pool()
         self._install(old)
