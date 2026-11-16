@@ -1377,7 +1377,10 @@ async def _control_loop() -> None:
     while _CONTROL_STATE.control_loop_running:
         async with _control_state() as state:
             state.iteration_start = iteration_start = now()  # timestamp to calculate loop sleep time
-            await _control_step(state)
+            # Hold the connections lock while issuing commands to prevent
+            # controller replacement or closure during a control step.
+            async with _connections_state():
+                await _control_step(state)
             listeners = state.control_loop_listeners.copy()
             state.cache.last_power_valid = False
             cur_log_registers: re.Pattern[str] | None = state.registers_to_log
