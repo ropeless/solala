@@ -305,9 +305,10 @@ class _ControlState:
         self.connections.controller = controller
         self.connections.controller_settings = settings
 
-        # Modes are now unknown, but leave the current policies in place
-        self.control.control_mode.battery_mode = BatteryMode.UNKNOWN
-        self.control.control_mode.inverter_mode = InverterMode.UNKNOWN
+        # Modes are now unknown, but leave the current policies in place.
+        async with _control_settings_state():
+            self.control.control_mode.battery_mode = BatteryMode.UNKNOWN
+            self.control.control_mode.inverter_mode = InverterMode.UNKNOWN
 
         # Invalidate cached status
         self.cache.last_power = _NO_POWER
@@ -542,7 +543,8 @@ async def get_settings() -> Settings:
         The current settings.
     """
     async with _control_state() as state:
-        return _get_settings(state)
+        async with _control_settings_state():
+            return _get_settings(state)
 
 
 async def add_control_loop_listener(listener: LoopListener) -> None:
@@ -1888,7 +1890,8 @@ async def _save_settings() -> None:
     """
     async with _control_state() as state:
         settings_path = state.settings_path
-        settings = _get_settings(state) if settings_path is not None else None
+        async with _control_settings_state():
+            settings = _get_settings(state) if settings_path is not None else None
 
     if settings_path is not None and settings is not None:
         try:
