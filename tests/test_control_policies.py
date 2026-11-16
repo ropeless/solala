@@ -115,5 +115,34 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         self.controller.zero_export.assert_awaited_once_with(change_duration=Constants.CONTROL_DURATION)
 
 
+    async def test_failed_zero_export_is_logged_and_retried(self) -> None:
+        self.state.control.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+        self.controller.zero_export.side_effect = [RuntimeError('command failed'), None]
+
+        with patch.object(control_loop, 'log_error') as log_error:
+            await self.step(100, 100)
+            self.assertEqual(self.state.control.prev_state.control_mode.inverter_mode, InverterMode.ZERO_EXPORT)
+            await self.step(100, 100)
+
+        self.assertEqual(self.controller.zero_export.await_count, 2)
+        self.controller.zero_export.assert_awaited_with(change_duration=Constants.CONTROL_DURATION)
+        log_error.assert_called_once()
+        self.assertIn('command failed', log_error.call_args.args[0])
+
+    async def test_failed_disable_inverter_is_logged_and_retried(self) -> None:
+        self.state.control.control_mode.inverter_mode = InverterMode.DISABLE
+        self.controller.disable_inverter.side_effect = [RuntimeError('command failed'), None]
+
+        with patch.object(control_loop, 'log_error') as log_error:
+            await self.step(100, 100)
+            self.assertEqual(self.state.control.prev_state.control_mode.inverter_mode, InverterMode.DISABLE)
+            await self.step(100, 100)
+
+        self.assertEqual(self.controller.disable_inverter.await_count, 2)
+        self.controller.disable_inverter.assert_awaited_with(change_duration=Constants.CONTROL_DURATION)
+        log_error.assert_called_once()
+        self.assertIn('command failed', log_error.call_args.args[0])
+
+
 if __name__ == '__main__':
     unittest.main()
