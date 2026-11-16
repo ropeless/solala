@@ -29,8 +29,8 @@ class SettingsPersistenceTestCase(unittest.IsolatedAsyncioTestCase):
 
         def get_settings(state: object) -> SimpleNamespace:
             self.assertTrue(self.state.settings_save_lock.locked())
-            self.assertTrue(self.state.connections.lock.locked())
-            self.assertTrue(self.state.control.lock.locked())
+            self.assertTrue(self.state.connections.lock._owner is not None)
+            self.assertTrue(self.state.control.lock._owner is not None)
             snapshots.append(version)
             return SimpleNamespace(model_dump_json=lambda: str(version))
 
@@ -52,8 +52,8 @@ class SettingsPersistenceTestCase(unittest.IsolatedAsyncioTestCase):
 
         def checked_open(*args: object, **kwargs: object):
             self.assertTrue(self.state.settings_save_lock.locked())
-            self.assertFalse(self.state.connections.lock.locked())
-            self.assertFalse(self.state.control.lock.locked())
+            self.assertFalse(self.state.connections.lock._owner is not None)
+            self.assertFalse(self.state.control.lock._owner is not None)
             return original_open(*args, **kwargs)
 
         settings = SimpleNamespace(model_dump_json=lambda: '{"test":true}')
