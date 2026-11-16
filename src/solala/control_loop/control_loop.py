@@ -1461,67 +1461,67 @@ async def _control_step(state: _ControlState) -> None:
     price: Price | None = await get_price_now() if state.connections.pricer is not None and needs_price else None
 
     async with _control_settings_state():
-        # Check to see if the power controller has changed.
         prev_state = state.control.prev_state
-        if state.connections.controller is None:
-            # No work can be done if there is no power controller.
+        power_controller = state.connections.controller
+        if power_controller is None:
             prev_state.reset(None)
             return
-        power_controller: PowerController = state.connections.controller
         if power_controller is not prev_state.controller:
             prev_state.reset(power_controller)
-    
-        # Battery Policy - may change Battery Mode
+
+        control_mode = state.control.control_mode
         if price is not None:
             if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
-                buy_price = price.buy_price
-                if buy_price < state.control.control_mode.start_charge_price_threshold:
-                    state.control.control_mode.battery_mode = BatteryMode.FORCE_CHARGE
-                elif buy_price > state.control.control_mode.enable_export_price_threshold:
-                    state.control.control_mode.battery_mode = BatteryMode.ENABLE
+                if price.buy_price < control_mode.start_charge_price_threshold:
+                    control_mode.battery_mode = BatteryMode.FORCE_CHARGE
+                elif price.buy_price > control_mode.enable_export_price_threshold:
+                    control_mode.battery_mode = BatteryMode.ENABLE
 
-        # Battery Mode
-        if state.control.control_mode.battery_mode != prev_state.control_mode.battery_mode:
-            match state.control.control_mode.battery_mode:
-                case BatteryMode.ENABLE:
-                    await power_controller.enable_battery()
-                case BatteryMode.DISABLE:
-                    await power_controller.disable_battery()
-                case BatteryMode.FORCE_CHARGE:
-                    await power_controller.force_charge()
-                case BatteryMode.FORCE_DISCHARGE:
-                    await power_controller.force_discharge()
-                case BatteryMode.CHARGE_ONLY:
-                    await power_controller.charge_only()
-                case BatteryMode.DISCHARGE_ONLY:
-                    await power_controller.discharge_only()
-
-        # Inverter Policy - may change Inverter Mode
-        if price is not None:
             if control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
-                feed_in_price = price.feed_in_price
-                if feed_in_price < state.control.control_mode.disable_export_price_threshold:
-                    state.control.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
-                elif feed_in_price > state.control.control_mode.disable_export_price_threshold:
-                    state.control.control_mode.inverter_mode = InverterMode.ENABLE
+                if price.feed_in_price < control_mode.disable_export_price_threshold:
+                    control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+                elif price.feed_in_price > control_mode.disable_export_price_threshold:
+                    control_mode.inverter_mode = InverterMode.ENABLE
 
-        # Inverter Mode
-        if state.control.control_mode.inverter_mode != prev_state.control_mode.inverter_mode:
-            if state.control.control_mode.inverter_mode == InverterMode.ENABLE:
-                await power_controller.enable_inverter()
-            # All other cases are managed below as they have a reversion time limit
-        # Inverter modes requiring keep-alive pulse
-        try:
-            match state.control.control_mode.inverter_mode:
-                case InverterMode.DISABLE:
-                    await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
-                case InverterMode.ZERO_EXPORT:
-                    await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
-        except Exception as e:
-            log_error(f'Error processing command: {state.control.control_mode.inverter_mode}. Error: {e}')
+        # Snapshot the commands before releasing the control-settings lock.
+        requested_mode = copy.copy(control_mode)
+        battery_changed = requested_mode.battery_mode != prev_state.control_mode.battery_mode
+        inverter_changed = requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
 
-        # Remember how we left things
-        prev_state.control_mode = copy.copy(state.control.control_mode)
+    # Connection lifetime remains protected by the caller's legacy lock.
+    # Do not block control-mode getters while waiting for the controller.
+    if battery_changed:
+        match requested_mode.battery_mode:
+            case BatteryMode.ENABLE:
+                await power_controller.enable_battery()
+            case BatteryMode.DISABLE:
+                await power_controller.disable_battery()
+            case BatteryMode.FORCE_CHARGE:
+                await power_controller.force_charge()
+            case BatteryMode.FORCE_DISCHARGE:
+                await power_controller.force_discharge()
+            case BatteryMode.CHARGE_ONLY:
+                await power_controller.charge_only()
+            case BatteryMode.DISCHARGE_ONLY:
+                await power_controller.discharge_only()
+
+    if inverter_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
+        await power_controller.enable_inverter()
+
+    # These inverter modes require a keep-alive command on every iteration.
+    try:
+        match requested_mode.inverter_mode:
+            case InverterMode.DISABLE:
+                await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
+            case InverterMode.ZERO_EXPORT:
+                await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
+    except Exception as e:
+        log_error(f'Error processing command: {requested_mode.inverter_mode}. Error: {e}')
+
+    async with _control_settings_state():
+        # Record what was actually requested, not any newer UI changes.
+        # A concurrent change will be picked up on the next iteration.
+        prev_state.control_mode = requested_mode
 
 
 def _connect_dummy_controller(controller_connection: DummyControllerConnection) -> PowerController:
