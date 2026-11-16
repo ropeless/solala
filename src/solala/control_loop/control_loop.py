@@ -9,7 +9,7 @@ from datetime import datetime, UTC, date
 from functools import partial
 from inspect import getmembers
 from pathlib import Path
-from typing import get_type_hints, Any, cast
+from typing import get_type_hints, Any
 
 from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
@@ -1488,7 +1488,7 @@ async def _control_step(state: _ControlState) -> None:
         if power_controller is None:
             prev_state.reset(None)
             return
-        active_controller: PowerController = cast(PowerController, power_controller)
+        power_controller: PowerController
         if power_controller is not prev_state.controller:
             prev_state.reset(power_controller)
 
@@ -1517,28 +1517,28 @@ async def _control_step(state: _ControlState) -> None:
     if battery_changed:
         match requested_mode.battery_mode:
             case BatteryMode.ENABLE:
-                await active_controller.enable_battery()
+                await power_controller.enable_battery()
             case BatteryMode.DISABLE:
-                await active_controller.disable_battery()
+                await power_controller.disable_battery()
             case BatteryMode.FORCE_CHARGE:
-                await active_controller.force_charge()
+                await power_controller.force_charge()
             case BatteryMode.FORCE_DISCHARGE:
-                await active_controller.force_discharge()
+                await power_controller.force_discharge()
             case BatteryMode.CHARGE_ONLY:
-                await active_controller.charge_only()
+                await power_controller.charge_only()
             case BatteryMode.DISCHARGE_ONLY:
-                await active_controller.discharge_only()
+                await power_controller.discharge_only()
 
     if inverter_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
-        await active_controller.enable_inverter()
+        await power_controller.enable_inverter()
 
     # These inverter modes require a keep-alive command on every iteration.
     try:
         match requested_mode.inverter_mode:
             case InverterMode.DISABLE:
-                await active_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
+                await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
             case InverterMode.ZERO_EXPORT:
-                await active_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
+                await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
     except Exception as e:
         log_error(f'Error processing command: {requested_mode.inverter_mode}. Error: {e}')
 
