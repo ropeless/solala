@@ -136,12 +136,18 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
         old.allow_acquisition.set()
         borrower = self._borrow(old)
         await asyncio.wait_for(old.entered.wait(), 2)
-        replacements = [asyncio.create_task(self._replace(pool))
-                        for pool in (first, second)]
-        await asyncio.sleep(0)
-        old.release.set()
-        await asyncio.wait_for(borrower, 2)
-        await asyncio.wait_for(asyncio.gather(*replacements), 2)
+        with patch.object(
+                control, 'SolalaDatabaseConnections',
+                side_effect=[first.pool, second.pool],
+        ):
+            replacements = [
+                asyncio.create_task(control.connect_database(self.settings))
+                for _ in range(2)
+            ]
+            await asyncio.sleep(0)
+            old.release.set()
+            await asyncio.wait_for(borrower, 2)
+            await asyncio.wait_for(asyncio.gather(*replacements), 2)
         old.pool._pool.close.assert_awaited_once()
         first.pool._pool.close.assert_awaited_once()
         self.assertIs(control._CONTROL_STATE.connections.database_connections, second.pool)
