@@ -1116,24 +1116,25 @@ async def connect_pricer(pricer_connection: PricerConnection) -> None:
         pricer_connection: Power pricer connection configuration.
     """
     async with _control_state() as state:
-        pricer: PowerPricer
+        async with _connections_state():
+            pricer: PowerPricer
 
-        if pricer_connection.type == DummyPricerConnection.TYPE:
-            assert isinstance(pricer_connection, DummyPricerConnection)
-            pricer = _connect_dummy_pricer(pricer_connection)
-        elif pricer_connection.type == AmberPricerConnection.TYPE:
-            assert isinstance(pricer_connection, AmberPricerConnection)
-            pricer = _connect_amber(pricer_connection)
+            if pricer_connection.type == DummyPricerConnection.TYPE:
+                assert isinstance(pricer_connection, DummyPricerConnection)
+                pricer = _connect_dummy_pricer(pricer_connection)
+            elif pricer_connection.type == AmberPricerConnection.TYPE:
+                assert isinstance(pricer_connection, AmberPricerConnection)
+                pricer = _connect_amber(pricer_connection)
 
-        else:
-            raise ControlLoopError('unknown pricer connection type', errors={'type': pricer_connection.type})
+            else:
+                raise ControlLoopError('unknown pricer connection type', errors={'type': pricer_connection.type})
 
-        await disconnect_pricer()
-        await state.reset_pricer(pricer, pricer_connection)
-        connection_info = pricer.get_connection_info()
-        log_info(f'Power pricer connection: {json.dumps(connection_info)}')
-        await _save_settings()
-        await _reconfigure_registers(state)
+            await disconnect_pricer()
+            await state.reset_pricer(pricer, pricer_connection)
+            connection_info = pricer.get_connection_info()
+            log_info(f'Power pricer connection: {json.dumps(connection_info)}')
+            await _save_settings()
+            await _reconfigure_registers(state)
 
 
 async def disconnect_pricer() -> None:
@@ -1141,12 +1142,13 @@ async def disconnect_pricer() -> None:
     Close the power pricer connection.
     """
     async with _control_state() as state:
-        if state.connections.pricer is not None:
-            await state.connections.pricer.close()
-            await state.reset_pricer(None, None)
-            log_info('Pricer disconnected')
-        await _save_settings()
-        await _reconfigure_registers(state)
+        async with _connections_state():
+            if state.connections.pricer is not None:
+                await state.connections.pricer.close()
+                await state.reset_pricer(None, None)
+                log_info('Pricer disconnected')
+            await _save_settings()
+            await _reconfigure_registers(state)
 
 
 async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> None:
@@ -1158,29 +1160,30 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
         consumer_connection: Power consumer connection configuration.
     """
     async with _control_state() as state:
-        consumer: PowerConsumer
+        async with _connections_state():
+            consumer: PowerConsumer
 
-        if consumer_connection.type == DummyConsumerConnection.TYPE:
-            assert isinstance(consumer_connection, DummyConsumerConnection)
-            consumer = _connect_dummy_consumer(consumer_connection)
-        elif consumer_connection.type == TeslaWallConnectorConnection.TYPE:
-            assert isinstance(consumer_connection, TeslaWallConnectorConnection)
-            consumer = _connect_tesla_wall_connector(consumer_connection)
-        elif consumer_connection.type == TuyaConnection.TYPE:
-            assert isinstance(consumer_connection, TuyaConnection)
-            consumer = _connect_tuya(consumer_connection)
-        else:
-            raise ControlLoopError(
-                'unknown consumer connection type',
-                errors={'name': name, 'type': consumer_connection.type}
-            )
+            if consumer_connection.type == DummyConsumerConnection.TYPE:
+                assert isinstance(consumer_connection, DummyConsumerConnection)
+                consumer = _connect_dummy_consumer(consumer_connection)
+            elif consumer_connection.type == TeslaWallConnectorConnection.TYPE:
+                assert isinstance(consumer_connection, TeslaWallConnectorConnection)
+                consumer = _connect_tesla_wall_connector(consumer_connection)
+            elif consumer_connection.type == TuyaConnection.TYPE:
+                assert isinstance(consumer_connection, TuyaConnection)
+                consumer = _connect_tuya(consumer_connection)
+            else:
+                raise ControlLoopError(
+                    'unknown consumer connection type',
+                    errors={'name': name, 'type': consumer_connection.type}
+                )
 
-        await disconnect_consumer(name)
-        await state.reset_consumer(name, consumer, consumer_connection)
-        connection_info = consumer.get_connection_info()
-        log_info(f'Power consumer {name!r} connection: {json.dumps(connection_info)}')
-        await _save_settings()
-        await _reconfigure_registers(state)
+            await disconnect_consumer(name)
+            await state.reset_consumer(name, consumer, consumer_connection)
+            connection_info = consumer.get_connection_info()
+            log_info(f'Power consumer {name!r} connection: {json.dumps(connection_info)}')
+            await _save_settings()
+            await _reconfigure_registers(state)
 
 
 async def disconnect_consumer(name: str) -> None:
@@ -1188,13 +1191,14 @@ async def disconnect_consumer(name: str) -> None:
     Close a power consumer connection.
     """
     async with _control_state() as state:
-        consumer: PowerConsumer | None = state.connections.consumers.get(name)
-        if consumer is not None:
-            await consumer.close()
-            await state.reset_consumer(name, None, None)
-            log_info('Power consumer {name!r} disconnected')
-        await _save_settings()
-        await _reconfigure_registers(state)
+        async with _connections_state():
+            consumer: PowerConsumer | None = state.connections.consumers.get(name)
+            if consumer is not None:
+                await consumer.close()
+                await state.reset_consumer(name, None, None)
+                log_info('Power consumer {name!r} disconnected')
+            await _save_settings()
+            await _reconfigure_registers(state)
 
 
 async def connect_forecaster(forecaster_connection: ForecasterConnection) -> None:
@@ -1205,26 +1209,27 @@ async def connect_forecaster(forecaster_connection: ForecasterConnection) -> Non
         forecaster_connection: Solar forecaster connection configuration.
     """
     async with _control_state() as state:
-        forecaster: SolarForecaster
+        async with _connections_state():
+            forecaster: SolarForecaster
 
-        if forecaster_connection.type == DummySolarForecasterConnection.TYPE:
-            assert isinstance(forecaster_connection, DummySolarForecasterConnection)
-            forecaster = _connect_dummy_solar_forecaster(forecaster_connection)
-        elif forecaster_connection.type == OpenMeteoConnection.TYPE:
-            assert isinstance(forecaster_connection, OpenMeteoConnection)
-            forecaster = _connect_open_meteo_forecaster(forecaster_connection)
-        else:
-            raise ControlLoopError(
-                'unknown forecaster connection type',
-                errors={'type': forecaster_connection.type}
-            )
+            if forecaster_connection.type == DummySolarForecasterConnection.TYPE:
+                assert isinstance(forecaster_connection, DummySolarForecasterConnection)
+                forecaster = _connect_dummy_solar_forecaster(forecaster_connection)
+            elif forecaster_connection.type == OpenMeteoConnection.TYPE:
+                assert isinstance(forecaster_connection, OpenMeteoConnection)
+                forecaster = _connect_open_meteo_forecaster(forecaster_connection)
+            else:
+                raise ControlLoopError(
+                    'unknown forecaster connection type',
+                    errors={'type': forecaster_connection.type}
+                )
 
-        await disconnect_forecaster()
-        await state.reset_forecaster(forecaster, forecaster_connection)
-        connection_info = forecaster.get_connection_info()
-        log_info(f'Solar forecaster connection: {json.dumps(connection_info)}')
-        await _save_settings()
-        await _reconfigure_registers(state)
+            await disconnect_forecaster()
+            await state.reset_forecaster(forecaster, forecaster_connection)
+            connection_info = forecaster.get_connection_info()
+            log_info(f'Solar forecaster connection: {json.dumps(connection_info)}')
+            await _save_settings()
+            await _reconfigure_registers(state)
 
 
 async def disconnect_forecaster() -> None:
@@ -1232,12 +1237,13 @@ async def disconnect_forecaster() -> None:
     Close the solar forecaster connection.
     """
     async with _control_state() as state:
-        if state.connections.forecaster is not None:
-            await state.connections.forecaster.close()
-            await state.reset_forecaster(None, None)
-            log_info('Solar forecaster disconnected')
-        await _save_settings()
-        await _reconfigure_registers(state)
+        async with _connections_state():
+            if state.connections.forecaster is not None:
+                await state.connections.forecaster.close()
+                await state.reset_forecaster(None, None)
+                log_info('Solar forecaster disconnected')
+            await _save_settings()
+            await _reconfigure_registers(state)
 
 
 async def connect_database(database_connection: DatabaseConnection) -> None:
@@ -1248,19 +1254,20 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
         database_connection: Database connection configuration.
     """
     async with _control_state() as state:
-        database_connections = SolalaDatabaseConnections(
-            role=database_connection.role,
-            password=database_connection.password,
-            host=database_connection.host,
-            port=database_connection.port,
-            database_name=database_connection.database_name,
-        )
-        await disconnect_database()
-        await state.reset_database(database_connections, database_connection)
-        connection_info = database_connections.get_connection_info()
-        log_info(f'Database connection: {json.dumps(connection_info)}')
-        await _save_settings()
-        # no need to _reconfigure_registers(state)
+        async with _connections_state():
+            database_connections = SolalaDatabaseConnections(
+                role=database_connection.role,
+                password=database_connection.password,
+                host=database_connection.host,
+                port=database_connection.port,
+                database_name=database_connection.database_name,
+            )
+            await disconnect_database()
+            await state.reset_database(database_connections, database_connection)
+            connection_info = database_connections.get_connection_info()
+            log_info(f'Database connection: {json.dumps(connection_info)}')
+            await _save_settings()
+            # no need to _reconfigure_registers(state)
 
 
 async def disconnect_database() -> None:
@@ -1268,12 +1275,13 @@ async def disconnect_database() -> None:
     Close the database connection pool.
     """
     async with _control_state() as state:
-        if state.connections.database_connections is not None:
-            await state.connections.database_connections.close()
-            await state.reset_database(None, None)
-            log_info('Database disconnected')
-        await _save_settings()
-        # no need to _reconfigure_registers(state)
+        async with _connections_state():
+            if state.connections.database_connections is not None:
+                await state.connections.database_connections.close()
+                await state.reset_database(None, None)
+                log_info('Database disconnected')
+            await _save_settings()
+            # no need to _reconfigure_registers(state)
 
 
 # =============================================================================
