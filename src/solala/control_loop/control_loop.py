@@ -47,7 +47,6 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     DummyControllerConnection, \
     DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
     DummySolarForecasterConnection, DatabaseConnection, TuyaConnection
-from solala.utils.async_rlock import AsyncRLock
 from solala.utils.datetime_extras import now, local_time_zone
 from solala.utils.json_extras import JSONDict, json_num, JSONValue
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
@@ -280,16 +279,14 @@ class _ControlState:
     """
     Hold delegate connections, cached readings, control settings, and loop state.
 
-    Access to mutable shared state is coordinated through `_control_state()`.
+    Mutable connection, control, and cache fields use their dedicated locks.
     """
-    # State groups own their fields; the legacy lock remains during migration.
     connections: _ConnectionsState = field(default_factory=_ConnectionsState)
     control: _ControlSettingsState = field(default_factory=_ControlSettingsState)
     cache: _CacheState = field(default_factory=_CacheState)
 
     # Listener lists are used on the same asyncio event loop; synchronous updates and snapshots need no lock.
     # Internal control loop tracking variables.
-    lock: AsyncRLock = field(default_factory=AsyncRLock)
     control_loop_running: bool = True
     control_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_loop_listeners: list[LoopListener] = field(default_factory=list)
@@ -397,26 +394,6 @@ async def _cache_state() -> AsyncIterator[_CacheState]:
     async with _CONTROL_STATE.cache.lock:
         yield _CONTROL_STATE.cache
 
-
-@asynccontextmanager
-async def _control_state() -> AsyncIterator[_ControlState]:
-    """
-    Get exclusive access to the control state.
-
-    This is a reentrant lock, i.e. the same task can acquire the lock multiple times.
-    All access must occur on the same asyncio event loop.
-
-    Usage:
-    ```
-    async with _control_state() as state:
-        # read and write to state.
-    ```
-
-    Returns:
-        The control state.
-    """
-    async with _CONTROL_STATE.lock:
-        yield _CONTROL_STATE
 
 
 # ============================================================================
@@ -1454,12 +1431,12 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
 async def _control_step(state: _ControlState) -> None:
     """
     Perform one functional step of the control loop.
-    This function assumes the control state lock is already acquired for `state`.
+    The caller must hold the connections lock for the duration of the step.
     No work is performed if the power controller is None.
     No non-manual policies are followed if the power pricer is None.
 
     Args:
-        state: the current control state (with the lock acquired).
+        state: Current control state; the caller holds the connections lock.
     """
     # Price retrieval does not need to hold the control-settings lock.
     # Fetch the price once if either automatic policy needs it.
@@ -1734,7 +1711,7 @@ def _update_listeners(listeners: Iterable[LoopListener]) -> None:
     WARNING:
         * The given iterable should not be modified during iteration, i.e.
           this function should be given a copy of the list of listeners.
-        * Do not hold the control state lock while scheduling listener updates,
+        * Do not hold the connections or cache lock while scheduling listener updates,
           as listeners may need to acquire it themselves.
     """
     for listener in listeners:
@@ -1784,7 +1761,7 @@ class ConsumerRegister(ReadOnlyRegister):
 async def _reconfigure_registers(state: _ControlState) -> None:
     """
     Updates the control loop register bank as per currently available delegates.
-    Assumes the control state lock is held.
+    Assumes the connections lock is held.
     """
 
     # Add status/battery and status/inverter registers
@@ -1865,7 +1842,7 @@ def _get_settings(state: _ControlState) -> Settings:
     """
     Build settings from the current control state.
 
-    The caller must hold the control state lock.
+    The caller must hold the connections and control-settings locks.
 
     Args:
         state: Current control state.
