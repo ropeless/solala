@@ -262,9 +262,18 @@ class _CacheState:
     """
     Group cached readings under the cache lock.
 
-    Cache fields will be migrated from _ControlState incrementally.
+    Own cached power readings and price, demand, and solar forecasts.
     """
     lock: OrderedAsyncRLock = field(default_factory=lambda: OrderedAsyncRLock(30))
+
+    # Caches of status components.
+    last_power: PowerStatus = field(default_factory=lambda: _NO_POWER)
+    last_power_valid: bool = False
+    price_cache: _PriceCache = field(default_factory=_PriceCache)
+    demand_window_cache: dict[_DateKey, _DemandWindowCache] = field(default_factory=dict)
+    price_forecast_cache: _PriceForecastCache = field(default_factory=_PriceForecastCache)
+    solar_forecast_cache: dict[_DateKey, _SolarForecastCache] = field(default_factory=dict)
+
 
 
 @dataclass
@@ -278,14 +287,6 @@ class _ControlState:
     connections: _ConnectionsState = field(default_factory=_ConnectionsState)
     control: _ControlSettingsState = field(default_factory=_ControlSettingsState)
     cache: _CacheState = field(default_factory=_CacheState)
-
-    # Caches of status components.
-    last_power: PowerStatus = field(default_factory=lambda: _NO_POWER)
-    last_power_valid: bool = False
-    price_cache: _PriceCache = field(default_factory=_PriceCache)
-    demand_window_cache: dict[_DateKey, _DemandWindowCache] = field(default_factory=dict)
-    price_forecast_cache: _PriceForecastCache = field(default_factory=_PriceForecastCache)
-    solar_forecast_cache: dict[_DateKey, _SolarForecastCache] = field(default_factory=dict)
 
     # Internal control loop tracking variables.
     lock: AsyncRLock = field(default_factory=AsyncRLock)
@@ -308,8 +309,8 @@ class _ControlState:
         self.control.control_mode.inverter_mode = InverterMode.UNKNOWN
 
         # Invalidate cached status
-        self.last_power = _NO_POWER
-        self.last_power_valid = False
+        self.cache.last_power = _NO_POWER
+        self.cache.last_power_valid = False
 
     async def reset_pricer(self, pricer: PowerPricer | None, settings: PricerConnection | None) -> None:
         assert (pricer is None) == (settings is None)
@@ -317,9 +318,9 @@ class _ControlState:
         self.connections.pricer_settings = settings
 
         # Invalidate cached status
-        await self.price_cache.invalidate()
-        await self.price_forecast_cache.invalidate()
-        self.demand_window_cache.clear()
+        await self.cache.price_cache.invalidate()
+        await self.cache.price_forecast_cache.invalidate()
+        self.cache.demand_window_cache.clear()
 
     async def reset_forecaster(self, forecaster: SolarForecaster | None, settings: ForecasterConnection | None) -> None:
         assert (forecaster is None) == (settings is None)
@@ -327,7 +328,7 @@ class _ControlState:
         self.connections.forecaster_settings = settings
 
         # Invalidate cached status
-        self.solar_forecast_cache.clear()
+        self.cache.solar_forecast_cache.clear()
 
     async def reset_consumer(self, consumer_name: str, consumer: PowerConsumer | None,
                              settings: ConsumerConnection | None) -> None:
@@ -631,14 +632,14 @@ async def get_power_status() -> PowerStatus:
         The current cached status, or the default status if no controller is connected.
     """
     async with _control_state() as state:
-        if not state.last_power_valid:
+        if not state.cache.last_power_valid:
             controller: PowerController | None = state.connections.controller
             if controller is None:
                 log_error('Power update not available. Error: power controller not connected')
             else:
-                state.last_power = await controller.get_status()
-            state.last_power_valid = True
-        return state.last_power
+                state.cache.last_power = await controller.get_status()
+            state.cache.last_power_valid = True
+        return state.cache.last_power
 
 
 async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> dict[str, RegisterValue | None]:
@@ -670,7 +671,7 @@ async def get_price_now() -> Price:
     """
     Get the current price from the power pricer.
     """
-    return await _CONTROL_STATE.price_cache()  # defers to _get_price_now()
+    return await _CONTROL_STATE.cache.price_cache()  # defers to _get_price_now()
 
 
 async def _get_price_now() -> LifecycleReturn[Price]:
@@ -728,10 +729,10 @@ async def get_demand_window(day: date) -> PossibleDemandWindow:
     """
     async with _control_state() as state:
         key = _DateKey(day.year, day.month, day.day)
-        demand_window_cache: _DemandWindowCache | None = state.demand_window_cache.get(key)
+        demand_window_cache: _DemandWindowCache | None = state.cache.demand_window_cache.get(key)
         if demand_window_cache is None:
             demand_window_cache: _DemandWindowCache = _DemandWindowCache(day)
-            state.demand_window_cache[key] = demand_window_cache
+            state.cache.demand_window_cache[key] = demand_window_cache
         demand_window_cache: _DemandWindowCache
     return await demand_window_cache()  # defers to _get_demand_window
 
@@ -765,7 +766,7 @@ async def get_price_forecast() -> Sequence[Price]:
 
     Errors will be logged but should not raise an exception.
     """
-    prices: Sequence[Price] = await _CONTROL_STATE.price_forecast_cache()  # defers to _get_price_forecast()
+    prices: Sequence[Price] = await _CONTROL_STATE.cache.price_forecast_cache()  # defers to _get_price_forecast()
 
     # A race condition or error may mean that the first forecast is already in the past.
     while len(prices) > 0 and prices[0].end_time < now():
@@ -874,10 +875,10 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
     """
     async with _control_state() as state:
         key = _DateKey(day.year, day.month, day.day)
-        solar_forecast_cache: _SolarForecastCache | None = state.solar_forecast_cache.get(key)
+        solar_forecast_cache: _SolarForecastCache | None = state.cache.solar_forecast_cache.get(key)
         if solar_forecast_cache is None:
             solar_forecast_cache: _SolarForecastCache = _SolarForecastCache(day)
-            state.solar_forecast_cache[key] = solar_forecast_cache
+            state.cache.solar_forecast_cache[key] = solar_forecast_cache
         solar_forecast_cache: _SolarForecastCache
     return await solar_forecast_cache()  # defers to _get_solar_forecast
 
@@ -1380,7 +1381,7 @@ async def _control_loop() -> None:
             state.iteration_start = iteration_start = now()  # timestamp to calculate loop sleep time
             await _control_step(state)
             listeners = state.control_loop_listeners.copy()
-            state.last_power_valid = False
+            state.cache.last_power_valid = False
             cur_log_registers: re.Pattern[str] | None = state.registers_to_log
 
         # Update the listeners while not holding the control state lock.
