@@ -805,13 +805,13 @@ async def get_consumers_status() -> dict[str, ConsumerStatus]:
     Returns:
         A mapping from each consumer name to its status.
     """
-    async with _control_state() as state:
-        names = state.connections.consumers.keys()
+    async with _connections_state() as connections:
+        # Keep consumers connected until all status requests complete.
+        consumers = tuple(connections.consumers.items())
         statuses = await asyncio.gather(*[
-            state.connections.consumers[name].get_status()
-            for name in names
+            consumer.get_status() for _, consumer in consumers
         ])
-    return {name: status for name, status in zip(names, statuses)}
+    return {name: status for (name, _), status in zip(consumers, statuses)}
 
 
 async def get_connection_info() -> JSONDict:
