@@ -609,18 +609,16 @@ async def get_control_mode() -> ControlMode:
     """
     Get what the control loop is aiming to do for the user.
     """
-    async with _control_state() as state:
-        async with _control_settings_state():
-            return copy.copy(state.control.control_mode)
+    async with _control_settings_state() as state:
+        return copy.copy(state.control_mode)
 
 
 async def get_prev_control_mode() -> ControlMode:
     """
     Get what the control loop last did for the user.
     """
-    async with _control_state() as state:
-        async with _control_settings_state():
-            return copy.copy(state.control.prev_state.control_mode)
+    async with _control_settings_state() as state:
+        return copy.copy(state.prev_state.control_mode)
 
 
 async def get_power_status() -> PowerStatus:
