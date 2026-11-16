@@ -3,7 +3,7 @@ import copy
 import json
 import re
 from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, fields, Field
 from datetime import datetime, UTC, date
 from functools import partial
@@ -900,18 +900,26 @@ async def _get_solar_forecast(day: date) -> LifecycleReturn[DailySolarForecast]:
 @asynccontextmanager
 async def _database() -> AsyncIterator[SolalaDatabase]:
     """
-    Borrow from the configured pool while coordinating pool replacement.
+    Reserve the current database pool before releasing the connections lock.
 
-    Connection acquisition is protected by the connections-state lock, but
-    the database operation and its cleanup run after releasing that lock.
+    The reservation is released only after the database context has returned
+    its connection, including when acquisition fails or is cancelled.
     """
-    async with AsyncExitStack() as stack:
+    pool: SolalaDatabaseConnections | None = None
+    reserved = False
+    try:
         async with _connections_state() as connections:
             pool = connections.database_connections
             if pool is None:
                 raise ConnectionError('Database pool not connected')
-            db = await stack.enter_async_context(pool.solala_database())
-        yield db
+            context = pool.reserve_database()
+            reserved = True
+
+        async with context as db:
+            yield db
+    finally:
+        if reserved and pool is not None:
+            pool._release_request()
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
