@@ -1077,42 +1077,40 @@ async def connect_controller(controller_connection: ControllerConnection) -> Non
     Args:
         controller_connection: Power controller connection configuration.
     """
-    async with _control_state() as state:
-        async with _connections_state():
-            controller: PowerController
+    async with _connections_state():
+        controller: PowerController
 
-            if controller_connection.type == DummyControllerConnection.TYPE:
-                assert isinstance(controller_connection, DummyControllerConnection)
-                controller = _connect_dummy_controller(controller_connection)
-            elif controller_connection.type == ModbusControllerConnection.TYPE:
-                assert isinstance(controller_connection, ModbusControllerConnection)
-                controller = _connect_modbus(controller_connection)
-            else:
-                raise ControlLoopError(
-                    'unknown controller connection type',
-                    errors={'type': controller_connection.type}
-                )
+        if controller_connection.type == DummyControllerConnection.TYPE:
+            assert isinstance(controller_connection, DummyControllerConnection)
+            controller = _connect_dummy_controller(controller_connection)
+        elif controller_connection.type == ModbusControllerConnection.TYPE:
+            assert isinstance(controller_connection, ModbusControllerConnection)
+            controller = _connect_modbus(controller_connection)
+        else:
+            raise ControlLoopError(
+                'unknown controller connection type',
+                errors={'type': controller_connection.type}
+            )
 
-            await disconnect_controller()
-            await state.reset_controller(controller, controller_connection)
-            connection_info = controller.get_connection_info()
-            log_info(f'Power controller connection: {json.dumps(connection_info)}')
-            await _save_settings()
-            await _reconfigure_registers(state)
+        await disconnect_controller()
+        await _CONTROL_STATE.reset_controller(controller, controller_connection)
+        connection_info = controller.get_connection_info()
+        log_info(f'Power controller connection: {json.dumps(connection_info)}')
+        await _save_settings()
+        await _reconfigure_registers(_CONTROL_STATE)
 
 
 async def disconnect_controller() -> None:
     """
     Close the power controller connection.
     """
-    async with _control_state() as state:
-        async with _connections_state():
-            if state.connections.controller is not None:
-                await state.connections.controller.close()
-                await state.reset_controller(None, None)
-                log_info('Power controller disconnected')
-            await _save_settings()
-            await _reconfigure_registers(state)
+    async with _connections_state():
+        if _CONTROL_STATE.connections.controller is not None:
+            await _CONTROL_STATE.connections.controller.close()
+            await _CONTROL_STATE.reset_controller(None, None)
+            log_info('Power controller disconnected')
+        await _save_settings()
+        await _reconfigure_registers(_CONTROL_STATE)
 
 
 async def connect_pricer(pricer_connection: PricerConnection) -> None:
