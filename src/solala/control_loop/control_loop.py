@@ -275,6 +275,17 @@ class _CacheState:
 
 
 @dataclass
+class _SettingsPersistenceState:
+    """
+    Hold the settings file path and serialize settings persistence.
+
+    Lock order: persistence (5) -> connections (10) -> control (20) -> cache (30).
+    """
+    lock: OrderedAsyncRLock = field(default_factory=lambda: OrderedAsyncRLock(5))
+    path: Path | None = None
+
+
+@dataclass
 class _ControlState:
     """
     Hold delegate connections, cached readings, control settings, and loop state.
@@ -284,6 +295,7 @@ class _ControlState:
     connections: _ConnectionsState = field(default_factory=_ConnectionsState)
     control: _ControlSettingsState = field(default_factory=_ControlSettingsState)
     cache: _CacheState = field(default_factory=_CacheState)
+    settings_persistence: _SettingsPersistenceState = field(default_factory=_SettingsPersistenceState)
 
     # Listener lists are used on the same asyncio event loop; synchronous updates and snapshots need no lock.
     # Internal control loop tracking variables.
@@ -291,8 +303,6 @@ class _ControlState:
     control_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_write: bool = True
-    settings_path: Path | None = None  # for using persisted settings.
-    settings_save_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     iteration_start: datetime = field(default_factory=now)  # used to confirm the control loop is running
     registers_to_log: re.Pattern[str] | None = None
     registers_to_log_str: str | None = None
@@ -435,7 +445,7 @@ async def control_loop(
     # Configure from user settings
     loaded: bool = False
     if settings_path is not None:
-        _CONTROL_STATE.settings_path = Path(settings_path)
+        _CONTROL_STATE.settings_persistence.path = Path(settings_path)
         if not force_settings or settings is None:
             loaded = await _load_settings()
     if (not loaded or force_settings) and settings is not None:
@@ -1890,8 +1900,8 @@ async def _save_settings() -> None:
     Serialize the snapshot and write so an older save cannot overwrite newer
     settings. The connections and control locks are released before file I/O.
     """
-    async with _CONTROL_STATE.settings_save_lock:
-        settings_path = _CONTROL_STATE.settings_path
+    async with _CONTROL_STATE.settings_persistence.lock:
+        settings_path = _CONTROL_STATE.settings_persistence.path
         if settings_path is None:
             return
 
@@ -1912,7 +1922,7 @@ async def _load_settings() -> bool:
     Returns:
         True if settings were loaded successfully, False otherwise.
     """
-    settings_path = _CONTROL_STATE.settings_path
+    settings_path = _CONTROL_STATE.settings_persistence.path
     if settings_path is not None:
         try:
             with open(settings_path, 'r') as file:
