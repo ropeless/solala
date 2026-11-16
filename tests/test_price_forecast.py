@@ -33,7 +33,7 @@ class PriceForecastTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_empty_forecast_uses_cached_fallback(self) -> None:
         self.pricer.get_price_forecast.return_value = []
 
-        self.assertEqual(await control_loop.get_price_forecast(), [])
+        self.assertEqual(await control_loop.get_price_forecast(), ())
         self.pricer.get_price_forecast.assert_awaited_once()
 
     async def test_nonempty_forecast_preserves_refresh_deadline(self) -> None:
