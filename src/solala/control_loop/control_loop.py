@@ -48,10 +48,10 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
     DummySolarForecasterConnection, DatabaseConnection, TuyaConnection
 from solala.utils.async_rlock import AsyncRLock
-from solala.utils.ordered_async_rlock import OrderedAsyncRLock
 from solala.utils.datetime_extras import now, local_time_zone
 from solala.utils.json_extras import JSONDict, json_num, JSONValue
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
+from solala.utils.ordered_async_rlock import OrderedAsyncRLock
 from solala.utils.string_extras import split_addresses
 
 _MIN_DATE = datetime.min.replace(tzinfo=UTC)
@@ -244,7 +244,6 @@ class _ConnectionsState:
             return self.database_connections.get_connection_info()
 
 
-
 @dataclass
 class _ControlSettingsState:
     """
@@ -305,8 +304,8 @@ class _ControlState:
         self.connections.controller_settings = settings
 
         # Modes are now unknown, but leave the current policies in place
-        self.control_mode.battery_mode = BatteryMode.UNKNOWN
-        self.control_mode.inverter_mode = InverterMode.UNKNOWN
+        self.control.control_mode.battery_mode = BatteryMode.UNKNOWN
+        self.control.control_mode.inverter_mode = InverterMode.UNKNOWN
 
         # Invalidate cached status
         self.last_power = _NO_POWER
@@ -346,7 +345,6 @@ class _ControlState:
         assert (database is None) == (settings is None)
         self.connections.database_connections = database
         self.connections.database_settings = settings
-
 
 
 _LOG_SRC = '[control loop] '  # prefix for log messages
@@ -1914,5 +1912,5 @@ async def _load_settings() -> bool:
         return False
 
 
-# Initialize global state after the cache delegates have been defined.
+# Initialise global state after the cache delegates have been defined.
 _CONTROL_STATE: _ControlState = _ControlState()
