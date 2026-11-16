@@ -292,6 +292,7 @@ class _ControlState:
     database_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_write: bool = True
     settings_path: Path | None = None  # for using persisted settings.
+    settings_save_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     iteration_start: datetime = field(default_factory=now)  # used to confirm the control loop is running
     registers_to_log: re.Pattern[str] | None = None
     registers_to_log_str: str | None = None
@@ -1884,24 +1885,25 @@ def _get_settings(state: _ControlState) -> Settings:
 
 async def _save_settings() -> None:
     """
-    This is called when the user settings are changed. We persist the settings
-    so that they are available across restarts.
+    Persist settings across restarts.
+
+    Serialize the snapshot and write so an older save cannot overwrite newer
+    settings. The connections and control locks are released before file I/O.
     """
-    settings_path = _CONTROL_STATE.settings_path
-    if settings_path is None:
-        return
+    async with _CONTROL_STATE.settings_save_lock:
+        settings_path = _CONTROL_STATE.settings_path
+        if settings_path is None:
+            return
 
-    async with _connections_state():
-        async with _control_settings_state():
-            settings = _get_settings(_CONTROL_STATE)
+        async with _connections_state():
+            async with _control_settings_state():
+                settings = _get_settings(_CONTROL_STATE)
 
-    if settings_path is not None and settings is not None:
         try:
             with open(settings_path, 'w') as file:
                 print(settings.model_dump_json(), file=file)
         except Exception as err:
             log_error(f'Error saving settings: {err}')
-
 
 async def _load_settings() -> bool:
     """
