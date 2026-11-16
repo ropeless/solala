@@ -149,6 +149,7 @@ class _PriceForecastCache(LifecycleCache[Sequence[Price]]):
             _get_price_forecast,
             log_error=log_error,
             log_info=log_info,
+            young=Constants.PRICE_FORECAST_YOUNG,
             old=Constants.PRICE_FORECAST_OLD,
             default=(),
         )
