@@ -1259,7 +1259,7 @@ async def _database_loop() -> None:
         if _CONTROL_STATE.database_write:
             try:
                 async with _database() as db:
-                        await _insert_measurement(iteration_start, db)
+                    await _insert_measurement(iteration_start, db)
             except ConnectionError as err:
                 log_error(f'Database connection error: {err}')
 
