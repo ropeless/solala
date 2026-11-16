@@ -66,6 +66,21 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
             await cache()
         self.assertEqual(cache._state, ErrorReturn.state)
 
+    async def test_expiry_is_set_when_success_logging_is_disabled(self) -> None:
+        for result_factory, expected_lifetime in ((valid, 30), (interim, 5)):
+            with self.subTest(result_factory=result_factory):
+                async def wrapped():
+                    return result_factory(12)
+
+                cache = LifecycleCache(
+                    wrapped, old=30, young=10, retry=5,
+                    log_error=self.error_log, log_info=self.info_log,
+                    valid_message='', interim_message='',
+                )
+                self.assertEqual(await cache(), 12)
+                self.assertEqual(cache._invalid_timestamp, self.now + expected_lifetime)
+                self.info_log.assert_not_called()
+
     async def test_valid_young_returns_without_refresh(self) -> None:
         self.results = [valid(12)]
         cache = self.make_cache(default=7)
