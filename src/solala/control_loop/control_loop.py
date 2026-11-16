@@ -279,9 +279,9 @@ class _SettingsPersistenceState:
     """
     Hold the settings file path and serialize settings persistence.
 
-    Lock order: persistence (5) -> connections (10) -> control (20) -> cache (30).
+    Lock order: connections (10) -> persistence (15) -> control (20) -> cache (30).
     """
-    lock: OrderedAsyncRLock = field(default_factory=lambda: OrderedAsyncRLock(5))
+    lock: OrderedAsyncRLock = field(default_factory=lambda: OrderedAsyncRLock(15))
     path: Path | None = None
 
 
@@ -1897,24 +1897,24 @@ async def _save_settings() -> None:
     """
     Persist settings across restarts.
 
-    Serialize the snapshot and write so an older save cannot overwrite newer
-    settings. The connections and control locks are released before file I/O.
+    Acquire the connections lock before the persistence lock, as callers may
+    already hold the connections lock. Serialize snapshots and writes so an
+    older save cannot overwrite newer settings.
     """
-    async with _CONTROL_STATE.settings_persistence.lock:
-        settings_path = _CONTROL_STATE.settings_persistence.path
-        if settings_path is None:
-            return
+    async with _connections_state():
+        async with _CONTROL_STATE.settings_persistence.lock:
+            settings_path = _CONTROL_STATE.settings_persistence.path
+            if settings_path is None:
+                return
 
-        async with _connections_state():
             async with _control_settings_state():
                 settings = _get_settings(_CONTROL_STATE)
 
-        try:
-            with open(settings_path, 'w') as file:
-                print(settings.model_dump_json(), file=file)
-        except Exception as err:
-            log_error(f'Error saving settings: {err}')
-
+            try:
+                with open(settings_path, 'w') as file:
+                    print(settings.model_dump_json(), file=file)
+            except Exception as err:
+                log_error(f'Error saving settings: {err}')
 
 async def _load_settings() -> bool:
     """
