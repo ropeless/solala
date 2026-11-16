@@ -322,7 +322,8 @@ class _ControlState:
         # Invalidate cached status
         await self.cache.price_cache.invalidate()
         await self.cache.price_forecast_cache.invalidate()
-        self.cache.demand_window_cache.clear()
+        async with _cache_state():
+            self.cache.demand_window_cache.clear()
 
     async def reset_forecaster(self, forecaster: SolarForecaster | None, settings: ForecasterConnection | None) -> None:
         assert (forecaster is None) == (settings is None)
@@ -330,7 +331,8 @@ class _ControlState:
         self.connections.forecaster_settings = settings
 
         # Invalidate cached status
-        self.cache.solar_forecast_cache.clear()
+        async with _cache_state():
+            self.cache.solar_forecast_cache.clear()
 
     async def reset_consumer(self, consumer_name: str, consumer: PowerConsumer | None,
                              settings: ConsumerConnection | None) -> None:
@@ -726,12 +728,12 @@ async def get_demand_window(day: date) -> PossibleDemandWindow:
 
     Returns None if the demand window is not active on the given day.
     """
-    async with _control_state() as state:
+    async with _cache_state() as cache:
         key = _DateKey(day.year, day.month, day.day)
-        demand_window_cache: _DemandWindowCache | None = state.cache.demand_window_cache.get(key)
+        demand_window_cache: _DemandWindowCache | None = cache.demand_window_cache.get(key)
         if demand_window_cache is None:
             demand_window_cache: _DemandWindowCache = _DemandWindowCache(day)
-            state.cache.demand_window_cache[key] = demand_window_cache
+            cache.demand_window_cache[key] = demand_window_cache
         demand_window_cache: _DemandWindowCache
     return await demand_window_cache()  # defers to _get_demand_window
 
@@ -872,12 +874,12 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
     """
     Get the daily forecast for solar power, for the given date.
     """
-    async with _control_state() as state:
+    async with _cache_state() as cache:
         key = _DateKey(day.year, day.month, day.day)
-        solar_forecast_cache: _SolarForecastCache | None = state.cache.solar_forecast_cache.get(key)
+        solar_forecast_cache: _SolarForecastCache | None = cache.solar_forecast_cache.get(key)
         if solar_forecast_cache is None:
             solar_forecast_cache: _SolarForecastCache = _SolarForecastCache(day)
-            state.cache.solar_forecast_cache[key] = solar_forecast_cache
+            cache.solar_forecast_cache[key] = solar_forecast_cache
         solar_forecast_cache: _SolarForecastCache
     return await solar_forecast_cache()  # defers to _get_solar_forecast
 
