@@ -708,9 +708,8 @@ async def get_price_forecast() -> Sequence[Price]:
     prices: Sequence[Price] = await _CONTROL_STATE.price_forecast_cache()  # defers to _get_price_forecast()
 
     # A race condition or error may mean that the first forecast is already in the past.
-    # Don't bother to update `next_price_forecast_check` as it is no more than 5 minutes in the future.
     while len(prices) > 0 and prices[0].end_time < now():
-        log_info('Price forecast contains old data: {prices[0]}')
+        log_info(f'Price forecast contains old data: {prices[0]}')
         prices = prices[1:]
 
     needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
