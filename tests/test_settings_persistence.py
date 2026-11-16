@@ -28,7 +28,7 @@ class SettingsPersistenceTestCase(unittest.IsolatedAsyncioTestCase):
         snapshots: list[int] = []
 
         def get_settings(state: object) -> SimpleNamespace:
-            self.assertTrue(self.state.settings_persistence.lock.locked())
+            self.assertTrue(self.state.settings_persistence.lock._owner is asyncio.current_task())
             self.assertTrue(self.state.connections.lock._owner is not None)
             self.assertTrue(self.state.control.lock._owner is not None)
             snapshots.append(version)
@@ -57,7 +57,7 @@ class SettingsPersistenceTestCase(unittest.IsolatedAsyncioTestCase):
         original_open = open
 
         def checked_open(*args: object, **kwargs: object):
-            self.assertTrue(self.state.settings_persistence.lock.locked())
+            self.assertTrue(self.state.settings_persistence.lock._owner is asyncio.current_task())
             self.assertFalse(self.state.connections.lock._owner is not None)
             self.assertFalse(self.state.control.lock._owner is not None)
             return original_open(*args, **kwargs)
