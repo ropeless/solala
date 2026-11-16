@@ -31,12 +31,21 @@ class DatabaseConnectionLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         self.pool._pool.connection = connection
 
+    @asynccontextmanager
+    async def _borrow(self):
+        context = self.pool.reserve_database()
+        try:
+            async with context as db:
+                yield db
+        finally:
+            self.pool._release_request()
+
     async def _start_borrower(self):
         entered = asyncio.Event()
         release = asyncio.Event()
 
         async def borrower():
-            async with self.pool.solala_database():
+            async with self._borrow():
                 entered.set()
                 await release.wait()
 
@@ -63,7 +72,7 @@ class DatabaseConnectionLifecycleTests(unittest.IsolatedAsyncioTestCase):
         closing = asyncio.create_task(self.pool.close())
         await asyncio.sleep(0)
         with self.assertRaises(ConnectionError):
-            async with self.pool.solala_database():
+            async with self._borrow():
                 pass
         release.set()
         await task
