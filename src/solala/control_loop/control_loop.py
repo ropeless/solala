@@ -608,7 +608,8 @@ async def get_control_mode() -> ControlMode:
     Get what the control loop is aiming to do for the user.
     """
     async with _control_state() as state:
-        return copy.copy(state.control.control_mode)
+        async with _control_settings_state():
+            return copy.copy(state.control.control_mode)
 
 
 async def get_prev_control_mode() -> ControlMode:
@@ -616,7 +617,8 @@ async def get_prev_control_mode() -> ControlMode:
     Get what the control loop last did for the user.
     """
     async with _control_state() as state:
-        return copy.copy(state.control.prev_state.control_mode)
+        async with _control_settings_state():
+            return copy.copy(state.control.prev_state.control_mode)
 
 
 async def get_power_status() -> PowerStatus:
@@ -1003,38 +1005,39 @@ async def set_control(
         ControlLoopError: If either pair of price thresholds is not strictly ordered.
     """
     async with _control_state() as state:
-        control_mode = state.control.control_mode
-
-        if disable_export_price_threshold is None:
-            disable_export_price_threshold = control_mode.disable_export_price_threshold
-        if enable_export_price_threshold is None:
-            enable_export_price_threshold = control_mode.enable_export_price_threshold
-        if start_charge_price_threshold is None:
-            start_charge_price_threshold = control_mode.start_charge_price_threshold
-        if stop_charge_price_threshold is None:
-            stop_charge_price_threshold = control_mode.stop_charge_price_threshold
-
-        if disable_export_price_threshold >= enable_export_price_threshold:
-            raise ControlLoopError('export price threshold: disable must be less than enable')
-        if start_charge_price_threshold >= stop_charge_price_threshold:
-            raise ControlLoopError('charge price threshold: start must be less than stop')
-
-        if battery_mode is not None:
-            control_mode.battery_mode = battery_mode
-        if inverter_mode is not None:
-            control_mode.inverter_mode = inverter_mode
-        if battery_policy is not None:
-            control_mode.battery_policy = battery_policy
-        if inverter_policy is not None:
-            control_mode.inverter_policy = inverter_policy
-
-        control_mode.disable_export_price_threshold = disable_export_price_threshold
-        control_mode.enable_export_price_threshold = enable_export_price_threshold
-        control_mode.start_charge_price_threshold = start_charge_price_threshold
-        control_mode.stop_charge_price_threshold = stop_charge_price_threshold
-
-        await _save_settings()
-        log_info('Control: {json.dumps(state.control.control_mode.to_json())}')
+        async with _control_settings_state():
+            control_mode = state.control.control_mode
+    
+            if disable_export_price_threshold is None:
+                disable_export_price_threshold = control_mode.disable_export_price_threshold
+            if enable_export_price_threshold is None:
+                enable_export_price_threshold = control_mode.enable_export_price_threshold
+            if start_charge_price_threshold is None:
+                start_charge_price_threshold = control_mode.start_charge_price_threshold
+            if stop_charge_price_threshold is None:
+                stop_charge_price_threshold = control_mode.stop_charge_price_threshold
+    
+            if disable_export_price_threshold >= enable_export_price_threshold:
+                raise ControlLoopError('export price threshold: disable must be less than enable')
+            if start_charge_price_threshold >= stop_charge_price_threshold:
+                raise ControlLoopError('charge price threshold: start must be less than stop')
+    
+            if battery_mode is not None:
+                control_mode.battery_mode = battery_mode
+            if inverter_mode is not None:
+                control_mode.inverter_mode = inverter_mode
+            if battery_policy is not None:
+                control_mode.battery_policy = battery_policy
+            if inverter_policy is not None:
+                control_mode.inverter_policy = inverter_policy
+    
+            control_mode.disable_export_price_threshold = disable_export_price_threshold
+            control_mode.enable_export_price_threshold = enable_export_price_threshold
+            control_mode.start_charge_price_threshold = start_charge_price_threshold
+            control_mode.stop_charge_price_threshold = stop_charge_price_threshold
+    
+            await _save_settings()
+            log_info('Control: {json.dumps(state.control.control_mode.to_json())}')
 
 
 async def log_registers(match: str | re.Pattern[str] | None) -> None:
@@ -1374,7 +1377,8 @@ async def _control_loop() -> None:
     while _CONTROL_STATE.control_loop_running:
         async with _control_state() as state:
             state.iteration_start = iteration_start = now()  # timestamp to calculate loop sleep time
-            await _control_step(state)
+            async with _control_settings_state():
+                await _control_step(state)
             listeners = state.control_loop_listeners.copy()
             state.cache.last_power_valid = False
             cur_log_registers: re.Pattern[str] | None = state.registers_to_log
