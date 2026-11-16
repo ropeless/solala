@@ -161,10 +161,11 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.results = [interim(12, until_time=datetime.now(UTC)), error('unavailable')]
         cache = self.make_cache(default=7)
-        with patch('solala.utils.lifecycle_cache._datetime_to_monotonic', return_value=112.0):
+        with patch('solala.utils.lifecycle_cache._datetime_to_monotonic', return_value=112.0) as convert:
             self.assertEqual(await cache(), 12)
+            convert.assert_called_once()
+            self.assertEqual(cache._refresh_timestamp, 112.0)
         self.assertEqual(cache._invalid_timestamp, 130.0)
-        self.assertEqual(cache._refresh_timestamp, 112.0)
         self.now = 111.0
         self.assertEqual(await cache(), 12)
         self.assertEqual(self.calls, 1)
@@ -303,7 +304,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(cache._task)
         self.assertIs(cache._state, LifecycleState.INITIAL)
         self.assertEqual(cache._timestamp, 100.0)
-        self.assertEqual(cache._cache_timestamp, 100.0)
+        self.assertEqual(cache._invalid_timestamp, 100.0)
         self.assertEqual(cache._cache, 7)
         self.error_log.assert_called_once()
         self.assertIn('ValueError: unexpected failure', self.error_log.call_args.args[0])
@@ -326,7 +327,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(await cache(), 12)
         timestamp = cache._timestamp
-        cache_timestamp = cache._cache_timestamp
+        invalid_timestamp = cache._invalid_timestamp
         self.now += 10
         self.assertEqual(await cache(), 12)
         await asyncio.wait_for(started.wait(), timeout=1)
@@ -334,7 +335,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(cache._task)
         self.assertEqual(cache._state, LifecycleState.VALID)
         self.assertEqual(cache._timestamp, timestamp)
-        self.assertEqual(cache._cache_timestamp, cache_timestamp)
+        self.assertEqual(cache._invalid_timestamp, invalid_timestamp)
         self.assertEqual(cache._cache, 12)
         self.error_log.assert_called_once()
         self.assertIn('RuntimeError: background failure', self.error_log.call_args.args[0])
@@ -533,7 +534,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(cache._task)
                 self.assertIs(cache.state, LifecycleState.INITIAL)
                 self.assertEqual(cache.timestamp, 100.0)
-                self.assertEqual(cache._cache_timestamp, 100.0)
+                self.assertEqual(cache._invalid_timestamp, 100.0)
                 self.assertIs(cache._cache, NO_VALUE)
 
 
