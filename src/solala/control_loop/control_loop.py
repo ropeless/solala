@@ -632,9 +632,9 @@ async def _get_price_now() -> LifecycleReturn[Price]:
     log_info(f'Updated current price: {price.buy_price} {price.feed_in_price} {note}')
 
     if price.is_estimate:
-        return interim(price)
+        return interim(price, expires_at=price.end_time)
     else:
-        return valid(price, until_time=price.end_time)
+        return valid(price, refresh_at=price.end_time, expires_at=price.end_time)
 
 
 async def get_price_now_no_estimate(max_tries: int = 10) -> Price:
@@ -734,7 +734,7 @@ async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
         # The issue will be corrected naturally when next polled.
         return error('Price forecast not available. Error: power pricer changed')
 
-    return valid(prices, until_time=prices[0].end_time)
+    return valid(prices, refresh_at=prices[0].end_time)
 
 
 async def get_consumers_status() -> dict[str, ConsumerStatus]:
