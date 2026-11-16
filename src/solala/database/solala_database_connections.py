@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, AsyncContextManager
 from contextlib import asynccontextmanager
 from types import TracebackType
 from typing import Self
@@ -46,11 +46,11 @@ class SolalaDatabaseConnections:
     Manage a pool of asynchronous connections to the Solala database.
 
     Use the pool as an asynchronous context manager to open and close it.
-    Individual database wrappers are borrowed with `solala_database()`.
+    Individual database wrappers are borrowed through `reserve_database()`.
 
     Example:
         async with SolalaDatabaseConnections(...) as pool:
-            async with pool.solala_database() as db:
+            async with pool.reserve_database() as db:
                 # Use the database.
     """
 
@@ -111,39 +111,52 @@ class SolalaDatabaseConnections:
         """
         return self._connection_info
 
-    @asynccontextmanager
-    async def solala_database(
+    def reserve_database(
             self,
             commit_on_close: bool = True,
             timeout: float | None = None,
-    ) -> AsyncIterator[SolalaDatabase]:
+    ) -> AsyncContextManager[SolalaDatabase]:
         """
-        Borrow a database wrapper and protect the pool until it is returned.
+        Register a pending database request before any asynchronous operation.
 
-        Pending acquisitions count as active requests, so shutdown waits for
-        them as well as for connections already in use.
+        The caller must return the reservation using `_release_request()`
+        after the returned context manager exits, including on cancellation.
         """
         if self._closing:
             raise ConnectionError('Database pool is closing')
         self._active_requests += 1
         self._drained.clear()
-        try:
-            await self.open(wait=False)
-            async with self._pool.connection(timeout=timeout) as conn:
-                db = SolalaDatabase(conn)
-                try:
-                    yield db
-                    if commit_on_close:
-                        await conn.commit()
-                    else:
-                        await conn.rollback()
-                finally:
-                    # noinspection PyProtectedMember
-                    db._take_connection()
-        finally:
-            self._active_requests -= 1
-            if self._active_requests == 0:
-                self._drained.set()
+        return self._borrow_database(commit_on_close, timeout)
+
+    def _release_request(self) -> None:
+        """
+        Finish a reservation after connection cleanup.
+        """
+        self._active_requests -= 1
+        if self._active_requests == 0:
+            self._drained.set()
+
+    @asynccontextmanager
+    async def _borrow_database(
+            self,
+            commit_on_close: bool,
+            timeout: float | None,
+    ) -> AsyncIterator[SolalaDatabase]:
+        """
+        Borrow, finalise and return a connection under an active reservation.
+        """
+        await self.open(wait=False)
+        async with self._pool.connection(timeout=timeout) as conn:
+            db = SolalaDatabase(conn)
+            try:
+                yield db
+                if commit_on_close:
+                    await conn.commit()
+                else:
+                    await conn.rollback()
+            finally:
+                # noinspection PyProtectedMember
+                db._take_connection()
 
     def get_stats(self) -> dict[str, int]:
         """
