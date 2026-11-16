@@ -1403,9 +1403,9 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
                 to_log_text[name] = value
         try:
             async with await _get_database_lease() as lease:
-            async with lease.solala_database() as db:
-                await db.insert_registers_numeric(timestamp, to_log_numeric)
-                await db.insert_registers_text(timestamp, to_log_text)
+                async with lease.solala_database() as db:
+                    await db.insert_registers_numeric(timestamp, to_log_numeric)
+                    await db.insert_registers_text(timestamp, to_log_text)
         except (ConnectionError, DatabaseError) as err:
             log_error(f'Database connection error: {err}')
 
