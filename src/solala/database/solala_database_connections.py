@@ -138,6 +138,7 @@ class SolalaDatabaseConnections:
         )
         self._active_leases = 0
         self._closing = False
+        self._closed = False
         self._drained = asyncio.Event()
         self._drained.set()
         self._close_lock = asyncio.Lock()
@@ -269,9 +270,12 @@ class SolalaDatabaseConnections:
         Close the connection pool and release its connections.
         """
         async with self._close_lock:
+            if self._closed:
+                return
             self._closing = True
             await self._drained.wait()
             await self._pool.close()
+            self._closed = True
 
     async def __aenter__(self) -> Self:
         await self.open(wait=True)
