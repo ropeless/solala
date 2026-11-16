@@ -221,17 +221,26 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.now = 120.0
         self.assertEqual(await cache(), 7)
 
-    async def test_refresh_deadline_cannot_follow_expiry(self) -> None:
+    async def test_refresh_deadline_is_capped_at_expiry(self) -> None:
         from datetime import UTC, datetime
 
         target = datetime.now(UTC)
         self.results = [interim(12, refresh_at=target, expires_at=target)]
         cache = self.make_cache(default=7)
         with patch('solala.utils.lifecycle_cache._datetime_to_monotonic', side_effect=[120.0, 110.0]):
-            with self.assertRaisesRegex(ValueError, 'refresh_at must not be later than expires_at'):
-                await cache()
-        self.assertIs(cache.state, LifecycleState.INITIAL)
-        self.assertEqual(cache._cache, 7)
+            self.assertEqual(await cache(), 12)
+        self.assertEqual(cache._refresh_timestamp, 110.0)
+        self.assertEqual(cache._invalid_timestamp, 110.0)
+
+    async def test_implicit_refresh_deadline_is_capped_at_expiry(self) -> None:
+        from datetime import UTC, datetime
+
+        self.results = [interim(12, expires_at=datetime.now(UTC))]
+        cache = self.make_cache(default=7)
+        with patch('solala.utils.lifecycle_cache._datetime_to_monotonic', return_value=102.0):
+            self.assertEqual(await cache(), 12)
+        self.assertEqual(cache._refresh_timestamp, 102.0)
+        self.assertEqual(cache._invalid_timestamp, 102.0)
 
     async def test_error_retries_only_after_retry_interval(self) -> None:
         self.results = [error('unavailable'), valid(15)]
