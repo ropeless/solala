@@ -116,7 +116,7 @@ class LifecycleCache[T]:
     never expires. An expired value must not be returned even if a refresh
     subsequently returns ErrorReturn.
 
-    An external caller can call invalidate() to reset the cache to INITIAL,
+    An external caller can call `invalidate()` to reset the cache to INITIAL,
     discard its value, and cancel any active refresh.
 
     The cache tracks the latest result state and its monotonic timestamp.
@@ -190,7 +190,7 @@ class LifecycleCache[T]:
     `asyncio.CancelledError` represents cancellation, not a lifecycle
     ERROR, and is not converted into one. Cancelling an individual
     foreground caller must not cancel a refresh shared with other callers.
-    Invalidation resets the cache immediately, cancels its active refresh,
+    Invalidation resets the cache immediately, cancels any active refresh,
     and prevents results from older refresh generations from being committed.
     A new caller can start a refresh while the cancelled task is still
     finishing. Foreground callers awaiting an invalidated refresh receive
@@ -469,6 +469,7 @@ class LifecycleCache[T]:
 def _datetime_to_monotonic(target_dt: datetime) -> float:
     """
     Convert a timezone-aware datetime to an absolute monotonic timestamp.
+    This is only an approximation as there may be small discrepancies.
 
     Args:
         target_dt: Deadline with timezone information.
