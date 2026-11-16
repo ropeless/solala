@@ -293,6 +293,7 @@ class _ControlState:
     Mutable connection, control, and cache fields use their dedicated locks.
     """
     connections: _ConnectionsState = field(default_factory=_ConnectionsState)
+    database_lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     control: _ControlSettingsState = field(default_factory=_ControlSettingsState)
     cache: _CacheState = field(default_factory=_CacheState)
     settings_persistence: _SettingsPersistenceState = field(default_factory=_SettingsPersistenceState)
@@ -1215,12 +1216,12 @@ async def disconnect_forecaster() -> None:
 
 async def connect_database(database_connection: DatabaseConnection) -> None:
     """
-    Configure or replace the database connection pool.
+    Replace the database pool without holding the connections lock while draining.
 
     Args:
         database_connection: Database connection configuration.
     """
-    async with _connections_state():
+    async with _CONTROL_STATE.database_lifecycle_lock:
         database_connections = SolalaDatabaseConnections(
             role=database_connection.role,
             password=database_connection.password,
@@ -1228,23 +1229,38 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
             port=database_connection.port,
             database_name=database_connection.database_name,
         )
-        await disconnect_database()
-        await _CONTROL_STATE.reset_database(database_connections, database_connection)
-        connection_info = database_connections.get_connection_info()
-        log_info(f'Database connection: {json.dumps(connection_info)}')
-        await _save_settings()
-        # no need to _reconfigure_registers(state)
+        async with _connections_state() as connections:
+            old_pool = connections.database_connections
+            if old_pool is not None:
+                old_pool.begin_close()
+            await _CONTROL_STATE.reset_database(None, None)
+
+        if old_pool is not None:
+            await old_pool.close()
+
+        async with _connections_state():
+            await _CONTROL_STATE.reset_database(database_connections, database_connection)
+            connection_info = database_connections.get_connection_info()
+            log_info(f'Database connection: {json.dumps(connection_info)}')
+            await _save_settings()
+            # no need to _reconfigure_registers(state)
 
 
 async def disconnect_database() -> None:
     """
-    Close the database connection pool.
+    Close the database pool without blocking the connections lock during drain.
     """
-    async with _connections_state():
-        if _CONTROL_STATE.connections.database_connections is not None:
-            await _CONTROL_STATE.connections.database_connections.close()
-            await _CONTROL_STATE.reset_database(None, None)
+    async with _CONTROL_STATE.database_lifecycle_lock:
+        async with _connections_state() as connections:
+            old_pool = connections.database_connections
+            if old_pool is not None:
+                old_pool.begin_close()
+                await _CONTROL_STATE.reset_database(None, None)
+
+        if old_pool is not None:
+            await old_pool.close()
             log_info('Database disconnected')
+
         await _save_settings()
         # no need to _reconfigure_registers(state)
 
