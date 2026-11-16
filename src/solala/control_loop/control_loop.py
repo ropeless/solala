@@ -395,7 +395,6 @@ async def _cache_state() -> AsyncIterator[_CacheState]:
         yield _CONTROL_STATE.cache
 
 
-
 # ============================================================================
 #  Public control loop functions
 # ============================================================================
