@@ -1042,19 +1042,18 @@ async def log_registers(match: str | re.Pattern[str] | None) -> None:
     Select registers to log to the database.
 
     Args:
-        match: Regular expression matching register names, or None to disable logging.
-            Use `MATCH_ALL` to match all registers.
+    match: Regular expression matching register names, or None to disable logging.
+        Use `MATCH_ALL` to match all registers.
     """
-    async with _control_state() as state:
-        if match is None:
-            state.registers_to_log = None
-            state.registers_to_log_str = None
-        elif isinstance(match, re.Pattern):
-            state.registers_to_log = match
-            state.registers_to_log_str = match.pattern
-        else:
-            state.registers_to_log = re.compile(match)
-            state.registers_to_log_str = match
+    if match is None:
+        _CONTROL_STATE.registers_to_log = None
+        _CONTROL_STATE.registers_to_log_str = None
+    elif isinstance(match, re.Pattern):
+        _CONTROL_STATE.registers_to_log = match
+        _CONTROL_STATE.registers_to_log_str = match.pattern
+    else:
+        _CONTROL_STATE.registers_to_log = re.compile(match)
+        _CONTROL_STATE.registers_to_log_str = match
 
 
 # =============================================================================
