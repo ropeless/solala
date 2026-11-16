@@ -542,9 +542,9 @@ async def get_settings() -> Settings:
     Returns:
         The current settings.
     """
-    async with _control_state() as state:
+    async with _connections_state():
         async with _control_settings_state():
-            return _get_settings(state)
+            return _get_settings(_CONTROL_STATE)
 
 
 async def add_control_loop_listener(listener: LoopListener) -> None:
