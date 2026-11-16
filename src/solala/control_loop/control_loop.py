@@ -620,7 +620,7 @@ async def get_prev_control_mode() -> ControlMode:
     Get what the control loop last did for the user.
     """
     async with _control_state() as state:
-        return copy.copy(state.control.prev_state.control.control_mode)
+        return copy.copy(state.control.prev_state.control_mode)
 
 
 async def get_power_status() -> PowerStatus:
@@ -1474,7 +1474,7 @@ async def _control_step(state: _ControlState) -> None:
                 state.control.control_mode.battery_mode = BatteryMode.ENABLE
 
     # Battery Mode
-    if state.control.control_mode.battery_mode != prev_state.control.control_mode.battery_mode:
+    if state.control.control_mode.battery_mode != prev_state.control_mode.battery_mode:
         match state.control.control_mode.battery_mode:
             case BatteryMode.ENABLE:
                 await power_controller.enable_battery()
@@ -1500,7 +1500,7 @@ async def _control_step(state: _ControlState) -> None:
                 state.control.control_mode.inverter_mode = InverterMode.ENABLE
 
     # Inverter Mode
-    if state.control.control_mode.inverter_mode != prev_state.control.control_mode.inverter_mode:
+    if state.control.control_mode.inverter_mode != prev_state.control_mode.inverter_mode:
         if state.control.control_mode.inverter_mode == InverterMode.ENABLE:
             await power_controller.enable_inverter()
         # All other cases are managed below as they have a reversion time limit
@@ -1515,7 +1515,7 @@ async def _control_step(state: _ControlState) -> None:
         log_error(f'Error processing command: {state.control.control_mode.inverter_mode}. Error: {e}')
 
     # Remember how we left things
-    prev_state.control.control_mode = copy.copy(state.control.control_mode)
+    prev_state.control_mode = copy.copy(state.control.control_mode)
 
 
 def _connect_dummy_controller(controller_connection: DummyControllerConnection) -> PowerController:
