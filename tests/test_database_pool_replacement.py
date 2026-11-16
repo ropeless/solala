@@ -16,8 +16,12 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
     """
 
     def setUp(self) -> None:
-        self.previous_pool = control._CONTROL_STATE.connections.database_connections
-        self.previous_settings = control._CONTROL_STATE.connections.database_settings
+        # Each IsolatedAsyncioTestCase uses a separate event loop. Give each
+        # test fresh control state so its asyncio locks cannot retain a binding
+        # to the event loop of an earlier test.
+        state_patch = patch.object(control, '_CONTROL_STATE', control._ControlState())
+        state_patch.start()
+        self.addCleanup(state_patch.stop)
         self.settings = SimpleNamespace(
             role='test', password='test', host='localhost',
             port=5432, database_name='solala',
@@ -26,10 +30,6 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
         self.save_patch.start()
         self.addCleanup(self.save_patch.stop)
         self.pools = []
-
-    async def asyncTearDown(self) -> None:
-        control._CONTROL_STATE.connections.database_connections = self.previous_pool
-        control._CONTROL_STATE.connections.database_settings = self.previous_settings
 
     def _pool(self):
         pool = SolalaDatabaseConnections(role='test', password='test')
