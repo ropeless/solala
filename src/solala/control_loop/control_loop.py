@@ -897,54 +897,17 @@ async def _get_solar_forecast(day: date) -> LifecycleReturn[DailySolarForecast]:
     return valid(forecast)
 
 
-@asynccontextmanager
-async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaDatabase]:
+async def _get_database_lease():
     """
-    Borrow a database connection from the pool for an asynchronous context.
+    Reserve the configured database pool before releasing the connections lock.
 
-    Args:
-        commit_on_close: Whether to commit when returning the connection to the pool.
-
-    Yields:
-        A database interface backed by the borrowed connection.
-
-    Raises:
-        ConnectionError: If the database pool is unavailable or changes while in use.
+    The caller must enter the lease as an asynchronous context manager.
     """
     async with _connections_state() as connections:
-        log_debug('Requesting DB connection from pool')
-        database_connections = connections.database_connections
-        if database_connections is None:
+        pool = connections.database_connections
+        if pool is None:
             raise ConnectionError('Database pool not connected')
-        database_connections: SolalaDatabaseConnections
-
-        # DEBUG
-        stats = database_connections.get_stats()
-        log_debug(f'Pool size: {stats["pool_size"]}')
-        log_debug(f'Available: {stats["pool_available"]}')
-        log_debug(f'Waiting:   {stats["requests_waiting"]}')
-        log_debug(f'Requests:  {stats["requests_waiting"]}')
-
-    await database_connections.open(wait=False)
-    db: SolalaDatabase = await database_connections.get_db()
-
-    # Release the connections lock, then provide the database connection
-    try:
-        yield db
-    finally:
-        # Release the database connection
-        async with _connections_state() as connections:
-            log_debug('Returning DB connection to pool')
-            if database_connections is not connections.database_connections:
-                raise ConnectionError('Database pool closed while in use')
-            await database_connections.put_db(db, commit_on_close)
-
-        # DEBUG
-        stats = database_connections.get_stats()
-        log_debug(f'Pool size: {stats["pool_size"]}')
-        log_debug(f'Available: {stats["pool_available"]}')
-        log_debug(f'Waiting:   {stats["requests_waiting"]}')
-        log_debug(f'Requests:  {stats["requests_waiting"]}')
+        return pool.reserve()
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
@@ -961,8 +924,9 @@ async def solala_database_measurements(day: date) -> Sequence[Measurement]:
         Measurements for the day, or an empty sequence if database access fails.
     """
     try:
-        async with solala_database() as db:
-            return await db.get_measurements(day)
+        async with await _get_database_lease() as lease:
+            async with lease.solala_database() as db:
+                return await db.get_measurements(day)
     except (ConnectionError, DatabaseError) as err:
         log_error(f'Database connection error: {err}')
         return []
@@ -1291,8 +1255,9 @@ async def _database_loop() -> None:
         iteration_start = now()
         if _CONTROL_STATE.database_write:
             try:
-                async with solala_database() as db:
-                    await _insert_measurement(iteration_start, db)
+                async with await _get_database_lease() as lease:
+                    async with lease.solala_database() as db:
+                        await _insert_measurement(iteration_start, db)
             except ConnectionError as err:
                 log_error(f'Database connection error: {err}')
 
@@ -1437,7 +1402,8 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
             elif isinstance(value, str):
                 to_log_text[name] = value
         try:
-            async with solala_database() as db:
+            async with await _get_database_lease() as lease:
+            async with lease.solala_database() as db:
                 await db.insert_registers_numeric(timestamp, to_log_numeric)
                 await db.insert_registers_text(timestamp, to_log_text)
         except (ConnectionError, DatabaseError) as err:
