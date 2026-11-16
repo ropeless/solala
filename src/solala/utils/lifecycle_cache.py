@@ -412,17 +412,17 @@ class LifecycleCache[T]:
         if lifecycle_return.state is LifecycleState.INTERIM:
             if self._interim_message != '':
                 self._info_log(self._interim_message.format(value=value))
-                if lifecycle_return.until_time is None:
-                    self._invalid_timestamp = timestamp + self._retry
-                else:
-                    self._invalid_timestamp = _datetime_to_monotonic(lifecycle_return.until_time)
+            if lifecycle_return.until_time is None:
+                self._invalid_timestamp = timestamp + self._retry
+            else:
+                self._invalid_timestamp = _datetime_to_monotonic(lifecycle_return.until_time)
         elif lifecycle_return.state is LifecycleState.VALID:
             if self._valid_message != '':
                 self._info_log(self._valid_message.format(value=value))
-                if lifecycle_return.until_time is None:
-                    self._invalid_timestamp = timestamp + self._old
-                else:
-                    self._invalid_timestamp = _datetime_to_monotonic(lifecycle_return.until_time)
+            if lifecycle_return.until_time is None:
+                self._invalid_timestamp = timestamp + self._old
+            else:
+                self._invalid_timestamp = _datetime_to_monotonic(lifecycle_return.until_time)
 
         self._cache = value
         self._timestamp = timestamp
