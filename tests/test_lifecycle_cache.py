@@ -712,5 +712,37 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls, 2)
 
 
+    async def test_invalidate_ignores_exception_from_obsolete_refresh(self) -> None:
+        started = asyncio.Event()
+
+        async def wrapped():
+            self.calls += 1
+            if self.calls == 1:
+                started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    raise RuntimeError('obsolete refresh failed')
+            return valid(42)
+
+        cache = LifecycleCache(
+            wrapped, old=30, young=10, retry=5,
+            default=7, log_error=self.error_log, log_info=self.info_log,
+        )
+        caller = asyncio.create_task(cache())
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        await asyncio.wait_for(cache.invalidate(), timeout=1)
+        with self.assertRaisesRegex(RuntimeError, 'obsolete refresh failed'):
+            await caller
+        await asyncio.sleep(0)
+        self.assertIs(cache.state, LifecycleState.INITIAL)
+        self.assertEqual(cache._cache, 7)
+        self.error_log.assert_called_once()
+        self.assertIn('obsolete refresh failed', self.error_log.call_args.args[0])
+        self.assertEqual(await cache(), 42)
+        self.assertEqual(self.calls, 2)
+
+
 if __name__ == '__main__':
     unittest.main()
