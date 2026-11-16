@@ -67,7 +67,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cache._state, ErrorReturn.state)
 
     async def test_expiry_is_set_when_success_logging_is_disabled(self) -> None:
-        for result_factory, expected_lifetime in ((valid, 30), (interim, 5)):
+        for result_factory, expected_lifetime in ((valid, 30), (interim, 30)):
             with self.subTest(result_factory=result_factory):
                 async def wrapped():
                     return result_factory(12)
@@ -155,6 +155,25 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
         self.now += 1
         self.assertEqual(await cache(), 7)
         self.assertEqual(self.calls, 2)
+
+    async def test_interim_until_time_controls_refresh_not_expiry(self) -> None:
+        from datetime import UTC, datetime
+
+        self.results = [interim(12, until_time=datetime.now(UTC)), error('unavailable')]
+        cache = self.make_cache(default=7)
+        with patch('solala.utils.lifecycle_cache._datetime_to_monotonic', return_value=112.0):
+            self.assertEqual(await cache(), 12)
+        self.assertEqual(cache._invalid_timestamp, 130.0)
+        self.assertEqual(cache._refresh_timestamp, 112.0)
+        self.now = 111.0
+        self.assertEqual(await cache(), 12)
+        self.assertEqual(self.calls, 1)
+        self.now = 112.0
+        self.assertEqual(await cache(), 12)
+        self.assertEqual(self.calls, 2)
+        self.now = 130.0
+        self.results = [error('still unavailable')]
+        self.assertEqual(await cache(), 7)
 
     async def test_error_retries_only_after_retry_interval(self) -> None:
         self.results = [error('unavailable'), valid(15)]
