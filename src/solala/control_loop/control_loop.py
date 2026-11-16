@@ -1446,6 +1446,7 @@ async def _control_step(state: _ControlState) -> None:
                 control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
                 or control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
         )
+    # A cached price may also serve the UI or database loop; no need to skip this lookup when the controller is absent.
     price: Price | None = await get_price_now() if state.connections.pricer is not None and needs_price else None
 
     async with _control_settings_state() as control_state:
