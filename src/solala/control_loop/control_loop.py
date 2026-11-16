@@ -1377,8 +1377,7 @@ async def _control_loop() -> None:
     while _CONTROL_STATE.control_loop_running:
         async with _control_state() as state:
             state.iteration_start = iteration_start = now()  # timestamp to calculate loop sleep time
-            async with _control_settings_state():
-                await _control_step(state)
+            await _control_step(state)
             listeners = state.control_loop_listeners.copy()
             state.cache.last_power_valid = False
             cur_log_registers: re.Pattern[str] | None = state.registers_to_log
@@ -1451,16 +1450,8 @@ async def _control_step(state: _ControlState) -> None:
     Args:
         state: the current control state (with the lock acquired).
     """
-    # Check to see if the power controller has changed.
-    prev_state = state.control.prev_state
-    if state.connections.controller is None:
-        # No work can be done if there is no power controller.
-        prev_state.reset(None)
-        return
-    power_controller: PowerController = state.connections.controller
-    if power_controller is not prev_state.controller:
-        prev_state.reset(power_controller)
-
+    # The legacy lock protects connection lifetime during the migration.
+    # Price retrieval does not need to hold the control-settings lock.
     # Fetch the price once if either automatic policy needs it.
     control_mode = state.control.control_mode
     needs_price = (
@@ -1469,57 +1460,68 @@ async def _control_step(state: _ControlState) -> None:
     )
     price: Price | None = await get_price_now() if state.connections.pricer is not None and needs_price else None
 
-    # Battery Policy - may change Battery Mode
-    if price is not None:
-        if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
-            buy_price = price.buy_price
-            if buy_price < state.control.control_mode.start_charge_price_threshold:
-                state.control.control_mode.battery_mode = BatteryMode.FORCE_CHARGE
-            elif buy_price > state.control.control_mode.enable_export_price_threshold:
-                state.control.control_mode.battery_mode = BatteryMode.ENABLE
+    async with _control_settings_state():
+        # Check to see if the power controller has changed.
+        prev_state = state.control.prev_state
+        if state.connections.controller is None:
+            # No work can be done if there is no power controller.
+            prev_state.reset(None)
+            return
+        power_controller: PowerController = state.connections.controller
+        if power_controller is not prev_state.controller:
+            prev_state.reset(power_controller)
+    
+        # Battery Policy - may change Battery Mode
+        if price is not None:
+            if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
+                buy_price = price.buy_price
+                if buy_price < state.control.control_mode.start_charge_price_threshold:
+                    state.control.control_mode.battery_mode = BatteryMode.FORCE_CHARGE
+                elif buy_price > state.control.control_mode.enable_export_price_threshold:
+                    state.control.control_mode.battery_mode = BatteryMode.ENABLE
 
-    # Battery Mode
-    if state.control.control_mode.battery_mode != prev_state.control_mode.battery_mode:
-        match state.control.control_mode.battery_mode:
-            case BatteryMode.ENABLE:
-                await power_controller.enable_battery()
-            case BatteryMode.DISABLE:
-                await power_controller.disable_battery()
-            case BatteryMode.FORCE_CHARGE:
-                await power_controller.force_charge()
-            case BatteryMode.FORCE_DISCHARGE:
-                await power_controller.force_discharge()
-            case BatteryMode.CHARGE_ONLY:
-                await power_controller.charge_only()
-            case BatteryMode.DISCHARGE_ONLY:
-                await power_controller.discharge_only()
+        # Battery Mode
+        if state.control.control_mode.battery_mode != prev_state.control_mode.battery_mode:
+            match state.control.control_mode.battery_mode:
+                case BatteryMode.ENABLE:
+                    await power_controller.enable_battery()
+                case BatteryMode.DISABLE:
+                    await power_controller.disable_battery()
+                case BatteryMode.FORCE_CHARGE:
+                    await power_controller.force_charge()
+                case BatteryMode.FORCE_DISCHARGE:
+                    await power_controller.force_discharge()
+                case BatteryMode.CHARGE_ONLY:
+                    await power_controller.charge_only()
+                case BatteryMode.DISCHARGE_ONLY:
+                    await power_controller.discharge_only()
 
-    # Inverter Policy - may change Inverter Mode
-    if price is not None:
-        if control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
-            feed_in_price = price.feed_in_price
-            if feed_in_price < state.control.control_mode.disable_export_price_threshold:
-                state.control.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
-            elif feed_in_price > state.control.control_mode.disable_export_price_threshold:
-                state.control.control_mode.inverter_mode = InverterMode.ENABLE
+        # Inverter Policy - may change Inverter Mode
+        if price is not None:
+            if control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
+                feed_in_price = price.feed_in_price
+                if feed_in_price < state.control.control_mode.disable_export_price_threshold:
+                    state.control.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+                elif feed_in_price > state.control.control_mode.disable_export_price_threshold:
+                    state.control.control_mode.inverter_mode = InverterMode.ENABLE
 
-    # Inverter Mode
-    if state.control.control_mode.inverter_mode != prev_state.control_mode.inverter_mode:
-        if state.control.control_mode.inverter_mode == InverterMode.ENABLE:
-            await power_controller.enable_inverter()
-        # All other cases are managed below as they have a reversion time limit
-    # Inverter modes requiring keep-alive pulse
-    try:
-        match state.control.control_mode.inverter_mode:
-            case InverterMode.DISABLE:
-                await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
-            case InverterMode.ZERO_EXPORT:
-                await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
-    except Exception as e:
-        log_error(f'Error processing command: {state.control.control_mode.inverter_mode}. Error: {e}')
+        # Inverter Mode
+        if state.control.control_mode.inverter_mode != prev_state.control_mode.inverter_mode:
+            if state.control.control_mode.inverter_mode == InverterMode.ENABLE:
+                await power_controller.enable_inverter()
+            # All other cases are managed below as they have a reversion time limit
+        # Inverter modes requiring keep-alive pulse
+        try:
+            match state.control.control_mode.inverter_mode:
+                case InverterMode.DISABLE:
+                    await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
+                case InverterMode.ZERO_EXPORT:
+                    await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
+        except Exception as e:
+            log_error(f'Error processing command: {state.control.control_mode.inverter_mode}. Error: {e}')
 
-    # Remember how we left things
-    prev_state.control_mode = copy.copy(state.control.control_mode)
+        # Remember how we left things
+        prev_state.control_mode = copy.copy(state.control.control_mode)
 
 
 def _connect_dummy_controller(controller_connection: DummyControllerConnection) -> PowerController:
