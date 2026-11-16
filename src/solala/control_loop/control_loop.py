@@ -1400,7 +1400,8 @@ async def _control_loop() -> None:
             async with _connections_state():
                 await _control_step(state)
             listeners = state.control_loop_listeners.copy()
-            state.cache.last_power_valid = False
+            async with _cache_state() as cache:
+                cache.last_power_valid = False
             cur_log_registers: re.Pattern[str] | None = state.registers_to_log
 
         # Update the listeners while not holding the control state lock.
