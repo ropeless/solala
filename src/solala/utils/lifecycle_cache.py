@@ -312,6 +312,9 @@ class LifecycleCache[T]:
             except asyncio.CancelledError:
                 if not task.done():
                     raise
+            except Exception:
+                # _refresh_done() logs unexpected failures from obsolete tasks.
+                pass
 
     async def __call__(self) -> T:
         """
