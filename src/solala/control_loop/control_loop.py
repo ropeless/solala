@@ -1382,18 +1382,18 @@ async def _control_loop() -> None:
     await asyncio.sleep(_get_sleep_time())
 
     while _CONTROL_STATE.control_loop_running:
-        async with _control_state() as state:
-            state.iteration_start = iteration_start = now()  # timestamp to calculate loop sleep time
-            # Hold the connections lock while issuing commands to prevent
-            # controller replacement or closure during a control step.
-            async with _connections_state():
-                await _control_step(state)
-            listeners = state.control_loop_listeners.copy()
-            async with _cache_state() as cache:
-                cache.last_power_valid = False
-            cur_log_registers: re.Pattern[str] | None = state.registers_to_log
+        state = _CONTROL_STATE
+        state.iteration_start = iteration_start = now()  # timestamp to calculate loop sleep time
+        # Hold the connections lock while issuing commands to prevent
+        # controller replacement or closure during a control step.
+        async with _connections_state():
+            await _control_step(state)
+        listeners = state.control_loop_listeners.copy()
+        async with _cache_state() as cache:
+            cache.last_power_valid = False
+        cur_log_registers: re.Pattern[str] | None = state.registers_to_log
 
-        # Update the listeners while not holding the control state lock.
+        # Update the listeners without holding the connections or cache lock.
         await _cur_log_registers(cur_log_registers)
         _update_listeners(listeners)
 
@@ -1461,7 +1461,6 @@ async def _control_step(state: _ControlState) -> None:
     Args:
         state: the current control state (with the lock acquired).
     """
-    # The legacy lock protects connection lifetime during the migration.
     # Price retrieval does not need to hold the control-settings lock.
     # Fetch the price once if either automatic policy needs it.
     async with _control_settings_state() as control_state:
@@ -1502,7 +1501,7 @@ async def _control_step(state: _ControlState) -> None:
         battery_changed = requested_mode.battery_mode != prev_state.control_mode.battery_mode
         inverter_changed = requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
 
-    # Connection lifetime remains protected by the caller's legacy lock.
+    # Connection lifetime is protected by the caller's connections lock.
     # Do not block control-mode getters while waiting for the controller.
     if battery_changed:
         match requested_mode.battery_mode:
