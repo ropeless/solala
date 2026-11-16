@@ -70,15 +70,14 @@ class Constants:
     PRICE_OLD: int = 5 * 60  # number of seconds a price forecast is valid
 
     PRICE_FORECAST_DURATION: int = 18  # how many hours into the future to forecast price
-    PRICE_FORECAST_YOUNG: int = 60 * 60  # number of seconds a price forecast cache is fresh
-    PRICE_FORECAST_OLD: int = 12 * 60 * 60  # number of seconds a price forecast cache is valid
+    PRICE_FORECAST_YOUNG: int = 30 * 60  # number of seconds a price forecast cache is fresh
+    PRICE_FORECAST_OLD: int = 60 * 60  # number of seconds a price forecast cache is valid
 
-    PRICE_DEMAND_WINDOW_YOUNG: int = 60 * 60  # number of seconds a price demand window cache is fresh
+    PRICE_DEMAND_WINDOW_YOUNG: int = 1 * 60 * 60  # number of seconds a price demand window cache is fresh
     PRICE_DEMAND_WINDOW_OLD: int = 12 * 60 * 60  # number of seconds a price demand window cache is valid
 
-    SOLAR_FORECAST_RETRY: int = 1  # number of minutes a solar forecast is valid
-    SOLAR_FORECAST_YOUNG: int = 3 * 60  # number of minutes a solar forecast is valid
-    SOLAR_FORECAST_OLD: int = 3 * 60  # number of minutes a solar forecast is valid
+    SOLAR_FORECAST_YOUNG: int = 1 * 60 * 60  # number of seconds a solar forecast is valid
+    SOLAR_FORECAST_OLD: int = 3 * 60 * 60  # number of seconds a solar forecast is valid
 
     MAX_LOG_HISTORY: int = 1000  # Maximum number of log lines in the GUI log
     BUY_PRICE_AMBER: float = 20  # Buy price threshold for amber colour

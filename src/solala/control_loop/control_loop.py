@@ -5,7 +5,7 @@ import re
 from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, fields, Field
-from datetime import datetime, UTC, timedelta, date
+from datetime import datetime, UTC, date
 from functools import partial
 from inspect import getmembers
 from pathlib import Path
@@ -30,7 +30,7 @@ from solala.delegates.power_controller.modbus_power_controller.modbus import Mod
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
 from solala.delegates.power_controller.power_controller import PowerController
 from solala.delegates.power_controller.power_controller import PowerStatus
-from solala.delegates.power_pricer.amber_power_pricer.amber_power_pricer import Price, AmberPowerPricer
+from solala.delegates.power_pricer.amber_power_pricer.amber_power_pricer import AmberPowerPricer
 from solala.delegates.power_pricer.dummy_power_pricer.dummy_power_pricer import DummyPowerPricer
 from solala.delegates.power_pricer.power_pricer import PowerPricer
 from solala.delegates.power_pricer.price import Price
@@ -88,6 +88,8 @@ _NO_SOLAR_FORECAST = DailySolarForecast([])
 _NO_REGISTERS: RegisterBank = RegisterBank({})
 
 MATCH_ALL: re.Pattern[str] = re.compile('.*')  # regular expression to match anything
+
+type PossibleDemandWindow = tuple[datetime, datetime] | None
 
 
 @dataclass(frozen=True)
@@ -152,7 +154,8 @@ class _PriceForecastCache(LifecycleCache[Sequence[Price]]):
             default=(),
         )
 
-class _DemandWindowCache(LifecycleCache[Price]):
+
+class _DemandWindowCache(LifecycleCache[PossibleDemandWindow]):
 
     def __init__(self, day: date):
         super().__init__(
@@ -161,7 +164,20 @@ class _DemandWindowCache(LifecycleCache[Price]):
             log_info=log_info,
             young=Constants.PRICE_DEMAND_WINDOW_YOUNG,
             old=Constants.PRICE_DEMAND_WINDOW_OLD,
-            default=_NO_PRICE,
+            default=None,
+        )
+
+
+class _SolarForecastCache(LifecycleCache[DailySolarForecast]):
+
+    def __init__(self, day: date):
+        super().__init__(
+            partial(_get_solar_forecast, day),
+            log_error=log_error,
+            log_info=log_info,
+            young=Constants.SOLAR_FORECAST_YOUNG,
+            old=Constants.SOLAR_FORECAST_OLD,
+            default=_NO_SOLAR_FORECAST,
         )
 
 
@@ -195,11 +211,7 @@ class _ControlState:
     price_cache: _PriceCache = field(default_factory=_PriceCache)
     demand_window_cache: dict[_DateKey, _DemandWindowCache] = field(default_factory=dict)
     price_forecast_cache: _PriceForecastCache = field(default_factory=_PriceForecastCache)
-
-    next_price_demand_window_check: datetime = _MIN_DATE
-
-    last_solar_forecast: dict[_DateKey, DailySolarForecast] = field(default_factory=dict)
-    next_solar_forecast_check: datetime = _MIN_DATE
+    solar_forecast_cache: dict[_DateKey, _SolarForecastCache] = field(default_factory=dict)
 
     # Internal control loop tracking variables.
     lock: AsyncRLock = field(default_factory=AsyncRLock)
@@ -269,10 +281,8 @@ class _ControlState:
 
         # Invalidate cached status
         await self.price_cache.invalidate()
+        await self.price_forecast_cache.invalidate()
         self.demand_window_cache.clear()
-
-        self.last_price_forecast = ()
-        self.next_price_forecast_check = _MIN_DATE
 
     async def reset_forecaster(self, forecaster: SolarForecaster | None, settings: ForecasterConnection | None) -> None:
         assert (forecaster is None) == (settings is None)
@@ -280,8 +290,7 @@ class _ControlState:
         self.forecaster_settings = settings
 
         # Invalidate cached status
-        self.last_price_forecast = ()
-        self.next_solar_forecast_check = _MIN_DATE
+        self.solar_forecast_cache.clear()
 
     async def reset_consumer(self, consumer_name: str, consumer: PowerConsumer | None,
                              settings: ConsumerConnection | None) -> None:
@@ -617,7 +626,7 @@ async def _get_price_now() -> LifecycleReturn[Price]:
         if price.is_estimate:
             return interim(price)
         else:
-            return valid(price)
+            return valid(price, until_time=price.end_time)
 
 
 async def get_price_now_no_estimate(max_tries: int = 10) -> Price:
@@ -643,7 +652,7 @@ async def get_price_now_no_estimate(max_tries: int = 10) -> Price:
     return price
 
 
-async def get_demand_window(day: date) -> Price:
+async def get_demand_window(day: date) -> PossibleDemandWindow:
     """
     Get the demand window for the given day.
 
@@ -659,7 +668,7 @@ async def get_demand_window(day: date) -> Price:
     return await demand_window_cache()  # defers to _get_demand_window
 
 
-async def _get_demand_window(day: date) -> LifecycleReturn[tuple[datetime, datetime] | None]:
+async def _get_demand_window(day: date) -> LifecycleReturn[PossibleDemandWindow]:
     async with _control_state() as state:
         pricer = state.pricer
         if pricer is None:
@@ -678,33 +687,31 @@ async def get_price_forecast() -> Sequence[Price]:
 
     Errors will be logged but should not raise an exception.
     """
-    async with _control_state() as state:
-        prices: Sequence[Price] = state.last_price_forecast
-        needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
-        timestamp = now()
-        if state.next_price_forecast_check <= timestamp or len(prices) == 0 or prices[0].end_time < timestamp:
-            # Need to go to the pricer to get a price forecast
-            pricer = state.pricer
-            if pricer is None:
-                log_error('Price forecast not available. Error: power pricer not connected')
-                return ()
+    return await _CONTROL_STATE.price_forecast_cache()  # defers to _get_price_forecast()
 
-            try:
-                # Plus one to account for possible race condition (see below).
-                prices: list[Price] = await pricer.get_price_forecast(needed_forecasts + 1)
-                log_info('Price forecast updating')
-                state.last_price_forecast = prices
-                state.next_price_forecast_check = timestamp + timedelta(minutes=Constants.PRICE_FORECAST_AGE)
-            except Exception as err:
-                log_error(f'Price forecast not available. Error: {err}')
+
+async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
+    async with _control_state() as state:
+        pricer = state.pricer
+        if pricer is None:
+            return error('Price forecast not available. Error: power pricer not connected')
+
+        needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
+
+        try:
+            # Plus one to account for possible race condition (see below).
+            prices: list[Price] = await pricer.get_price_forecast(needed_forecasts + 1)
+            log_info('Price forecast updated')
+        except Exception as err:
+            return error(f'Price forecast not available. Error: {err}')
 
         # A race condition or error may mean that the first forecast is already in the past.
         # Don't bother to update `next_price_forecast_check` as it is no more than 5 minutes in the future.
-        while len(prices) > 0 and prices[0].end_time < timestamp:
+        while len(prices) > 0 and prices[0].end_time < now():
             log_info('Price forecast contains old data: {prices[0]}')
             prices = prices[1:]
 
-    return prices[:needed_forecasts]
+    return valid(prices[:needed_forecasts])
 
 
 async def get_consumers_status() -> dict[str, ConsumerStatus]:
@@ -782,29 +789,23 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
     Get the daily forecast for solar power, for the given date.
     """
     async with _control_state() as state:
+        key = _DateKey(day.year, day.month, day.day)
+        solar_forecast_cache: _SolarForecastCache | None = state.solar_forecast_cache.get(key)
+        if solar_forecast_cache is None:
+            solar_forecast_cache: _SolarForecastCache = _SolarForecastCache(day)
+            state.solar_forecast_cache[key] = solar_forecast_cache
+        solar_forecast_cache: _SolarForecastCache
+    return await solar_forecast_cache()  # defers to _get_solar_forecast
+
+
+async def _get_solar_forecast(day: date) -> LifecycleReturn[DailySolarForecast]:
+    async with _control_state() as state:
         forecaster = state.forecaster
         if forecaster is None:
-            log_error('Solar forecast not available. Error: solar forecaster not connected')
-            return _NO_SOLAR_FORECAST
-
-        # Clear stale forecasts
-        timestamp = now()
-        if state.next_price_forecast_check <= timestamp:
-            state.last_solar_forecast.clear()
-            state.next_price_forecast_check = timestamp + timedelta(minutes=Constants.SOLAR_FORECAST_AGE)
-
-        key = _DateKey(day.year, day.month, day.day)
-        forecast: DailySolarForecast | None = state.last_solar_forecast.get(key)
-        if forecast is None:
-            try:
-                forecast: DailySolarForecast = await forecaster.get_forecast(day)
-                log_info('Updating solar forecast: day = {key}')
-                state.last_solar_forecast[key] = forecast
-            except Exception as err:
-                log_error(f'Solar forecast not available. Error: {err!r}')
-                return _NO_SOLAR_FORECAST
-
-    return forecast
+            return error('Solar forecast not available. Error: solar forecaster not connected')
+        forecast: DailySolarForecast = await forecaster.get_forecast(day)
+        log_info(f'Updating solar forecast: day = {day.strftime("%Y-%m-%d")}')
+        return valid(forecast)
 
 
 @asynccontextmanager
@@ -992,7 +993,7 @@ async def connect_controller(controller_connection: ControllerConnection) -> Non
             )
 
         await disconnect_controller()
-        state.reset_controller(controller, controller_connection)
+        await state.reset_controller(controller, controller_connection)
         connection_info = controller.get_connection_info()
         log_info(f'Power controller connection: {json.dumps(connection_info)}')
         await _save_settings()
@@ -1006,7 +1007,7 @@ async def disconnect_controller() -> None:
     async with _control_state() as state:
         if state.controller is not None:
             await state.controller.close()
-            state.reset_controller(None, None)
+            await state.reset_controller(None, None)
             log_info('Power controller disconnected')
         await _save_settings()
         await _reconfigure_registers(state)
@@ -1033,7 +1034,7 @@ async def connect_pricer(pricer_connection: PricerConnection) -> None:
             raise ControlLoopError('unknown pricer connection type', errors={'type': pricer_connection.type})
 
         await disconnect_pricer()
-        state.reset_pricer(pricer, pricer_connection)
+        await state.reset_pricer(pricer, pricer_connection)
         connection_info = pricer.get_connection_info()
         log_info(f'Power pricer connection: {json.dumps(connection_info)}')
         await _save_settings()
@@ -1047,7 +1048,7 @@ async def disconnect_pricer() -> None:
     async with _control_state() as state:
         if state.pricer is not None:
             await state.pricer.close()
-            state.reset_pricer(None, None)
+            await state.reset_pricer(None, None)
             log_info('Pricer disconnected')
         await _save_settings()
         await _reconfigure_registers(state)
@@ -1080,7 +1081,7 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
             )
 
         await disconnect_consumer(name)
-        state.reset_consumer(name, consumer, consumer_connection)
+        await state.reset_consumer(name, consumer, consumer_connection)
         connection_info = consumer.get_connection_info()
         log_info(f'Power consumer {name!r} connection: {json.dumps(connection_info)}')
         await _save_settings()
@@ -1095,7 +1096,7 @@ async def disconnect_consumer(name: str) -> None:
         consumer: PowerConsumer | None = state.consumers.get(name)
         if consumer is not None:
             await consumer.close()
-            state.reset_consumer(name, None, None)
+            await state.reset_consumer(name, None, None)
             log_info('Power consumer {name!r} disconnected')
         await _save_settings()
         await _reconfigure_registers(state)
@@ -1124,7 +1125,7 @@ async def connect_forecaster(forecaster_connection: ForecasterConnection) -> Non
             )
 
         await disconnect_forecaster()
-        state.reset_forecaster(forecaster, forecaster_connection)
+        await state.reset_forecaster(forecaster, forecaster_connection)
         connection_info = forecaster.get_connection_info()
         log_info(f'Solar forecaster connection: {json.dumps(connection_info)}')
         await _save_settings()
@@ -1138,7 +1139,7 @@ async def disconnect_forecaster() -> None:
     async with _control_state() as state:
         if state.forecaster is not None:
             await state.forecaster.close()
-            state.reset_forecaster(None, None)
+            await state.reset_forecaster(None, None)
             log_info('Solar forecaster disconnected')
         await _save_settings()
         await _reconfigure_registers(state)
@@ -1160,7 +1161,7 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
             database_name=database_connection.database_name,
         )
         await disconnect_database()
-        state.reset_database(database_connections, database_connection)
+        await state.reset_database(database_connections, database_connection)
         connection_info = database_connections.get_connection_info()
         log_info(f'Database connection: {json.dumps(connection_info)}')
         await _save_settings()
@@ -1174,7 +1175,7 @@ async def disconnect_database() -> None:
     async with _control_state() as state:
         if state.database_connections is not None:
             await state.database_connections.close()
-            state.reset_database(None, None)
+            await state.reset_database(None, None)
             log_info('Database disconnected')
         await _save_settings()
         # no need to _reconfigure_registers(state)
