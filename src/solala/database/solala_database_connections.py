@@ -176,6 +176,12 @@ class SolalaDatabaseConnections:
         """
         await self._pool.open(wait=wait, timeout=timeout)
 
+    def begin_close(self) -> None:
+        """
+        Reject new reservations before the pool is detached from shared state.
+        """
+        self._closing = True
+
     async def close(self) -> None:
         """
         Close the connection pool and release its connections.
