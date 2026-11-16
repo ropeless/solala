@@ -39,13 +39,11 @@ def make_connection_string(
     return f'postgresql://{safe_role}:{safe_password}@{host}:{port}{db_path}'
 
 
-
 class DatabaseLease:
     """
-    Reserve a pool lifetime across asynchronous database operations.
+    Reserve a database pool lifetime while a caller uses it.
 
-    A lease is acquired synchronously before the caller releases its
-    connection-state lock. It must be entered exactly once.
+    The reservation is created synchronously and released by the context.
     """
 
     def __init__(self, owner: 'SolalaDatabaseConnections') -> None:
@@ -54,8 +52,8 @@ class DatabaseLease:
         self._released = False
 
     async def __aenter__(self) -> 'DatabaseLease':
-        if self._entered:
-            raise RuntimeError('database lease already entered')
+        if self._entered or self._released:
+            raise RuntimeError('database lease is not available')
         self._entered = True
         return self
 
@@ -65,18 +63,101 @@ class DatabaseLease:
         self.release()
 
     def release(self) -> None:
-        """Release the reservation, including when acquisition is cancelled."""
-        if self._released:
-            return
-        self._released = True
-        self._owner._release_lease()
+        """
+        Release this lease exactly once.
+        """
+        if not self._released:
+            self._released = True
+            self._owner._release_lease()
+
+    @asynccontextmanager
+    async def solala_database(
+            self,
+            commit_on_close: bool = True,
+            timeout: float | None = None,
+    ) -> AsyncIterator[SolalaDatabase]:
+        """
+        Borrow a connection under this lease.
+        """
+        if not self._entered or self._released:
+            raise RuntimeError('database lease is not active')
+        async with self._owner._borrow_database(commit_on_close, timeout) as db:
+            yield db
+
+
+class SolalaDatabaseConnections:
+    """
+    Manage a pool of asynchronous connections to the Solala database.
+
+    Use the pool as an asynchronous context manager to open and close it.
+    Individual database wrappers can be borrowed with `solala_database()`
+    or with the paired `get_db()` and `put_db()` methods.
+
+    Example:
+        async with SolalaDatabaseConnections(...) as pool:
+            async with pool.solala_database() as db:
+                # Use the database.
+    """
+
+    def __init__(
+            self,
+            role: str,
+            password: str,
+            host: str = DEFAULT_DB_HOST,
+            port: int = DEFAULT_DB_PORT,
+            database_name: str = DEFAULT_DB_NAME,
+            min_pool_size: int = 2,
+            max_pool_size: int = 8,
+    ) -> None:
+        """
+        Configure the connection pool without opening it.
+
+        Args:
+            role: Database username.
+            password: Database password.
+            host: Database server host.
+            port: Database server port.
+            database_name: Database name.
+            min_pool_size: Minimum number of pooled connections.
+            max_pool_size: Maximum number of pooled connections.
+        """
+        connection_string = make_connection_string(
+            role=role,
+            password=password,
+            host=host,
+            port=port,
+            database_name=database_name,
+        )
+        self._pool = AsyncConnectionPool(
+            conninfo=connection_string,
+            min_size=min_pool_size,
+            max_size=max_pool_size,
+            open=False,
+        )
+        self._active_leases = 0
+        self._closing = False
+        self._drained = asyncio.Event()
+        self._drained.set()
+        self._close_lock = asyncio.Lock()
+        self._connection_info: JSONDict = {
+            'role': role,
+            'host': host,
+            'port': port,
+            'database_name': database_name,
+        }
+
+    def get_connection_info(self) -> JSONDict:
+        """
+        Return connection settings (without the password).
+
+        Returns:
+            Connection role, host, port, and database name.
+        """
+        return self._connection_info
 
     def reserve(self) -> DatabaseLease:
         """
-        Reserve the pool lifetime before any asynchronous acquisition.
-
-        The caller must enter and release the returned lease. This method is
-        synchronous so it can be called under the connections-state lock.
+        Reserve the pool before asynchronous connection acquisition.
         """
         if self._closing:
             raise ConnectionError('Database pool is closing')
@@ -85,6 +166,9 @@ class DatabaseLease:
         return DatabaseLease(self)
 
     def _release_lease(self) -> None:
+        """
+        Notify a closing pool when the last borrower finishes.
+        """
         self._active_leases -= 1
         if self._active_leases == 0:
             self._drained.set()
@@ -95,7 +179,9 @@ class DatabaseLease:
             commit_on_close: bool = True,
             timeout: float | None = None,
     ) -> AsyncIterator[SolalaDatabase]:
-        """Borrow a database wrapper with its own lifetime reservation."""
+        """
+        Borrow a connection using a managed lifetime reservation.
+        """
         lease = self.reserve()
         try:
             async with lease:
@@ -110,7 +196,9 @@ class DatabaseLease:
             commit_on_close: bool,
             timeout: float | None,
     ) -> AsyncIterator[SolalaDatabase]:
-        """Manage a borrowed connection without creating another lease."""
+        """
+        Manage a pooled connection under an existing lease.
+        """
         await self.open(wait=False)
         async with self._pool.connection(timeout=timeout) as conn:
             db = SolalaDatabase(conn)
