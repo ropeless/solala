@@ -347,9 +347,6 @@ class _ControlState:
         self.database_settings = settings
 
 
-# Global control loop state
-# For exclusive asynchronous access to the control state use `_control_state()`.
-_CONTROL_STATE: _ControlState = _ControlState()
 
 _LOG_SRC = '[control loop] '  # prefix for log messages
 
@@ -1914,3 +1911,7 @@ async def _load_settings() -> bool:
             except Exception as err:
                 log_error(f'Error loading settings: {err}')
         return False
+
+
+# Initialize global state after the cache delegates have been defined.
+_CONTROL_STATE: _ControlState = _ControlState()
