@@ -250,9 +250,12 @@ class _ControlSettingsState:
     """
     Group control settings under the control lock.
 
-    Control fields will be migrated from _ControlState incrementally.
+    Own desired control modes and previous applied control state.
     """
     lock: OrderedAsyncRLock = field(default_factory=lambda: OrderedAsyncRLock(20))
+
+    control_mode: ControlMode = field(default_factory=ControlMode)
+    prev_state: _PrevControl = field(default_factory=_PrevControl)
 
 
 @dataclass
@@ -277,9 +280,6 @@ class _ControlState:
     control: _ControlSettingsState = field(default_factory=_ControlSettingsState)
     cache: _CacheState = field(default_factory=_CacheState)
 
-    # What the user is asking the control loop to do.
-    control_mode: ControlMode = field(default_factory=ControlMode)
-
     # Caches of status components.
     last_power: PowerStatus = field(default_factory=lambda: _NO_POWER)
     last_power_valid: bool = False
@@ -290,7 +290,6 @@ class _ControlState:
 
     # Internal control loop tracking variables.
     lock: AsyncRLock = field(default_factory=AsyncRLock)
-    prev_state: _PrevControl = field(default_factory=_PrevControl)
     control_loop_running: bool = True
     control_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_loop_listeners: list[LoopListener] = field(default_factory=list)
@@ -613,7 +612,7 @@ async def get_control_mode() -> ControlMode:
     Get what the control loop is aiming to do for the user.
     """
     async with _control_state() as state:
-        return copy.copy(state.control_mode)
+        return copy.copy(state.control.control_mode)
 
 
 async def get_prev_control_mode() -> ControlMode:
@@ -621,7 +620,7 @@ async def get_prev_control_mode() -> ControlMode:
     Get what the control loop last did for the user.
     """
     async with _control_state() as state:
-        return copy.copy(state.prev_state.control_mode)
+        return copy.copy(state.control.prev_state.control.control_mode)
 
 
 async def get_power_status() -> PowerStatus:
@@ -1008,7 +1007,7 @@ async def set_control(
         ControlLoopError: If either pair of price thresholds is not strictly ordered.
     """
     async with _control_state() as state:
-        control_mode = state.control_mode
+        control_mode = state.control.control_mode
 
         if disable_export_price_threshold is None:
             disable_export_price_threshold = control_mode.disable_export_price_threshold
@@ -1039,7 +1038,7 @@ async def set_control(
         control_mode.stop_charge_price_threshold = stop_charge_price_threshold
 
         await _save_settings()
-        log_info('Control: {json.dumps(state.control_mode.to_json())}')
+        log_info('Control: {json.dumps(state.control.control_mode.to_json())}')
 
 
 async def log_registers(match: str | re.Pattern[str] | None) -> None:
@@ -1455,7 +1454,7 @@ async def _control_step(state: _ControlState) -> None:
         state: the current control state (with the lock acquired).
     """
     # Check to see if the power controller has changed.
-    prev_state = state.prev_state
+    prev_state = state.control.prev_state
     if state.connections.controller is None:
         # No work can be done if there is no power controller.
         prev_state.reset(None)
@@ -1466,17 +1465,17 @@ async def _control_step(state: _ControlState) -> None:
 
     # Battery Policy - may change Battery Mode
     if state.connections.pricer is not None:
-        if state.control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
+        if state.control.control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
             price: Price = await get_price_now()
             buy_price = price.buy_price
-            if buy_price < state.control_mode.start_charge_price_threshold:
-                state.control_mode.battery_mode = BatteryMode.FORCE_CHARGE
-            elif buy_price > state.control_mode.enable_export_price_threshold:
-                state.control_mode.battery_mode = BatteryMode.ENABLE
+            if buy_price < state.control.control_mode.start_charge_price_threshold:
+                state.control.control_mode.battery_mode = BatteryMode.FORCE_CHARGE
+            elif buy_price > state.control.control_mode.enable_export_price_threshold:
+                state.control.control_mode.battery_mode = BatteryMode.ENABLE
 
     # Battery Mode
-    if state.control_mode.battery_mode != prev_state.control_mode.battery_mode:
-        match state.control_mode.battery_mode:
+    if state.control.control_mode.battery_mode != prev_state.control.control_mode.battery_mode:
+        match state.control.control_mode.battery_mode:
             case BatteryMode.ENABLE:
                 await power_controller.enable_battery()
             case BatteryMode.DISABLE:
@@ -1492,31 +1491,31 @@ async def _control_step(state: _ControlState) -> None:
 
     # Inverter Policy - may change Inverter Mode
     if state.connections.pricer is not None:
-        if state.control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
+        if state.control.control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
             price = await get_price_now()
             feed_in_price = price.feed_in_price
-            if feed_in_price < state.control_mode.disable_export_price_threshold:
-                state.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
-            elif feed_in_price > state.control_mode.disable_export_price_threshold:
-                state.control_mode.inverter_mode = InverterMode.ENABLE
+            if feed_in_price < state.control.control_mode.disable_export_price_threshold:
+                state.control.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+            elif feed_in_price > state.control.control_mode.disable_export_price_threshold:
+                state.control.control_mode.inverter_mode = InverterMode.ENABLE
 
     # Inverter Mode
-    if state.control_mode.inverter_mode != prev_state.control_mode.inverter_mode:
-        if state.control_mode.inverter_mode == InverterMode.ENABLE:
+    if state.control.control_mode.inverter_mode != prev_state.control.control_mode.inverter_mode:
+        if state.control.control_mode.inverter_mode == InverterMode.ENABLE:
             await power_controller.enable_inverter()
         # All other cases are managed below as they have a reversion time limit
     # Inverter modes requiring keep-alive pulse
     try:
-        match state.control_mode.inverter_mode:
+        match state.control.control_mode.inverter_mode:
             case InverterMode.DISABLE:
                 await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
             case InverterMode.ZERO_EXPORT:
                 await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
     except Exception as e:
-        log_error(f'Error processing command: {state.control_mode.inverter_mode}. Error: {e}')
+        log_error(f'Error processing command: {state.control.control_mode.inverter_mode}. Error: {e}')
 
     # Remember how we left things
-    prev_state.control_mode = copy.copy(state.control_mode)
+    prev_state.control.control_mode = copy.copy(state.control.control_mode)
 
 
 def _connect_dummy_controller(controller_connection: DummyControllerConnection) -> PowerController:
@@ -1771,19 +1770,19 @@ async def _reconfigure_registers(state: _ControlState) -> None:
 
     # Add status/battery and status/inverter registers
     registers: dict[str, Register] = {
-        'status/battery/mode': CallRegister(lambda: _CONTROL_STATE.control_mode.battery_mode.name),
-        'status/battery/policy': CallRegister(lambda: _CONTROL_STATE.control_mode.battery_policy.name),
+        'status/battery/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.battery_mode.name),
+        'status/battery/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.battery_policy.name),
         'status/battery/start_charge_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control_mode.start_charge_price_threshold),
+            lambda: _CONTROL_STATE.control.control_mode.start_charge_price_threshold),
         'status/battery/stop_charge_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control_mode.stop_charge_price_threshold),
+            lambda: _CONTROL_STATE.control.control_mode.stop_charge_price_threshold),
 
-        'status/inverter/mode': CallRegister(lambda: _CONTROL_STATE.control_mode.inverter_mode.name),
-        'status/inverter/policy': CallRegister(lambda: _CONTROL_STATE.control_mode.inverter_policy.name),
+        'status/inverter/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_mode.name),
+        'status/inverter/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_policy.name),
         'status/inverter/enable_export_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control_mode.enable_export_price_threshold),
+            lambda: _CONTROL_STATE.control.control_mode.enable_export_price_threshold),
         'status/inverter/disable_export_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control_mode.disable_export_price_threshold),
+            lambda: _CONTROL_STATE.control.control_mode.disable_export_price_threshold),
     }
 
     # Add status/power registers
@@ -1855,7 +1854,7 @@ def _get_settings(state: _ControlState) -> Settings:
     Returns:
         Settings representing the current connections and control configuration.
     """
-    control_mode = state.control_mode
+    control_mode = state.control.control_mode
     return Settings(
         controller=state.connections.controller_settings,
         pricer=state.connections.pricer_settings,
