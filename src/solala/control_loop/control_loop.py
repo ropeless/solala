@@ -1461,6 +1461,7 @@ async def _control_step(state: _ControlState) -> None:
 
         control_mode = control_state.control_mode
         # The policy may have changed while pricing was being fetched.
+        # A newly enabled automatic policy may wait until the next control step for a price lookup.
         if price is not None:
             if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
                 if price.buy_price < control_mode.start_charge_price_threshold:
