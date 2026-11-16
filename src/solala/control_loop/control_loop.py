@@ -593,7 +593,10 @@ async def get_control_mode() -> ControlMode:
 
 async def get_prev_control_mode() -> ControlMode:
     """
-    Get what the control loop last did for the user.
+    Get the control mode last requested by the control loop.
+
+    This is not a verified hardware state. Inverter DISABLE and ZERO_EXPORT
+    commands are retried every iteration, even when a command fails.
     """
     async with _control_settings_state() as state:
         return copy.copy(state.prev_state.control_mode)
@@ -1503,6 +1506,8 @@ async def _control_step(state: _ControlState) -> None:
         await power_controller.enable_inverter()
 
     # These inverter modes require a keep-alive command on every iteration.
+    # A failed command is logged and retried next iteration; the previous mode
+    # records the request, not confirmation of the inverter's actual state.
     try:
         match requested_mode.inverter_mode:
             case InverterMode.DISABLE:
