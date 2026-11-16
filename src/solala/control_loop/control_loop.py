@@ -1457,10 +1457,17 @@ async def _control_step(state: _ControlState) -> None:
     if power_controller is not prev_state.controller:
         prev_state.reset(power_controller)
 
+    # Fetch the price once if either automatic policy needs it.
+    control_mode = state.control.control_mode
+    needs_price = (
+        control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
+        or control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
+    )
+    price: Price | None = await get_price_now() if state.connections.pricer is not None and needs_price else None
+
     # Battery Policy - may change Battery Mode
-    if state.connections.pricer is not None:
-        if state.control.control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
-            price: Price = await get_price_now()
+    if price is not None:
+        if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
             buy_price = price.buy_price
             if buy_price < state.control.control_mode.start_charge_price_threshold:
                 state.control.control_mode.battery_mode = BatteryMode.FORCE_CHARGE
@@ -1484,9 +1491,8 @@ async def _control_step(state: _ControlState) -> None:
                 await power_controller.discharge_only()
 
     # Inverter Policy - may change Inverter Mode
-    if state.connections.pricer is not None:
-        if state.control.control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
-            price = await get_price_now()
+    if price is not None:
+        if control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
             feed_in_price = price.feed_in_price
             if feed_in_price < state.control.control_mode.disable_export_price_threshold:
                 state.control.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
