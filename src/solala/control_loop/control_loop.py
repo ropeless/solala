@@ -1209,42 +1209,40 @@ async def connect_forecaster(forecaster_connection: ForecasterConnection) -> Non
     Args:
         forecaster_connection: Solar forecaster connection configuration.
     """
-    async with _control_state() as state:
-        async with _connections_state():
-            forecaster: SolarForecaster
+    async with _connections_state():
+        forecaster: SolarForecaster
 
-            if forecaster_connection.type == DummySolarForecasterConnection.TYPE:
-                assert isinstance(forecaster_connection, DummySolarForecasterConnection)
-                forecaster = _connect_dummy_solar_forecaster(forecaster_connection)
-            elif forecaster_connection.type == OpenMeteoConnection.TYPE:
-                assert isinstance(forecaster_connection, OpenMeteoConnection)
-                forecaster = _connect_open_meteo_forecaster(forecaster_connection)
-            else:
-                raise ControlLoopError(
-                    'unknown forecaster connection type',
-                    errors={'type': forecaster_connection.type}
-                )
+        if forecaster_connection.type == DummySolarForecasterConnection.TYPE:
+            assert isinstance(forecaster_connection, DummySolarForecasterConnection)
+            forecaster = _connect_dummy_solar_forecaster(forecaster_connection)
+        elif forecaster_connection.type == OpenMeteoConnection.TYPE:
+            assert isinstance(forecaster_connection, OpenMeteoConnection)
+            forecaster = _connect_open_meteo_forecaster(forecaster_connection)
+        else:
+            raise ControlLoopError(
+                'unknown forecaster connection type',
+                errors={'type': forecaster_connection.type}
+            )
 
-            await disconnect_forecaster()
-            await state.reset_forecaster(forecaster, forecaster_connection)
-            connection_info = forecaster.get_connection_info()
-            log_info(f'Solar forecaster connection: {json.dumps(connection_info)}')
-            await _save_settings()
-            await _reconfigure_registers(state)
+        await disconnect_forecaster()
+        await _CONTROL_STATE.reset_forecaster(forecaster, forecaster_connection)
+        connection_info = forecaster.get_connection_info()
+        log_info(f'Solar forecaster connection: {json.dumps(connection_info)}')
+        await _save_settings()
+        await _reconfigure_registers(_CONTROL_STATE)
 
 
 async def disconnect_forecaster() -> None:
     """
     Close the solar forecaster connection.
     """
-    async with _control_state() as state:
-        async with _connections_state():
-            if state.connections.forecaster is not None:
-                await state.connections.forecaster.close()
-                await state.reset_forecaster(None, None)
-                log_info('Solar forecaster disconnected')
-            await _save_settings()
-            await _reconfigure_registers(state)
+    async with _connections_state():
+        if _CONTROL_STATE.connections.forecaster is not None:
+            await _CONTROL_STATE.connections.forecaster.close()
+            await _CONTROL_STATE.reset_forecaster(None, None)
+            log_info('Solar forecaster disconnected')
+        await _save_settings()
+        await _reconfigure_registers(_CONTROL_STATE)
 
 
 async def connect_database(database_connection: DatabaseConnection) -> None:
