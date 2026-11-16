@@ -1008,9 +1008,9 @@ async def set_control(
     Raises:
         ControlLoopError: If either pair of price thresholds is not strictly ordered.
     """
-    async with _control_state() as state:
-        async with _control_settings_state():
-            control_mode = state.control.control_mode
+    async with _connections_state():
+        async with _control_settings_state() as state:
+            control_mode = state.control_mode
     
             if disable_export_price_threshold is None:
                 disable_export_price_threshold = control_mode.disable_export_price_threshold
