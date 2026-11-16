@@ -288,6 +288,7 @@ class _ControlState:
     control: _ControlSettingsState = field(default_factory=_ControlSettingsState)
     cache: _CacheState = field(default_factory=_CacheState)
 
+    # Listener lists are used on the same asyncio event loop; synchronous updates and snapshots need no lock.
     # Internal control loop tracking variables.
     lock: AsyncRLock = field(default_factory=AsyncRLock)
     control_loop_running: bool = True
@@ -550,14 +551,13 @@ async def add_control_loop_listener(listener: LoopListener) -> None:
     Registering the same listener multiple times causes no problems.
 
     Args:
-        listener: Listener to be updated each control loop iteration.
+    listener: Listener to be updated each control loop iteration.
     """
-    async with _control_state() as state:
-        try:
-            state.control_loop_listeners.remove(listener)
-        except ValueError:
-            pass
-        state.control_loop_listeners.append(listener)
+    try:
+        _CONTROL_STATE.control_loop_listeners.remove(listener)
+    except ValueError:
+        pass
+    _CONTROL_STATE.control_loop_listeners.append(listener)
 
 
 async def remove_control_loop_listener(listener: LoopListener) -> None:
@@ -566,13 +566,12 @@ async def remove_control_loop_listener(listener: LoopListener) -> None:
     No error is raised if the listener is not registered.
 
     Args:
-        listener: Listener to unregister.
+    listener: Listener to unregister.
     """
-    async with _control_state() as state:
-        try:
-            state.control_loop_listeners.remove(listener)
-        except ValueError:
-            pass
+    try:
+        _CONTROL_STATE.control_loop_listeners.remove(listener)
+    except ValueError:
+        pass
 
 
 async def add_database_loop_listener(listener: LoopListener) -> None:
@@ -581,14 +580,13 @@ async def add_database_loop_listener(listener: LoopListener) -> None:
     Registering the same listener multiple times causes no problems.
 
     Args:
-        listener: Listener to be updated each database loop iteration.
+    listener: Listener to be updated each database loop iteration.
     """
-    async with _control_state() as state:
-        try:
-            state.database_loop_listeners.remove(listener)
-        except ValueError:
-            pass
-        state.database_loop_listeners.append(listener)
+    try:
+        _CONTROL_STATE.database_loop_listeners.remove(listener)
+    except ValueError:
+        pass
+    _CONTROL_STATE.database_loop_listeners.append(listener)
 
 
 async def remove_database_loop_listener(listener: LoopListener) -> None:
@@ -597,13 +595,12 @@ async def remove_database_loop_listener(listener: LoopListener) -> None:
     No error is raised if the listener is not registered.
 
     Args:
-        listener: Listener to unregister.
+    listener: Listener to unregister.
     """
-    async with _control_state() as state:
-        try:
-            state.database_loop_listeners.remove(listener)
-        except ValueError:
-            pass
+    try:
+        _CONTROL_STATE.database_loop_listeners.remove(listener)
+    except ValueError:
+        pass
 
 
 async def get_control_mode() -> ControlMode:
@@ -1297,9 +1294,8 @@ async def _database_loop() -> None:
             except ConnectionError as err:
                 log_error(f'Database connection error: {err}')
 
-        async with _control_state() as state:
-            listeners = state.database_loop_listeners.copy()
-        # Update the listeners while not holding the control state lock.
+        listeners = _CONTROL_STATE.database_loop_listeners.copy()
+        # Notify listeners without holding a state lock.
         _update_listeners(listeners)
 
         # Sleep for the remaining time until the next loop iteration.
