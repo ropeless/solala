@@ -26,7 +26,8 @@ type ReturnState = Literal[LifecycleState.VALID, LifecycleState.INTERIM]
 class ObjectReturn[T]:
     value: T
     state: ReturnState
-    until_time: datetime | None
+    refresh_at: datetime | None = None
+    expires_at: datetime | None = None
 
 
 @dataclass
@@ -35,18 +36,30 @@ class ErrorReturn:
     state: ClassVar[LifecycleState] = LifecycleState.ERROR
 
 
-def valid[T](value: T, until_time: datetime | None = None) -> ObjectReturn[T]:
+def valid[T](value: T, *, refresh_at: datetime | None = None,
+             expires_at: datetime | None = None) -> ObjectReturn[T]:
     """
     Support a wrapped function to return a VALID object.
+
+    Args:
+        value: Value to cache.
+        refresh_at: Optional next refresh deadline, overriding young.
+        expires_at: Optional value expiry deadline, overriding old.
     """
-    return ObjectReturn(value, LifecycleState.VALID, until_time)
+    return ObjectReturn(value, LifecycleState.VALID, refresh_at, expires_at)
 
 
-def interim[T](value: T, until_time: datetime | None = None) -> ObjectReturn[T]:
+def interim[T](value: T, *, refresh_at: datetime | None = None,
+               expires_at: datetime | None = None) -> ObjectReturn[T]:
     """
     Support a wrapped function to return an INTERIM object.
+
+    Args:
+        value: Provisional value to cache.
+        refresh_at: Optional next refresh deadline, overriding retry.
+        expires_at: Optional value expiry deadline, overriding old.
     """
-    return ObjectReturn(value, LifecycleState.INTERIM, until_time)
+    return ObjectReturn(value, LifecycleState.INTERIM, refresh_at, expires_at)
 
 
 def error(message: str) -> ErrorReturn:
@@ -104,12 +117,12 @@ class LifecycleCache[T]:
     only NO_VALUE denotes absence. Sentinel instances are valid values except
     for the reserved NO_VALUE sentinel.
 
-    A VALID result normally expires after 'old' seconds, but its optional
-    'until_time' overrides that expiry deadline. An INTERIM result always
-    expires after 'old' seconds; its optional 'until_time' instead overrides
-    the next refresh deadline, normally determined by 'retry'. The supplied
-    'until_time' must be a timezone-aware datetime. It is converted to an
-    absolute monotonic deadline and may be in the past.
+    A VALID result normally refreshes after 'young' seconds and expires after
+    'old' seconds. An INTERIM result normally refreshes after 'retry' seconds
+    and expires after 'old' seconds. Both states may independently override
+    these deadlines using 'refresh_at' and 'expires_at'. Explicit deadlines
+    must be timezone-aware datetimes; they are converted to monotonic deadlines
+    and may be in the past. The refresh deadline must not exceed expiry.
 
     Expiration replaces the cached value with the configured default; it
     does not change the lifecycle state or its timestamp. A default value
@@ -218,13 +231,13 @@ class LifecycleCache[T]:
             f: Asynchronous function providing ObjectReturn or ErrorReturn.
             log_error: Callback for refresh errors and unexpected failures.
             log_info: Callback for provisional results.
-            old: Maximum age of a cached result in seconds, unless overridden
-                by until_time on a VALID result.
+            old: Default maximum age of a cached result in seconds, unless
+                overridden by expires_at on a successful result.
             young: Age at which a valid result triggers background refresh.
                 Defaults to old.
-            retry: Minimum interval between interim or error refresh attempts.
+            retry: Default interval between interim or error refresh attempts.
                 An INTERIM result may override its next refresh deadline
-                using until_time. Defaults to young.
+                using refresh_at. Defaults to young.
             default: Fallback value when no unexpired cached value is available.
                 None is valid; NO_VALUE means no default.
             valid_message: Format string for logging valid values, including {value}.
@@ -444,25 +457,30 @@ class LifecycleCache[T]:
         value: T = lifecycle_return.value
 
         if lifecycle_return.state is LifecycleState.INTERIM:
+            default_refresh = timestamp + self._retry
+        else:
+            default_refresh = timestamp + self._young
+
+        refresh_timestamp = (
+            default_refresh if lifecycle_return.refresh_at is None
+            else _datetime_to_monotonic(lifecycle_return.refresh_at)
+        )
+        invalid_timestamp = (
+            timestamp + self._old if lifecycle_return.expires_at is None
+            else _datetime_to_monotonic(lifecycle_return.expires_at)
+        )
+        if refresh_timestamp > invalid_timestamp:
+            raise ValueError('refresh_at must not be later than expires_at')
+
+        if lifecycle_return.state is LifecycleState.INTERIM:
             if self._interim_message != '':
                 self._info_log(self._interim_message.format(value=value))
-            refresh_timestamp = (
-                (timestamp + self._retry)
-                if lifecycle_return.until_time is None
-                else _datetime_to_monotonic(lifecycle_return.until_time)
-            )
-            self._invalid_timestamp = timestamp + self._old
-            self._refresh_timestamp = refresh_timestamp
         elif lifecycle_return.state is LifecycleState.VALID:
             if self._valid_message != '':
                 self._info_log(self._valid_message.format(value=value))
-            invalid_timestamp = (
-                (timestamp + self._old)
-                if lifecycle_return.until_time is None
-                else _datetime_to_monotonic(lifecycle_return.until_time)
-            )
-            self._invalid_timestamp = invalid_timestamp
-            self._refresh_timestamp = timestamp + self._young
+
+        self._invalid_timestamp = invalid_timestamp
+        self._refresh_timestamp = refresh_timestamp
 
         self._cache = value
         self._timestamp = timestamp
@@ -484,7 +502,7 @@ def _datetime_to_monotonic(target_dt: datetime) -> float:
         ValueError: If the datetime is timezone-naive.
     """
     if target_dt.tzinfo is None or target_dt.utcoffset() is None:
-        raise ValueError('until_time must be a timezone-aware datetime')
+        raise ValueError('deadline must be a timezone-aware datetime')
 
     now_dt = datetime.now(UTC)
     now_mono = monotonic()
