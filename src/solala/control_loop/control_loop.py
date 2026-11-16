@@ -1882,6 +1882,7 @@ async def _save_settings() -> None:
             except Exception as err:
                 log_error(f'Error saving settings: {err}')
 
+
 async def _load_settings() -> bool:
     """
     Load the persisted settings.

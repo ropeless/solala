@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -46,12 +48,12 @@ class DatabaseLease:
     The reservation is created synchronously and released by the context.
     """
 
-    def __init__(self, owner: 'SolalaDatabaseConnections') -> None:
+    def __init__(self, owner: SolalaDatabaseConnections) -> None:
         self._owner = owner
         self._entered = False
         self._released = False
 
-    async def __aenter__(self) -> 'DatabaseLease':
+    async def __aenter__(self) -> DatabaseLease:
         if self._entered or self._released:
             raise RuntimeError('database lease is not available')
         self._entered = True
@@ -227,7 +229,7 @@ class SolalaDatabaseConnections:
 
     async def put_db(self, db: SolalaDatabase, commit_on_close: bool = True) -> None:
         """
-        Finalize a borrowed database connection and return it to the pool.
+        Finalise a borrowed database connection and return it to the pool.
 
         Args:
             db: Database wrapper previously obtained with `get_db()`.
