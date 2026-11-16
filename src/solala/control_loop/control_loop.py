@@ -1484,10 +1484,11 @@ async def _control_step(state: _ControlState) -> None:
 
     async with _control_settings_state() as control_state:
         prev_state = control_state.prev_state
-        power_controller = state.connections.controller
+        power_controller: PowerController | None = state.connections.controller
         if power_controller is None:
             prev_state.reset(None)
             return
+        assert power_controller is not None
         if power_controller is not prev_state.controller:
             prev_state.reset(power_controller)
 
