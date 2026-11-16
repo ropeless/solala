@@ -11,7 +11,7 @@ control_loop = importlib.import_module('solala.control_loop.control_loop')
 
 class SettingsPersistenceTestCase(unittest.IsolatedAsyncioTestCase):
     """
-    Verify settings saves are serialized without holding state locks for file I/O.
+    Verify serialized settings saves and the required lock order.
     """
 
     async def asyncSetUp(self) -> None:
@@ -49,16 +49,16 @@ class SettingsPersistenceTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_persistence_lock_enforces_lock_order(self) -> None:
         with self.assertRaisesRegex(RuntimeError, 'Lock order violation'):
-            async with self.state.connections.lock:
+            async with self.state.control.lock:
                 async with self.state.settings_persistence.lock:
                     self.fail('Reverse lock acquisition should not succeed')
 
-    async def test_save_does_not_hold_state_locks_during_write(self) -> None:
+    async def test_save_releases_control_lock_before_write(self) -> None:
         original_open = open
 
         def checked_open(*args: object, **kwargs: object):
             self.assertTrue(self.state.settings_persistence.lock._owner is asyncio.current_task())
-            self.assertFalse(self.state.connections.lock._owner is not None)
+            self.assertTrue(self.state.connections.lock._owner is asyncio.current_task())
             self.assertFalse(self.state.control.lock._owner is not None)
             return original_open(*args, **kwargs)
 
