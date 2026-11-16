@@ -1453,11 +1453,12 @@ async def _control_step(state: _ControlState) -> None:
     # The legacy lock protects connection lifetime during the migration.
     # Price retrieval does not need to hold the control-settings lock.
     # Fetch the price once if either automatic policy needs it.
-    control_mode = state.control.control_mode
-    needs_price = (
-        control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
-        or control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
-    )
+    async with _control_settings_state() as control_state:
+        control_mode = copy.copy(control_state.control_mode)
+        needs_price = (
+            control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
+            or control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
+        )
     price: Price | None = await get_price_now() if state.connections.pricer is not None and needs_price else None
 
     async with _control_settings_state():
@@ -1470,6 +1471,7 @@ async def _control_step(state: _ControlState) -> None:
             prev_state.reset(power_controller)
 
         control_mode = state.control.control_mode
+        # The policy may have changed while pricing was being fetched.
         if price is not None:
             if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
                 if price.buy_price < control_mode.start_charge_price_threshold:
