@@ -774,7 +774,7 @@ async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
         # The issue will be corrected naturally when next polled.
         return error('Price forecast not available. Error: power pricer changed')
 
-    if not prices:
+    if len(prices) == 0:
         return error('Price forecast not available. Error: power pricer returned no prices')
 
     log_info('Updated price forecast')
