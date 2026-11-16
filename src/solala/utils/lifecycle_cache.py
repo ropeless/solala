@@ -469,8 +469,8 @@ class LifecycleCache[T]:
             timestamp + self._old if lifecycle_return.expires_at is None
             else _datetime_to_monotonic(lifecycle_return.expires_at)
         )
-        if refresh_timestamp > invalid_timestamp:
-            raise ValueError('refresh_at must not be later than expires_at')
+        # Expiry always takes precedence over a later refresh deadline.
+        refresh_timestamp = min(refresh_timestamp, invalid_timestamp)
 
         if lifecycle_return.state is LifecycleState.INTERIM:
             if self._interim_message != '':
