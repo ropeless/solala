@@ -1,18 +1,8 @@
 import asyncio
-from enum import IntEnum
 from typing import Any
 from weakref import WeakKeyDictionary
 
 from solala.utils.async_rlock import AsyncRLock
-
-
-class LockRank(IntEnum):
-    """
-    Define the acquisition order of Solala's shared-state locks.
-    """
-    CONNECTIONS = 10
-    CONTROL = 20
-    CACHE = 30
 
 
 class OrderedAsyncRLock(AsyncRLock):
@@ -31,7 +21,7 @@ class OrderedAsyncRLock(AsyncRLock):
 
     _held: WeakKeyDictionary[asyncio.Task[Any], dict['OrderedAsyncRLock', int]] = WeakKeyDictionary()
 
-    def __init__(self, rank: LockRank) -> None:
+    def __init__(self, rank: int) -> None:
         super().__init__()
         self.rank = rank
 
@@ -54,8 +44,8 @@ class OrderedAsyncRLock(AsyncRLock):
             highest = max((lock.rank for lock in held), default=None)
             if highest is not None and self.rank < highest:
                 raise RuntimeError(
-                    f'Lock order violation: cannot acquire {self.rank.name} '
-                    f'while holding {highest.name}'
+                    f'Lock order violation: cannot acquire {self.rank} '
+                    f'while holding {highest}'
                 )
 
         await super().acquire()
