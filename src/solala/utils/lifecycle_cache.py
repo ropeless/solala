@@ -104,16 +104,20 @@ class LifecycleCache[T]:
     only NO_VALUE denotes absence. Sentinel instances are valid values except
     for the reserved NO_VALUE sentinel.
 
-    Both VALID and INTERIM cached values expire at age 'old'. Expiration
-    replaces the cached value with the configured default; it does not
-    change the lifecycle state or its timestamp. A default value never
-    expires. An expired value must not be returned even if a refresh
+    A VALID result normally expires after 'old' seconds, but its optional
+    'until_time' overrides that expiry deadline. An INTERIM result always
+    expires after 'old' seconds; its optional 'until_time' instead overrides
+    the next refresh deadline, normally determined by 'retry'. The supplied
+    'until_time' must be a timezone-aware datetime. It is converted to an
+    absolute monotonic deadline and may be in the past.
+
+    Expiration replaces the cached value with the configured default; it
+    does not change the lifecycle state or its timestamp. A default value
+    never expires. An expired value must not be returned even if a refresh
     subsequently returns ErrorReturn.
 
-    The wrapped function can override the definition of old age, by
-    explicitly returning 'until_time' in its result.
-
-    An external caller can invalidate a cached (make it old) at any time.
+    An external caller can call invalidate() to reset the cache to INITIAL,
+    discard its value, and cancel any active refresh.
 
     The cache tracks the latest result state and its monotonic timestamp.
     The age of the cache is the elapsed time since that result was received.
@@ -138,24 +142,24 @@ class LifecycleCache[T]:
         Await the wrapped function; if it reports ERROR, use an unexpired
         cached value or the default, or raise NoResult if neither exists.
 
-    INTERIM, result age < retry and cached-value age < old:
+    INTERIM, before its refresh deadline and before expiry:
         Return the cached provisional value.
 
-    INTERIM, retry <= result age and cached-value age < old:
+    INTERIM, at or after its refresh deadline but before expiry:
         Await the wrapped function; the provisional value remains usable
         if the refresh reports ERROR.
 
-    INTERIM, old <= cached-value age:
+    INTERIM, at or after expiry:
         Expire the cached value, then await the wrapped function. If it
         reports ERROR, return the default or raise NoResult.
 
-    VALID, age < young:
+    VALID, age < young and before expiry:
         Return the cached value.
 
-    VALID, young <= age < old:
+    VALID, age >= young but before expiry:
         Start a background refresh and return the cached value.
 
-    VALID, old <= age:
+    VALID, at or after expiry:
         Expire the cached value, then await the wrapped function. If it
         reports ERROR, return the default or raise NoResult.
 
@@ -188,7 +192,9 @@ class LifecycleCache[T]:
     foreground caller must not cancel a refresh shared with other callers.
     Invalidation resets the cache immediately, cancels its active refresh,
     and prevents results from older refresh generations from being committed.
-    Foreground callers awaiting an invalidated refresh receive CancelledError.
+    A new caller can start a refresh while the cancelled task is still
+    finishing. Foreground callers awaiting an invalidated refresh receive
+    CancelledError.
     """
 
     def __init__(
@@ -212,11 +218,13 @@ class LifecycleCache[T]:
             f: Asynchronous function providing ObjectReturn or ErrorReturn.
             log_error: Callback for refresh errors and unexpected failures.
             log_info: Callback for provisional results.
-            old: Maximum age of a cached result in seconds.
+            old: Maximum age of a cached result in seconds, unless overridden
+                by until_time on a VALID result.
             young: Age at which a valid result triggers background refresh.
                 Defaults to old.
             retry: Minimum interval between interim or error refresh attempts.
-                Defaults to young.
+                An INTERIM result may override its next refresh deadline
+                using until_time. Defaults to young.
             default: Fallback value when no unexpired cached value is available.
                 None is valid; NO_VALUE means no default.
             valid_message: Format string for logging valid values, including {value}.
@@ -284,6 +292,8 @@ class LifecycleCache[T]:
 
         Reset immediately and cancel any active refresh. A refresh that
         suppresses cancellation cannot commit its result after invalidation.
+        New callers may refresh while the old task is still finishing.
+        Foreground callers awaiting the invalidated task are cancelled.
         """
         self._generation += 1
         task = self._task
@@ -358,7 +368,8 @@ class LifecycleCache[T]:
         Await the shared refresh task and return the resulting cached value.
 
         Shielding prevents cancellation of this caller from cancelling the
-        shared refresh task.
+        shared refresh task. Invalidation cancels the shared task; a caller
+        awaiting an invalidated generation receives CancelledError.
 
         Returns:
             The refreshed value or an available fallback.
@@ -406,7 +417,8 @@ class LifecycleCache[T]:
         Successful results replace the cached value. Error results update
         the lifecycle state without replacing an existing usable value.
         NO_VALUE is reserved and cannot be returned as a successful value.
-        Called only by `_get_or_create_refresh_task()`.
+        Called only by `_get_or_create_refresh_task()`. Results from
+        invalidated generations are ignored even if cancellation is suppressed.
         """
         lifecycle_return: LifecycleReturn[T] = await self._f()
         if generation != self._generation:
@@ -456,7 +468,16 @@ class LifecycleCache[T]:
 
 def _datetime_to_monotonic(target_dt: datetime) -> float:
     """
-    Make best efforts to convert the given timezone-aware datetime to a monotonic time stamp.
+    Convert a timezone-aware datetime to an absolute monotonic timestamp.
+
+    Args:
+        target_dt: Deadline with timezone information.
+
+    Returns:
+        Approximate monotonic timestamp corresponding to the deadline.
+
+    Raises:
+        ValueError: If the datetime is timezone-naive.
     """
     if target_dt.tzinfo is None or target_dt.utcoffset() is None:
         raise ValueError('until_time must be a timezone-aware datetime')
