@@ -918,9 +918,9 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
     Raises:
         ConnectionError: If the database pool is unavailable or changes while in use.
     """
-    async with _control_state() as state:
+    async with _connections_state() as connections:
         log_debug('Requesting DB connection from pool')
-        database_connections = state.connections.database_connections
+        database_connections = connections.database_connections
         if database_connections is None:
             raise ConnectionError('Database pool not connected')
         database_connections: SolalaDatabaseConnections
@@ -935,14 +935,14 @@ async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaD
     await database_connections.open(wait=False)
     db: SolalaDatabase = await database_connections.get_db()
 
-    # Release the control state lock, then provide the database connection
+    # Release the connections lock, then provide the database connection
     try:
         yield db
     finally:
         # Release the database connection
-        async with _control_state() as state:
+        async with _connections_state() as connections:
             log_debug('Returning DB connection to pool')
-            if database_connections is not state.connections.database_connections:
+            if database_connections is not connections.database_connections:
                 raise ConnectionError('Database pool closed while in use')
             await database_connections.put_db(db, commit_on_close)
 
