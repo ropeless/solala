@@ -1036,8 +1036,12 @@ async def set_control(
             control_mode.start_charge_price_threshold = start_charge_price_threshold
             control_mode.stop_charge_price_threshold = stop_charge_price_threshold
     
-            await _save_settings()
-            log_info('Control: {json.dumps(state.control.control_mode.to_json())}')
+            control_json = state.control.control_mode.to_json()
+
+        # Saving takes the connections lock before the control-settings lock.
+        # Do not call it while already holding the latter.
+        await _save_settings()
+        log_info(f'Control: {json.dumps(control_json)}')
 
 
 async def log_registers(match: str | re.Pattern[str] | None) -> None:
