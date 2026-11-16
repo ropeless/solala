@@ -186,6 +186,9 @@ class LifecycleCache[T]:
     `asyncio.CancelledError` represents cancellation, not a lifecycle
     ERROR, and is not converted into one. Cancelling an individual
     foreground caller must not cancel a refresh shared with other callers.
+    Invalidation resets the cache immediately, cancels its active refresh,
+    and prevents results from older refresh generations from being committed.
+    Foreground callers awaiting an invalidated refresh receive CancelledError.
     """
 
     def __init__(
@@ -249,6 +252,7 @@ class LifecycleCache[T]:
         self._interim_message: str = interim_message
         self._error_message: str = error_message
         self._task: Task[None] | None = None
+        self._generation: int = 0
 
     @property
     def state(self) -> LifecycleState:
@@ -277,21 +281,27 @@ class LifecycleCache[T]:
     async def invalidate(self) -> None:
         """
         Invalidate the cache.
-        Cancel any active refresh and reset the cache to its initial state.
+
+        Reset immediately and cancel any active refresh. A refresh that
+        suppresses cancellation cannot commit its result after invalidation.
         """
+        self._generation += 1
         task = self._task
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        self._task = None
 
         self._cache = self._default
         self._state = LifecycleState.INITIAL
         self._timestamp = monotonic()
         self._invalid_timestamp = self._timestamp
         self._refresh_timestamp = self._timestamp
+
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                if not task.done():
+                    raise
 
     async def __call__(self) -> T:
         """
@@ -353,7 +363,10 @@ class LifecycleCache[T]:
         Returns:
             The refreshed value or an available fallback.
         """
+        generation = self._generation
         await asyncio.shield(self._get_or_create_refresh_task())
+        if generation != self._generation:
+            raise asyncio.CancelledError()
         return self._get_cached_value()
 
     def _get_or_create_refresh_task(self) -> Task[None]:
@@ -364,7 +377,7 @@ class LifecycleCache[T]:
             The shared refresh task.
         """
         if self._task is None:
-            task = asyncio.create_task(self._refresh())
+            task = asyncio.create_task(self._refresh(self._generation))
             task.add_done_callback(self._refresh_done)
             self._task = task
             return task
@@ -386,7 +399,7 @@ class LifecycleCache[T]:
                 + ''.join(format_exception(exception))
             )
 
-    async def _refresh(self) -> None:
+    async def _refresh(self, generation: int) -> None:
         """
         Refresh the cache using the wrapped function.
 
@@ -396,6 +409,8 @@ class LifecycleCache[T]:
         Called only by `_get_or_create_refresh_task()`.
         """
         lifecycle_return: LifecycleReturn[T] = await self._f()
+        if generation != self._generation:
+            return
 
         if isinstance(lifecycle_return, ObjectReturn):
             value: T = lifecycle_return.value
