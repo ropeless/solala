@@ -689,7 +689,7 @@ async def _get_demand_window(day: date) -> LifecycleReturn[PossibleDemandWindow]
     if pricer is not _CONTROL_STATE.pricer:
         # The pricer got changed, abandon the update
         # The issue will be corrected naturally when next polled.
-        return error('Price update not available. Error: power pricer changed')
+        return error('Demand window not available. Error: power pricer changed')
 
     log_info(f'Updated price demand window: day = {day.strftime("%Y-%m-%d")}')
     return valid(demand_window)
