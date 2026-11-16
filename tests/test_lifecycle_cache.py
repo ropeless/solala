@@ -186,7 +186,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
             with self.subTest(result_factory=result_factory):
                 self.results = [result_factory(12, refresh_at=datetime(2026, 1, 1))]
                 cache = self.make_cache(default=7)
-                with self.assertRaisesRegex(ValueError, 'refresh_at must be a timezone-aware datetime'):
+                with self.assertRaisesRegex(ValueError, 'deadline must be a timezone-aware datetime'):
                     await cache()
                 self.assertIs(cache.state, LifecycleState.INITIAL)
                 self.assertEqual(cache._cache, 7)
@@ -194,7 +194,7 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_interim_expires_at_overrides_old_and_survives_error_only_until_expiry(self) -> None:
         from datetime import UTC, datetime
 
-        self.results = [interim(12, expires_at=datetime.now(UTC)), error('unavailable')]
+        self.results = [interim(12, expires_at=datetime.now(UTC)), error('unavailable'), error('still unavailable')]
         cache = self.make_cache(default=7)
         with patch('solala.utils.lifecycle_cache._datetime_to_monotonic', return_value=112.0):
             self.assertEqual(await cache(), 12)
