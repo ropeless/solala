@@ -1903,10 +1903,13 @@ async def _save_settings() -> None:
     This is called when the user settings are changed. We persist the settings
     so that they are available across restarts.
     """
-    async with _control_state() as state:
-        settings_path = state.settings_path
+    settings_path = _CONTROL_STATE.settings_path
+    if settings_path is None:
+        return
+
+    async with _connections_state():
         async with _control_settings_state():
-            settings = _get_settings(state) if settings_path is not None else None
+            settings = _get_settings(_CONTROL_STATE)
 
     if settings_path is not None and settings is not None:
         try:
