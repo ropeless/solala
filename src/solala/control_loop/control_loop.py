@@ -1482,8 +1482,8 @@ async def _control_step(state: _ControlState) -> None:
         )
     price: Price | None = await get_price_now() if state.connections.pricer is not None and needs_price else None
 
-    async with _control_settings_state():
-        prev_state = state.control.prev_state
+    async with _control_settings_state() as control_state:
+        prev_state = control_state.prev_state
         power_controller = state.connections.controller
         if power_controller is None:
             prev_state.reset(None)
@@ -1491,7 +1491,7 @@ async def _control_step(state: _ControlState) -> None:
         if power_controller is not prev_state.controller:
             prev_state.reset(power_controller)
 
-        control_mode = state.control.control_mode
+        control_mode = control_state.control_mode
         # The policy may have changed while pricing was being fetched.
         if price is not None:
             if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
