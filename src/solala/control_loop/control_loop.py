@@ -1122,40 +1122,38 @@ async def connect_pricer(pricer_connection: PricerConnection) -> None:
     Args:
         pricer_connection: Power pricer connection configuration.
     """
-    async with _control_state() as state:
-        async with _connections_state():
-            pricer: PowerPricer
+    async with _connections_state():
+        pricer: PowerPricer
 
-            if pricer_connection.type == DummyPricerConnection.TYPE:
-                assert isinstance(pricer_connection, DummyPricerConnection)
-                pricer = _connect_dummy_pricer(pricer_connection)
-            elif pricer_connection.type == AmberPricerConnection.TYPE:
-                assert isinstance(pricer_connection, AmberPricerConnection)
-                pricer = _connect_amber(pricer_connection)
+        if pricer_connection.type == DummyPricerConnection.TYPE:
+            assert isinstance(pricer_connection, DummyPricerConnection)
+            pricer = _connect_dummy_pricer(pricer_connection)
+        elif pricer_connection.type == AmberPricerConnection.TYPE:
+            assert isinstance(pricer_connection, AmberPricerConnection)
+            pricer = _connect_amber(pricer_connection)
 
-            else:
-                raise ControlLoopError('unknown pricer connection type', errors={'type': pricer_connection.type})
+        else:
+            raise ControlLoopError('unknown pricer connection type', errors={'type': pricer_connection.type})
 
-            await disconnect_pricer()
-            await state.reset_pricer(pricer, pricer_connection)
-            connection_info = pricer.get_connection_info()
-            log_info(f'Power pricer connection: {json.dumps(connection_info)}')
-            await _save_settings()
-            await _reconfigure_registers(state)
+        await disconnect_pricer()
+        await _CONTROL_STATE.reset_pricer(pricer, pricer_connection)
+        connection_info = pricer.get_connection_info()
+        log_info(f'Power pricer connection: {json.dumps(connection_info)}')
+        await _save_settings()
+        await _reconfigure_registers(_CONTROL_STATE)
 
 
 async def disconnect_pricer() -> None:
     """
     Close the power pricer connection.
     """
-    async with _control_state() as state:
-        async with _connections_state():
-            if state.connections.pricer is not None:
-                await state.connections.pricer.close()
-                await state.reset_pricer(None, None)
-                log_info('Pricer disconnected')
-            await _save_settings()
-            await _reconfigure_registers(state)
+    async with _connections_state():
+        if _CONTROL_STATE.connections.pricer is not None:
+            await _CONTROL_STATE.connections.pricer.close()
+            await _CONTROL_STATE.reset_pricer(None, None)
+            log_info('Pricer disconnected')
+        await _save_settings()
+        await _reconfigure_registers(_CONTROL_STATE)
 
 
 async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> None:
