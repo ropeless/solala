@@ -161,10 +161,13 @@ class LifecycleCacheCallTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.results = [interim(12, until_time=datetime.now(UTC)), error('unavailable')]
         cache = self.make_cache(default=7)
-        with patch('solala.utils.lifecycle_cache._datetime_to_monotonic', return_value=112.0) as convert:
-            self.assertEqual(await cache(), 12)
-            convert.assert_called_once()
-            self.assertEqual(cache._refresh_timestamp, 112.0)
+        convert_patch = patch('solala.utils.lifecycle_cache._datetime_to_monotonic', return_value=112.0)
+        convert = convert_patch.start()
+        self.addCleanup(convert_patch.stop)
+
+        self.assertEqual(await cache(), 12)
+        convert.assert_called_once()
+        self.assertEqual(cache._refresh_timestamp, 112.0)
         self.assertEqual(cache._invalid_timestamp, 130.0)
         self.now = 111.0
         self.assertEqual(await cache(), 12)
