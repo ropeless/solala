@@ -821,15 +821,15 @@ async def get_connection_info() -> JSONDict:
     Returns:
         A JSON-compatible dictionary of connection information.
     """
-    async with _control_state() as state:
+    async with _connections_state() as connections:
         result: dict[str, JSONValue] = {
-            'controller': state.connections.controller_connection_info,
-            'pricer': state.connections.pricer_connection_info,
-            'forecaster': state.connections.forecaster_connection_info,
-            'database': state.connections.database_connection_info,
+            'controller': connections.controller_connection_info,
+            'pricer': connections.pricer_connection_info,
+            'forecaster': connections.forecaster_connection_info,
+            'database': connections.database_connection_info,
         }
-        if len(state.connections.consumers) > 0:
-            result['consumers'] = state.connections.consumers_connection_info
+        if len(connections.consumers) > 0:
+            result['consumers'] = connections.consumers_connection_info
         return result
 
 
