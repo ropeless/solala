@@ -3,7 +3,7 @@ import copy
 import json
 import re
 from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field, fields, Field
 from datetime import datetime, UTC, date
 from functools import partial
@@ -902,24 +902,16 @@ async def _database() -> AsyncIterator[SolalaDatabase]:
     """
     Borrow from the configured pool while coordinating pool replacement.
 
-    Hold the connections-state lock through acquisition so a disconnect
-    cannot close the selected pool before its request has been registered.
-    Release that lock during the database operation and connection return.
+    Connection acquisition is protected by the connections-state lock, but
+    the database operation and its cleanup run after releasing that lock.
     """
-    async with _connections_state() as connections:
-        pool = connections.database_connections
-        if pool is None:
-            raise ConnectionError('Database pool not connected')
-        context = pool.solala_database()
-        db = await context.__aenter__()
-    try:
+    async with AsyncExitStack() as stack:
+        async with _connections_state() as connections:
+            pool = connections.database_connections
+            if pool is None:
+                raise ConnectionError('Database pool not connected')
+            db = await stack.enter_async_context(pool.solala_database())
         yield db
-    except BaseException as err:
-        suppress = await context.__aexit__(type(err), err, err.__traceback__)
-        if not suppress:
-            raise
-    else:
-        await context.__aexit__(None, None, None)
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
@@ -1412,10 +1404,9 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
             elif isinstance(value, str):
                 to_log_text[name] = value
         try:
-            async with await _get_database_lease() as lease:
-                async with lease.solala_database() as db:
-                    await db.insert_registers_numeric(timestamp, to_log_numeric)
-                    await db.insert_registers_text(timestamp, to_log_text)
+            async with _database() as db:
+                await db.insert_registers_numeric(timestamp, to_log_numeric)
+                await db.insert_registers_text(timestamp, to_log_text)
         except (ConnectionError, DatabaseError) as err:
             log_error(f'Database connection error: {err}')
 
