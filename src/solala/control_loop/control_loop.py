@@ -48,6 +48,7 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
     DummySolarForecasterConnection, DatabaseConnection, TuyaConnection
 from solala.utils.async_rlock import AsyncRLock
+from solala.utils.ordered_async_rlock import OrderedAsyncRLock
 from solala.utils.datetime_extras import now, local_time_zone
 from solala.utils.json_extras import JSONDict, json_num, JSONValue
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
@@ -181,6 +182,37 @@ class _SolarForecastCache(LifecycleCache[DailySolarForecast]):
         )
 
 
+# Lock acquisition order: connections -> control -> cache.
+@dataclass
+class _ConnectionsState:
+    """
+    Group connection state under the connections lock.
+
+    Connection fields will be migrated from _ControlState incrementally.
+    """
+    lock: OrderedAsyncRLock = field(default_factory=lambda: OrderedAsyncRLock(10))
+
+
+@dataclass
+class _ControlSettingsState:
+    """
+    Group control settings under the control lock.
+
+    Control fields will be migrated from _ControlState incrementally.
+    """
+    lock: OrderedAsyncRLock = field(default_factory=lambda: OrderedAsyncRLock(20))
+
+
+@dataclass
+class _CacheState:
+    """
+    Group cached readings under the cache lock.
+
+    Cache fields will be migrated from _ControlState incrementally.
+    """
+    lock: OrderedAsyncRLock = field(default_factory=lambda: OrderedAsyncRLock(30))
+
+
 @dataclass
 class _ControlState:
     """
@@ -188,6 +220,11 @@ class _ControlState:
 
     Access to mutable shared state is coordinated through `_control_state()`.
     """
+    # Separate state groups will own their fields as callers are migrated.
+    connections: _ConnectionsState = field(default_factory=_ConnectionsState)
+    control: _ControlSettingsState = field(default_factory=_ControlSettingsState)
+    cache: _CacheState = field(default_factory=_CacheState)
+
     # These are the work delegates for accessing the solar power system and database.
     controller: PowerController | None = None
     pricer: PowerPricer | None = None
@@ -331,6 +368,33 @@ def log_warn(message: str) -> None:
 
 def log_error(message: str) -> None:
     LOGGER.error(f'{_LOG_SRC}{message}')
+
+
+@asynccontextmanager
+async def _connections_state() -> AsyncIterator[_ConnectionsState]:
+    """
+    Get exclusive access to the connection state.
+    """
+    async with _CONTROL_STATE.connections.lock:
+        yield _CONTROL_STATE.connections
+
+
+@asynccontextmanager
+async def _control_settings_state() -> AsyncIterator[_ControlSettingsState]:
+    """
+    Get exclusive access to the control settings state.
+    """
+    async with _CONTROL_STATE.control.lock:
+        yield _CONTROL_STATE.control
+
+
+@asynccontextmanager
+async def _cache_state() -> AsyncIterator[_CacheState]:
+    """
+    Get exclusive access to the cache state.
+    """
+    async with _CONTROL_STATE.cache.lock:
+        yield _CONTROL_STATE.cache
 
 
 @asynccontextmanager
