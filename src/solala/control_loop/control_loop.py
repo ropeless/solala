@@ -311,8 +311,9 @@ class _ControlState:
             self.control.control_mode.inverter_mode = InverterMode.UNKNOWN
 
         # Invalidate cached status
-        self.cache.last_power = _NO_POWER
-        self.cache.last_power_valid = False
+        async with _cache_state():
+            self.cache.last_power = _NO_POWER
+            self.cache.last_power_valid = False
 
     async def reset_pricer(self, pricer: PowerPricer | None, settings: PricerConnection | None) -> None:
         assert (pricer is None) == (settings is None)
@@ -632,15 +633,16 @@ async def get_power_status() -> PowerStatus:
     Returns:
         The current cached status, or the default status if no controller is connected.
     """
-    async with _control_state() as state:
-        if not state.cache.last_power_valid:
-            controller: PowerController | None = state.connections.controller
-            if controller is None:
-                log_error('Power update not available. Error: power controller not connected')
-            else:
-                state.cache.last_power = await controller.get_status()
-            state.cache.last_power_valid = True
-        return state.cache.last_power
+    async with _connections_state() as connections:
+        async with _cache_state() as cache:
+            if not cache.last_power_valid:
+                controller: PowerController | None = connections.controller
+                if controller is None:
+                    log_error('Power update not available. Error: power controller not connected')
+                else:
+                    cache.last_power = await controller.get_status()
+                cache.last_power_valid = True
+            return cache.last_power
 
 
 async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> dict[str, RegisterValue | None]:
