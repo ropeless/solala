@@ -1879,13 +1879,14 @@ async def _save_settings() -> None:
     """
     async with _control_state() as state:
         settings_path = state.settings_path
-        if settings_path is not None:
-            try:
-                with open(settings_path, 'w') as file:
-                    settings: Settings = _get_settings(state)
-                    print(settings.model_dump_json(), file=file)
-            except Exception as err:
-                log_error(f'Error saving settings: {err}')
+        settings = _get_settings(state) if settings_path is not None else None
+
+    if settings_path is not None and settings is not None:
+        try:
+            with open(settings_path, 'w') as file:
+                print(settings.model_dump_json(), file=file)
+        except Exception as err:
+            log_error(f'Error saving settings: {err}')
 
 
 async def _load_settings() -> bool:
@@ -1895,18 +1896,17 @@ async def _load_settings() -> bool:
     Returns:
         True if settings were loaded successfully, False otherwise.
     """
-    async with _control_state() as state:
-        settings_path = state.settings_path
-        if settings_path is not None:
-            try:
-                with open(settings_path, 'r') as file:
-                    json_string = file.read()
-                settings = Settings.model_validate_json(json_string)
-                await configure_from_settings(settings)
-                return True
-            except Exception as err:
-                log_error(f'Error loading settings: {err}')
-        return False
+    settings_path = _CONTROL_STATE.settings_path
+    if settings_path is not None:
+        try:
+            with open(settings_path, 'r') as file:
+                json_string = file.read()
+            settings = Settings.model_validate_json(json_string)
+            await configure_from_settings(settings)
+            return True
+        except Exception as err:
+            log_error(f'Error loading settings: {err}')
+    return False
 
 
 # Initialise global state after the cache delegates have been defined.
