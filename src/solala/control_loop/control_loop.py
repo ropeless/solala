@@ -1464,13 +1464,13 @@ async def _control_step(state: _ControlState) -> None:
             if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
                 if price.buy_price < control_mode.start_charge_price_threshold:
                     control_mode.battery_mode = BatteryMode.FORCE_CHARGE
-                elif price.buy_price > control_mode.enable_export_price_threshold:
+                elif price.buy_price > control_mode.stop_charge_price_threshold:
                     control_mode.battery_mode = BatteryMode.ENABLE
 
             if control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
                 if price.feed_in_price < control_mode.disable_export_price_threshold:
                     control_mode.inverter_mode = InverterMode.ZERO_EXPORT
-                elif price.feed_in_price > control_mode.disable_export_price_threshold:
+                elif price.feed_in_price > control_mode.enable_export_price_threshold:
                     control_mode.inverter_mode = InverterMode.ENABLE
 
         # Snapshot the commands before releasing the control-settings lock.
