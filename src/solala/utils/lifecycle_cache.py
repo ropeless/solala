@@ -242,6 +242,7 @@ class LifecycleCache[T]:
         self._state: LifecycleState = LifecycleState.INITIAL
         self._timestamp: float = monotonic()
         self._invalid_timestamp: float = self._timestamp
+        self._refresh_timestamp: float = self._timestamp
         self._error_log: Callable[[str], None] = log_error
         self._info_log: Callable[[str], None] = log_info
         self._valid_message: str = valid_message
@@ -290,6 +291,7 @@ class LifecycleCache[T]:
         self._state = LifecycleState.INITIAL
         self._timestamp = monotonic()
         self._invalid_timestamp = self._timestamp
+        self._refresh_timestamp = self._timestamp
 
     async def __call__(self) -> T:
         """
@@ -316,10 +318,12 @@ class LifecycleCache[T]:
             else:
                 self._get_or_create_refresh_task()
                 return self._get_cached_value()
-        elif self._state is LifecycleState.INTERIM and old_cache:
-            return await self._refresh_and_get()
+        elif self._state is LifecycleState.INTERIM:
+            if old_cache or now >= self._refresh_timestamp:
+                return await self._refresh_and_get()
+            return self._get_cached_value()
         elif now < self._timestamp + self._retry:
-            # ERROR | INTERIM with usable cache
+            # ERROR with usable cache
             return self._get_cached_value()
         else:
             return await self._refresh_and_get()
@@ -412,10 +416,12 @@ class LifecycleCache[T]:
         if lifecycle_return.state is LifecycleState.INTERIM:
             if self._interim_message != '':
                 self._info_log(self._interim_message.format(value=value))
-            if lifecycle_return.until_time is None:
-                self._invalid_timestamp = timestamp + self._retry
-            else:
-                self._invalid_timestamp = _datetime_to_monotonic(lifecycle_return.until_time)
+            self._invalid_timestamp = timestamp + self._old
+            self._refresh_timestamp = (
+                timestamp + self._retry
+                if lifecycle_return.until_time is None
+                else _datetime_to_monotonic(lifecycle_return.until_time)
+            )
         elif lifecycle_return.state is LifecycleState.VALID:
             if self._valid_message != '':
                 self._info_log(self._valid_message.format(value=value))
@@ -423,6 +429,7 @@ class LifecycleCache[T]:
                 self._invalid_timestamp = timestamp + self._old
             else:
                 self._invalid_timestamp = _datetime_to_monotonic(lifecycle_return.until_time)
+            self._refresh_timestamp = timestamp + self._young
 
         self._cache = value
         self._timestamp = timestamp
