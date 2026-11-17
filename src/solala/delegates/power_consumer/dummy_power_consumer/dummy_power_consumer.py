@@ -21,6 +21,7 @@ class FailureLocation(BaseFailureLocation):
         """
         return self != FailureLocation.get_connection_info
 
+
 class DummyPowerConsumer(PowerConsumer):
     """
     Simulated power consumer with configurable electrical status.
