@@ -33,7 +33,7 @@ def _alarm_state(previous: str) -> tuple[str, tuple[HealthIssue, ...]]:
 
 class MasterAlarm:
     """
-    Own the page-header alarm, details dialog and client heartbeat timer.
+    Own the page-header alarm, details dialogue and client heartbeat timer.
 
     A browser watchdog displays DISCONNECTED when server updates stop. A
     server-confirmed STALLED state is never inferred from network silence.
@@ -51,13 +51,13 @@ class MasterAlarm:
         indicator.on('click', self._open_details)
 
         with ui.dialog() as self._dialog, ui.card().classes('w-full').style('max-width: 520px'):
-            ui.label('System health').classes('text-h6')
+            ui.label('System Health').classes('text-h6')
             self._details = ui.column().classes('w-full gap-2')
             with ui.row().classes('w-full justify-end'):
-                ui.button('Log', on_click=self._open_log).props('flat')
+                ui.button('Go to Log', on_click=self._open_log).props('flat')
                 ui.button('Close', on_click=self._dialog.close).props('flat')
 
-        # Keep this timer alive across tab switches; root_page owns its cleanup.
+        # Keep this timer alive across tab switches; root_page owns its clean-up.
         self._timer = ui.timer(2.0, self._refresh)
         self._initialise_browser()
         self._refresh()
@@ -129,7 +129,7 @@ class MasterAlarm:
         self._state, self._issues = _alarm_state(self._state)
         self._details.clear()
         with self._details:
-            ui.label(f'Status: {self._state}').classes('text-subtitle1')
+            ui.label(f'Status: {self._state.lower()}').classes('text-subtitle1')
             if self._state == 'STALLED':
                 ui.label('Suspected total loss of hardware control. Check the Solala log.')
             elif self._state == 'WARNING':
@@ -152,7 +152,7 @@ class MasterAlarm:
         """
         Close details and navigate to the Log tab.
         """
-        self._dialog.close()
+        await self._dialog.close()
         await self._select_tab('Log')
 
     def close(self) -> None:
