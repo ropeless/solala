@@ -129,6 +129,28 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         self.controller.zero_export.assert_awaited_once_with(change_duration=Constants.CONTROL_DURATION)
 
 
+    async def test_inverter_price_failure_preserves_zero_export_keep_alive(self) -> None:
+        """
+        A failed price lookup must not suppress the active zero-export keep-alive.
+        """
+        self.state.control.control_mode.inverter_policy = InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
+        self.state.control.control_mode.inverter_mode = InverterMode.ENABLE
+        self.state.control.prev_state.control_mode.inverter_policy = InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
+        self.state.control.prev_state.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+        self.price_mock.side_effect = RuntimeError('price lookup failed')
+
+        async with control_loop._connections_state():
+            await control_loop._control_step(self.state)
+
+        self.controller.zero_export.assert_awaited_once_with(
+            change_duration=Constants.CONTROL_DURATION
+        )
+        self.controller.enable_inverter.assert_not_awaited()
+        self.assertEqual(
+            self.state.control.prev_state.control_mode.inverter_mode,
+            InverterMode.ZERO_EXPORT,
+        )
+
     async def test_failed_zero_export_is_logged_and_retried(self) -> None:
         self.state.control.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
         self.controller.zero_export.side_effect = [RuntimeError('command failed'), None]
