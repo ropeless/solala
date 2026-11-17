@@ -43,12 +43,12 @@ class MasterAlarm:
         self._select_tab = select_tab
         self._state = 'DISCONNECTED'
         self._issues: tuple[HealthIssue, ...] = ()
-        with ui.button().props('flat no-caps').classes('solala-master-alarm solala-alarm-disconnected') as button:
-            ui.element('span').classes('solala-alarm-light')
-            self._label = ui.label('disconnected').classes('solala-alarm-label')
-        self._button_id = button.id
+        with ui.element('div').classes('solala-master-alarm') as indicator:
+            self._light = ui.element('div').classes('solala-alarm-light solala-alarm-disconnected')
+            self._label = ui.label('disconnected').classes('solala-alarm-label solala-alarm-disconnected')
+        self._light_id = self._light.id
         self._label_id = self._label.id
-        button.on_click(self._open_details)
+        indicator.on('click', self._open_details)
 
         with ui.dialog() as self._dialog, ui.card().classes('w-full').style('max-width: 520px'):
             ui.label('System health').classes('text-h6')
@@ -70,17 +70,19 @@ class MasterAlarm:
             (() => {{
                 const key = 'solalaMasterAlarm';
                 window[key]?.close();
-                const button = getHtmlElement({self._button_id});
+                const light = getHtmlElement({self._light_id});
                 const label = getHtmlElement({self._label_id});
                 let lastResponse = 0;
-                const disconnected = () => {{
-                    button.classList.remove(
-                        'solala-alarm-normal', 'solala-alarm-caution',
-                        'solala-alarm-warning', 'solala-alarm-stalled'
-                    );
-                    button.classList.add('solala-alarm-disconnected');
-                    label.textContent = 'disconnected';
+                const states = ['normal', 'caution', 'warning', 'stalled', 'disconnected'];
+                const setState = (state) => {{
+                    const name = state.toLowerCase();
+                    for (const element of [light, label]) {{
+                        element.classList.remove(...states.map(s => 'solala-alarm-' + s));
+                        element.classList.add('solala-alarm-' + name);
+                    }}
+                    label.textContent = name;
                 }};
+                const disconnected = () => setState('disconnected');
                 const onDisconnect = () => disconnected();
                 const onConnect = () => {{
                     disconnected();
@@ -94,13 +96,7 @@ class MasterAlarm:
                     receive(state) {{
                         if (!window.socket.connected) return;
                         lastResponse = Date.now();
-                        button.classList.remove(
-                            'solala-alarm-normal', 'solala-alarm-caution',
-                            'solala-alarm-warning', 'solala-alarm-stalled',
-                            'solala-alarm-disconnected'
-                        );
-                        button.classList.add('solala-alarm-' + state.toLowerCase());
-                        label.textContent = state.toLowerCase();
+                        setState(state);
                     }},
                     close() {{
                         window.clearInterval(watchdog);
@@ -118,6 +114,10 @@ class MasterAlarm:
         Send a fresh server-confirmed state to the browser.
         """
         self._state, self._issues = _alarm_state(self._state)
+        status = self._state.lower()
+        self._light.classes(replace=f'solala-alarm-light solala-alarm-{status}')
+        self._label.classes(replace=f'solala-alarm-label solala-alarm-{status}')
+        self._label.set_text(status)
         _ = ui.run_javascript(
             f'window.solalaMasterAlarm?.receive({json.dumps(self._state)});'
         )
