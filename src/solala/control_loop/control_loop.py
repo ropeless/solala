@@ -1214,6 +1214,26 @@ async def disconnect_forecaster() -> None:
         await _reconfigure_registers(_CONTROL_STATE)
 
 
+async def _close_database_pool(pool: SolalaDatabaseConnections) -> None:
+    """
+    Complete pool shutdown even if the calling task is cancelled.
+
+    Cancellation is propagated after the pool has finished closing, so the
+    database lifecycle lock remains held throughout the transition.
+    """
+    closing = asyncio.create_task(pool.close())
+    cancelled = False
+    while not closing.done():
+        try:
+            await asyncio.shield(closing)
+        except asyncio.CancelledError:
+            cancelled = True
+    # Propagate any failure from the close operation rather than hiding it.
+    await closing
+    if cancelled:
+        raise asyncio.CancelledError
+
+
 async def connect_database(database_connection: DatabaseConnection) -> None:
     """
     Replace the database pool without holding the connections lock while draining.
@@ -1236,7 +1256,7 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
             await _CONTROL_STATE.reset_database(None, None)
 
         if old_pool is not None:
-            await old_pool.close()
+            await _close_database_pool(old_pool)
 
         async with _connections_state():
             await _CONTROL_STATE.reset_database(database_connections, database_connection)
@@ -1258,7 +1278,7 @@ async def disconnect_database() -> None:
                 await _CONTROL_STATE.reset_database(None, None)
 
         if old_pool is not None:
-            await old_pool.close()
+            await _close_database_pool(old_pool)
             log_info('Database disconnected')
 
         await _save_settings()
