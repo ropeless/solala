@@ -11,6 +11,10 @@ from solala.utils.time_extras import ensure_date, date_to_datetime
 
 
 class FailureLocation(StrEnum):
+    """
+    Operations at which the dummy solar forecaster can inject failures.
+    """
+
     get_forecast = auto()
     get_connection_info = auto()
 
@@ -36,6 +40,7 @@ class DummySolarForecaster(SolarForecaster):
         Args:
             panel_capacity: Installed solar panel capacity in W.
             inverter_limit: Maximum inverter output power in W.
+            failure: Optional simulated failure configuration.
         """
         self.failure = failure
         self.panel_capacity: float = panel_capacity
