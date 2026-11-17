@@ -92,24 +92,27 @@ authoritative detailed diagnostic record.
 System health and master alarm
 ------------------------------
 
-The user-facing master alarm has **five displayed conditions**, representing
-three operational health levels and two distinct loss-of-observability
-conditions:
+The master alarm has **five displayed conditions**. Each has two distinct
+interpretations: **user understanding** describes the potential operational
+impact in plain language; **system understanding** specifies the evidence
+used to select the state. The user interpretation is not a claim that the
+suspected hardware condition has been confirmed.
 
-| Condition | Display | Explaination | Diagnostic guidance |
+| Display | User understanding | System understanding | Diagnostic guidance |
 | --- | --- | --- | --- |
-| Normal - good control and reporting| **NORMAL** | Server reachable, control-loop heartbeat current, no active health issues. | No action required. |
-| Degraded - believe control is okay but reporting reduced | **CAUTION** | Server reachable, heartbeat current, noncritical functionality impaired. | Inspect the alarm details. |
-| Critical - suspected parital loss of hardware control| **WARNING** | Server reachable, heartbeat current, a critical control operation failed or safe control cannot be confirmed. | Inspect the alarm details and log. |
-| Stalled - suspected total loss of hardware control | **STALLED** | Server reachable, but the control-loop heartbeat is overdue; current control-loop operation cannot be confirmed. | Check the Solala log; the server remains reachable. |
-| Disconnected - unknown status | **DISCONNECTED** | Browser cannot obtain a fresh response from the server, including while awaiting the first response after reconnection. | Check the network connection; displayed log data may be stale. |
+| **NORMAL** | Hardware control and reporting appear to be working correctly. | Server reachable, control-loop heartbeat current, no active health issues. | No action required. |
+| **CAUTION** | Hardware control is believed to be working, but some reporting or other noncritical functionality is impaired. | Server reachable, heartbeat current, highest active ControlHealth severity is CAUTION. | Inspect the alarm details. |
+| **WARNING** | Suspected partial loss of hardware control, or uncertainty about safe control. | Server reachable, heartbeat current, highest active ControlHealth severity is WARNING. | Inspect the alarm details and log. |
+| **STALLED** | Suspected total loss of hardware control. | Server reachable, but the control loop does not appear to be running correctly: its completion heartbeat is overdue, possibly because the crucial control-step method is not getting processor time or is waiting indefinitely. | Check the Solala log; the server remains reachable. |
+| **DISCONNECTED** | The current condition of the system is unknown. | Browser cannot obtain a fresh response from the server, including while awaiting the first response after reconnection. | Check the network connection; displayed log data may be stale. |
 
-**STALLED** means that the server is reachable and reports an overdue
-control-loop heartbeat. It does not assert that the control loop has
-permanently stopped: an unusually long control step or scheduling delay may
-also exceed the timeout. **DISCONNECTED** means the browser cannot verify the
-server's current state. The browser must not infer STALLED merely because a
-server response is late.
+The distinction is particularly important for **STALLED**: its user meaning
+expresses the potential consequence, while its system meaning describes
+what can actually be detected. An overdue heartbeat does not prove that
+hardware control has stopped; a long-running step or scheduling delay can
+also cause it. **DISCONNECTED** means the browser cannot verify the server's
+current state. The browser must not infer STALLED merely because a server
+response is late.
 
 The master alarm applies these rules in order:
 
@@ -179,15 +182,14 @@ Responsibilities and implementation direction
 ---------------------------------------------
 
 - **Control loop:** Decides which actions are safe, isolates operation
-  failures, preserves user intent, and reports outcomes.
+  failures, preserves user intent, reports outcomes, and records completion
+  of control-step attempts as a heartbeat even when a handled failure occurs.
 - **Delegates:** Report genuine failures and enforce their command and
   verification contracts; they must not conceal errors with fabricated
   success values.
 - **ControlHealth:** Tracks active issues, severity, repetition and recovery
   without making hardware control decisions. It does not detect a stalled
   control loop or browser disconnection.
-- **Control loop:** Records completion of control-step attempts as a heartbeat,
-  independently of whether the attempt reported an operational failure.
 - **Server:** Reports current operational health and heartbeat freshness.
 - **Browser/GUI:** Determines whether a fresh server response is available,
   applies the five-state precedence rules and presents the persistent alarm.
