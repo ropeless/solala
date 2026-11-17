@@ -204,7 +204,7 @@ class ModbusPowerController(PowerController):
             value = await self._modbus[name].get()
             if not isinstance(value, (int, float)):
                 raise TypeError(f'expected numeric register {name!r}, got {type(value)}')
-            return float(value)
+            return value
         except Exception as err:
             LOGGER.warning(f'GET status {name}: ERROR: {err}')
             return math.nan
@@ -452,15 +452,6 @@ class ModbusPowerController(PowerController):
         finally:
             LOGGER.info(f'{_STOP} {name}')
 
-    def _logger_get_set(self, message: str) -> None:
-        """
-        Log a register operation when register-operation logging is enabled.
-
-        Args:
-            message: Message describing the register operation.
-        """
-        LOGGER.info(message)
-
     async def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
         """
         Set the inverter output limit and its automatic reversion duration.
@@ -496,7 +487,7 @@ class ModbusPowerController(PowerController):
         old = await self._modbus[name].get()
         if not force and old == value:
             # No change needed
-            self._logger_get_set(f'SET {name}: {old!r} -> {value!r} UNCHANGED')
+            LOGGER.info(f'SET {name}: {old!r} -> {value!r} UNCHANGED')
         else:
             # Make the change
             try:
@@ -515,9 +506,9 @@ class ModbusPowerController(PowerController):
             if failed:
                 LOGGER.error(f'SET {name}: {old!r} -> {value!r} checked {new!r} FAILED')
             elif force:
-                self._logger_get_set(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK FORCED')
+                LOGGER.info(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK FORCED')
             else:
-                self._logger_get_set(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK')
+                LOGGER.info(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK')
 
     async def _get(self, name: str) -> int | float:
         """
@@ -533,7 +524,7 @@ class ModbusPowerController(PowerController):
             TypeError: If the register value is not numeric.
         """
         value = await self._modbus[name].get()
-        self._logger_get_set(f'GET {name}: {value!r}')
+        LOGGER.info(f'GET {name}: {value!r}')
         if not isinstance(value, (int, float)):
             msg = f'getting register {name!r}: Expected int or float, got {type(value)}'
             LOGGER.error(msg)
@@ -576,7 +567,7 @@ class ModbusPowerController(PowerController):
         Returns:
             The sum of the register values.
         """
-        self._logger_get_set(f'SUM {names}')
+        LOGGER.info(f'SUM {names}')
         result = sum(await self._get_all(names))
-        self._logger_get_set(f'SUM = {result}')
+        LOGGER.info(f'SUM = {result}')
         return result
