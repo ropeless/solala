@@ -1565,7 +1565,18 @@ async def _control_step(state: _ControlState) -> None:
     # Do not hold the settings lock across price retrieval or hardware I/O.
     # We operate on the settings `requested_mode` copied above.
 
-    await _apply_battery_policy(requested_mode, pricer_available)
+    try:
+        await _apply_battery_policy(requested_mode, pricer_available)
+    except Exception:
+        # Preserve the last effective battery mode rather than falling back
+        # to the originally requested mode after a failed price lookup.
+        requested_mode.battery_mode = prev_state.control_mode.battery_mode
+        if state.health.report_failure('battery_policy', Severity.CAUTION,
+                                       'Battery price policy could not be evaluated'):
+            log_exception('Battery price policy failed')
+    else:
+        if state.health.report_success('battery_policy'):
+            log_info('Battery price policy recovered after previous failure')
     await _execute_battery_mode(state, prev_state, controller, requested_mode)
 
     try:
