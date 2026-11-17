@@ -9,7 +9,7 @@ from nicegui import ui
 
 from solala.constants import Constants
 from solala.control_loop import control_loop
-from solala.control_loop.control_health import HealthIssue, Severity
+from solala.control_loop.control_health import HealthIssue
 
 
 def _alarm_state(previous: str) -> tuple[str, tuple[HealthIssue, ...]]:
@@ -53,12 +53,6 @@ class MasterAlarm:
         with ui.dialog() as self._dialog, ui.card().classes('w-full').style('max-width: 520px'):
             ui.label('System Health').classes('text-h6')
             self._details = ui.column().classes('w-full gap-2')
-            if control_loop.dummy_health_test_enabled():
-                with ui.row().classes('items-center gap-2'):
-                    ui.label('Dummy health test').classes('text-caption')
-                    ui.button('Normal', on_click=lambda: self._inject_health(None)).props('flat dense')
-                    ui.button('Caution', on_click=lambda: self._inject_health(Severity.CAUTION)).props('flat dense')
-                    ui.button('Warning', on_click=lambda: self._inject_health(Severity.WARNING)).props('flat dense')
             with ui.row().classes('w-full justify-end'):
                 ui.button('Go to Log', on_click=self._open_log).props('flat')
                 ui.button('Close', on_click=self._dialog.close).props('flat')
@@ -153,18 +147,6 @@ class MasterAlarm:
                     ui.label(f'Last: {issue.last_seen.astimezone().strftime("%Y-%m-%d %H:%M:%S")}').classes('text-caption')
                     ui.label(f'Occurrences: {issue.occurrences}').classes('text-caption')
         self._dialog.open()
-
-    def _inject_health(self, severity: Severity | None) -> None:
-        """
-        Apply an opt-in dummy health condition and refresh alarm details.
-
-        Args:
-            severity: Severity to simulate, or None to clear the test issue.
-        """
-        control_loop.set_dummy_health_issue(severity)
-        self._refresh()
-        self._open_details()
-
 
     async def _open_log(self) -> None:
         """
