@@ -22,8 +22,6 @@ class TuyaPowerConsumer(PowerConsumer):
 
     API failures return fallback readings, which are cached for the full cache
     duration. Callers should expect recovery to be delayed until cache expiry.
-    Concurrent first calls to get_registers() may build separate register banks;
-    callers should initialise registers before accessing them concurrently.
     """
 
     def __init__(
@@ -77,6 +75,7 @@ class TuyaPowerConsumer(PowerConsumer):
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
+        self._register_bank_lock = asyncio.Lock()
 
     async def _connect(self) -> None:
         """
@@ -89,14 +88,17 @@ class TuyaPowerConsumer(PowerConsumer):
             self._connected = True
 
     async def get_registers(self) -> RegisterBank:
-        if self._register_bank is None:
-            self._register_bank = reg_bank = RegisterBank({
-                key: AsyncCallRegister((partial(self._get_register_value, key)), reg_type)
-                async for key, reg_type in self._get_register_keys()
-            })
-            return reg_bank
-        else:
-            return self._register_bank
+        reg_bank = self._register_bank
+        if reg_bank is None:
+            async with self._register_bank_lock:
+                reg_bank = self._register_bank
+                if reg_bank is None:
+                    reg_bank = RegisterBank({
+                        key: AsyncCallRegister(partial(self._get_register_value, key), reg_type)
+                        async for key, reg_type in self._get_register_keys()
+                    })
+                    self._register_bank = reg_bank
+        return reg_bank
 
     async def get_status(self) -> ConsumerStatus:
         device_status: JSONDict = await self._cache()
