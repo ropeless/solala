@@ -1436,10 +1436,16 @@ async def _control_loop() -> None:
         except Exception:
             log_exception('Power cache invalidation failed')
 
-        try:
-            await _cur_log_registers(state.registers_to_log)
-        except Exception:
-            log_exception('Register logging failed')
+        if state.registers_to_log is not None:
+            try:
+                await _cur_log_registers(state.registers_to_log)
+            except Exception:
+                if state.health.report_failure('register_logging', Severity.CAUTION,
+                                               'Diagnostic register logging failed'):
+                    log_exception('Register logging failed')
+            else:
+                if state.health.report_success('register_logging'):
+                    log_info('Diagnostic register logging recovered after previous failure')
 
         # Listener callbacks are dispatched without holding state locks.
         _update_listeners(state.control_loop_listeners.copy())
@@ -1507,12 +1513,9 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
                 to_log_numeric[name] = value
             elif isinstance(value, str):
                 to_log_text[name] = value
-        try:
-            async with _database() as db:
-                await db.insert_registers_numeric(timestamp, to_log_numeric)
-                await db.insert_registers_text(timestamp, to_log_text)
-        except (ConnectionError, DatabaseError) as err:
-            log_error(f'Database connection error: {err}')
+        async with _database() as db:
+            await db.insert_registers_numeric(timestamp, to_log_numeric)
+            await db.insert_registers_text(timestamp, to_log_text)
 
 
 async def _control_step(state: _ControlState) -> None:
