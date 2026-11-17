@@ -385,6 +385,9 @@ def log_error(message: str) -> None:
 
 
 def log_exception(message: str) -> None:
+    """
+    Should only be used when handling an exception.
+    """
     LOGGER.exception(f'{_LOG_SRC}{message}')
 
 
