@@ -116,12 +116,13 @@ class DummyControllerFailureTestCase(unittest.IsolatedAsyncioTestCase):
         sleep.assert_awaited_once_with(1.0)
 
     async def test_connection_info_exception(self) -> None:
-        # The constructor calls get_connection_info() to build registers.
+        # Initialisation must succeed; injection applies to later calls.
+        controller = make_controller(DummyControllerFailure(
+            location=ControllerLocation.get_connection_info,
+            exception=ConnectionError('simulated'),
+        ))
         with self.assertRaises(ConnectionError):
-            make_controller(DummyControllerFailure(
-                location=ControllerLocation.get_connection_info,
-                exception=ConnectionError('simulated'),
-            ))
+            controller.get_connection_info()
 
     async def test_settings_round_trip(self) -> None:
         settings = DummyControllerConnection(failure=DummyControllerFailure(
