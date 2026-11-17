@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from functools import partial
 
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 from solala.register import CallRegister
@@ -82,7 +83,7 @@ class DummyPowerController(PowerController):
         self.accumulated_battery_energy_discharge: float = 0
 
         self.registers = RegisterBank({
-            key: CallRegister(lambda key=key: self.get_connection_info()[key])
+            key: CallRegister(partial(self._get_connection_value, key))
             for key in self.get_connection_info().keys()
         })
 
@@ -106,6 +107,9 @@ class DummyPowerController(PowerController):
             'max_charge_param': self.max_charge_param,
             'max_discharge_param': self.max_discharge_param,
         }
+
+    def _get_connection_value(self, key: str) -> int | float | str:
+        return self.get_connection_info()[key]
 
     async def get_registers(self) -> RegisterBank:
         return self.registers
