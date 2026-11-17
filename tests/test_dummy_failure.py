@@ -21,7 +21,7 @@ class SerializableExceptionTestCase(unittest.TestCase):
                     settings = _FailureSettings(exception=exception_type(*args))
                     restored = _FailureSettings.model_validate_json(settings.model_dump_json())
                     self.assertIs(type(restored.exception), exception_type)
-                    self.assertEqual(restored.exception.args, args if args else ('',))
+                    self.assertEqual(restored.exception.args, args)
 
     def test_python_dump_keeps_exception_instance(self):
         exception = TimeoutError('simulated timeout')
