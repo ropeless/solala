@@ -1,16 +1,16 @@
 import random
 from datetime import datetime, timedelta, date
-from enum import StrEnum, auto
+from enum import auto
 
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
-from solala.utils.dummy_failure import DummyFailure, maybe_inject_failure, async_maybe_inject_failure
+from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, async_maybe_inject_failure
 from solala.utils.json_extras import JSONDict
 from solala.utils.time_extras import ensure_date, date_to_datetime
 
 
-class FailureLocation(StrEnum):
+class FailureLocation(BaseFailureLocation):
     """
     Operations at which the dummy solar forecaster can inject failures.
     """
@@ -18,6 +18,11 @@ class FailureLocation(StrEnum):
     get_forecast = auto()
     get_connection_info = auto()
 
+    def is_async(self) -> bool:
+        """
+        Return whether the selected operation is asynchronous.
+        """
+        return self != FailureLocation.get_connection_info
 
 class DummySolarForecaster(SolarForecaster):
     """
