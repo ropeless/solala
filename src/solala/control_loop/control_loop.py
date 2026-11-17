@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+import math
 import re
 from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
 from contextlib import asynccontextmanager
@@ -46,7 +47,7 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     ControllerConnection, PricerConnection, ConsumerConnection, DummyControllerConnection, DummyPricerConnection, \
     DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, DummySolarForecasterConnection, \
     DatabaseConnection, TuyaConnection
-from solala.utils.datetime_extras import now, local_time_zone
+from solala.utils.time_extras import now, local_time_zone
 from solala.utils.json_extras import JSONDict, json_num, JSONValue
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
 from solala.utils.ordered_async_rlock import OrderedAsyncRLock
@@ -134,8 +135,8 @@ class _PriceCache(LifecycleCache[Price]):
             _get_price_now,
             log_error=log_error,
             log_info=log_info,
-            old=Constants.PRICE_OLD,
-            retry=Constants.PRICE_SETTLE_CHECK,
+            old=Constants.PRICE_OLD.total_seconds(),
+            retry=Constants.PRICE_SETTLE_CHECK.total_seconds(),
             default=_NO_PRICE,
             interim_message='price is an estimate',
         )
@@ -148,8 +149,8 @@ class _PriceForecastCache(LifecycleCache[Sequence[Price]]):
             _get_price_forecast,
             log_error=log_error,
             log_info=log_info,
-            young=Constants.PRICE_FORECAST_YOUNG,
-            old=Constants.PRICE_FORECAST_OLD,
+            young=Constants.PRICE_FORECAST_YOUNG.total_seconds(),
+            old=Constants.PRICE_FORECAST_OLD.total_seconds(),
             default=(),
         )
 
@@ -161,8 +162,8 @@ class _DemandWindowCache(LifecycleCache[PossibleDemandWindow]):
             partial(_get_demand_window, day),
             log_error=log_error,
             log_info=log_info,
-            young=Constants.PRICE_DEMAND_WINDOW_YOUNG,
-            old=Constants.PRICE_DEMAND_WINDOW_OLD,
+            young=Constants.PRICE_DEMAND_WINDOW_YOUNG.total_seconds(),
+            old=Constants.PRICE_DEMAND_WINDOW_OLD.total_seconds(),
             default=None,
         )
 
@@ -174,8 +175,8 @@ class _SolarForecastCache(LifecycleCache[DailySolarForecast]):
             partial(_get_solar_forecast, day),
             log_error=log_error,
             log_info=log_info,
-            young=Constants.SOLAR_FORECAST_YOUNG,
-            old=Constants.SOLAR_FORECAST_OLD,
+            young=Constants.SOLAR_FORECAST_YOUNG.total_seconds(),
+            old=Constants.SOLAR_FORECAST_OLD.total_seconds(),
             default=_NO_SOLAR_FORECAST,
         )
 
@@ -471,7 +472,10 @@ def loop_check_overdue() -> float:
         The number of seconds the loop check is overdue (a small number if running normally).
     """
     # We are not concerned with race conditions, so we do not need to get the control loop lock.
-    return max(0, now().timestamp() - (_CONTROL_STATE.iteration_start.timestamp() + Constants.LOOP_TIME))
+    return max(
+        0,
+        now().timestamp() - (_CONTROL_STATE.iteration_start.timestamp() + Constants.LOOP_TIME.total_seconds())
+    )
 
 
 def exit_control_loop() -> None:
@@ -708,7 +712,7 @@ async def get_price_now_no_estimate(max_tries: int = 10) -> Price:
     max_tries -= 1
     while price.is_estimate and max_tries > 1 and _CONTROL_STATE.connections.pricer is not None:
         max_tries -= 1
-        await asyncio.sleep(Constants.PRICE_SETTLE_CHECK)
+        await asyncio.sleep(Constants.PRICE_SETTLE_CHECK.total_seconds())
         price = await get_price_now()
     return price
 
@@ -765,8 +769,14 @@ async def get_price_forecast() -> Sequence[Price]:
         log_info(f'Price forecast contains old data: {prices[0]}')
         prices = prices[1:]
 
-    needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
-    return prices[:needed_forecasts]
+    return prices[:_needed_forecasts()]
+
+
+def _needed_forecasts() -> int:
+    """
+    How many 30-minute forecasts are needed to cover.
+    """
+    return int(math.ceil(Constants.PRICE_FORECAST_DURATION.total_seconds() / 60 / 30))
 
 
 async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
@@ -775,9 +785,8 @@ async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
         return error('Price forecast not available. Error: power pricer not connected')
 
     try:
-        needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
         # Plus one to account for possible race condition
-        prices: list[Price] = await pricer.get_price_forecast(needed_forecasts + 1)
+        prices: list[Price] = await pricer.get_price_forecast(_needed_forecasts() + 1)
         log_info('Price forecast updated')
     except Exception as err:
         return error(f'Price forecast not available. Error: {err}')
@@ -1312,8 +1321,8 @@ async def _database_loop() -> None:
         _update_listeners(listeners)
 
         # Sleep for the remaining time until the next loop iteration.
-        iter_time = Constants.DATABASE_LOG_LOOP_TIME
-        start_timestamp = (int(iteration_start.timestamp() / iter_time) + 1) * iter_time
+        iter_time: int = int(Constants.DATABASE_LOG_LOOP_TIME.total_seconds())
+        start_timestamp: int = (int(iteration_start.timestamp() / iter_time) + 1) * iter_time
         sleeptime: float = start_timestamp - now().timestamp()
         await asyncio.sleep(sleeptime)
 
@@ -1403,7 +1412,10 @@ async def _control_loop() -> None:
 
         # Sleep for the remaining time until the next loop iteration.
         sleep_time = _get_sleep_time()
-        loop_time_multiple = (now().timestamp() - iteration_start.timestamp() + sleep_time) / Constants.LOOP_TIME
+        loop_time_multiple = (
+                (now().timestamp() - iteration_start.timestamp() + sleep_time)
+                / Constants.LOOP_TIME.total_seconds()
+        )
         if loop_time_multiple > 1:
             log_warn(f'Loop time multiple > 1 ({loop_time_multiple})')
         await asyncio.sleep(sleep_time)
@@ -1417,10 +1429,11 @@ def _get_sleep_time() -> float:
     The result is > Constants.LOOP_MIN_SLEEP_TIME.
     """
     ts: float = now().timestamp()
-    start_timestamp = (int(ts / Constants.LOOP_TIME) + 1) * Constants.LOOP_TIME
+    loop_time: int = int(Constants.LOOP_TIME.total_seconds())
+    start_timestamp = int(ts / loop_time + 1) * loop_time
     sleep_time = start_timestamp - ts
-    while sleep_time < Constants.LOOP_MIN_SLEEP_TIME:
-        start_timestamp += Constants.LOOP_TIME
+    while sleep_time < Constants.LOOP_MIN_SLEEP_TIME.total_seconds():
+        start_timestamp += loop_time
         sleep_time = start_timestamp - ts
     return sleep_time
 

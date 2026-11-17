@@ -3,7 +3,7 @@ from enum import Enum, auto
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 from solala.register import CallRegister
 from solala.register_bank import RegisterBank
-from solala.utils.datetime_extras import now
+from solala.utils.time_extras import now
 
 
 class BatteryMode(Enum):

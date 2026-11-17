@@ -7,7 +7,7 @@ from scipy.interpolate import CubicSpline
 from solala.database.measurement import Measurement
 from solala.delegates.power_pricer.price import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast
-from solala.utils.datetime_extras import local_time_zone, ensure_date, date_to_datetime
+from solala.utils.time_extras import local_time_zone, ensure_date, date_to_datetime
 
 
 class GraphingInterpolator:
