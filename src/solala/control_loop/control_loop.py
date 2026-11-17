@@ -1797,13 +1797,14 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
     clients: list[ModbusTcpClient] = []  # coindexed with address
     errors: list[JSONDict] = []
     for address in addresses:
+        client: ModbusTcpClient | None = None
         try:
             client = ModbusTcpClient(address.ip_address)
             if not client.connect():
                 raise ConnectionError('Modbus TCP connection failed')
             clients.append(client)
         except Exception as err:
-            if 'client' in locals():
+            if client is not None:
                 client.close()
             errors.append({
                 'host': address.ip_address,
