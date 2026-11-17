@@ -132,7 +132,7 @@ class _PrevControl:
 
 class _PriceCache(LifecycleCache[Price]):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             _get_price_now,
             log_error=log_error,
@@ -146,7 +146,7 @@ class _PriceCache(LifecycleCache[Price]):
 
 class _PriceForecastCache(LifecycleCache[Sequence[Price]]):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             _get_price_forecast,
             log_error=log_error,
@@ -1078,8 +1078,8 @@ async def log_registers(match: str | re.Pattern[str] | None) -> None:
     Select registers to log to the database.
 
     Args:
-    match: Regular expression matching register names, or None to disable logging.
-        Use `MATCH_ALL` to match all registers.
+        match: Regular expression matching register names, or None to disable logging.
+            Use `MATCH_ALL` to match all registers.
     """
     if match is None:
         _CONTROL_STATE.registers_to_log = None
@@ -1383,7 +1383,7 @@ async def _database_loop() -> None:
         iter_time: int = int(Constants.DATABASE_LOG_LOOP_TIME.total_seconds())
         start_timestamp: int = (int(iteration_start.timestamp() / iter_time) + 1) * iter_time
         sleeptime: float = start_timestamp - now().timestamp()
-        await asyncio.sleep(sleeptime)
+        await asyncio.sleep(max(0.0, sleeptime))
 
     log_info('Stopped database loop')
 
@@ -1600,7 +1600,7 @@ async def _control_step(state: _ControlState) -> None:
             log_exception('Battery price policy failed')
     else:
         if state.health.report_success('battery_policy'):
-            log_info('Battery price policy recovered after previous failure')
+            log_info('Battery price policy issue resolved')
     await _execute_battery_mode(state, prev_state, controller, requested_mode)
 
     try:
@@ -1614,7 +1614,7 @@ async def _control_step(state: _ControlState) -> None:
             log_exception('Inverter price policy failed')
     else:
         if state.health.report_success('inverter_policy'):
-            log_info('Inverter price policy recovered after previous failure')
+            log_info('Inverter price policy issue resolved')
     await _execute_inverter_mode(state, prev_state, controller, requested_mode)
 
     async with _control_settings_state():
@@ -1799,9 +1799,12 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
     for address in addresses:
         try:
             client = ModbusTcpClient(address.ip_address)
-            client.connect()
+            if not client.connect():
+                raise ConnectionError('Modbus TCP connection failed')
             clients.append(client)
         except Exception as err:
+            if 'client' in locals():
+                client.close()
             errors.append({
                 'host': address.ip_address,
                 'mac_address': address.mac_address,
@@ -1809,6 +1812,8 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
             })
     # Fail if there are any errors
     if len(errors) > 0:
+        for client in clients:
+            client.close()
         raise ControlLoopError('could not connect Modbus TCP client', errors=errors)
 
     # Configure power controller
@@ -2038,6 +2043,28 @@ async def _reconfigure_registers(state: _ControlState) -> None:
         registers[f'status/power/{f.name}'] = PriceRegister(f.name, f_type)
 
     # Add controller registers
+    try:
+        await _add_delegate_registers(state, registers)
+    except Exception:
+        # Do not expose register references belonging to disconnected hardware.
+        state.connections.registers = RegisterBank(registers)
+        if state.health.report_failure('register_configuration', Severity.CAUTION,
+                                       'Register bank reconfiguration failed'):
+            log_exception('Register bank reconfiguration failed')
+    else:
+        state.connections.registers = RegisterBank(registers)
+        if state.health.report_success('register_configuration'):
+            log_info('Register bank reconfiguration recovered')
+
+
+async def _add_delegate_registers(state: _ControlState, registers: dict[str, Register]) -> None:
+    """
+    Add controller and consumer registers to the new register bank.
+
+    Args:
+        state: Current connection state.
+        registers: Register mapping to extend.
+    """
     if state.connections.controller is not None:
         controller_registers: RegisterBank = await state.connections.controller.get_registers()
         for name, register in controller_registers.items():
@@ -2048,9 +2075,6 @@ async def _reconfigure_registers(state: _ControlState) -> None:
         consumer_registers: RegisterBank = await consumer.get_registers()
         for name, register in consumer_registers.items():
             registers[f'consumer/{consumer_name}/{name}'] = register
-
-    state.connections.registers = RegisterBank(registers)
-
 
 def _get_dataclass_properties(cls: type) -> Iterator[tuple[str, Any]]:
     """
