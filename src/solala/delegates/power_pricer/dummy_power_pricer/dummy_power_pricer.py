@@ -27,6 +27,7 @@ class FailureLocation(BaseFailureLocation):
         """
         return self != FailureLocation.get_connection_info
 
+
 class DummyPowerPricer(PowerPricer):
     """
     Generates simulated electricity prices for testing and demonstration.
