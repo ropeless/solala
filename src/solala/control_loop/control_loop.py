@@ -486,7 +486,7 @@ def exit_control_loop() -> None:
     """
     Flag to exit the control loop on the next iteration.
     """
-    # We are not concerned with race conditions, so we do not need to get the control loop lock.
+    # We are not concerned with race conditions, so we do not need to get a lock.
     _CONTROL_STATE.control_loop_running = False
     _CONTROL_STATE.control_changed.set()
 
