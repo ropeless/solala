@@ -275,3 +275,92 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(OSError) as caught:
             await controller.zero_export(change_duration=11)
         self.assertIs(caught.exception, failure)
+
+    async def test_power_limit_two_inverters_weighted_by_capacity(self) -> None:
+        values = {
+            'master/limit': 40.0, 'slave/limit': 80.0,
+            'master/enabled': 1.0, 'slave/enabled': 1.0,
+            'master/WMax': 6000.0, 'master/WRtg': 5000.0,
+            'slave/WMax': 4000.0, 'slave/WRtg': 3000.0,
+        }
+
+        async def read(name: str) -> float:
+            return values[name]
+
+        controller = self.make_controller({})
+        controller._WMaxLimPct = ['master/limit', 'slave/limit']
+        controller._WMaxLim_Ena = ['master/enabled', 'slave/enabled']
+        controller._power_controllers = ['master', 'slave']
+        controller._get_for_status = AsyncMock(side_effect=read)
+        self.assertAlmostEqual(await controller._get_power_limit(), 55.0)
+
+        values['slave/enabled'] = 0.0
+        self.assertAlmostEqual(await controller._get_power_limit(), 62.5)
+
+    async def test_power_limit_two_inverters_unavailable_capacity(self) -> None:
+        controller = self.make_controller({})
+        controller._WMaxLimPct = ['master/limit', 'slave/limit']
+        controller._WMaxLim_Ena = ['master/enabled', 'slave/enabled']
+        controller._power_controllers = ['master', 'slave']
+        values = {
+            'master/limit': 40.0, 'slave/limit': 80.0,
+            'master/enabled': 1.0, 'slave/enabled': 1.0,
+            'master/WMax': 6000.0, 'master/WRtg': 5000.0,
+            'slave/WMax': math.nan, 'slave/WRtg': 3000.0,
+        }
+        controller._get_for_status = AsyncMock(side_effect=lambda name: values[name])
+        self.assertTrue(math.isnan(await controller._get_power_limit()))
+
+    async def test_set_power_pct_two_inverters_register_order(self) -> None:
+        controller = self.make_controller({})
+        controller._WMaxLimPct = ['master/pct', 'slave/pct']
+        controller._WMaxLimPct_RvrtTms = ['master/revert', 'slave/revert']
+        controller._WMaxLim_Ena = ['master/enabled', 'slave/enabled']
+        calls: list[tuple[str, float, bool]] = []
+
+        async def set_register(name: str, value: int | float, *, force: bool = False) -> None:
+            calls.append((name, value, force))
+
+        controller._set = AsyncMock(side_effect=set_register)
+        await controller._set_power_pct(35.0, 11)
+        self.assertEqual(calls, [
+            ('master/pct', 35.0, False), ('slave/pct', 35.0, False),
+            ('master/revert', 11, False), ('slave/revert', 11, False),
+            ('master/enabled', 1, True), ('slave/enabled', 1, True),
+        ])
+
+        calls.clear()
+        await controller._set_power_pct(100.0, 11)
+        self.assertEqual(calls, [
+            ('master/pct', 100, False), ('slave/pct', 100, False),
+            ('master/revert', 11, False), ('slave/revert', 11, False),
+            ('master/enabled', 0, False), ('slave/enabled', 0, False),
+        ])
+
+    async def test_set_power_pct_stops_after_partial_failure(self) -> None:
+        controller = self.make_controller({})
+        controller._WMaxLimPct = ['master/pct', 'slave/pct']
+        controller._WMaxLimPct_RvrtTms = ['master/revert', 'slave/revert']
+        controller._WMaxLim_Ena = ['master/enabled', 'slave/enabled']
+        failure = OSError('slave write failed')
+        calls: list[str] = []
+
+        async def set_register(name: str, value: int | float, *, force: bool = False) -> None:
+            calls.append(name)
+            if name == 'slave/pct':
+                raise failure
+
+        controller._set = AsyncMock(side_effect=set_register)
+        with self.assertRaises(OSError) as caught:
+            await controller._set_power_pct(35.0, 11)
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(calls, ['master/pct', 'slave/pct'])
+
+    async def test_zero_export_two_inverters_uses_combined_capacity(self) -> None:
+        controller = self.make_zero_export_controller(
+            grid_power=-3000.0, inverter_power=4000.0, capacity=5000.0,
+        )
+        controller._power_controllers = ['master', 'slave']
+        controller._get_inverter_limit_array = AsyncMock(return_value=[5000.0, 3000.0])
+        await controller.zero_export(change_duration=11)
+        controller._set_power_pct.assert_awaited_once_with(12.5, 11)
