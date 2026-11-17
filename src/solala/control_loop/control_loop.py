@@ -353,6 +353,7 @@ class _ControlState:
             assert settings is None
             self.connections.consumers.pop(consumer_name, None)
             self.connections.consumers_settings.pop(consumer_name, None)
+            self.health.report_success(f'consumer_status:{consumer_name}')
         else:
             assert settings is not None
             self.connections.consumers[consumer_name] = consumer
@@ -820,8 +821,13 @@ async def get_consumers_status() -> dict[str, ConsumerStatus]:
         if isinstance(status, BaseException):
             if isinstance(status, asyncio.CancelledError):
                 raise status
-            log_error(f'Consumer {name!r} status unavailable: {status!r}')
+            if _CONTROL_STATE.health.report_failure(
+                    f'consumer_status:{name}', Severity.CAUTION,
+                    f'Consumer {name!r} status unavailable'):
+                log_error(f'Consumer {name!r} status unavailable: {status!r}')
         else:
+            if _CONTROL_STATE.health.report_success(f'consumer_status:{name}'):
+                log_info(f'Consumer {name!r} status recovered')
             result[name] = status
     return result
 
