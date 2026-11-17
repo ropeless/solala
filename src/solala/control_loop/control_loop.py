@@ -661,13 +661,28 @@ async def get_power_status() -> PowerStatus:
     """
     async with _connections_state() as connections:
         async with _cache_state() as cache:
-            if not cache.last_power_valid:
-                controller: PowerController | None = connections.controller
-                if controller is None:
+            if cache.last_power_valid:
+                return cache.last_power
+
+            controller: PowerController | None = connections.controller
+            if controller is None:
+                cache.last_power = _NO_POWER
+                if _CONTROL_STATE.health.report_failure(
+                        'power_status', Severity.CAUTION, 'Power status unavailable: controller disconnected'):
                     log_error('Power update not available. Error: power controller not connected')
+            else:
+                try:
+                    status = await controller.get_status()
+                except Exception:
+                    cache.last_power = _NO_POWER
+                    if _CONTROL_STATE.health.report_failure(
+                            'power_status', Severity.CAUTION, 'Power status could not be read'):
+                        log_exception('Power status update failed')
                 else:
-                    cache.last_power = await controller.get_status()
-                cache.last_power_valid = True
+                    cache.last_power = status
+                    cache.last_power_valid = True
+                    if _CONTROL_STATE.health.report_success('power_status'):
+                        log_info('Power status recovered after previous failure')
             return cache.last_power
 
 
