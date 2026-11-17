@@ -118,6 +118,53 @@ class DatabaseConnectionLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.returned.is_set())
         self.pool._pool.close.assert_awaited_once()
 
+    async def test_close_waits_for_cancelled_connection_cleanup(self) -> None:
+        """
+        Shutdown must not overtake cleanup cancelled while returning a connection.
+        """
+        cleanup_started = asyncio.Event()
+        allow_cleanup = asyncio.Event()
+        cleanup_finished = asyncio.Event()
+
+        @asynccontextmanager
+        async def connection(*, timeout=None):
+            conn = AsyncMock()
+            try:
+                yield conn
+            finally:
+                cleanup_started.set()
+                try:
+                    await allow_cleanup.wait()
+                finally:
+                    cleanup_finished.set()
+
+        self.pool._pool.connection = connection
+        self.allow_acquisition.set()
+
+        async def borrower():
+            async with self.pool.reserve_database():
+                pass
+
+        task = asyncio.create_task(borrower())
+        await asyncio.wait_for(cleanup_started.wait(), 2)
+        closing = asyncio.create_task(self.pool.close())
+        await asyncio.sleep(0)
+        self.pool._pool.close.assert_not_awaited()
+
+        task.cancel()
+        try:
+            with self.assertRaises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 2)
+            # Cancellation of the borrower must not let shutdown overtake
+            # completion of the underlying connection's cleanup.
+            self.assertTrue(cleanup_finished.is_set())
+            await asyncio.wait_for(closing, 2)
+        finally:
+            allow_cleanup.set()
+            if not closing.done():
+                closing.cancel()
+            await asyncio.gather(closing, return_exceptions=True)
+
     async def test_concurrent_closes_close_pool_once(self) -> None:
         await asyncio.gather(self.pool.close(), self.pool.close())
         self.pool._pool.close.assert_awaited_once()
