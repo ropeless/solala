@@ -1506,22 +1506,31 @@ async def _control_step(state: _ControlState) -> None:
     # Connection lifetime is protected by the caller's connections lock.
     # Do not block control-mode getters while waiting for the controller.
     if battery_changed:
-        match requested_mode.battery_mode:
-            case BatteryMode.ENABLE:
-                await power_controller.enable_battery()
-            case BatteryMode.DISABLE:
-                await power_controller.disable_battery()
-            case BatteryMode.FORCE_CHARGE:
-                await power_controller.force_charge()
-            case BatteryMode.FORCE_DISCHARGE:
-                await power_controller.force_discharge()
-            case BatteryMode.CHARGE_ONLY:
-                await power_controller.charge_only()
-            case BatteryMode.DISCHARGE_ONLY:
-                await power_controller.discharge_only()
+        try:
+            match requested_mode.battery_mode:
+                case BatteryMode.ENABLE:
+                    await power_controller.enable_battery()
+                case BatteryMode.DISABLE:
+                    await power_controller.disable_battery()
+                case BatteryMode.FORCE_CHARGE:
+                    await power_controller.force_charge()
+                case BatteryMode.FORCE_DISCHARGE:
+                    await power_controller.force_discharge()
+                case BatteryMode.CHARGE_ONLY:
+                    await power_controller.charge_only()
+                case BatteryMode.DISCHARGE_ONLY:
+                    await power_controller.discharge_only()
+        except Exception:
+            # A partially applied command may leave the hardware state unknown.
+            # Do not blindly retry until reconciliation is implemented.
+            LOGGER.exception('%sBattery command failed: %s', _LOG_SRC, requested_mode.battery_mode)
 
     if inverter_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
-        await power_controller.enable_inverter()
+        try:
+            await power_controller.enable_inverter()
+        except Exception:
+            # An unsuccessful call does not establish the actual inverter mode.
+            LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
 
     # These inverter modes require a keep-alive command on every iteration.
     # A failed command is logged and retried next iteration; the previous mode
