@@ -3,6 +3,7 @@ import importlib
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from solala.control_loop.control_health import Severity
 from solala.delegates.power_consumer.consumer_status import ConsumerStatus
 
 control_loop = importlib.import_module('solala.control_loop.control_loop')
@@ -49,3 +50,50 @@ class ConsumerStatusIsolationTestCase(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(asyncio.CancelledError):
             await control_loop.get_consumers_status()
+
+    async def test_consumer_failure_repetition_and_recovery(self) -> None:
+        """
+        Track a consumer's failures until its next successful reading.
+        """
+        expected = ConsumerStatus(on=True, power=120.0, voltage=240.0, current=0.5)
+        consumer = AsyncMock()
+        consumer.get_status.side_effect = [
+            ConnectionError('offline'),
+            ConnectionError('offline'),
+            expected,
+        ]
+        self.state.connections.consumers['meter'] = consumer
+
+        with (
+            patch.object(control_loop, 'log_error') as log_error,
+            patch.object(control_loop, 'log_info') as log_info,
+        ):
+            self.assertEqual(await control_loop.get_consumers_status(), {})
+            issues = self.state.health.get_issues()
+            self.assertEqual(len(issues), 1)
+            self.assertEqual(issues[0].key, 'consumer_status:meter')
+            self.assertEqual(issues[0].severity, Severity.CAUTION)
+            self.assertEqual(issues[0].occurrences, 1)
+
+            self.assertEqual(await control_loop.get_consumers_status(), {})
+            self.assertEqual(self.state.health.get_issues()[0].occurrences, 2)
+            log_error.assert_called_once()
+
+            self.assertEqual(await control_loop.get_consumers_status(), {'meter': expected})
+            self.assertEqual(self.state.health.get_issues(), ())
+            log_info.assert_called_once_with("Consumer 'meter' status recovered")
+
+    async def test_removed_consumer_clears_reporting_issue(self) -> None:
+        """
+        Removing a consumer must not leave an obsolete health issue.
+        """
+        consumer = AsyncMock()
+        consumer.get_status.side_effect = ConnectionError('offline')
+        self.state.connections.consumers['meter'] = consumer
+
+        with patch.object(control_loop, 'log_error'):
+            await control_loop.get_consumers_status()
+        self.assertEqual(len(self.state.health.get_issues()), 1)
+
+        self.state.reset_consumer('meter', None, None)
+        self.assertEqual(self.state.health.get_issues(), ())
