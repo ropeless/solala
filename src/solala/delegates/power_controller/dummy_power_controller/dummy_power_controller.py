@@ -83,7 +83,8 @@ class DummyPowerController(PowerController):
             max_discharge_param: Maximum simulated battery discharging power, in watts.
             failure: Optional simulated failure configuration.
         """
-        self.failure = failure
+        # Disable injection while initialising registers and simulated state.
+        self.failure = None
         self.state_of_charge = 50
 
         self.house_power = house_power
@@ -111,6 +112,7 @@ class DummyPowerController(PowerController):
         })
 
         self.update_status()
+        self.failure = failure
 
     async def get_inverter_limit(self) -> float:
         await async_maybe_inject_failure(FailureLocation.get_inverter_limit, self.failure)
