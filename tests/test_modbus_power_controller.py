@@ -364,3 +364,79 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
         controller._get_inverter_limit_array = AsyncMock(return_value=[5000.0, 3000.0])
         await controller.zero_export(change_duration=11)
         controller._set_power_pct.assert_awaited_once_with(12.5, 11)
+
+    @staticmethod
+    def make_battery_controller() -> ModbusPowerController:
+        controller = object.__new__(ModbusPowerController)
+        controller._StorCtl_Mod = 'master/StorCtl_Mod'
+        controller._InWRte = 'master/InWRte'
+        controller._OutWRte = 'master/OutWRte'
+        controller._ChaGriSet = 'master/ChaGriSet'
+        controller._MinRsvPct = 'master/MinRsvPct'
+        controller._set = AsyncMock()
+        return controller
+
+    async def test_battery_mode_register_sequences(self) -> None:
+        controller = self.make_battery_controller()
+        expected = {
+            'enable_battery': [
+                ('StorCtl_Mod', 0), ('InWRte', 100), ('OutWRte', 100),
+                ('ChaGriSet', 0),
+            ],
+            'disable_battery': [
+                ('StorCtl_Mod', 0), ('InWRte', 0), ('OutWRte', 0),
+                ('StorCtl_Mod', 3), ('ChaGriSet', 0),
+            ],
+            'force_charge': [
+                ('StorCtl_Mod', 0), ('InWRte', 100), ('OutWRte', -100),
+                ('StorCtl_Mod', 3), ('ChaGriSet', 1),
+            ],
+            'force_discharge': [
+                ('StorCtl_Mod', 0), ('InWRte', -100), ('OutWRte', 100),
+                ('StorCtl_Mod', 3), ('ChaGriSet', 0),
+            ],
+            'charge_only': [
+                ('StorCtl_Mod', 0), ('InWRte', 100), ('OutWRte', 0),
+                ('StorCtl_Mod', 3), ('ChaGriSet', 0),
+            ],
+            'discharge_only': [
+                ('StorCtl_Mod', 0), ('InWRte', 0), ('OutWRte', 100),
+                ('StorCtl_Mod', 3), ('ChaGriSet', 0),
+            ],
+        }
+        for method, sequence in expected.items():
+            with self.subTest(method=method):
+                controller._set.reset_mock()
+                await getattr(controller, method)()
+                actual = [(call.args[0].split('/')[-1], call.args[1])
+                          for call in controller._set.await_args_list]
+                self.assertEqual(actual[:-1], sequence)
+                self.assertEqual(actual[-1][0], 'MinRsvPct')
+                self.assertEqual(len(actual), len(sequence) + 1)
+
+    async def test_battery_mode_stops_after_failed_intermediate_write(self) -> None:
+        controller = self.make_battery_controller()
+        failure = OSError('battery register write failed')
+        calls: list[str] = []
+
+        async def write(name: str, value: int | float) -> None:
+            calls.append(name)
+            if name == 'master/OutWRte':
+                raise failure
+
+        controller._set.side_effect = write
+        with self.assertRaises(OSError) as caught:
+            await controller.force_charge()
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(calls, [
+            'master/StorCtl_Mod', 'master/InWRte', 'master/OutWRte',
+        ])
+
+    async def test_battery_mode_propagates_verification_failure(self) -> None:
+        controller = self.make_battery_controller()
+        failure = ValueError('register readback mismatch')
+        controller._set.side_effect = failure
+        with self.assertRaises(ValueError) as caught:
+            await controller.disable_battery()
+        self.assertIs(caught.exception, failure)
+        controller._set.assert_awaited_once_with('master/StorCtl_Mod', 0)
