@@ -29,7 +29,8 @@ class PowerStatusHealthTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.state.cache.last_power_valid = False
         self.controller.get_status.side_effect = OSError('unavailable')
-        self.assertEqual(await control_loop.get_power_status(), control_loop._NO_POWER)
+        with patch.object(control_loop, 'log_exception'):
+            self.assertEqual(await control_loop.get_power_status(), control_loop._NO_POWER)
         self.assertFalse(self.state.cache.last_power_valid)
         issues = self.state.health.get_issues()
         self.assertEqual(len(issues), 1)
