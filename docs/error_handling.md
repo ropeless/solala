@@ -93,29 +93,71 @@ System health and master alarm
 ------------------------------
 
 The user-facing master alarm has **five displayed conditions**, representing
-three operational health levels plus two loss-of-observability conditions:
+three operational health levels and two distinct loss-of-observability
+conditions:
 
-| Condition | Display | Meaning |
-| --- | --- | --- |
-| Normal | **NORMAL** | Control loop responsive; no active faults known. |
-| Degraded | **CAUTION** | Noncritical functionality is impaired. |
-| Critical | **WARNING** | A critical control operation has failed or safe control cannot be confirmed. |
-| Stalled | **WARNING — STALLED** | Control loop is unresponsive; monitoring and control cannot be trusted. |
-| Disconnected | **DISCONNECTED — UNKNOWN** | Browser cannot contact the server; current system state is unknown. |
+| Condition | Display | Meaning | Diagnostic guidance |
+| --- | --- | --- | --- |
+| Normal | **NORMAL** | Server reachable, control-loop heartbeat current, no active health issues. | No action required. |
+| Degraded | **CAUTION** | Server reachable, heartbeat current, noncritical functionality impaired. | Inspect the alarm details. |
+| Critical | **WARNING** | Server reachable, heartbeat current, a critical control operation failed or safe control cannot be confirmed. | Inspect the alarm details and log. |
+| Stalled | **WARNING — STALLED** | Server reachable, but the control-loop heartbeat is overdue; current control-loop operation cannot be confirmed. | Check the Solala log; the server remains reachable. |
+| Disconnected | **DISCONNECTED — UNKNOWN** | Browser cannot obtain a fresh response from the server, including while awaiting the first response after reconnection. | Check the network connection; displayed log data may be stale. |
 
-The most severe active operational issue determines NORMAL, CAUTION or
-WARNING. **STALLED overrides the reported operational health**: a stalled
-loop cannot reliably report its own condition. The GUI must assess loop
-responsiveness independently of the control iteration, using an appropriate
-heartbeat timeout. **DISCONNECTED overrides every other displayed condition**
-in the browser because it can no longer verify any current server status.
-After reconnection, the browser must obtain fresh status before displaying
-NORMAL.
+**STALLED** means that the server is reachable and reports an overdue
+control-loop heartbeat. It does not assert that the control loop has
+permanently stopped: an unusually long control step or scheduling delay may
+also exceed the timeout. **UNKNOWN** means the browser cannot verify the
+server's current state. The browser must not infer STALLED merely because a
+server response is late.
 
-Stalled and disconnected are different: the former means the server is
-reachable but its control loop is not responsive; the latter means the
-browser cannot determine whether the server or control loop is functioning.
-Neither should leave a reassuring stale NORMAL indication on screen.
+The master alarm applies these rules in order:
+
+1. Without a fresh server response, display DISCONNECTED — UNKNOWN.
+2. With a fresh server response reporting an overdue control-loop heartbeat,
+   display WARNING — STALLED, regardless of previously reported health.
+3. Otherwise, display NORMAL, CAUTION or WARNING according to the highest
+   active severity reported by ControlHealth.
+
+A restored browser connection alone does not establish current system health.
+After reconnection, retain UNKNOWN until a fresh server response is received.
+That response may establish STALLED or one of the three operational health
+levels. In particular, never restore a previously displayed NORMAL solely
+because the network connection has returned.
+
+Control-loop heartbeat and timing
+---------------------------------
+
+The control-loop heartbeat records completion of a **control-step attempt**,
+not the start of the attempt and not proof of successful hardware control.
+Update it after a control step finishes, including when an operational failure
+has been caught and reported through ControlHealth. Do not update it for an
+unfinished or cancelled step. Retain the iteration-start timestamp separately
+for control-loop scheduling.
+
+Heartbeat freshness is assessed independently of the control-step task, so a
+suspended control step cannot refresh its own heartbeat. The existing overdue
+hysteresis is intentional: a short delay need not immediately change the
+displayed state. Use `Constants.OVERDUE_THRESHOLD` instead of coupling the
+overdue test to `Constants.LOOP_TIME`:
+
+```python
+if overdue > Constants.OVERDUE_THRESHOLD.total_seconds():
+    # The control-loop heartbeat is overdue.
+```
+
+The intended configuration is `LOOP_TIME = 5 seconds`,
+`OVERDUE_THRESHOLD = 5 seconds` and `CONTROL_DURATION = 11 seconds`.
+Maintain the invariant:
+
+```text
+LOOP_TIME + OVERDUE_THRESHOLD < CONTROL_DURATION
+```
+
+The overdue calculation must consistently account for the normal loop
+interval and the completion-based heartbeat. The intermediate hysteresis
+region may retain the previous displayed operational indication while the
+server remains reachable; it must not override a known disconnection.
 
 User interface
 --------------
@@ -125,7 +167,10 @@ be reassuring and unobtrusive. CAUTION and WARNING should be conspicuous,
 but should not generate repeated pop-ups, sounds or notifications.
 
 Selecting the alarm should reveal active issues in plain language, ordered
-by severity, with relevant details and access to the existing Log tab.
+by severity, including relevant timestamps and occurrence counts, with access
+to the existing Log tab. For STALLED, direct the user to the log; for UNKNOWN,
+explain that the connection should be checked and displayed log data may be
+stale.
 Resolved issues should disappear from the active alarm automatically while
 remaining in the log. Acknowledgement is not required initially and must
 never be confused with recovery.
@@ -138,13 +183,17 @@ Responsibilities and implementation direction
 - **Delegates:** Report genuine failures and enforce their command and
   verification contracts; they must not conceal errors with fabricated
   success values.
-- **ControlHealth (proposed):** Tracks active issues, severity, repetition
-  and recovery without making hardware control decisions.
-- **Server/GUI:** Presents operational health, independently detects a
-  stalled loop, and displays DISCONNECTED when the browser loses contact.
+- **ControlHealth:** Tracks active issues, severity, repetition and recovery
+  without making hardware control decisions. It does not detect a stalled
+  control loop or browser disconnection.
+- **Control loop:** Records completion of control-step attempts as a heartbeat,
+  independently of whether the attempt reported an operational failure.
+- **Server:** Reports current operational health and heartbeat freshness.
+- **Browser/GUI:** Determines whether a fresh server response is available,
+  applies the five-state precedence rules and presents the persistent alarm.
 - **Log:** Retains technical failure and recovery details.
 
-The precise severity assigned to individual failures, retry schedules,
-command reconciliation procedures and health API are implementation
-decisions to be established and tested as this policy is implemented.
+The precise severity assigned to individual failures, retry schedules and
+command reconciliation procedures remain implementation decisions to be
+established and tested as this policy is implemented.
 
