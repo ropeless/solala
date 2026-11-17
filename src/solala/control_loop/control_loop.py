@@ -1481,6 +1481,9 @@ async def _control_step(state: _ControlState) -> None:
     step are handled on a subsequent iteration.
     """
     async with _control_settings_state() as control_state:
+        # Acknowledge changes at the start of every step, even without a
+        # connected controller. Later changes will signal the next step.
+        state.control_changed.clear()
         prev_state = control_state.prev_state
         controller = _check_power_controller(state, prev_state)
         if controller is None:
@@ -1494,9 +1497,6 @@ async def _control_step(state: _ControlState) -> None:
         if requested_mode.inverter_policy == prev_state.control_mode.inverter_policy:
             if requested_mode.inverter_policy != InverterPolicy.MANUAL:
                 requested_mode.inverter_mode = prev_state.control_mode.inverter_mode
-        # Any subsequent settings change must wake another control step.
-        state.control_changed.clear()
-
     # Control step operates within locked connections so `pricer` is stable
     pricer_available: bool = state.connections.pricer is not None
 
