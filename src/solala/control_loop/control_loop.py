@@ -1,6 +1,7 @@
 import asyncio
 import json
 import math
+import os
 import re
 from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
 from contextlib import asynccontextmanager
@@ -382,6 +383,16 @@ def get_control_health() -> tuple[Severity, tuple[HealthIssue, ...]]:
     return health.severity, health.get_issues()
 
 
+def dummy_health_test_enabled() -> bool:
+    """
+    Return whether explicitly enabled fault injection is safe to expose.
+    """
+    return (
+        os.environ.get('SOLALA_TEST_HEALTH') == '1'
+        and isinstance(_CONTROL_STATE.connections.controller_settings, DummyControllerConnection)
+    )
+
+
 def set_dummy_health_issue(severity: Severity | None) -> None:
     """
     Inject or clear a test health issue only with a dummy controller.
@@ -393,8 +404,8 @@ def set_dummy_health_issue(severity: Severity | None) -> None:
         RuntimeError: If the configured controller is not a dummy.
         ValueError: If the severity is not supported.
     """
-    if not isinstance(_CONTROL_STATE.connections.controller_settings, DummyControllerConnection):
-        raise RuntimeError('Health fault injection requires a dummy controller')
+    if not dummy_health_test_enabled():
+        raise RuntimeError('Health fault injection requires SOLALA_TEST_HEALTH=1 and a dummy controller')
     if severity is None:
         _CONTROL_STATE.health.report_success('dummy_test')
     elif severity in (Severity.CAUTION, Severity.WARNING):
