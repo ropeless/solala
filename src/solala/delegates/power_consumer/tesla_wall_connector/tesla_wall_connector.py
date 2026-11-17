@@ -5,7 +5,6 @@ from functools import partial
 import httpx
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
-from solala.logger import LOGGER
 from solala.register import check_type, RegisterType, AsyncCallRegister, RegisterValue, check_value
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
@@ -117,18 +116,11 @@ class TeslaWallConnector(PowerConsumer):
         Retrieve the connector's vitals from its local HTTP API.
 
         Returns:
-            The vitals response as a JSON dictionary. If the request fails, an
-            error message, NaN voltage and current, and a false contactor state are returned.
+            The vitals response as a JSON dictionary.
+
+        Raises:
+            Exception: If the HTTP request or response processing fails.
         """
-        try:
-            url = self._api + 'vitals'
-            response = await self._client.get(url)
-            return json_dict(response.json())
-        except Exception as err:
-            LOGGER.error(f'{self.__class__.__name__} {self._connection_info["host"]!r}: {err!r}')
-            return {
-                'error': str(err),
-                'voltageA_v': float('nan'),
-                'currentA_a': float('nan'),
-                'contactor_closed': False,
-            }
+        url = self._api + 'vitals'
+        response = await self._client.get(url)
+        return json_dict(response.json())
