@@ -1774,6 +1774,7 @@ def _connect_dummy_consumer(consumer_connection: DummyConsumerConnection) -> Pow
         current=consumer_connection.current,
         power=consumer_connection.power,
         on=consumer_connection.on,
+        failure=consumer_connection.failure,
     )
 
 
