@@ -24,6 +24,7 @@ class FailureLocation(BaseFailureLocation):
         """
         return self != FailureLocation.get_connection_info
 
+
 class DummySolarForecaster(SolarForecaster):
     """
     Dummy solar forecaster that generates synthetic hourly forecasts for
