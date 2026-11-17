@@ -121,9 +121,12 @@ def maybe_inject_failure(location: Enum, failure: DummyFailure | None) -> None:
     Inject the configured delay and exception for a matching failure description.
 
     Args:
-        location: where is this method being called; a failure can be raise if
+        location: Operation being called; injection is possible if
             `location.name == failure.location`.
-        failure: An instance of DummyFailure describing the kind of failure possible.
+        failure: Optional description of the failure to inject.
+
+    Raises:
+        ValueError: If the matching failure requests a delay in a synchronous operation.
     """
     if failure is None or failure.location != location.name:
         return
