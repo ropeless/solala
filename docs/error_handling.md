@@ -45,7 +45,7 @@ as a valid zero measurement or as a successful operation.
 Normal shutdown and asyncio task cancellation are not operational failures.
 Cancellation must propagate, and background tasks and connections must be
 cleaned up reliably. Unexpected exceptions should be logged with enough
-context to diagnose them, even when the loop continues.
+context to diagnose them, whether the control loop continues or not.
 
 Control consistency and safety
 ------------------------------
@@ -67,7 +67,7 @@ when clearly marked as stale, but its use for control must satisfy the
 specific safety requirements of the policy. In particular, zero-export
 control requires trustworthy measurements and confirmation of the relevant
 inverter commands. A communication failure or register reversion timer is
-not proof that zero export remains enforced.
+not proof that zero-export remains enforced.
 
 When a requested action cannot be completed safely, Solala should retain
 the user's intent where appropriate, report the failure, and continue other
@@ -148,13 +148,3 @@ The precise severity assigned to individual failures, retry schedules,
 command reconciliation procedures and health API are implementation
 decisions to be established and tested as this policy is implemented.
 
-Verification
-------------
-
-Tests should cover isolated delegate and consumer failures, partial command
-completion, safe retries, invalid or stale control inputs, unexpected loop
-exceptions, database failures, cancellation and cleanup, health recovery,
-log deduplication, stalled-loop detection, browser disconnection and
-reconnection. In particular, tests must show that a failed battery action
-does not suppress an independent safe inverter action, and that an uncertain
-zero-export outcome is never reported as confirmed success.
