@@ -382,6 +382,27 @@ def get_control_health() -> tuple[Severity, tuple[HealthIssue, ...]]:
     return health.severity, health.get_issues()
 
 
+def set_dummy_health_issue(severity: Severity | None) -> None:
+    """
+    Inject or clear a test health issue only with a dummy controller.
+
+    Args:
+        severity: CAUTION or WARNING to inject, or None to recover.
+
+    Raises:
+        RuntimeError: If the configured controller is not a dummy.
+        ValueError: If the severity is not supported.
+    """
+    if not isinstance(_CONTROL_STATE.connections.controller_settings, DummyControllerConnection):
+        raise RuntimeError('Health fault injection requires a dummy controller')
+    if severity is None:
+        _CONTROL_STATE.health.report_success('dummy_test')
+    elif severity in (Severity.CAUTION, Severity.WARNING):
+        _CONTROL_STATE.health.report_failure('dummy_test', severity, 'Simulated health issue (development test)')
+    else:
+        raise ValueError('Only CAUTION and WARNING may be injected')
+
+
 def log_debug(message: str) -> None:
     LOGGER.debug(f'{_LOG_SRC}{message}')
 
