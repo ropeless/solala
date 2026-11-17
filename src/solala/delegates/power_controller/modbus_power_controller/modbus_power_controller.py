@@ -133,7 +133,7 @@ class ModbusPowerController(PowerController):
         if unnamed_device is not None:
             self._connection_info['unnamed_device'] = unnamed_device
 
-        registers: dict[str, Register] = dict(self._modbus.registers)
+        registers: dict[str, Register] = dict(self._modbus)
         registers[_INVERTER_LIMIT_NAME] = AsyncCallRegister(self.get_inverter_limit, float)
         self._registers: RegisterBank = RegisterBank(registers)
 
@@ -463,21 +463,21 @@ class ModbusPowerController(PowerController):
             value: Value to write.
             force: Write the value even if it is unchanged.
         """
-        old = await self._modbus.get(name)
+        old = await self._modbus[name].get()
         if not force and old == value:
             # No change needed
             self._logger_get_set(f'SET {name}: {old!r} -> {value!r} UNCHANGED')
         else:
             # Make the change
             try:
-                await self._modbus.set(name, value)
+                await self._modbus[name].set(value)
             except ModbusError as err:
                 LOGGER.error(f'SET {name}: {old!r} -> {value!r} ERROR: {err}')
                 LOGGER.error(f'Modbus message: {err.modbus_message!r}')
                 return
 
             failed: bool
-            new = await self._modbus.get(name)
+            new = await self._modbus[name].get()
             if not isinstance(new, (int, float)):
                 failed = True
             else:
@@ -502,7 +502,7 @@ class ModbusPowerController(PowerController):
         Raises:
             TypeError: If the register value is not numeric.
         """
-        value = await self._modbus.get(name)
+        value = await self._modbus[name].get()
         self._logger_get_set(f'GET {name}: {value!r}')
         if not isinstance(value, (int, float)):
             msg = f'getting register {name!r}: Expected int or float, got {type(value)}'
