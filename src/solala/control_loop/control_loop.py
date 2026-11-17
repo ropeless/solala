@@ -1064,7 +1064,7 @@ async def set_control(
 
             control_json = control_mode.to_json()
 
-        # Wake the loop promptly; the next step will snapshot these settings.
+        # Wake the loop promptly; the next step will copy the settings.
         _CONTROL_STATE.control_changed.set()
 
         # Saving takes the connections lock before the control-settings lock.
@@ -1799,7 +1799,7 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
     for address in addresses:
         client: ModbusTcpClient | None = None
         try:
-            client = ModbusTcpClient(address.ip_address)
+            client: ModbusTcpClient = ModbusTcpClient(address.ip_address)
             if not client.connect():
                 raise ConnectionError('Modbus TCP connection failed')
             clients.append(client)
