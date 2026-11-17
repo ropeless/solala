@@ -307,7 +307,8 @@ class _ControlState:
     control_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_write: bool = True
-    iteration_start: datetime = field(default_factory=now)  # used to confirm the control loop is running
+    iteration_start: datetime = field(default_factory=now)  # used for control-loop scheduling
+    last_control_step: datetime = field(default_factory=now)  # last completed control-step attempt
     registers_to_log: re.Pattern[str] | None = None
     registers_to_log_str: str | None = None
 
@@ -495,17 +496,17 @@ async def control_loop(
 
 def loop_check_overdue() -> float:
     """
-    The control loop is expected to iterate each `Constants.LOOP_TIME` seconds.
-    This returns the number of seconds past the last expected loop, i.e.
-    `max(0, now - (iteration_start + Constants.LOOP_TIME))`.
+    The control loop is expected to complete a step every `Constants.LOOP_TIME` seconds.
+    Return the number of seconds past the next expected completion, i.e.
+    `max(0, now - (last_control_step + Constants.LOOP_TIME))`.
 
     Returns:
         The number of seconds the loop check is overdue (a small number if running normally).
     """
-    # We are not concerned with race conditions, so we do not need to get the control loop lock.
+    # The timestamp is updated on the same event loop; no lock is needed.
     return max(
         0,
-        now().timestamp() - (_CONTROL_STATE.iteration_start.timestamp() + Constants.LOOP_TIME.total_seconds())
+        now().timestamp() - (_CONTROL_STATE.last_control_step.timestamp() + Constants.LOOP_TIME.total_seconds())
     )
 
 
@@ -1469,6 +1470,10 @@ async def _control_loop() -> None:
         else:
             if state.health.report_success('control_step'):
                 log_info('Control step recovered after previous failure')
+        # A completed attempt is a heartbeat even when its failure was handled.
+        # Cancellation propagates before this point and must not refresh it.
+        state.last_control_step = now()
+
         # Ancillary work must not prevent the next control iteration.
         try:
             async with _cache_state() as cache:
