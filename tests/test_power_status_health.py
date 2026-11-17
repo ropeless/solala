@@ -1,5 +1,6 @@
 import importlib
 import unittest
+from dataclasses import replace
 from unittest.mock import AsyncMock, patch
 
 from solala.control_loop.control_health import Severity
@@ -21,7 +22,7 @@ class PowerStatusHealthTestCase(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.state_patch.stop)
 
     async def test_failure_discards_previous_reading_and_recovery_requires_read(self) -> None:
-        measured = control_loop._NO_POWER.model_copy(update={'solar_power': 123})
+        measured = replace(control_loop._NO_POWER, solar_power=123)
         self.controller.get_status.return_value = measured
         self.assertEqual(await control_loop.get_power_status(), measured)
         self.assertEqual(self.state.health.get_issues(), ())
@@ -42,7 +43,7 @@ class PowerStatusHealthTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.state.health.get_issues(), ())
 
     async def test_disconnection_invalidates_cached_measurement(self) -> None:
-        measured = control_loop._NO_POWER.model_copy(update={'solar_power': 123})
+        measured = replace(control_loop._NO_POWER, solar_power=123)
         self.state.cache.last_power = measured
         self.state.cache.last_power_valid = True
         with patch.object(control_loop, 'log_error'):
