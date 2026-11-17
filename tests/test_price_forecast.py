@@ -1,8 +1,10 @@
 import importlib
+import logging
 import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
+from solala.logger import LOGGER
 from solala.delegates.power_pricer.price import Price
 from solala.utils.lifecycle_cache import ErrorReturn, ObjectReturn
 
@@ -15,6 +17,13 @@ class PriceForecastTestCase(unittest.IsolatedAsyncioTestCase):
     """
 
     async def asyncSetUp(self) -> None:
+        handlers = patch.object(LOGGER, 'handlers', [logging.NullHandler()])
+        propagation = patch.object(LOGGER, 'propagate', False)
+        handlers.start()
+        propagation.start()
+        self.addCleanup(propagation.stop)
+        self.addCleanup(handlers.stop)
+
         self.state = control_loop._ControlState()
         self.state_patch = patch.object(control_loop, '_CONTROL_STATE', self.state)
         self.state_patch.start()
