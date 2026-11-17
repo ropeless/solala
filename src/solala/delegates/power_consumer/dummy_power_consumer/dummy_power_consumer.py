@@ -1,6 +1,19 @@
+from enum import StrEnum, auto
+
+from solala.utils.dummy_failure import DummyFailure, maybe_inject_failure, async_maybe_inject_failure
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.register import CallRegister
 from solala.register_bank import RegisterBank
+
+
+class FailureLocation(StrEnum):
+    """
+    Operations supporting simulated power consumer failures.
+    """
+
+    get_registers = auto()
+    get_status = auto()
+    get_connection_info = auto()
 
 
 class DummyPowerConsumer(PowerConsumer):
@@ -20,6 +33,8 @@ class DummyPowerConsumer(PowerConsumer):
             current: float = 0,
             power: float | None = None,
             on: bool = True,
+            *,
+            failure: DummyFailure | None = None,
     ) -> None:
         """
         Initialise the simulated consumer.
@@ -30,10 +45,12 @@ class DummyPowerConsumer(PowerConsumer):
             voltage: Supply voltage in volts.
             current: Current draw in amperes.
             on: Is the device switched on. Defaults to True.
+            failure: Optional simulated failure configuration.
 
         Raises:
             ValueError: If power is negative or exceeds voltage multiplied by current.
         """
+        self.failure = failure
         self._voltage: float = 0
         self._current: float = 0
         self._power: float = 0
@@ -94,9 +111,11 @@ class DummyPowerConsumer(PowerConsumer):
         self._power = value
 
     async def get_registers(self) -> RegisterBank:
+        await async_maybe_inject_failure(FailureLocation.get_registers, self.failure)
         return self._register_bank
 
     async def get_status(self) -> ConsumerStatus:
+        await async_maybe_inject_failure(FailureLocation.get_status, self.failure)
         return ConsumerStatus(
             voltage=self.voltage,
             current=self.current,
@@ -105,6 +124,7 @@ class DummyPowerConsumer(PowerConsumer):
         )
 
     def get_connection_info(self) -> dict[str, int | float | str]:
+        maybe_inject_failure(FailureLocation.get_connection_info, self.failure)
         return {
             'connection': self.__class__.__name__,
             'on': self.on,
