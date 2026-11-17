@@ -96,31 +96,31 @@ The user-facing master alarm has **five displayed conditions**, representing
 three operational health levels and two distinct loss-of-observability
 conditions:
 
-| Condition | Display | Meaning | Diagnostic guidance |
+| Condition | Display | Explaination | Diagnostic guidance |
 | --- | --- | --- | --- |
-| Normal | **NORMAL** | Server reachable, control-loop heartbeat current, no active health issues. | No action required. |
-| Degraded | **CAUTION** | Server reachable, heartbeat current, noncritical functionality impaired. | Inspect the alarm details. |
-| Critical | **WARNING** | Server reachable, heartbeat current, a critical control operation failed or safe control cannot be confirmed. | Inspect the alarm details and log. |
-| Stalled | **WARNING — STALLED** | Server reachable, but the control-loop heartbeat is overdue; current control-loop operation cannot be confirmed. | Check the Solala log; the server remains reachable. |
-| Disconnected | **DISCONNECTED — UNKNOWN** | Browser cannot obtain a fresh response from the server, including while awaiting the first response after reconnection. | Check the network connection; displayed log data may be stale. |
+| Normal - good control and reporting| **NORMAL** | Server reachable, control-loop heartbeat current, no active health issues. | No action required. |
+| Degraded - believe control is okay but reporting reduced | **CAUTION** | Server reachable, heartbeat current, noncritical functionality impaired. | Inspect the alarm details. |
+| Critical - suspected parital loss of hardware control| **WARNING** | Server reachable, heartbeat current, a critical control operation failed or safe control cannot be confirmed. | Inspect the alarm details and log. |
+| Stalled - suspected total loss of hardware control | **STALLED** | Server reachable, but the control-loop heartbeat is overdue; current control-loop operation cannot be confirmed. | Check the Solala log; the server remains reachable. |
+| Disconnected - unknown status | **DISCONNECTED** | Browser cannot obtain a fresh response from the server, including while awaiting the first response after reconnection. | Check the network connection; displayed log data may be stale. |
 
 **STALLED** means that the server is reachable and reports an overdue
 control-loop heartbeat. It does not assert that the control loop has
 permanently stopped: an unusually long control step or scheduling delay may
-also exceed the timeout. **UNKNOWN** means the browser cannot verify the
+also exceed the timeout. **DISCONNECTED** means the browser cannot verify the
 server's current state. The browser must not infer STALLED merely because a
 server response is late.
 
 The master alarm applies these rules in order:
 
-1. Without a fresh server response, display DISCONNECTED — UNKNOWN.
+1. Without a fresh server response, display DISCONNECTED.
 2. With a fresh server response reporting an overdue control-loop heartbeat,
-   display WARNING — STALLED, regardless of previously reported health.
+   display STALLED, regardless of previously reported health.
 3. Otherwise, display NORMAL, CAUTION or WARNING according to the highest
    active severity reported by ControlHealth.
 
 A restored browser connection alone does not establish current system health.
-After reconnection, retain UNKNOWN until a fresh server response is received.
+After reconnection, retain DISCONNECTED until a fresh server response is received.
 That response may establish STALLED or one of the three operational health
 levels. In particular, never restore a previously displayed NORMAL solely
 because the network connection has returned.
@@ -168,7 +168,7 @@ but should not generate repeated pop-ups, sounds or notifications.
 
 Selecting the alarm should reveal active issues in plain language, ordered
 by severity, including relevant timestamps and occurrence counts, with access
-to the existing Log tab. For STALLED, direct the user to the log; for UNKNOWN,
+to the existing Log tab. For STALLED, direct the user to the log; for DISCONNECTED,
 explain that the connection should be checked and displayed log data may be
 stale.
 Resolved issues should disappear from the active alarm automatically while
