@@ -15,7 +15,7 @@ from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
 
 from solala.constants import Constants, GUI_TIMESTAMP_FORMAT
-from solala.control_loop.control_health import ControlHealth, Severity
+from solala.control_loop.control_health import ControlHealth, HealthIssue, Severity
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
@@ -367,6 +367,17 @@ class _ControlState:
 
 
 _LOG_SRC = '[control loop] '  # prefix for log messages
+
+
+def get_control_health() -> tuple[Severity, tuple[HealthIssue, ...]]:
+    """
+    Return a snapshot of overall control health and active issues.
+
+    Returns:
+        Current highest severity and immutable issue snapshots.
+    """
+    health = _CONTROL_STATE.health
+    return health.severity, health.get_issues()
 
 
 def log_debug(message: str) -> None:
