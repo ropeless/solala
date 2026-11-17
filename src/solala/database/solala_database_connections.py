@@ -40,6 +40,48 @@ def make_connection_string(
     return f'postgresql://{safe_role}:{safe_password}@{host}:{port}{db_path}'
 
 
+class _DatabaseReservation:
+    """Own a single-use database reservation and its connection context."""
+
+    def __init__(
+            self,
+            pool: SolalaDatabaseConnections,
+            commit_on_close: bool,
+            timeout: float | None,
+    ) -> None:
+        self._pool = pool
+        self._context = pool._borrow_database(commit_on_close, timeout)
+        self._entered = False
+        self._released = False
+
+    def release(self) -> None:
+        """Release this reservation exactly once, including when unused."""
+        if not self._released:
+            self._released = True
+            self._pool._release_request()
+
+    async def __aenter__(self) -> SolalaDatabase:
+        if self._entered or self._released:
+            raise RuntimeError('Database reservation cannot be reused')
+        self._entered = True
+        try:
+            return await self._context.__aenter__()
+        except BaseException:
+            self.release()
+            raise
+
+    async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            traceback: TracebackType | None,
+    ) -> bool | None:
+        try:
+            return await self._context.__aexit__(exc_type, exc_value, traceback)
+        finally:
+            self.release()
+
+
 class SolalaDatabaseConnections:
     """
     Manage a pool of asynchronous connections to the Solala database.
@@ -114,18 +156,17 @@ class SolalaDatabaseConnections:
             self,
             commit_on_close: bool = True,
             timeout: float | None = None,
-    ) -> AsyncContextManager[SolalaDatabase]:
+    ) -> _DatabaseReservation:
         """
-        Register a pending database request before any asynchronous operation.
+        Register a request synchronously and return its owning context manager.
 
-        The caller must return the reservation using `_release_request()`
-        after the returned context manager exits, including on cancellation.
+        The caller must enter the reservation or call release() if unused.
         """
         if self._closing:
             raise ConnectionError('Database pool is closing')
         self._active_requests += 1
         self._drained.clear()
-        return self._borrow_database(commit_on_close, timeout)
+        return _DatabaseReservation(self, commit_on_close, timeout)
 
     def _release_request(self) -> None:
         """
