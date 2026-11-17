@@ -1754,6 +1754,7 @@ def _connect_dummy_controller(controller_connection: DummyControllerConnection) 
         house_power=controller_connection.house_power,
         max_charge_param=controller_connection.max_charge_param,
         max_discharge_param=controller_connection.max_discharge_param,
+        failure=controller_connection.failure,
     )
 
 
@@ -1765,6 +1766,7 @@ def _connect_dummy_pricer(pricer_connection: DummyPricerConnection) -> PowerPric
         feed_in_price_discount_max=pricer_connection.feed_in_price_discount_max,
         cur_price_is_estimate=pricer_connection.cur_price_is_estimate,
         demand_window=pricer_connection.demand_window,
+        failure=pricer_connection.failure,
     )
 
 
