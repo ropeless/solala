@@ -82,7 +82,7 @@ class DummyPowerController(PowerController):
         self.accumulated_battery_energy_discharge: float = 0
 
         self.registers = RegisterBank({
-            key: CallRegister(lambda: self.get_connection_info()[key])
+            key: CallRegister(lambda key=key: self.get_connection_info()[key])
             for key in self.get_connection_info().keys()
         })
 
