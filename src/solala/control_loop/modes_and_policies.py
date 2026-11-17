@@ -1,5 +1,7 @@
+import copy
 from dataclasses import dataclass
 from enum import Enum, auto
+from typing import Self
 
 from solala.constants import DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD, DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD, \
     DEFAULT_START_CHARGE_PRICE_THRESHOLD, DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
@@ -95,3 +97,6 @@ class ControlMode:
             'battery': battery,
             'inverter': inverter,
         }
+
+    def copy(self) -> Self:
+        return copy.copy(self)
