@@ -906,21 +906,19 @@ async def _database() -> AsyncIterator[SolalaDatabase]:
     The reservation is released only after the database context has returned
     its connection, including when acquisition fails or is cancelled.
     """
-    pool: SolalaDatabaseConnections | None = None
-    reserved = False
+    reservation = None
     try:
         async with _connections_state() as connections:
             pool = connections.database_connections
             if pool is None:
                 raise ConnectionError('Database pool not connected')
-            context = pool.reserve_database()
-            reserved = True
+            reservation = pool.reserve_database()
 
-        async with context as db:
+        async with reservation as db:
             yield db
     finally:
-        if reserved and pool is not None:
-            pool._release_request()
+        if reservation is not None:
+            reservation.release()
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
