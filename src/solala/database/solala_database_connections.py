@@ -56,7 +56,13 @@ class _DatabaseReservation:
         self._released = False
 
     def release(self) -> None:
-        """Release this reservation exactly once, including when unused."""
+        """
+        Release this reservation exactly once, including when unused.
+
+        Callers must not release an entered reservation before its context
+        manager exits: doing so would allow pool shutdown while a connection
+        is still in use. Normal context exit releases it automatically.
+        """
         if not self._released:
             self._released = True
             # noinspection PyProtectedMember
