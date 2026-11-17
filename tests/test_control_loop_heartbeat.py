@@ -4,7 +4,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from solala.constants import Constants
-from solala.utils.time import now
+from solala.utils.time_extras import now
 
 
 class ControlLoopHeartbeatTestCase(unittest.TestCase):
