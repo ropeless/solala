@@ -89,7 +89,7 @@ class DummyFailure(BaseModel):
     sleep: float = Field(default=0.0, ge=0.0)
 
     @model_validator(mode='after')
-    def check_dates(self) -> Self:
+    def validate_failure(self) -> Self:
         if self.sleep == 0.0 and self.exception is None:
             raise ValueError('A failure must have at least an exception or a sleep')
         return self
@@ -100,9 +100,9 @@ async def async_maybe_inject_failure(location: Enum, failure: DummyFailure | Non
     Inject the configured delay and exception for a matching failure description.
 
     Args:
-        location: where is this method being called; a failure can be raise if
+        location: Operation being called; injection is possible if
             `location.name == failure.location`.
-        failure: An instance of DummyFailure describing the kind of failure possible.
+        failure: Optional description of the failure to inject.
     """
     if (
             failure is not None
@@ -114,6 +114,7 @@ async def async_maybe_inject_failure(location: Enum, failure: DummyFailure | Non
             await asyncio.sleep(failure.sleep)
         if failure.exception is not None:
             raise failure.exception
+
 
 def maybe_inject_failure(location: Enum, failure: DummyFailure | None) -> None:
     """
@@ -129,7 +130,8 @@ def maybe_inject_failure(location: Enum, failure: DummyFailure | None) -> None:
             and failure.location == location.name
             and (failure.probability == 1 or random.random() < failure.probability)
     ):
-        assert failure.sleep == 0, 'cannot inject a failure sleep for a synchronous function'
+        if failure.sleep != 0:
+            raise ValueError('cannot inject a failure sleep for a synchronous function')
         # inject the failure
         if failure.exception is not None:
             raise failure.exception
