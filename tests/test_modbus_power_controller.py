@@ -2,8 +2,28 @@ import math
 import unittest
 
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
-from solala.register import AsyncCallRegister
+from collections.abc import Awaitable, Callable
+
+from solala.register import AsyncCallRegister, Register, RegisterValue
 from solala.register_bank import RegisterBank
+
+
+class _WritableRegister(Register):
+    def __init__(
+            self,
+            read: Callable[[], Awaitable[RegisterValue]],
+            write: Callable[[RegisterValue], Awaitable[None]],
+    ) -> None:
+        super().__init__(float, writable=True)
+        self._read = read
+        self._write = write
+
+    async def _get(self) -> RegisterValue:
+        return await self._read()
+
+    async def _set(self, value: RegisterValue) -> None:
+        await self._write(value)
+
 
 
 class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
@@ -12,7 +32,7 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
     """
 
     @staticmethod
-    def make_controller(registers: dict[str, AsyncCallRegister]) -> ModbusPowerController:
+    def make_controller(registers: dict[str, Register]) -> ModbusPowerController:
         # These tests exercise register operations without the hardware-dependent
         # constructor, which normally discovers devices and their Modbus models.
         controller = object.__new__(ModbusPowerController)
@@ -29,7 +49,7 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
         async def write(value: float) -> None:
             calls.append('write')
 
-        controller = self.make_controller({'r': AsyncCallRegister(read, float, write)})
+        controller = self.make_controller({'r': _WritableRegister(read, write)})
         for invalid in (math.nan, math.inf, -math.inf):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(ValueError):
@@ -45,7 +65,7 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
         async def write(value: float) -> None:
             calls.append(value)
 
-        controller = self.make_controller({'r': AsyncCallRegister(read, float, write)})
+        controller = self.make_controller({'r': _WritableRegister(read, write)})
         await controller._set('r', 12.0)
         self.assertEqual(calls, [])
         await controller._set('r', 12.0, force=True)
@@ -60,7 +80,7 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
         async def write(value: float) -> None:
             raise failure
 
-        controller = self.make_controller({'r': AsyncCallRegister(read, float, write)})
+        controller = self.make_controller({'r': _WritableRegister(read, write)})
         with self.assertRaises(OSError) as caught:
             await controller._set('r', 2.0)
         self.assertIs(caught.exception, failure)
@@ -78,7 +98,7 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
                 async def write(value: float) -> None:
                     pass
 
-                controller = self.make_controller({'r': AsyncCallRegister(read, float, write)})
+                controller = self.make_controller({'r': _WritableRegister(read, write)})
                 with self.assertRaises(ValueError):
                     await controller._set('r', 2.0)
                 self.assertEqual(reads, 2)
@@ -97,7 +117,7 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
         async def write(value: float) -> None:
             pass
 
-        controller = self.make_controller({'r': AsyncCallRegister(read, float, write)})
+        controller = self.make_controller({'r': _WritableRegister(read, write)})
         with self.assertRaises(OSError) as caught:
             await controller._set('r', 2.0)
         self.assertIs(caught.exception, failure)
