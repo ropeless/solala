@@ -1,112 +1,78 @@
-from typing import Iterable, Mapping, KeysView, AsyncIterator
+import re
+from collections.abc import Iterable, Iterator, Mapping
+from types import MappingProxyType
 
 from solala.register import Register, RegisterValue, ConstantRegister
-from solala.utils.sentinel import Sentinel
-
-_NONE = Sentinel('NO_VALUE')
 
 
-class RegisterBank:
+class RegisterBank(Mapping[str, Register]):
     """
-    A collection of named registers.
+    An immutable mapping of names to asynchronously accessed registers.
 
-    Register names are fixed after initialisation, but individual register
-    values may change. The `registers` property exposes the underlying mapping.
+    Register values may change or become unavailable. Individual read
+    failures are returned by `get_register_values` for clients to interpret.
     """
 
     def __init__(
             self,
-            registers: Iterable[tuple[str, Register | RegisterValue]] | Mapping[str, Register | RegisterValue]
+            registers: Iterable[tuple[str, Register | RegisterValue]] | Mapping[str, Register | RegisterValue],
     ) -> None:
         """
-        Initialise the register bank.
+        Initialise the bank.
 
         Args:
-            registers: The registers to include in the bank. Each entry
-                associates a name with either a Register or a constant value.
-                Constant values are wrapped in ConstantRegister instances.
+            registers: Named registers or constant values, which are wrapped
+                in ConstantRegister instances.
         """
         if isinstance(registers, Mapping):
-            registers: Iterable[tuple[str, Register | RegisterValue]] = registers.items()
+            registers = registers.items()
+        self._registers: Mapping[str, Register] = MappingProxyType({
+            name: value if isinstance(value, Register) else ConstantRegister(value)
+            for name, value in registers
+        })
 
-        registers: Iterable[tuple[str, Register | RegisterValue]]
-        self._registers: Mapping[str, Register] = {
-            key: value if isinstance(value, Register) else ConstantRegister(value)
-            for key, value in registers
-        }
-
-    @property
-    def registers(self) -> Mapping[str, Register]:
+    def __getitem__(self, key: str) -> Register:
         """
-        Return the registers in the bank.
-
-        Returns:
-            A mapping of register names to Register instances.
+        Return the named register.
         """
-        return self._registers
+        return self._registers[key]
+
+    def __iter__(self) -> Iterator[str]:
+        """
+        Iterate over register names.
+        """
+        return iter(self._registers)
 
     def __len__(self) -> int:
         """
-        Return the number of registers in the bank.
+        Return the number of registers.
         """
         return len(self._registers)
 
-    def keys(self) -> KeysView[str]:
+    async def get_register_values(
+            self,
+            pattern: re.Pattern[str] | None = None,
+    ) -> dict[str, RegisterValue | Exception]:
         """
-        Return a view of the register names.
-        """
-        return self._registers.keys()
-
-    async def items(self) -> AsyncIterator[tuple[str, RegisterValue]]:
-        """
-        Asynchronously iterate over register names and their current values.
-
-        Each register is read when its entry is yielded.
-
-        Yields:
-            A tuple containing a register name and its current value.
-        """
-        for key in self._registers.keys():
-            yield key, await self._registers[key].get()
-
-    async def get(self, key: str, default: RegisterValue | None = None) -> RegisterValue | None:
-        """
-        Get the current value of a register.
+        Read matching registers sequentially, retaining individual failures.
 
         Args:
-            key: The name of the register.
-            default: The value to return if the register does not exist.
+            pattern: Compiled pattern matched against register names, or None
+                to read all registers.
 
         Returns:
-            The register value, or the default if the register does not exist.
+            Register names mapped to values or read exceptions. The caller
+            determines how to handle unsuccessful reads.
         """
-        got: Register | Sentinel = self._registers.get(key, _NONE)
-        if got is _NONE:
-            return default
-        else:
-            assert isinstance(got, Register)
-            return await got.get()
-
-    async def set(self, key: str, value: RegisterValue) -> None:
-        """
-        Set the value of a register.
-
-        Args:
-            key: The name of the register.
-            value: The value to write.
-
-        Raises:
-            KeyError: If the register does not exist.
-            ReadOnlyError: If the register is read-only.
-            TypeError: If the value is not of the expected type.
-        """
-        got: Register | Sentinel = self._registers.get(key, _NONE)
-        if got is _NONE:
-            raise KeyError(key)
-        else:
-            assert isinstance(got, Register)
-            await got.set(value)
+        results: dict[str, RegisterValue | Exception] = {}
+        for name, register in self.items():
+            if pattern is not None and not pattern.match(name):
+                continue
+            try:
+                results[name] = await register.get()
+            except Exception as error:
+                results[name] = error
+        return results
 
 
-# An immutable, empty register bank
 EMPTY_REGISTER_BANK: RegisterBank = RegisterBank({})
