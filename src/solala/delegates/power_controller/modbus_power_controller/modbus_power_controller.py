@@ -477,8 +477,8 @@ class ModbusPowerController(PowerController):
         """
         Set a register value and verify the change.
 
-        The old and new values are logged when register logging is enabled.
-        Modbus write errors and verification failures are logged.
+        The old and new values are logged. Write errors propagate, and
+        verification failures raise ValueError.
 
         Args:
             name: Name of the register to update.
@@ -496,17 +496,18 @@ class ModbusPowerController(PowerController):
             except ModbusError as err:
                 LOGGER.error(f'SET {name}: {old!r} -> {value!r} ERROR: {err}')
                 LOGGER.error(f'Modbus message: {err.modbus_message!r}')
-                return
+                raise
 
-            failed: bool
             new = await self._modbus[name].get()
-            if not isinstance(new, (int, float)):
-                failed = True
-            else:
-                failed = abs(new - value) > 10e-6
-            if failed:
-                LOGGER.error(f'SET {name}: {old!r} -> {value!r} checked {new!r} FAILED')
-            elif force:
+            if (
+                    not isinstance(new, (int, float))
+                    or not math.isfinite(new)
+                    or abs(new - value) > 10e-6
+            ):
+                message = f'SET {name}: {old!r} -> {value!r} checked {new!r} FAILED'
+                LOGGER.error(message)
+                raise ValueError(message)
+            if force:
                 LOGGER.info(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK FORCED')
             else:
                 LOGGER.info(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK')
