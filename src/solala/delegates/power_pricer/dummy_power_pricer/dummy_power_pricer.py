@@ -1,17 +1,17 @@
 import random
 from datetime import datetime, timedelta, date, time
-from enum import StrEnum, auto
+from enum import auto
 
 from solala.constants import GUI_TIME_FORMAT
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
 from solala.utils.time_extras import ensure_date, local_time_zone
 from solala.utils.json_extras import JSONDict
-from solala.utils.dummy_failure import DummyFailure, maybe_inject_failure, async_maybe_inject_failure
+from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, async_maybe_inject_failure
 
 _FIVE_MINUTES: timedelta = timedelta(minutes=5)
 
 
-class FailureLocation(StrEnum):
+class FailureLocation(BaseFailureLocation):
     """
     Operations supporting simulated electricity price failures.
     """
@@ -21,6 +21,11 @@ class FailureLocation(StrEnum):
     get_price_forecast = auto()
     get_demand_window = auto()
 
+    def is_async(self) -> bool:
+        """
+        Return whether the selected operation is asynchronous.
+        """
+        return self != FailureLocation.get_connection_info
 
 class DummyPowerPricer(PowerPricer):
     """
