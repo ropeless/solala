@@ -5,7 +5,6 @@ from functools import partial
 from tuya_connector import TuyaOpenAPI
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
-from solala.logger import LOGGER
 from solala.register import RegisterType, check_type, AsyncCallRegister, check_value, RegisterValue
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_num, json_bool
@@ -20,8 +19,8 @@ class TuyaPowerConsumer(PowerConsumer):
 
     Retrieves device status and exposes supported status fields as registers.
 
-    API failures return fallback readings, which are cached for the full cache
-    duration. Callers should expect recovery to be delayed until cache expiry.
+    API failures propagate to callers without caching synthetic measurements.
+    A failed request can be retried on the next access.
     """
 
     def __init__(
@@ -155,25 +154,17 @@ class TuyaPowerConsumer(PowerConsumer):
         Retrieve the device status from the Tuya IoT API.
 
         Returns:
-            A dictionary mapping status codes to values. If the API request
-            fails, an error message and NaN electrical measurements are
-            returned.
+            A dictionary mapping status codes to values.
+
+        Raises:
+            ConnectionError: If the Tuya API reports an unsuccessful response.
+            Exception: If connecting or requesting device status fails.
         """
-        try:
-            await self._connect()
-            response = await asyncio.to_thread(self._tuya.get, self._status_url)
-            if not response.get('success', False):
-                raise ConnectionError(response)
-            return {
-                item['code']: item['value']
-                for item in response['result']
-            }
-        except Exception as err:
-            LOGGER.error(f'{self.__class__.__name__} {self._connection_info["device_id"]!r}: {err!r}')
-            return {
-                'error': str(err),
-                'cur_voltage': float('nan'),
-                'cur_current': float('nan'),
-                'cur_power': float('nan'),
-                'switch_1': False,
-            }
+        await self._connect()
+        response = await asyncio.to_thread(self._tuya.get, self._status_url)
+        if not response.get('success', False):
+            raise ConnectionError(response)
+        return {
+            item['code']: item['value']
+            for item in response['result']
+        }
