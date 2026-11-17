@@ -16,6 +16,7 @@ from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
 
 from solala.constants import Constants, GUI_TIMESTAMP_FORMAT
+from solala.control_loop.control_health import ControlHealth, Severity
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
@@ -111,6 +112,8 @@ class _PrevControl:
     """
     controller: PowerController | None = None
     control_mode: ControlMode = field(default_factory=ControlMode)
+    battery_commanded_mode: BatteryMode = BatteryMode.UNKNOWN
+    inverter_commanded_mode: InverterMode = InverterMode.UNKNOWN
 
     def reset(self, controller: PowerController | None) -> None:
         """
@@ -120,6 +123,8 @@ class _PrevControl:
             controller: Controller associated with the new tracking state.
         """
         self.controller = controller
+        self.battery_commanded_mode = BatteryMode.UNKNOWN
+        self.inverter_commanded_mode = InverterMode.UNKNOWN
         self.control_mode.battery_mode = BatteryMode.UNKNOWN
         self.control_mode.inverter_mode = InverterMode.UNKNOWN
         self.control_mode.battery_policy = BatteryPolicy.MANUAL
@@ -295,6 +300,7 @@ class _ControlState:
     control: _ControlSettingsState = field(default_factory=_ControlSettingsState)
     cache: _CacheState = field(default_factory=_CacheState)
     settings_persistence: _SettingsPersistenceState = field(default_factory=_SettingsPersistenceState)
+    health: ControlHealth = field(default_factory=ControlHealth)
 
     # Listener lists are used on the same asyncio event loop; synchronous updates and snapshots need no lock.
     # Internal control loop tracking variables.
@@ -1521,16 +1527,29 @@ async def _control_step(state: _ControlState) -> None:
                 case BatteryMode.DISCHARGE_ONLY:
                     await power_controller.discharge_only()
         except Exception:
-            # A partially applied command may leave the hardware state unknown.
-            # Do not blindly retry until reconciliation is implemented.
-            LOGGER.exception('%sBattery command failed: %s', _LOG_SRC, requested_mode.battery_mode)
+            # A partial write can leave hardware state unknown. Reconciliation
+            # is required before attempting an automatic retry.
+            prev_state.battery_commanded_mode = BatteryMode.UNKNOWN
+            if state.health.report_failure('battery_command', Severity.WARNING,
+                                           'Battery command outcome is uncertain'):
+                LOGGER.exception('%sBattery command failed: %s', _LOG_SRC, requested_mode.battery_mode)
+        else:
+            prev_state.battery_commanded_mode = requested_mode.battery_mode
+            if state.health.report_success('battery_command'):
+                log_info('Battery command completed after previous failure')
 
     if inverter_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
         try:
             await power_controller.enable_inverter()
         except Exception:
-            # An unsuccessful call does not establish the actual inverter mode.
-            LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
+            prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
+            if state.health.report_failure('inverter_command', Severity.WARNING,
+                                           'Inverter command outcome is uncertain'):
+                LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
+        else:
+            prev_state.inverter_commanded_mode = requested_mode.inverter_mode
+            if state.health.report_success('inverter_command'):
+                log_info('Inverter command completed after previous failure')
 
     # These inverter modes require a keep-alive command on every iteration.
     # A failed command is logged and retried next iteration; the previous mode
@@ -1541,8 +1560,16 @@ async def _control_step(state: _ControlState) -> None:
                 await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
             case InverterMode.ZERO_EXPORT:
                 await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
-    except Exception as e:
-        log_error(f'Error processing command: {requested_mode.inverter_mode}. Error: {e}')
+    except Exception:
+        prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
+        if state.health.report_failure('inverter_command', Severity.WARNING,
+                                       'Inverter command outcome is uncertain'):
+            LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
+    else:
+        if requested_mode.inverter_mode in (InverterMode.DISABLE, InverterMode.ZERO_EXPORT):
+            prev_state.inverter_commanded_mode = requested_mode.inverter_mode
+            if state.health.report_success('inverter_command'):
+                log_info('Inverter command completed after previous failure')
 
     async with _control_settings_state():
         # Record what was actually requested, not any newer UI changes.
