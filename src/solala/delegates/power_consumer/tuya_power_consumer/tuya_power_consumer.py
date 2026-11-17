@@ -1,13 +1,13 @@
 import asyncio
-from functools import partial
 from collections.abc import AsyncIterator, Awaitable, Callable
+from functools import partial
 
 from tuya_connector import TuyaOpenAPI
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.logger import LOGGER
-from solala.registers import RegisterBank, RegisterType, check_type, AsyncCallRegister, check_value, \
-    RegisterValue
+from solala.register import RegisterType, check_type, AsyncCallRegister, check_value, RegisterValue
+from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_num, json_bool
 from solala.utils.micro_cache import AsyncMicroCache
 

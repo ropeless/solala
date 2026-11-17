@@ -1,6 +1,6 @@
 import asyncio
 
-from solala.registers import RegisterBank
+from solala.register import RegisterBank
 from solala.utils.local_config_help import config
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 

@@ -10,7 +10,8 @@ from solala.delegates.power_controller.modbus_power_controller.modbus_register_a
     MODBUS_MODEL
 from solala.delegates.power_controller.modbus_power_controller.modbus_registers import MODELS, mppt_modules, MPPT_MODEL
 from solala.logger import LOGGER
-from solala.registers import Register, RegisterValue, RegisterBank
+from solala.register import Register, RegisterValue
+from solala.register_bank import RegisterBank
 
 
 @dataclass

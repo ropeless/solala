@@ -22,7 +22,7 @@ from solala.delegates.power_pricer.price import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
-from solala.registers import RegisterValue
+from solala.register import RegisterValue
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.server.graphs import ChargeChart, PriceChart, PowerChart, EnergyChart
 from solala.server.icons import weather_code_to_icon_url

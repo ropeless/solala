@@ -17,7 +17,7 @@ used to implement them. The main components are:
   implementations include Modbus/Fronius, Amber, Open-Meteo, Tesla Wall
   Connector and Tuya integrations, alongside dummy implementations for testing and demos.
 
-- **Register abstraction** (`src/solala/registers.py`): Provides typed,
+- **Register abstraction** (`src/solala/register.py`): Provides typed,
   asynchronous access to named registers. The Modbus implementation maps
   those names to device registers, allowing the higher-level code to work
   without hard-coding register addresses throughout the application.

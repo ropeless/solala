@@ -3,7 +3,7 @@ from types import TracebackType
 from typing import Self
 
 from solala.delegates.power_consumer.consumer_status import ConsumerStatus
-from solala.registers import RegisterBank
+from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict
 
 

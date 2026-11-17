@@ -1,5 +1,6 @@
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
-from solala.registers import RegisterBank, CallRegister
+from solala.register import CallRegister
+from solala.register_bank import RegisterBank
 
 
 class DummyPowerConsumer(PowerConsumer):

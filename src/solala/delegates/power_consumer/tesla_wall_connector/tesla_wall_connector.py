@@ -6,8 +6,8 @@ import httpx
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.logger import LOGGER
-from solala.registers import RegisterBank, check_type, RegisterType, \
-    AsyncCallRegister, RegisterValue, check_value
+from solala.register import check_type, RegisterType, AsyncCallRegister, RegisterValue, check_value
+from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
 from solala.utils.micro_cache import AsyncMicroCache
 

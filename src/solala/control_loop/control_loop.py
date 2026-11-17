@@ -40,13 +40,12 @@ from solala.delegates.solar_forecaster.solar_forecast import SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
-from solala.registers import RegisterBank, Register, RegisterType, RegisterValue, CallRegister, \
-    ReadOnlyRegister, check_type
-from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
-    TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
-    DummyControllerConnection, \
-    DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
-    DummySolarForecasterConnection, DatabaseConnection, TuyaConnection
+from solala.register import Register, RegisterType, RegisterValue, CallRegister, ReadOnlyRegister, check_type
+from solala.register_bank import RegisterBank, EMPTY_REGISTER_BANK
+from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, TeslaWallConnectorConnection, \
+    ControllerConnection, PricerConnection, ConsumerConnection, DummyControllerConnection, DummyPricerConnection, \
+    DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, DummySolarForecasterConnection, \
+    DatabaseConnection, TuyaConnection
 from solala.utils.datetime_extras import now, local_time_zone
 from solala.utils.json_extras import JSONDict, json_num, JSONValue
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
@@ -85,7 +84,7 @@ _NO_FORECAST = SolarForecast(
 )
 _DISCONNECTED: JSONDict = {'connection': 'disconnected'}
 _NO_SOLAR_FORECAST = DailySolarForecast([])
-_NO_REGISTERS: RegisterBank = RegisterBank({})
+_NO_REGISTERS: RegisterBank = EMPTY_REGISTER_BANK
 
 MATCH_ALL: re.Pattern[str] = re.compile('.*')  # regular expression to match anything
 
