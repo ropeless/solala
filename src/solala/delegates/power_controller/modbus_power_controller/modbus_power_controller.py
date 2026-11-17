@@ -478,7 +478,8 @@ class ModbusPowerController(PowerController):
         Set a register value and verify the change.
 
         The old and new values are logged. Write errors propagate, and
-        verification failures raise ValueError. If the new value is the
+        verification failures raise ValueError. Non-finite requested values
+        are rejected before any Modbus I/O. If the new value is the
         same as the old value, then no write will be performed _unless_
         `force` is true.
 
@@ -487,6 +488,9 @@ class ModbusPowerController(PowerController):
             value: Value to write.
             force: Write the value even if the new value is the same as the old value.
         """
+        if not math.isfinite(value):
+            raise ValueError(f'SET {name}: non-finite requested value {value!r}')
+
         old = await self._modbus[name].get()
         if not force and old == value:
             # No change needed
