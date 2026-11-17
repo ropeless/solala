@@ -72,3 +72,10 @@ connect directly to the inverter or the database.
 
 - **Typed data and configuration:** Python type annotations, dataclasses and
   Pydantic models describe register values, measurements and settings.
+
+### Error handling and recovery
+
+The intended policy for failure isolation, safe control retries, operational
+health and master alarms is documented in [Error Handling and Recovery](error_handling.md).
+These behaviours are being implemented incrementally; the policy describes
+the target design rather than asserting complete implementation.

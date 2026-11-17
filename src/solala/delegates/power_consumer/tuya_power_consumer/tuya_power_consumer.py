@@ -5,7 +5,6 @@ from functools import partial
 from tuya_connector import TuyaOpenAPI
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
-from solala.logger import LOGGER
 from solala.register import RegisterType, check_type, AsyncCallRegister, check_value, RegisterValue
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_num, json_bool
@@ -20,10 +19,8 @@ class TuyaPowerConsumer(PowerConsumer):
 
     Retrieves device status and exposes supported status fields as registers.
 
-    API failures return fallback readings, which are cached for the full cache
-    duration. Callers should expect recovery to be delayed until cache expiry.
-    Concurrent first calls to get_registers() may build separate register banks;
-    callers should initialise registers before accessing them concurrently.
+    API failures propagate to callers without caching synthetic measurements.
+    A failed request can be retried on the next access.
     """
 
     def __init__(
@@ -77,6 +74,7 @@ class TuyaPowerConsumer(PowerConsumer):
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
+        self._register_bank_lock = asyncio.Lock()
 
     async def _connect(self) -> None:
         """
@@ -89,14 +87,17 @@ class TuyaPowerConsumer(PowerConsumer):
             self._connected = True
 
     async def get_registers(self) -> RegisterBank:
-        if self._register_bank is None:
-            self._register_bank = reg_bank = RegisterBank({
-                key: AsyncCallRegister((partial(self._get_register_value, key)), reg_type)
-                async for key, reg_type in self._get_register_keys()
-            })
-            return reg_bank
-        else:
-            return self._register_bank
+        reg_bank = self._register_bank
+        if reg_bank is None:
+            async with self._register_bank_lock:
+                reg_bank = self._register_bank
+                if reg_bank is None:
+                    reg_bank = RegisterBank({
+                        key: AsyncCallRegister(partial(self._get_register_value, key), reg_type)
+                        async for key, reg_type in self._get_register_keys()
+                    })
+                    self._register_bank = reg_bank
+        return reg_bank
 
     async def get_status(self) -> ConsumerStatus:
         device_status: JSONDict = await self._cache()
@@ -153,25 +154,17 @@ class TuyaPowerConsumer(PowerConsumer):
         Retrieve the device status from the Tuya IoT API.
 
         Returns:
-            A dictionary mapping status codes to values. If the API request
-            fails, an error message and NaN electrical measurements are
-            returned.
+            A dictionary mapping status codes to values.
+
+        Raises:
+            ConnectionError: If the Tuya API reports an unsuccessful response.
+            Exception: If connecting or requesting device status fails.
         """
-        try:
-            await self._connect()
-            response = await asyncio.to_thread(self._tuya.get, self._status_url)
-            if not response.get('success', False):
-                raise ConnectionError(response)
-            return {
-                item['code']: item['value']
-                for item in response['result']
-            }
-        except Exception as err:
-            LOGGER.error(f'{self.__class__.__name__} {self._connection_info["device_id"]!r}: {err!r}')
-            return {
-                'error': str(err),
-                'cur_voltage': float('nan'),
-                'cur_current': float('nan'),
-                'cur_power': float('nan'),
-                'switch_1': False,
-            }
+        await self._connect()
+        response = await asyncio.to_thread(self._tuya.get, self._status_url)
+        if not response.get('success', False):
+            raise ConnectionError(response)
+        return {
+            item['code']: item['value']
+            for item in response['result']
+        }
