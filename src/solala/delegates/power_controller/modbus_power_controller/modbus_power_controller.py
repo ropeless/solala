@@ -174,7 +174,7 @@ class ModbusPowerController(PowerController):
         battery_power = charge_power - discharge_power
         house_power = grid_power + solar_power - battery_power
 
-        power_limit = await self._get_power_limit_for_status()
+        power_limit = await self._get_power_limit()
 
         return PowerStatus(
             state_of_charge=state_of_charge,
@@ -220,36 +220,6 @@ class ModbusPowerController(PowerController):
             Sum of readings, or NaN if any reading is unavailable.
         """
         return sum([await self._get_for_status(name) for name in names])
-
-    async def _get_power_limit_for_status(self) -> float:
-        """
-        Calculate the reported inverter limit without failing the status snapshot.
-
-        Returns:
-            Effective percentage limit, or NaN if required readings fail.
-        """
-        power_limits = [await self._get_for_status(name) for name in self._WMaxLimPct]
-        enabled = [await self._get_for_status(name) for name in self._WMaxLim_Ena]
-        if any(not math.isfinite(x) for x in power_limits + enabled):
-            return math.nan
-        if len(power_limits) == 1:
-            return power_limits[0] if enabled[0] != 0 else 100.0
-
-        capacities = [
-            min(
-                await self._get_for_status(f'{inverter}/WMax'),
-                await self._get_for_status(f'{inverter}/WRtg'),
-            )
-            for inverter in self._power_controllers
-        ]
-        total = sum(capacities)
-        if not math.isfinite(total) or total <= 0:
-            LOGGER.warning('Cannot report power limit: inverter capacity unavailable or zero')
-            return math.nan
-        return sum(
-            (limit if active != 0 else 100.0) * capacity / total
-            for limit, active, capacity in zip(power_limits, enabled, capacities)
-        )
 
     # =================================================
     #  Battery Control
@@ -361,7 +331,10 @@ class ModbusPowerController(PowerController):
         """
         with self._log_it('zero_export'):
             cur_pct: float
-            cur_pct, _ = await self._get_power_limit()
+            cur_pct = await self._get_power_limit()
+            LOGGER.info(f'Current inverter power limit: {cur_pct!r}%')
+            if not math.isfinite(cur_pct):
+                raise ValueError('cannot adjust zero-export limit: inverter power limit is unavailable')
             grid_power: float = await self._get(self._grid_power)
             # Only inverters receiving the power-limit command are controllable.
             controlled_limits = await self._get_inverter_limit_array()
@@ -428,38 +401,39 @@ class ModbusPowerController(PowerController):
     #  Support
     # =================================================
 
-    async def _get_power_limit(self) -> tuple[float, bool]:
+    async def _get_power_limit(self) -> float:
         """
-        Get the power limit set on the controlling inverters.
+        Calculate the effective inverter output limit for reporting.
+
+        Unavailable readings produce NaN. Control callers must validate the
+        result before using it.
 
         Returns:
-            tuple[float, bool]: The effective inverter power limit as a percentage
-            and whether a power limit is enabled. When multiple inverters are
-            controlled, the percentage is weighted by each inverter's rated
-            output power.
+            The effective inverter power limit as a percentage, or NaN when
+            it cannot be determined.
         """
-        power_limits: list[float] = await self._get_all(self._WMaxLimPct)
-        power_limits_enabled: list[bool] = [x != 0 for x in await self._get_all(self._WMaxLim_Ena)]
+        power_limits = [await self._get_for_status(name) for name in self._WMaxLimPct]
+        enabled = [await self._get_for_status(name) for name in self._WMaxLim_Ena]
+        if any(not math.isfinite(x) for x in power_limits + enabled):
+            return math.nan
         if len(power_limits) == 1:
-            limit_enabled = power_limits_enabled[0]
-            limit = power_limits[0] if limit_enabled else 100.0
-            return limit, limit_enabled
+            return power_limits[0] if enabled[0] != 0 else 100.0
 
-        else:
-            # all controlling inverters
-            inverter_limits: list[float] = await self._get_inverter_limit_array()
-            assert len(power_limits) == len(inverter_limits)
-
-            total_limit: float = sum(inverter_limits)
-            if total_limit <= 0:
-                raise ValueError('cannot calculate power limit: total inverter capacity is zero')
-            avg_limit: float = 0.0
-            for limit, limit_enabled, inverter_limit in zip(power_limits, power_limits_enabled, inverter_limits):
-                if not limit_enabled:
-                    limit = 100.0
-                pr = inverter_limit / total_limit
-                avg_limit += limit * pr
-            return avg_limit, any(power_limits_enabled)
+        capacities = [
+            min(
+                await self._get_for_status(f'{inverter}/WMax'),
+                await self._get_for_status(f'{inverter}/WRtg'),
+            )
+            for inverter in self._power_controllers
+        ]
+        total = sum(capacities)
+        if not math.isfinite(total) or total <= 0:
+            LOGGER.warning('Cannot calculate power limit: inverter capacity unavailable or zero')
+            return math.nan
+        return sum(
+            (limit if active != 0 else 100.0) * capacity / total
+            for limit, active, capacity in zip(power_limits, enabled, capacities)
+        )
 
     @contextmanager
     def _log_it(self, name: str) -> Iterator[None]:
