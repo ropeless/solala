@@ -33,9 +33,9 @@ def _validate_exception(value: Any) -> Exception:
         name, message = value['type'], value['message']
         if not isinstance(name, str) or name not in _ALLOWED_EXCEPTIONS:
             raise ValueError('Unsupported exception type')
-        if not isinstance(message, str):
-            raise ValueError('Exception message must be a string')
-        exception = _ALLOWED_EXCEPTIONS[name](message)
+        if message is not None and not isinstance(message, str):
+            raise ValueError('Exception message must be a string or null')
+        exception = _ALLOWED_EXCEPTIONS[name]() if message is None else _ALLOWED_EXCEPTIONS[name](message)
     else:
         raise ValueError('Expected an exception or its serialized representation')
 
@@ -46,7 +46,7 @@ def _validate_exception(value: Any) -> Exception:
     return exception
 
 
-def _serialize_exception(exception: Exception) -> dict[str, str]:
+def _serialize_exception(exception: Exception) -> dict[str, str | None]:
     """
     Serialize a supported exception without dynamic imports.
 
@@ -58,12 +58,12 @@ def _serialize_exception(exception: Exception) -> dict[str, str]:
     """
     return {
         'type': type(exception).__name__,
-        'message': exception.args[0] if exception.args else '',
+        'message': exception.args[0] if exception.args else None,
     }
 
 
 SerializableException = Annotated[
     Exception,
     PlainValidator(_validate_exception),
-    PlainSerializer(_serialize_exception, return_type=dict[str, str], when_used='json'),
+    PlainSerializer(_serialize_exception, return_type=dict[str, str | None], when_used='json'),
 ]
