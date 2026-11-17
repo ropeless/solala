@@ -50,6 +50,20 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         async with control_loop._connections_state():
             await control_loop._control_step(self.state)
 
+    async def test_disconnected_controller_acknowledges_control_change(self) -> None:
+        """
+        A pending change must not cause a busy loop without a controller.
+        """
+        self.state.connections.controller = None
+        self.state.control_changed.set()
+
+        async with control_loop._connections_state():
+            await control_loop._control_step(self.state)
+
+        self.assertFalse(self.state.control_changed.is_set())
+        self.assertIsNone(self.state.control.prev_state.controller)
+        self.price_mock.assert_not_awaited()
+
     async def test_battery_charge_hysteresis_and_boundaries(self) -> None:
         self.state.control.control_mode.battery_policy = BatteryPolicy.CHEAP_CHARGE
         for price, expected in [
