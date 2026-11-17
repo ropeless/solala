@@ -140,7 +140,6 @@ class _PriceCache(LifecycleCache[Price]):
             old=Constants.PRICE_OLD.total_seconds(),
             retry=Constants.PRICE_SETTLE_CHECK.total_seconds(),
             default=_NO_PRICE,
-            interim_message='price is an estimate',
         )
 
 
@@ -1412,7 +1411,7 @@ async def _insert_measurement(dt_now: datetime, db: SolalaDatabase) -> None:
 
     forecast: SolarForecast | None = daily_forecast.find_contemporary(dt_now)
     if forecast is None:
-        log_warn(f'No solar forecast found for {dt_now}')
+        log_warn(f'No solar forecast found for {dt_now.strftime("%Y-%m-%d")}')
         forecast: SolarForecast = _NO_FORECAST
 
     measurement = Measurement(
