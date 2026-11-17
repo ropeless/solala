@@ -67,6 +67,8 @@ Documentation
   policies and price thresholds.
 - [Software Architecture and Design](docs/architecture.md) — components,
   delegates, data flow and design principles.
+- [Error Handling and Recovery](docs/error_handling.md) — intended failure
+  isolation, recovery policy and master alarm conditions.
 - [Development and Testing](docs/development.md) — tests and adding new
   hardware or service integrations.
 
