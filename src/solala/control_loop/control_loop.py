@@ -1305,8 +1305,10 @@ async def _database_loop() -> None:
             try:
                 async with _database() as db:
                     await _insert_measurement(iteration_start, db)
-            except ConnectionError as err:
-                log_error(f'Database connection error: {err}')
+            except Exception:
+                # A failed measurement must not stop subsequent logging cycles.
+                # Cancellation still propagates to the caller.
+                LOGGER.exception('%sDatabase measurement failed', _LOG_SRC)
 
         listeners = _CONTROL_STATE.database_loop_listeners.copy()
         # Notify listeners without holding a state lock.
@@ -1391,8 +1393,18 @@ async def _control_loop() -> None:
         state.iteration_start = iteration_start = now()  # timestamp to calculate loop sleep time
         # Hold the connections lock while issuing commands to prevent
         # controller replacement or closure during a control step.
-        async with _connections_state():
-            await _control_step(state)
+        try:
+            async with _connections_state():
+                await _control_step(state)
+        except Exception:
+            # Do not automatically retry an uncertain hardware command here.
+            # Continue on the next scheduled iteration instead.
+            if state.health.report_failure('control_step', Severity.WARNING,
+                                           'Control step failed'):
+                LOGGER.exception('%sControl step failed', _LOG_SRC)
+        else:
+            if state.health.report_success('control_step'):
+                log_info('Control step recovered after previous failure')
         listeners = state.control_loop_listeners.copy()
         async with _cache_state() as cache:
             cache.last_power_valid = False
