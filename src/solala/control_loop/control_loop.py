@@ -476,8 +476,15 @@ async def control_loop(
         await configure_from_settings(settings)
 
     database_task = asyncio.create_task(_database_loop())
-    await _control_loop()
-    database_task.cancel()
+    try:
+        await _control_loop()
+    finally:
+        database_task.cancel()
+        try:
+            await database_task
+        except asyncio.CancelledError:
+            # Expected when shutting down the database loop.
+            pass
 
 
 # =============================================================================
