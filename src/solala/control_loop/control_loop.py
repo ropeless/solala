@@ -384,6 +384,10 @@ def log_error(message: str) -> None:
     LOGGER.error(f'{_LOG_SRC}{message}')
 
 
+def log_exception(message: str) -> None:
+    LOGGER.exception(f'{_LOG_SRC}{message}')
+
+
 @asynccontextmanager
 async def _connections_state() -> AsyncIterator[_ConnectionsState]:
     """
@@ -1319,7 +1323,7 @@ async def _database_loop() -> None:
             except Exception:
                 # A failed measurement must not stop subsequent logging cycles.
                 # Cancellation still propagates to the caller.
-                LOGGER.exception('%sDatabase measurement failed', _LOG_SRC)
+                log_exception('Database measurement failed')
 
         listeners = _CONTROL_STATE.database_loop_listeners.copy()
         # Notify listeners without holding a state lock.
@@ -1412,7 +1416,7 @@ async def _control_loop() -> None:
             # Continue on the next scheduled iteration instead.
             if state.health.report_failure('control_step', Severity.WARNING,
                                            'Control step failed'):
-                LOGGER.exception('%sControl step failed', _LOG_SRC)
+                log_exception('Control step failed')
         else:
             if state.health.report_success('control_step'):
                 log_info('Control step recovered after previous failure')
@@ -1421,12 +1425,12 @@ async def _control_loop() -> None:
             async with _cache_state() as cache:
                 cache.last_power_valid = False
         except Exception:
-            LOGGER.exception('%sPower cache invalidation failed', _LOG_SRC)
+            log_exception('Power cache invalidation failed')
 
         try:
             await _cur_log_registers(state.registers_to_log)
         except Exception:
-            LOGGER.exception('%sRegister logging failed', _LOG_SRC)
+            log_exception('Register logging failed')
 
         # Listener callbacks are dispatched without holding state locks.
         _update_listeners(state.control_loop_listeners.copy())
@@ -1614,7 +1618,7 @@ async def _execute_battery_mode(
             prev_state.battery_commanded_mode = BatteryMode.UNKNOWN
             if state.health.report_failure('battery_command', Severity.WARNING,
                                            'Battery command outcome is uncertain'):
-                LOGGER.exception('%sBattery command failed: %s', _LOG_SRC, requested_mode.battery_mode)
+                log_exception(f'Battery command failed: {requested_mode.battery_mode}')
         else:
             prev_state.battery_commanded_mode = requested_mode.battery_mode
             if state.health.report_success('battery_command'):
@@ -1638,7 +1642,7 @@ async def _execute_inverter_mode(
             prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
             if state.health.report_failure('inverter_command', Severity.WARNING,
                                            'Inverter command outcome is uncertain'):
-                LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
+                log_exception(f'Inverter command failed: {requested_mode.inverter_mode}')
         else:
             prev_state.inverter_commanded_mode = requested_mode.inverter_mode
             if state.health.report_success('inverter_command'):
@@ -1657,7 +1661,7 @@ async def _execute_inverter_mode(
         prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
         if state.health.report_failure('inverter_command', Severity.WARNING,
                                        'Inverter command outcome is uncertain'):
-            LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
+            log_exception(f'Inverter command failed: {requested_mode.inverter_mode}')
     else:
         if requested_mode.inverter_mode in (InverterMode.DISABLE, InverterMode.ZERO_EXPORT):
             prev_state.inverter_commanded_mode = requested_mode.inverter_mode
