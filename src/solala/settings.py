@@ -86,6 +86,7 @@ class DummySolarForecasterConnection(BaseModel):
     Attributes:
         panel_capacity: Rated solar panel capacity in watts.
         inverter_limit: Maximum inverter output in watts.
+        failure: Optional configured simulated failure.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
