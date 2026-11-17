@@ -478,12 +478,14 @@ class ModbusPowerController(PowerController):
         Set a register value and verify the change.
 
         The old and new values are logged. Write errors propagate, and
-        verification failures raise ValueError.
+        verification failures raise ValueError. If the new value is the
+        same as the old value, then no write will be performed _unless_
+        `force` is true.
 
         Args:
             name: Name of the register to update.
             value: Value to write.
-            force: Write the value even if it is unchanged.
+            force: Write the value even if the new value is the same as the old value.
         """
         old = await self._modbus[name].get()
         if not force and old == value:
