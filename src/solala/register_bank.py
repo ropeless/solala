@@ -5,6 +5,9 @@ from types import MappingProxyType
 from solala.register import Register, RegisterValue, ConstantRegister
 
 
+MATCH_ALL: re.Pattern[str] = re.compile('.*')  # regular expression to match anything
+
+
 class RegisterBank(Mapping[str, Register]):
     """
     An immutable mapping of names to asynchronously accessed registers.
@@ -51,13 +54,13 @@ class RegisterBank(Mapping[str, Register]):
 
     async def get_register_values(
             self,
-            pattern: re.Pattern[str] | None = None,
+            pattern: re.Pattern[str] = MATCH_ALL,
     ) -> dict[str, RegisterValue | Exception]:
         """
         Read matching registers sequentially, retaining individual failures.
 
         Args:
-            pattern: Compiled pattern matched against register names, or None
+            pattern: Compiled pattern matched against register names; use MATCH_ALL
                 to read all registers.
 
         Returns:
@@ -66,12 +69,11 @@ class RegisterBank(Mapping[str, Register]):
         """
         results: dict[str, RegisterValue | Exception] = {}
         for name, register in self.items():
-            if pattern is not None and not pattern.match(name):
-                continue
-            try:
-                results[name] = await register.get()
-            except Exception as error:
-                results[name] = error
+            if pattern.match(name):
+                try:
+                    results[name] = await register.get()
+                except Exception as error:
+                    results[name] = error
         return results
 
 

@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from solala.utils.time_extras import render_timedelta\nfrom solala.register import RegisterValue
+from solala.utils.time_extras import render_timedelta
 
 # Non-container JSON value types
 type JSONPrimitive = str | int | float | bool | None

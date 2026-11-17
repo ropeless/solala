@@ -87,8 +87,6 @@ _DISCONNECTED: JSONDict = {'connection': 'disconnected'}
 _NO_SOLAR_FORECAST = DailySolarForecast([])
 _NO_REGISTERS: RegisterBank = EMPTY_REGISTER_BANK
 
-MATCH_ALL: re.Pattern[str] = re.compile('.*')  # regular expression to match anything
-
 type PossibleDemandWindow = tuple[datetime, datetime] | None
 
 
