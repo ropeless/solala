@@ -141,8 +141,10 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         self.state.control.prev_state.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
         self.price_mock.side_effect = RuntimeError('battery price lookup failed')
 
-        async with control_loop._connections_state():
-            await control_loop._control_step(self.state)
+        with patch.object(control_loop.LOGGER, 'exception') as log_exception:
+            async with control_loop._connections_state():
+                await control_loop._control_step(self.state)
+        log_exception.assert_called_once()
 
         self.controller.enable_battery.assert_not_awaited()
         self.controller.force_charge.assert_not_awaited()
@@ -168,8 +170,10 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         self.state.control.prev_state.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
         self.price_mock.side_effect = RuntimeError('price lookup failed')
 
-        async with control_loop._connections_state():
-            await control_loop._control_step(self.state)
+        with patch.object(control_loop.LOGGER, 'exception') as log_exception:
+            async with control_loop._connections_state():
+                await control_loop._control_step(self.state)
+        log_exception.assert_called_once()
 
         self.controller.zero_export.assert_awaited_once_with(
             change_duration=Constants.CONTROL_DURATION
