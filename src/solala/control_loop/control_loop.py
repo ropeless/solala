@@ -1459,34 +1459,22 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
 async def _control_step(state: _ControlState) -> None:
     """
     Perform one functional step while the caller holds the connections lock.
-    """
-    # Fetch pricing without holding the settings lock.
-    async with _control_settings_state() as control_state:
-        requested_mode: ControlMode = control_state.control_mode.copy()
-        needs_price = (
-                requested_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
-                or requested_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
-        )
-    price: Price | None = await get_price_now() if state.connections.pricer is not None and needs_price else None
 
+    Each step uses one snapshot of control settings. Changes made during the
+    step are handled on a subsequent iteration.
+    """
     async with _control_settings_state() as control_state:
         prev_state = control_state.prev_state
         controller = _check_power_controller(state, prev_state)
         if controller is None:
             return
-
-        # We attempted to get a price assuming the state of policies and pricer above.
-        # The policies may have changes since then so we implement the policies
-        # if we got a price _and_ updating our understanding of the policies.
-        # Applying a policy is effectively a decision to request a particular mode for
-        # the battery or inverter.
         requested_mode = control_state.control_mode.copy()
-        if price is not None:
-            _apply_battery_policy(requested_mode, price)
-            _apply_inverter_policy(requested_mode, price)
 
-    # Hardware commands run outside the settings lock.
+    # Do not hold the settings lock across price retrieval or hardware I/O.
+    await _apply_battery_policy(requested_mode, state.connections.pricer is not None)
     await _execute_battery_mode(state, prev_state, controller, requested_mode)
+
+    await _apply_inverter_policy(requested_mode, state.connections.pricer is not None)
     await _execute_inverter_mode(state, prev_state, controller, requested_mode)
 
     async with _control_settings_state():
@@ -1506,26 +1494,32 @@ def _check_power_controller(state: _ControlState, prev_state: _PrevControl) -> P
     return controller
 
 
-def _apply_battery_policy(control_mode: ControlMode, price: Price) -> None:
+async def _apply_battery_policy(control_mode: ControlMode, pricer_available: bool) -> None:
     """
-    Apply the battery pricing policy to the current requested mode.
+    Apply the battery pricing policy to the requested mode.
     """
-    if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
-        if price.buy_price < control_mode.start_charge_price_threshold:
-            control_mode.battery_mode = BatteryMode.FORCE_CHARGE
-        elif price.buy_price > control_mode.stop_charge_price_threshold:
-            control_mode.battery_mode = BatteryMode.ENABLE
+    if not pricer_available or control_mode.battery_policy != BatteryPolicy.CHEAP_CHARGE:
+        return
+
+    price = await get_price_now()
+    if price.buy_price < control_mode.start_charge_price_threshold:
+        control_mode.battery_mode = BatteryMode.FORCE_CHARGE
+    elif price.buy_price > control_mode.stop_charge_price_threshold:
+        control_mode.battery_mode = BatteryMode.ENABLE
 
 
-def _apply_inverter_policy(control_mode: ControlMode, price: Price) -> None:
+async def _apply_inverter_policy(control_mode: ControlMode, pricer_available: bool) -> None:
     """
-    Apply the inverter pricing policy to the current requested mode.
+    Apply the inverter pricing policy to the requested mode.
     """
-    if control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
-        if price.feed_in_price < control_mode.disable_export_price_threshold:
-            control_mode.inverter_mode = InverterMode.ZERO_EXPORT
-        elif price.feed_in_price > control_mode.enable_export_price_threshold:
-            control_mode.inverter_mode = InverterMode.ENABLE
+    if not pricer_available or control_mode.inverter_policy != InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
+        return
+
+    price = await get_price_now()
+    if price.feed_in_price < control_mode.disable_export_price_threshold:
+        control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+    elif price.feed_in_price > control_mode.enable_export_price_threshold:
+        control_mode.inverter_mode = InverterMode.ENABLE
 
 
 async def _execute_battery_mode(
