@@ -1326,7 +1326,13 @@ async def _database_loop() -> None:
             except Exception:
                 # A failed measurement must not stop subsequent logging cycles.
                 # Cancellation still propagates to the caller.
-                log_exception('Database measurement failed')
+                if _CONTROL_STATE.health.report_failure(
+                        'database_measurement', Severity.CAUTION,
+                        'Database measurement could not be saved'):
+                    log_exception('Database measurement failed')
+            else:
+                if _CONTROL_STATE.health.report_success('database_measurement'):
+                    log_info('Database measurements recovered after previous failure')
 
         listeners = _CONTROL_STATE.database_loop_listeners.copy()
         # Notify listeners without holding a state lock.
