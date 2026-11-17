@@ -293,6 +293,7 @@ class _ControlState:
     Mutable connection, control, and cache fields use their dedicated locks.
     """
     connections: _ConnectionsState = field(default_factory=_ConnectionsState)
+    database_lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     control: _ControlSettingsState = field(default_factory=_ControlSettingsState)
     cache: _CacheState = field(default_factory=_CacheState)
     settings_persistence: _SettingsPersistenceState = field(default_factory=_SettingsPersistenceState)
@@ -342,8 +343,8 @@ class _ControlState:
         async with _cache_state():
             self.cache.solar_forecast_cache.clear()
 
-    async def reset_consumer(self, consumer_name: str, consumer: PowerConsumer | None,
-                             settings: ConsumerConnection | None) -> None:
+    def reset_consumer(self, consumer_name: str, consumer: PowerConsumer | None,
+                       settings: ConsumerConnection | None) -> None:
         if consumer is None:
             assert settings is None
             self.connections.consumers.pop(consumer_name, None)
@@ -353,8 +354,8 @@ class _ControlState:
             self.connections.consumers[consumer_name] = consumer
             self.connections.consumers_settings[consumer_name] = settings
 
-    async def reset_database(self, database: SolalaDatabaseConnections | None,
-                             settings: DatabaseConnection | None) -> None:
+    def reset_database(self, database: SolalaDatabaseConnections | None,
+                       settings: DatabaseConnection | None) -> None:
         assert (database is None) == (settings is None)
         self.connections.database_connections = database
         self.connections.database_settings = settings
@@ -898,53 +899,26 @@ async def _get_solar_forecast(day: date) -> LifecycleReturn[DailySolarForecast]:
 
 
 @asynccontextmanager
-async def solala_database(commit_on_close: bool = True) -> AsyncIterator[SolalaDatabase]:
+async def _database() -> AsyncIterator[SolalaDatabase]:
     """
-    Borrow a database connection from the pool for an asynchronous context.
+    Reserve the current database pool before releasing the connections lock.
 
-    Args:
-        commit_on_close: Whether to commit when returning the connection to the pool.
-
-    Yields:
-        A database interface backed by the borrowed connection.
-
-    Raises:
-        ConnectionError: If the database pool is unavailable or changes while in use.
+    The reservation is released only after the database context has returned
+    its connection, including when acquisition fails or is cancelled.
     """
-    async with _connections_state() as connections:
-        log_debug('Requesting DB connection from pool')
-        database_connections = connections.database_connections
-        if database_connections is None:
-            raise ConnectionError('Database pool not connected')
-        database_connections: SolalaDatabaseConnections
-
-        # DEBUG
-        stats = database_connections.get_stats()
-        log_debug(f'Pool size: {stats["pool_size"]}')
-        log_debug(f'Available: {stats["pool_available"]}')
-        log_debug(f'Waiting:   {stats["requests_waiting"]}')
-        log_debug(f'Requests:  {stats["requests_waiting"]}')
-
-    await database_connections.open(wait=False)
-    db: SolalaDatabase = await database_connections.get_db()
-
-    # Release the connections lock, then provide the database connection
+    reservation = None
     try:
-        yield db
-    finally:
-        # Release the database connection
         async with _connections_state() as connections:
-            log_debug('Returning DB connection to pool')
-            if database_connections is not connections.database_connections:
-                raise ConnectionError('Database pool closed while in use')
-            await database_connections.put_db(db, commit_on_close)
+            pool = connections.database_connections
+            if pool is None:
+                raise ConnectionError('Database pool not connected')
+            reservation = pool.reserve_database()
 
-        # DEBUG
-        stats = database_connections.get_stats()
-        log_debug(f'Pool size: {stats["pool_size"]}')
-        log_debug(f'Available: {stats["pool_available"]}')
-        log_debug(f'Waiting:   {stats["requests_waiting"]}')
-        log_debug(f'Requests:  {stats["requests_waiting"]}')
+        async with reservation as db:
+            yield db
+    finally:
+        if reservation is not None:
+            reservation.release()
 
 
 async def solala_database_measurements(day: date) -> Sequence[Measurement]:
@@ -961,7 +935,7 @@ async def solala_database_measurements(day: date) -> Sequence[Measurement]:
         Measurements for the day, or an empty sequence if database access fails.
     """
     try:
-        async with solala_database() as db:
+        async with _database() as db:
             return await db.get_measurements(day)
     except (ConnectionError, DatabaseError) as err:
         log_error(f'Database connection error: {err}')
@@ -1174,7 +1148,7 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
             )
 
         await disconnect_consumer(name)
-        await _CONTROL_STATE.reset_consumer(name, consumer, consumer_connection)
+        _CONTROL_STATE.reset_consumer(name, consumer, consumer_connection)
         connection_info = consumer.get_connection_info()
         log_info(f'Power consumer {name!r} connection: {json.dumps(connection_info)}')
         await _save_settings()
@@ -1189,7 +1163,7 @@ async def disconnect_consumer(name: str) -> None:
         consumer: PowerConsumer | None = _CONTROL_STATE.connections.consumers.get(name)
         if consumer is not None:
             await consumer.close()
-            await _CONTROL_STATE.reset_consumer(name, None, None)
+            _CONTROL_STATE.reset_consumer(name, None, None)
             log_info('Power consumer {name!r} disconnected')
         await _save_settings()
         await _reconfigure_registers(_CONTROL_STATE)
@@ -1238,14 +1212,37 @@ async def disconnect_forecaster() -> None:
         await _reconfigure_registers(_CONTROL_STATE)
 
 
+async def _close_database_pool(pool: SolalaDatabaseConnections) -> None:
+    """
+    Complete pool shutdown even if the calling task is cancelled.
+
+    Cancellation is propagated after the pool has finished closing, so the
+    database lifecycle lock remains held throughout the transition.
+    """
+    closing = asyncio.create_task(pool.close())
+    cancelled = False
+    # Keep awaiting the shielded close after cancellation. This deliberately
+    # delays cancellation propagation until shutdown has completed, so the
+    # lifecycle lock cannot be released while the old pool is still closing.
+    while not closing.done():
+        try:
+            await asyncio.shield(closing)
+        except asyncio.CancelledError:
+            cancelled = True
+    # Propagate any failure from the close operation rather than hiding it.
+    await closing
+    if cancelled:
+        raise asyncio.CancelledError
+
+
 async def connect_database(database_connection: DatabaseConnection) -> None:
     """
-    Configure or replace the database connection pool.
+    Replace the database pool without holding the connections lock while draining.
 
     Args:
         database_connection: Database connection configuration.
     """
-    async with _connections_state():
+    async with _CONTROL_STATE.database_lifecycle_lock:
         database_connections = SolalaDatabaseConnections(
             role=database_connection.role,
             password=database_connection.password,
@@ -1253,23 +1250,38 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
             port=database_connection.port,
             database_name=database_connection.database_name,
         )
-        await disconnect_database()
-        await _CONTROL_STATE.reset_database(database_connections, database_connection)
-        connection_info = database_connections.get_connection_info()
-        log_info(f'Database connection: {json.dumps(connection_info)}')
-        await _save_settings()
-        # no need to _reconfigure_registers(state)
+        async with _connections_state() as connections:
+            old_pool = connections.database_connections
+            if old_pool is not None:
+                old_pool.begin_close()
+            _CONTROL_STATE.reset_database(None, None)
+
+        if old_pool is not None:
+            await _close_database_pool(old_pool)
+
+        async with _connections_state():
+            _CONTROL_STATE.reset_database(database_connections, database_connection)
+            connection_info = database_connections.get_connection_info()
+            log_info(f'Database connection: {json.dumps(connection_info)}')
+            await _save_settings()
+            # no need to _reconfigure_registers(state)
 
 
 async def disconnect_database() -> None:
     """
-    Close the database connection pool.
+    Close the database pool without blocking the connections lock during drain.
     """
-    async with _connections_state():
-        if _CONTROL_STATE.connections.database_connections is not None:
-            await _CONTROL_STATE.connections.database_connections.close()
-            await _CONTROL_STATE.reset_database(None, None)
+    async with _CONTROL_STATE.database_lifecycle_lock:
+        async with _connections_state() as connections:
+            old_pool = connections.database_connections
+            if old_pool is not None:
+                old_pool.begin_close()
+                _CONTROL_STATE.reset_database(None, None)
+
+        if old_pool is not None:
+            await _close_database_pool(old_pool)
             log_info('Database disconnected')
+
         await _save_settings()
         # no need to _reconfigure_registers(state)
 
@@ -1291,7 +1303,7 @@ async def _database_loop() -> None:
         iteration_start = now()
         if _CONTROL_STATE.database_write:
             try:
-                async with solala_database() as db:
+                async with _database() as db:
                     await _insert_measurement(iteration_start, db)
             except ConnectionError as err:
                 log_error(f'Database connection error: {err}')
@@ -1437,7 +1449,7 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
             elif isinstance(value, str):
                 to_log_text[name] = value
         try:
-            async with solala_database() as db:
+            async with _database() as db:
                 await db.insert_registers_numeric(timestamp, to_log_numeric)
                 await db.insert_registers_text(timestamp, to_log_text)
         except (ConnectionError, DatabaseError) as err:
@@ -1915,6 +1927,7 @@ async def _save_settings() -> None:
                     print(settings.model_dump_json(), file=file)
             except Exception as err:
                 log_error(f'Error saving settings: {err}')
+
 
 async def _load_settings() -> bool:
     """
