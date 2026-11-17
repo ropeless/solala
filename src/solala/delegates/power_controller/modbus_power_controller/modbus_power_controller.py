@@ -1,3 +1,4 @@
+import math
 from collections.abc import Iterable
 from contextlib import contextmanager
 from typing import Iterator
@@ -71,7 +72,6 @@ class ModbusPowerController(PowerController):
         self._slaves = list(slaves)
         self._inverters = [self._master] + self._slaves
         self._meter = meter
-        self._log_set_get: bool = False
         self._hunt_history: list[float] = []
 
         # Important registers
@@ -159,23 +159,22 @@ class ModbusPowerController(PowerController):
         return self._registers
 
     async def get_status(self) -> PowerStatus:
-        state_of_charge = await self._get(self._ChaState)
-        charge_power = await self._get(self._charge_power)
-        discharge_power = await self._get(self._discharge_power)
-        solar_power = await self._get_sum(self._solar_power)
-        grid_power = await self._get(self._grid_power)
+        state_of_charge = await self._get_for_status(self._ChaState)
+        charge_power = await self._get_for_status(self._charge_power)
+        discharge_power = await self._get_for_status(self._discharge_power)
+        solar_power = await self._get_sum_for_status(self._solar_power)
+        grid_power = await self._get_for_status(self._grid_power)
 
-        accumulated_grid_import = await self._get(self._accumulated_grid_import)
-        accumulated_grid_export = await self._get(self._accumulated_grid_export)
-        accumulated_solar_energy = await self._get_sum(self._accumulated_solar_energy)
-        accumulated_charge_energy = await self._get(self._accumulated_charge_energy)
-        accumulated_discharge_energy = await self._get(self._accumulated_discharge_energy)
-        # accumulated_inverter_power = await self._get_sum(self._accumulated_inverter_power)
+        accumulated_grid_import = await self._get_for_status(self._accumulated_grid_import)
+        accumulated_grid_export = await self._get_for_status(self._accumulated_grid_export)
+        accumulated_solar_energy = await self._get_sum_for_status(self._accumulated_solar_energy)
+        accumulated_charge_energy = await self._get_for_status(self._accumulated_charge_energy)
+        accumulated_discharge_energy = await self._get_for_status(self._accumulated_discharge_energy)
 
         battery_power = charge_power - discharge_power
         house_power = grid_power + solar_power - battery_power
 
-        power_limit, power_limit_enabled = await self._get_power_limit()
+        power_limit = await self._get_power_limit_for_status()
 
         return PowerStatus(
             state_of_charge=state_of_charge,
@@ -189,6 +188,67 @@ class ModbusPowerController(PowerController):
             accumulated_grid_energy_export=accumulated_grid_export,
             accumulated_battery_energy_charge=accumulated_charge_energy,
             accumulated_battery_energy_discharge=accumulated_discharge_energy,
+        )
+
+    async def _get_for_status(self, name: str) -> float:
+        """
+        Read a numeric register for reporting, returning NaN on failure.
+
+        Args:
+            name: Name of the register to read.
+
+        Returns:
+            The numeric value, or NaN when it cannot be read.
+        """
+        try:
+            value = await self._modbus[name].get()
+            if not isinstance(value, (int, float)):
+                raise TypeError(f'expected numeric register {name!r}, got {type(value)}')
+            return float(value)
+        except Exception as err:
+            LOGGER.warning(f'GET status {name}: ERROR: {err}')
+            return math.nan
+
+    async def _get_sum_for_status(self, names: list[str]) -> float:
+        """
+        Sum reporting registers, propagating NaN for unavailable inputs.
+
+        Args:
+            names: Register names to sum.
+
+        Returns:
+            Sum of readings, or NaN if any reading is unavailable.
+        """
+        return sum([await self._get_for_status(name) for name in names])
+
+    async def _get_power_limit_for_status(self) -> float:
+        """
+        Calculate the reported inverter limit without failing the status snapshot.
+
+        Returns:
+            Effective percentage limit, or NaN if required readings fail.
+        """
+        power_limits = [await self._get_for_status(name) for name in self._WMaxLimPct]
+        enabled = [await self._get_for_status(name) for name in self._WMaxLim_Ena]
+        if any(not math.isfinite(x) for x in power_limits + enabled):
+            return math.nan
+        if len(power_limits) == 1:
+            return power_limits[0] if enabled[0] != 0 else 100.0
+
+        capacities = [
+            min(
+                await self._get_for_status(f'{inverter}/WMax'),
+                await self._get_for_status(f'{inverter}/WRtg'),
+            )
+            for inverter in self._power_controllers
+        ]
+        total = sum(capacities)
+        if not math.isfinite(total) or total <= 0:
+            LOGGER.warning('Cannot report power limit: inverter capacity unavailable or zero')
+            return math.nan
+        return sum(
+            (limit if active != 0 else 100.0) * capacity / total
+            for limit, active, capacity in zip(power_limits, enabled, capacities)
         )
 
     # =================================================
@@ -409,8 +469,6 @@ class ModbusPowerController(PowerController):
         Args:
             name: Name of the operation to include in the log messages.
         """
-        previous = self._log_set_get
-        self._log_set_get = True
         LOGGER.info(f'{_START} {name}')
         try:
             yield
@@ -419,7 +477,6 @@ class ModbusPowerController(PowerController):
             raise
         finally:
             LOGGER.info(f'{_STOP} {name}')
-            self._log_set_get = previous
 
     def _logger_get_set(self, message: str) -> None:
         """
@@ -428,8 +485,7 @@ class ModbusPowerController(PowerController):
         Args:
             message: Message describing the register operation.
         """
-        if self._log_set_get:
-            LOGGER.info(message)
+        LOGGER.info(message)
 
     async def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
         """
