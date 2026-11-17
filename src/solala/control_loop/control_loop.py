@@ -638,29 +638,14 @@ async def get_power_status() -> PowerStatus:
             return cache.last_power
 
 
-async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> dict[str, RegisterValue | None]:
+def get_register_bank() -> RegisterBank:
     """
-    Get the values of registers, optionally limited to names that match a pattern.
+    Return the current immutable mapping of named registers.
 
-    Args:
-        match: A compiled regular expression or an iterable of register names.
-
-    Returns:
-        A dictionary mapping each register name to its value, or to None if
-        a specifically requested register is unavailable.
+    Register values are obtained separately and may change or become
+    unavailable after the bank is returned.
     """
-    registers: RegisterBank = _CONTROL_STATE.connections.registers  # no need to lock as RegisterBank is stable.
-    if isinstance(match, re.Pattern):
-        return {
-            name: await registers.get(name)
-            for name in registers.keys()
-            if match.match(name)
-        }
-    else:
-        return {
-            name: await registers.get(name)
-            for name in match
-        }
+    return _CONTROL_STATE.connections.registers
 
 
 async def get_price_now() -> Price:
@@ -1450,7 +1435,7 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
     """
     if cur_log_registers is not None:
         timestamp = now()
-        registers = await get_registers(cur_log_registers)
+        registers = await get_register_bank().get_register_values(cur_log_registers)
         to_log_numeric: dict[str, int | float] = {}
         to_log_text: dict[str, str] = {}
         for name, value in registers.items():
@@ -1854,13 +1839,13 @@ async def _reconfigure_registers(state: _ControlState) -> None:
     # Add controller registers
     if state.connections.controller is not None:
         controller_registers: RegisterBank = await state.connections.controller.get_registers()
-        for name, register in controller_registers.registers.items():
+        for name, register in controller_registers.items():
             registers[f'controller/{name}'] = register
 
     # Add power consumer registers
     for consumer_name, consumer in state.connections.consumers.items():
         consumer_registers: RegisterBank = await consumer.get_registers()
-        for name, register in consumer_registers.registers.items():
+        for name, register in consumer_registers.items():
             registers[f'consumer/{consumer_name}/{name}'] = register
 
     state.connections.registers = RegisterBank(registers)
