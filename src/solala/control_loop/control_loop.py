@@ -803,10 +803,20 @@ async def get_consumers_status() -> dict[str, ConsumerStatus]:
     async with _connections_state() as connections:
         # Keep consumers connected until all status requests complete.
         consumers = tuple(connections.consumers.items())
-        statuses = await asyncio.gather(*[
-            consumer.get_status() for _, consumer in consumers
-        ])
-    return {name: status for (name, _), status in zip(consumers, statuses)}
+        statuses = await asyncio.gather(
+            *(consumer.get_status() for _, consumer in consumers),
+            return_exceptions=True,
+        )
+
+    result: dict[str, ConsumerStatus] = {}
+    for (name, _), status in zip(consumers, statuses):
+        if isinstance(status, BaseException):
+            if isinstance(status, asyncio.CancelledError):
+                raise status
+            LOGGER.error('Consumer %r status unavailable: %r', name, status)
+        else:
+            result[name] = status
+    return result
 
 
 async def get_connection_info() -> JSONDict:
