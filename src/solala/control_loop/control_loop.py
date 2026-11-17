@@ -111,8 +111,6 @@ class _PrevControl:
     """
     controller: PowerController | None = None
     control_mode: ControlMode = field(default_factory=ControlMode)
-    battery_retry: bool = False
-    inverter_retry: bool = False
 
     def reset(self, controller: PowerController | None) -> None:
         """
@@ -122,8 +120,6 @@ class _PrevControl:
             controller: Controller associated with the new tracking state.
         """
         self.controller = controller
-        self.battery_retry = False
-        self.inverter_retry = False
         self.control_mode.battery_mode = BatteryMode.UNKNOWN
         self.control_mode.inverter_mode = InverterMode.UNKNOWN
         self.control_mode.battery_policy = BatteryPolicy.MANUAL
@@ -1504,58 +1500,449 @@ async def _control_step(state: _ControlState) -> None:
 
         # Snapshot the commands before releasing the control-settings lock.
         requested_mode = copy.copy(control_mode)
-        battery_changed = (requested_mode.battery_mode != prev_state.control_mode.battery_mode
-                           or prev_state.battery_retry)
-        inverter_changed = (requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
-                            or prev_state.inverter_retry)
+        battery_changed = requested_mode.battery_mode != prev_state.control_mode.battery_mode
+        inverter_changed = requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
 
     # Connection lifetime is protected by the caller's connections lock.
     # Do not block control-mode getters while waiting for the controller.
-    # Keep the previous requested mode for reporting, while separately tracking
-    # failed one-shot commands for retry on the next iteration.
-    battery_retry = False
     if battery_changed:
-        try:
-            match requested_mode.battery_mode:
-                case BatteryMode.ENABLE:
-                    await power_controller.enable_battery()
-                case BatteryMode.DISABLE:
-                    await power_controller.disable_battery()
-                case BatteryMode.FORCE_CHARGE:
-                    await power_controller.force_charge()
-                case BatteryMode.FORCE_DISCHARGE:
-                    await power_controller.force_discharge()
-                case BatteryMode.CHARGE_ONLY:
-                    await power_controller.charge_only()
-                case BatteryMode.DISCHARGE_ONLY:
-                    await power_controller.discharge_only()
-        except Exception:
-            battery_retry = True
-            LOGGER.exception('%sBattery command failed: %s', _LOG_SRC, requested_mode.battery_mode)
+        match requested_mode.battery_mode:
+            case BatteryMode.ENABLE:
+                await power_controller.enable_battery()
+            case BatteryMode.DISABLE:
+                await power_controller.disable_battery()
+            case BatteryMode.FORCE_CHARGE:
+                await power_controller.force_charge()
+            case BatteryMode.FORCE_DISCHARGE:
+                await power_controller.force_discharge()
+            case BatteryMode.CHARGE_ONLY:
+                await power_controller.charge_only()
+            case BatteryMode.DISCHARGE_ONLY:
+                await power_controller.discharge_only()
 
-    inverter_retry = False
     if inverter_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
-        try:
-            await power_controller.enable_inverter()
-        except Exception:
-            inverter_retry = True
-            LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
+        await power_controller.enable_inverter()
 
-    # DISABLE and ZERO_EXPORT require a keep-alive on every iteration.
-    # A failed attempt must not prevent the next iteration from retrying.
+    # These inverter modes require a keep-alive command on every iteration.
+    # A failed command is logged and retried next iteration; the previous mode
+    # records the request, not confirmation of the inverter's actual state.
     try:
         match requested_mode.inverter_mode:
             case InverterMode.DISABLE:
                 await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
             case InverterMode.ZERO_EXPORT:
                 await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
-    except Exception:
-        LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
+    except Exception as e:
+        log_error(f'Error processing command: {requested_mode.inverter_mode}. Error: {e}')
 
     async with _control_settings_state():
-        # Preserve the last requested modes; these are not confirmed hardware states.
-        # A newer request is picked up in the next iteration.
+        # Record what was actually requested, not any newer UI changes.
+        # A concurrent change will be picked up on the next iteration.
         prev_state.control_mode = requested_mode
-        prev_state.battery_retry = battery_retry
-        prev_state.inverter_retry = inverter_retry
 
+
+def _connect_dummy_controller(controller_connection: DummyControllerConnection) -> PowerController:
+    return DummyPowerController(
+        inverter_limit=controller_connection.inverter_limit,
+        house_power=controller_connection.house_power,
+        max_charge_param=controller_connection.max_charge_param,
+        max_discharge_param=controller_connection.max_discharge_param,
+    )
+
+
+def _connect_dummy_pricer(pricer_connection: DummyPricerConnection) -> PowerPricer:
+    return DummyPowerPricer(
+        buy_price_min=pricer_connection.buy_price_min,
+        buy_price_max=pricer_connection.buy_price_max,
+        feed_in_price_discount_min=pricer_connection.feed_in_price_discount_min,
+        feed_in_price_discount_max=pricer_connection.feed_in_price_discount_max,
+        cur_price_is_estimate=pricer_connection.cur_price_is_estimate,
+        demand_window=pricer_connection.demand_window,
+    )
+
+
+def _connect_dummy_consumer(consumer_connection: DummyConsumerConnection) -> PowerConsumer:
+    return DummyPowerConsumer(
+        voltage=consumer_connection.voltage,
+        current=consumer_connection.current,
+        power=consumer_connection.power,
+        on=consumer_connection.on,
+    )
+
+
+def _connect_dummy_solar_forecaster(forecaster_connection: DummySolarForecasterConnection) -> SolarForecaster:
+    return DummySolarForecaster(
+        panel_capacity=forecaster_connection.panel_capacity,
+        inverter_limit=forecaster_connection.inverter_limit,
+    )
+
+
+def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerController:
+    """
+    Establish a power controller modbus connection to the inverter.
+
+    Does not change the control state in any way.
+
+    Raises:
+        ControlLoopError: a connection cannot be established.
+    """
+    addresses: list[ResolvedAddress] = resolve_addresses(split_addresses(controller_connection.address))
+    if len(addresses) == 0:
+        raise ControlLoopError('no controller address provided')
+
+    # get ModbusTcpClient objects
+    clients: list[ModbusTcpClient] = []  # coindexed with address
+    errors: list[JSONDict] = []
+    for address in addresses:
+        try:
+            client = ModbusTcpClient(address.ip_address)
+            client.connect()
+            clients.append(client)
+        except Exception as err:
+            errors.append({
+                'host': address.ip_address,
+                'mac_address': address.mac_address,
+                'error': str(err),
+            })
+    # Fail if there are any errors
+    if len(errors) > 0:
+        raise ControlLoopError('could not connect Modbus TCP client', errors=errors)
+
+    # Configure power controller
+    master_client: ModbusTcpClient = clients[0]
+    slave_clients: list[ModbusTcpClient] = clients[1:]
+    devices: dict[str, ModbusDevice] = {
+        'master': ModbusDevice(master_client, controller_connection.master_device_id),
+    }
+    slave_names: list[str]
+    if len(slave_clients) == 1:
+        slave_names = ['slave']
+        devices['slave'] = ModbusDevice(slave_clients[0], controller_connection.slave_device_id)
+    else:
+        slave_names = []
+        for slave_id, slave_client in enumerate(slave_clients, start=1):
+            name = f'slave_{slave_id}'
+            slave_names.append(name)
+            devices[name] = ModbusDevice(slave_client, controller_connection.slave_device_id)
+    devices['meter'] = ModbusDevice(master_client, controller_connection.meter_device_id)
+
+    mac_addr_lookup: dict[str, str] = {
+        address.ip_address: address.mac_address
+        for address in addresses
+    }
+
+    controller = ModbusPowerController(
+        Modbus(devices),
+        master='master',
+        meter='meter',
+        slaves=slave_names,
+        mac_addr_lookup=mac_addr_lookup,
+    )
+
+    return controller
+
+
+def _connect_amber(pricer_connection: AmberPricerConnection) -> PowerPricer:
+    """
+    Establish a power pricer connection using Amber.
+
+    Does not change the control state in any way.
+
+    Raises:
+        ControlLoopError: a connection cannot be established.
+    """
+    api_token = pricer_connection.api_token.strip()
+    nmi = pricer_connection.nmi.strip()
+    if api_token == '' or nmi == '':
+        log_warn('No API token or NMI provided for Amber pricer')
+        raise ControlLoopError('no API token or NMI provided for Amber pricer')
+    try:
+        amber_pricer = AmberPowerPricer(api_token, nmi)
+    except Exception as err:
+        raise ControlLoopError('could not connect Amber', errors=[str(err)])
+
+    return amber_pricer
+
+
+def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnection) -> PowerConsumer:
+    """
+    Establish a power consumer connection using Tesla Wall Connector.
+
+    Does not change the control state in any way.
+
+    Raises:
+        ControlLoopError: a connection cannot be established.
+    """
+    address: ResolvedAddress = resolve_addresses([consumer_connection.address])[0]
+    try:
+        return TeslaWallConnector(address.ip_address, address.mac_address)
+    except Exception as err:
+        raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
+
+
+def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
+    """
+    Establish a power consumer connection using Tuya.
+
+    Does not change the control state in any way.
+
+    Raises:
+        ControlLoopError: a connection cannot be established.
+    """
+    try:
+        return TuyaPowerConsumer(
+            access_id=consumer_connection.access_id,
+            access_secret=consumer_connection.access_secret,
+            device_id=consumer_connection.device_id,
+            voltage_scale_factor=consumer_connection.voltage_scale_factor,
+            current_scale_factor=consumer_connection.current_scale_factor,
+            power_scale_factor=consumer_connection.power_scale_factor,
+            cache_duration=consumer_connection.cache_duration,
+        )
+    except Exception as err:
+        raise ControlLoopError('could not connect to the Tuya device', errors=[str(err)])
+
+
+def _connect_open_meteo_forecaster(forecaster_connection: OpenMeteoConnection) -> SolarForecaster:
+    """
+    Construct an Open-Meteo solar forecaster without changing control state.
+
+    Args:
+        forecaster_connection: Open-Meteo forecast configuration.
+
+    Returns:
+        The configured solar forecaster.
+
+    Raises:
+        ControlLoopError: If the forecaster cannot be constructed.
+    """
+    try:
+        return OpenMeteoForecaster(
+            latitude=forecaster_connection.latitude,
+            longitude=forecaster_connection.longitude,
+            panel_orientation=forecaster_connection.panel_orientation,
+            panel_tilt=forecaster_connection.panel_tilt,
+            panel_capacity=forecaster_connection.panel_capacity,
+            panel_temperature_coefficient=forecaster_connection.panel_temperature_coefficient,
+            inverter_limit=forecaster_connection.inverter_limit,
+            inverter_efficiency=forecaster_connection.inverter_efficiency,
+        )
+    except Exception as err:
+        raise ControlLoopError('could not connect Open-Meteo', errors=[str(err)])
+
+
+def _update_listeners(listeners: Iterable[LoopListener]) -> None:
+    """
+    Schedule an update on each listener.
+
+    WARNING:
+        * The given iterable should not be modified during iteration, i.e.
+          this function should be given a copy of the list of listeners.
+        * Do not hold the connections or cache lock while scheduling listener updates,
+          as listeners may need to acquire it themselves.
+    """
+    for listener in listeners:
+        asyncio.create_task(listener.update())
+
+
+class PowerRegister(ReadOnlyRegister):
+    """
+    Expose a power status field as a read-only register.
+    """
+
+    def __init__(self, field_name: str, register_type: RegisterType) -> None:
+        self._field_name = field_name
+        super().__init__(register_type)
+
+    async def _get(self) -> RegisterValue:
+        return getattr(await get_power_status(), self._field_name)
+
+
+class PriceRegister(ReadOnlyRegister):
+    """
+    Expose a current electricity price field as a read-only register.
+    """
+
+    def __init__(self, field_name: str, register_type: RegisterType) -> None:
+        self._field_name = field_name
+        super().__init__(register_type)
+
+    async def _get(self) -> RegisterValue:
+        return getattr(await get_price_now(), self._field_name)
+
+
+class ConsumerRegister(ReadOnlyRegister):
+    """
+    Expose a consumer status field as a read-only register.
+    """
+
+    def __init__(self, consumer: PowerConsumer, field_name: str, register_type: RegisterType) -> None:
+        self._field_name = field_name
+        self._consumer = consumer
+        super().__init__(register_type)
+
+    async def _get(self) -> RegisterValue:
+        return getattr(await self._consumer.get_status(), self._field_name)
+
+
+async def _reconfigure_registers(state: _ControlState) -> None:
+    """
+    Updates the control loop register bank as per currently available delegates.
+    Assumes the connections lock is held.
+    """
+
+    # Add status/battery and status/inverter registers
+    registers: dict[str, Register] = {
+        'status/battery/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.battery_mode.name),
+        'status/battery/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.battery_policy.name),
+        'status/battery/start_charge_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control.control_mode.start_charge_price_threshold),
+        'status/battery/stop_charge_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control.control_mode.stop_charge_price_threshold),
+
+        'status/inverter/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_mode.name),
+        'status/inverter/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_policy.name),
+        'status/inverter/enable_export_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control.control_mode.enable_export_price_threshold),
+        'status/inverter/disable_export_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control.control_mode.disable_export_price_threshold),
+    }
+
+    # Add status/power registers
+    f: Field
+    for f in fields(PowerStatus):
+        f_type: RegisterType = check_type(f.type)
+        registers[f'status/power/{f.name}'] = PowerRegister(f.name, f_type)
+    for consumer_name, consumer in state.connections.consumers.items():
+        for f in fields(ConsumerStatus):
+            try:
+                reg_type: RegisterType = check_type(f.type)
+            except TypeError:
+                continue
+            registers[f'status/power/consumers/{consumer_name}/{f.name}'] = \
+                ConsumerRegister(consumer, f.name, reg_type)
+        for prop_name, prop_type in _get_dataclass_properties(ConsumerStatus):
+            try:
+                reg_type: RegisterType = check_type(prop_type)
+            except TypeError:
+                continue
+            registers[f'status/power/consumers/{consumer_name}/{prop_name}'] = \
+                ConsumerRegister(consumer, prop_name, reg_type)
+    for f in fields(Price):
+        if f.name in ('start_time', 'end_time'):
+            continue
+        f_type: RegisterType = check_type(f.type)
+        registers[f'status/power/{f.name}'] = PriceRegister(f.name, f_type)
+
+    # Add controller registers
+    if state.connections.controller is not None:
+        controller_registers: RegisterBank = await state.connections.controller.get_registers()
+        for name, register in controller_registers.items():
+            registers[f'controller/{name}'] = register
+
+    # Add power consumer registers
+    for consumer_name, consumer in state.connections.consumers.items():
+        consumer_registers: RegisterBank = await consumer.get_registers()
+        for name, register in consumer_registers.items():
+            registers[f'consumer/{consumer_name}/{name}'] = register
+
+    state.connections.registers = RegisterBank(registers)
+
+
+def _get_dataclass_properties(cls: type) -> Iterator[tuple[str, Any]]:
+    """
+    Iterate over properties defined on a class and their return types.
+
+    Args:
+        cls: Class whose properties are to be inspected.
+
+    Yields:
+        Property name and annotated getter return type.
+    """
+    for name, member in getmembers(cls):
+        if isinstance(member, property) and member.fget is not None:
+            prop_type = get_type_hints(member.fget)['return']
+            yield name, prop_type
+
+
+def _get_settings(state: _ControlState) -> Settings:
+    """
+    Build settings from the current control state.
+
+    The caller must hold the connections and control-settings locks.
+
+    Args:
+        state: Current control state.
+
+    Returns:
+        Settings representing the current connections and control configuration.
+    """
+    control_mode = state.control.control_mode
+    return Settings(
+        controller=state.connections.controller_settings,
+        pricer=state.connections.pricer_settings,
+        consumers=state.connections.consumers_settings,
+        forecaster=state.connections.forecaster_settings,
+        database=state.connections.database_settings,
+
+        battery_mode=control_mode.battery_mode,
+        inverter_mode=control_mode.inverter_mode,
+        battery_policy=control_mode.battery_policy,
+        inverter_policy=control_mode.inverter_policy,
+
+        disable_export_price_threshold=control_mode.disable_export_price_threshold,
+        enable_export_price_threshold=control_mode.enable_export_price_threshold,
+
+        start_charge_price_threshold=control_mode.start_charge_price_threshold,
+        stop_charge_price_threshold=control_mode.stop_charge_price_threshold,
+
+        registers_to_log=state.registers_to_log_str,
+    )
+
+
+async def _save_settings() -> None:
+    """
+    Persist settings across restarts.
+
+    Acquire the connections lock before the persistence lock, as callers may
+    already hold the connections lock. Serialize snapshots and writes so an
+    older save cannot overwrite newer settings.
+    """
+    async with _connections_state():
+        async with _CONTROL_STATE.settings_persistence.lock:
+            settings_path = _CONTROL_STATE.settings_persistence.path
+            if settings_path is None:
+                return
+
+            async with _control_settings_state():
+                settings = _get_settings(_CONTROL_STATE)
+
+            try:
+                with open(settings_path, 'w') as file:
+                    print(settings.model_dump_json(), file=file)
+            except Exception as err:
+                log_error(f'Error saving settings: {err}')
+
+
+async def _load_settings() -> bool:
+    """
+    Load the persisted settings.
+
+    Returns:
+        True if settings were loaded successfully, False otherwise.
+    """
+    settings_path = _CONTROL_STATE.settings_persistence.path
+    if settings_path is not None:
+        try:
+            with open(settings_path, 'r') as file:
+                json_string = file.read()
+            settings = Settings.model_validate_json(json_string)
+            await configure_from_settings(settings)
+            return True
+        except Exception as err:
+            log_error(f'Error loading settings: {err}')
+    return False
+
+
+# Initialise global state after the cache delegates have been defined.
+_CONTROL_STATE: _ControlState = _ControlState()
