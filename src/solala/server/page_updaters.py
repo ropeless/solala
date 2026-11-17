@@ -22,14 +22,14 @@ from solala.delegates.power_pricer.price import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
-from solala.registers import RegisterValue
+from solala.register import RegisterValue
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.server.graphs import ChargeChart, PriceChart, PowerChart, EnergyChart
 from solala.server.icons import weather_code_to_icon_url
 from solala.server.infographic import Infographic
 from solala.server.page_session import PageSession
 from solala.server.units_lookup import STATUS_UNITS
-from solala.utils.datetime_extras import now
+from solala.utils.time_extras import now
 from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json, JSONPrimitive
 
 
@@ -254,10 +254,10 @@ class RegistersUpdater(LoopListener):
 
     @final
     async def update(self) -> None:
-        register_values: dict[str, RegisterValue | None] = await control_loop.get_registers()
+        register_values: dict[str, RegisterValue | Exception] = await control_loop.get_register_bank().get_register_values()
         self._update(register_values)
 
-    def _update(self, register_values: dict[str, JSONPrimitive]) -> None:
+    def _update(self, register_values: dict[str, RegisterValue | Exception]) -> None:
         json_as_str = render_json(
             register_values,
             float_format='.2f',

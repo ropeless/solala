@@ -1,4 +1,4 @@
-from datetime import datetime, date, time, UTC, tzinfo
+from datetime import datetime, date, time, UTC, tzinfo, timedelta
 
 
 def local_time_zone() -> tzinfo:
@@ -65,3 +65,30 @@ def date_to_datetime(obj: date, tz: tzinfo | None = None) -> datetime:
         A timezone-aware datetime at midnight in the chosen timezone.
     """
     return datetime.combine(ensure_date(obj), time.min, tzinfo=tz or UTC)
+
+
+def render_timedelta(value: timedelta) -> str:
+    seconds_float: float = value.total_seconds()
+    whole_seconds = int(seconds_float)
+    hours, remainder = divmod(whole_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if whole_seconds != seconds_float:
+        seconds += seconds_float - whole_seconds
+
+    if hours > 0:
+        if minutes == 0 and seconds == 0:
+            if hours == 1:
+                return '1 hour'
+            return f'{hours} hours'
+        else:
+            return f'{hours}:{minutes}:{seconds} seconds'
+    if minutes > 0:
+        if seconds == 0:
+            if minutes == 1:
+                return f'1 minute'
+            return f'{minutes} minutes'
+        else:
+            return f'{minutes}:{seconds} seconds'
+    if seconds == 1:
+        return f'1 second'
+    return f'{seconds} seconds'

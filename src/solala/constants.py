@@ -3,6 +3,7 @@ Default configuration values, display units, and application constants.
 
 Price thresholds use cents per kilowatt-hour unless otherwise specified.
 """
+from datetime import timedelta
 
 from solala.utils.json_extras import JSONDict, to_json
 
@@ -47,6 +48,18 @@ class Units:
     CELSIUS = '°C'
 
 
+def _seconds(s: float) -> timedelta:
+    return timedelta(seconds=s)
+
+
+def _minutes(m: float) -> timedelta:
+    return timedelta(minutes=m)
+
+
+def _hours(h: float) -> timedelta:
+    return timedelta(hours=h)
+
+
 class Constants:
     """
     Define timing, cache, logging, and display constants for Solala.
@@ -61,23 +74,23 @@ class Constants:
     APP_NAME: str = 'Solala'
     APP_SUBTITLE: str = 'Home Power Management'
 
-    LOOP_TIME: int = 5  # number of seconds for each loop iteration - should be a factor of 60
-    LOOP_MIN_SLEEP_TIME: int = 1  # number of seconds to sleep for each loop iteration
+    LOOP_TIME: timedelta = _seconds(5)  # target duration for each loop iteration - should be a factor of 1 minute
+    LOOP_MIN_SLEEP_TIME: timedelta = _seconds(1)  # minimum sleep time for each loop iteration
     CONTROL_DURATION: int = 11  # number of seconds a control remains active
-    DATABASE_LOG_LOOP_TIME = 5 * 60  # five minutes, in seconds
+    DATABASE_LOG_LOOP_TIME: timedelta = _minutes(5)  # target duration for each loop iteration - should be a factor of 1 hour
 
-    PRICE_SETTLE_CHECK: int = 9  # check delay to see if the power price has settled, in seconds
-    PRICE_OLD: int = 5 * 60  # number of seconds a price forecast is valid
+    PRICE_SETTLE_CHECK: timedelta = _seconds(9)  # check delay to see if the power price has settled
+    PRICE_OLD: timedelta = _minutes(5)  # duration a price forecast is valid
 
-    PRICE_FORECAST_DURATION: int = 18  # how many hours into the future to forecast price
-    PRICE_FORECAST_YOUNG: int = 5 * 60  # number of seconds a price forecast cache is fresh
-    PRICE_FORECAST_OLD: int = 60 * 60  # number of seconds a price forecast cache is valid
+    PRICE_FORECAST_DURATION: timedelta = _hours(18)  # how many hours into the future to forecast price
+    PRICE_FORECAST_YOUNG: timedelta = _minutes(5)  # time duration a price forecast cache is fresh
+    PRICE_FORECAST_OLD: timedelta = _hours(1)  # time duration a price forecast cache is valid
 
-    PRICE_DEMAND_WINDOW_YOUNG: int = 1 * 60 * 60  # number of seconds a price demand window cache is fresh
-    PRICE_DEMAND_WINDOW_OLD: int = 12 * 60 * 60  # number of seconds a price demand window cache is valid
+    PRICE_DEMAND_WINDOW_YOUNG: timedelta = _hours(1)  # time duration a price demand window cache is fresh
+    PRICE_DEMAND_WINDOW_OLD: timedelta = _hours(12)  # time duration a price demand window cache is valid
 
-    SOLAR_FORECAST_YOUNG: int = 1 * 60 * 60  # number of seconds a solar forecast is valid
-    SOLAR_FORECAST_OLD: int = 3 * 60 * 60  # number of seconds a solar forecast is valid
+    SOLAR_FORECAST_YOUNG: timedelta = _hours(1)  # time duration a solar forecast is valid
+    SOLAR_FORECAST_OLD: timedelta = _hours(3)  # time duration a solar forecast is valid
 
     MAX_LOG_HISTORY: int = 1000  # Maximum number of log lines in the GUI log
     BUY_PRICE_AMBER: float = 20  # Buy price threshold for amber colour

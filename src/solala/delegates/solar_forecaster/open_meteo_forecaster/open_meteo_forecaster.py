@@ -6,7 +6,7 @@ from solala.constants import DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, DEFAULT_INVE
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
-from solala.utils.datetime_extras import ensure_date
+from solala.utils.time_extras import ensure_date
 from solala.utils.json_extras import JSONDict
 
 API_URL = "https://api.open-meteo.com/v1/forecast"

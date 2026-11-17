@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+import math
 import re
 from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
 from contextlib import asynccontextmanager
@@ -40,14 +41,13 @@ from solala.delegates.solar_forecaster.solar_forecast import SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
-from solala.registers import RegisterBank, Register, RegisterType, RegisterValue, CallRegister, \
-    ReadOnlyRegister, check_type
-from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, \
-    TeslaWallConnectorConnection, ControllerConnection, PricerConnection, ConsumerConnection, \
-    DummyControllerConnection, \
-    DummyPricerConnection, DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, \
-    DummySolarForecasterConnection, DatabaseConnection, TuyaConnection
-from solala.utils.datetime_extras import now, local_time_zone
+from solala.register import Register, RegisterType, RegisterValue, CallRegister, ReadOnlyRegister, check_type
+from solala.register_bank import RegisterBank, EMPTY_REGISTER_BANK
+from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, TeslaWallConnectorConnection, \
+    ControllerConnection, PricerConnection, ConsumerConnection, DummyControllerConnection, DummyPricerConnection, \
+    DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, DummySolarForecasterConnection, \
+    DatabaseConnection, TuyaConnection
+from solala.utils.time_extras import now, local_time_zone
 from solala.utils.json_extras import JSONDict, json_num, JSONValue
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
 from solala.utils.ordered_async_rlock import OrderedAsyncRLock
@@ -85,9 +85,7 @@ _NO_FORECAST = SolarForecast(
 )
 _DISCONNECTED: JSONDict = {'connection': 'disconnected'}
 _NO_SOLAR_FORECAST = DailySolarForecast([])
-_NO_REGISTERS: RegisterBank = RegisterBank({})
-
-MATCH_ALL: re.Pattern[str] = re.compile('.*')  # regular expression to match anything
+_NO_REGISTERS: RegisterBank = EMPTY_REGISTER_BANK
 
 type PossibleDemandWindow = tuple[datetime, datetime] | None
 
@@ -135,8 +133,8 @@ class _PriceCache(LifecycleCache[Price]):
             _get_price_now,
             log_error=log_error,
             log_info=log_info,
-            old=Constants.PRICE_OLD,
-            retry=Constants.PRICE_SETTLE_CHECK,
+            old=Constants.PRICE_OLD.total_seconds(),
+            retry=Constants.PRICE_SETTLE_CHECK.total_seconds(),
             default=_NO_PRICE,
             interim_message='price is an estimate',
         )
@@ -149,8 +147,8 @@ class _PriceForecastCache(LifecycleCache[Sequence[Price]]):
             _get_price_forecast,
             log_error=log_error,
             log_info=log_info,
-            young=Constants.PRICE_FORECAST_YOUNG,
-            old=Constants.PRICE_FORECAST_OLD,
+            young=Constants.PRICE_FORECAST_YOUNG.total_seconds(),
+            old=Constants.PRICE_FORECAST_OLD.total_seconds(),
             default=(),
         )
 
@@ -162,8 +160,8 @@ class _DemandWindowCache(LifecycleCache[PossibleDemandWindow]):
             partial(_get_demand_window, day),
             log_error=log_error,
             log_info=log_info,
-            young=Constants.PRICE_DEMAND_WINDOW_YOUNG,
-            old=Constants.PRICE_DEMAND_WINDOW_OLD,
+            young=Constants.PRICE_DEMAND_WINDOW_YOUNG.total_seconds(),
+            old=Constants.PRICE_DEMAND_WINDOW_OLD.total_seconds(),
             default=None,
         )
 
@@ -175,8 +173,8 @@ class _SolarForecastCache(LifecycleCache[DailySolarForecast]):
             partial(_get_solar_forecast, day),
             log_error=log_error,
             log_info=log_info,
-            young=Constants.SOLAR_FORECAST_YOUNG,
-            old=Constants.SOLAR_FORECAST_OLD,
+            young=Constants.SOLAR_FORECAST_YOUNG.total_seconds(),
+            old=Constants.SOLAR_FORECAST_OLD.total_seconds(),
             default=_NO_SOLAR_FORECAST,
         )
 
@@ -472,7 +470,10 @@ def loop_check_overdue() -> float:
         The number of seconds the loop check is overdue (a small number if running normally).
     """
     # We are not concerned with race conditions, so we do not need to get the control loop lock.
-    return max(0, now().timestamp() - (_CONTROL_STATE.iteration_start.timestamp() + Constants.LOOP_TIME))
+    return max(
+        0,
+        now().timestamp() - (_CONTROL_STATE.iteration_start.timestamp() + Constants.LOOP_TIME.total_seconds())
+    )
 
 
 def exit_control_loop() -> None:
@@ -635,29 +636,14 @@ async def get_power_status() -> PowerStatus:
             return cache.last_power
 
 
-async def get_registers(match: re.Pattern[str] | Iterable[str] = MATCH_ALL) -> dict[str, RegisterValue | None]:
+def get_register_bank() -> RegisterBank:
     """
-    Get the values of registers, optionally limited to names that match a pattern.
+    Return the current immutable mapping of named registers.
 
-    Args:
-        match: A compiled regular expression or an iterable of register names.
-
-    Returns:
-        A dictionary mapping each register name to its value, or to None if
-        a specifically requested register is unavailable.
+    Register values are obtained separately and may change or become
+    unavailable after the bank is returned.
     """
-    registers: RegisterBank = _CONTROL_STATE.connections.registers  # no need to lock as RegisterBank is stable.
-    if isinstance(match, re.Pattern):
-        return {
-            name: await registers.get(name)
-            for name in registers.keys()
-            if match.match(name)
-        }
-    else:
-        return {
-            name: await registers.get(name)
-            for name in match
-        }
+    return _CONTROL_STATE.connections.registers
 
 
 async def get_price_now() -> Price:
@@ -709,7 +695,7 @@ async def get_price_now_no_estimate(max_tries: int = 10) -> Price:
     max_tries -= 1
     while price.is_estimate and max_tries > 1 and _CONTROL_STATE.connections.pricer is not None:
         max_tries -= 1
-        await asyncio.sleep(Constants.PRICE_SETTLE_CHECK)
+        await asyncio.sleep(Constants.PRICE_SETTLE_CHECK.total_seconds())
         price = await get_price_now()
     return price
 
@@ -766,8 +752,14 @@ async def get_price_forecast() -> Sequence[Price]:
         log_info(f'Price forecast contains old data: {prices[0]}')
         prices = prices[1:]
 
-    needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
-    return prices[:needed_forecasts]
+    return prices[:_needed_forecasts()]
+
+
+def _needed_forecasts() -> int:
+    """
+    How many 30-minute forecasts are needed to cover.
+    """
+    return int(math.ceil(Constants.PRICE_FORECAST_DURATION.total_seconds() / 60 / 30))
 
 
 async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
@@ -776,9 +768,8 @@ async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
         return error('Price forecast not available. Error: power pricer not connected')
 
     try:
-        needed_forecasts: int = Constants.PRICE_FORECAST_DURATION * 2  # convert hours to 30-minute forecasts.
         # Plus one to account for possible race condition
-        prices: list[Price] = await pricer.get_price_forecast(needed_forecasts + 1)
+        prices: list[Price] = await pricer.get_price_forecast(_needed_forecasts() + 1)
         log_info('Price forecast updated')
     except Exception as err:
         return error(f'Price forecast not available. Error: {err}')
@@ -1313,8 +1304,8 @@ async def _database_loop() -> None:
         _update_listeners(listeners)
 
         # Sleep for the remaining time until the next loop iteration.
-        iter_time = Constants.DATABASE_LOG_LOOP_TIME
-        start_timestamp = (int(iteration_start.timestamp() / iter_time) + 1) * iter_time
+        iter_time: int = int(Constants.DATABASE_LOG_LOOP_TIME.total_seconds())
+        start_timestamp: int = (int(iteration_start.timestamp() / iter_time) + 1) * iter_time
         sleeptime: float = start_timestamp - now().timestamp()
         await asyncio.sleep(sleeptime)
 
@@ -1404,7 +1395,10 @@ async def _control_loop() -> None:
 
         # Sleep for the remaining time until the next loop iteration.
         sleep_time = _get_sleep_time()
-        loop_time_multiple = (now().timestamp() - iteration_start.timestamp() + sleep_time) / Constants.LOOP_TIME
+        loop_time_multiple = (
+                (now().timestamp() - iteration_start.timestamp() + sleep_time)
+                / Constants.LOOP_TIME.total_seconds()
+        )
         if loop_time_multiple > 1:
             log_warn(f'Loop time multiple > 1 ({loop_time_multiple})')
         await asyncio.sleep(sleep_time)
@@ -1418,10 +1412,11 @@ def _get_sleep_time() -> float:
     The result is > Constants.LOOP_MIN_SLEEP_TIME.
     """
     ts: float = now().timestamp()
-    start_timestamp = (int(ts / Constants.LOOP_TIME) + 1) * Constants.LOOP_TIME
+    loop_time: int = int(Constants.LOOP_TIME.total_seconds())
+    start_timestamp = int(ts / loop_time + 1) * loop_time
     sleep_time = start_timestamp - ts
-    while sleep_time < Constants.LOOP_MIN_SLEEP_TIME:
-        start_timestamp += Constants.LOOP_TIME
+    while sleep_time < Constants.LOOP_MIN_SLEEP_TIME.total_seconds():
+        start_timestamp += loop_time
         sleep_time = start_timestamp - ts
     return sleep_time
 
@@ -1438,7 +1433,7 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
     """
     if cur_log_registers is not None:
         timestamp = now()
-        registers = await get_registers(cur_log_registers)
+        registers = await get_register_bank().get_register_values(cur_log_registers)
         to_log_numeric: dict[str, int | float] = {}
         to_log_text: dict[str, str] = {}
         for name, value in registers.items():
@@ -1842,13 +1837,13 @@ async def _reconfigure_registers(state: _ControlState) -> None:
     # Add controller registers
     if state.connections.controller is not None:
         controller_registers: RegisterBank = await state.connections.controller.get_registers()
-        for name, register in controller_registers.registers.items():
+        for name, register in controller_registers.items():
             registers[f'controller/{name}'] = register
 
     # Add power consumer registers
     for consumer_name, consumer in state.connections.consumers.items():
         consumer_registers: RegisterBank = await consumer.get_registers()
-        for name, register in consumer_registers.registers.items():
+        for name, register in consumer_registers.items():
             registers[f'consumer/{consumer_name}/{name}'] = register
 
     state.connections.registers = RegisterBank(registers)

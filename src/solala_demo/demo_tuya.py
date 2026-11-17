@@ -3,7 +3,7 @@ from pprint import pprint
 
 from tuya_connector import TuyaOpenAPI
 
-from solala.registers import RegisterBank
+from solala.register import RegisterBank
 from solala.utils.local_config_help import config
 from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
 

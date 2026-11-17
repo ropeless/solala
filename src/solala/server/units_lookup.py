@@ -43,14 +43,7 @@ STATUS_UNITS: Mapping[str, str] = dict_merge(
 
 # Unit suffixes for control-loop timing and forecast constants.
 CONSTANTS_UNITS: Mapping[str, str] = {
-    'LOOP_TIME': Units.SECONDS,
-    'LOOP_MIN_SLEEP_TIME': Units.SECONDS,
     'CONTROL_DURATION': Units.SECONDS,
-    'PRICE_LOOK_AHEAD': Units.MINUTES,
-    'PRICE_SETTLE_CHECK': Units.SECONDS,
-    'PRICE_FORECAST_DURATION': Units.HOURS,
-    'PRICE_FORECAST_AGE': Units.MINUTES,
-    'SOLAR_FORECAST_AGE': Units.MINUTES,
 }
 # Unit suffixes for connection and solar-installation settings.
 CONNECTION_UNITS: Mapping[str, str] = {

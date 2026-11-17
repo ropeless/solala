@@ -1,14 +1,16 @@
 import inspect
 import json
 import re
-from datetime import datetime, date
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
+from datetime import datetime, date, timedelta
 from enum import Enum
 from itertools import chain
 from types import NoneType
-from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from typing import Any
 
 from pydantic import BaseModel
+
+from solala.utils.time_extras import render_timedelta
 
 # Non-container JSON value types
 type JSONPrimitive = str | int | float | bool | None
@@ -257,8 +259,8 @@ def to_json(
 
     Supports Pydantic models, classes, and objects with a `__dict__`.
     Private names, excluded entries, and unsupported value types are skipped.
-    Enum values are represented by their names; dates and datetimes are
-    formatted as strings.
+    Enum values are represented by their names; `date`, `datetime`, and
+    `timedelta` objects are formatted as strings.
 
     Args:
         thing: Object or class whose attributes should be extracted.
@@ -309,6 +311,8 @@ def _to_json(
             result[name] = value.strftime(datetime_format)
         elif isinstance(value, date):
             result[name] = value.strftime(date_format)
+        elif isinstance(value, timedelta):
+            result[name] = render_timedelta(value)
         elif isinstance(value, (Sequence, set, frozenset)):
             result[name] = [
                 _to_json(item, exclude_names, exclude_values, datetime_format, date_format)

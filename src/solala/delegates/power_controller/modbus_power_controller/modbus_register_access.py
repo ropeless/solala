@@ -6,7 +6,7 @@ from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ModbusPDU
 
 from solala.logger import LOGGER
-from solala.registers import ReadOnlyError, RegisterType, RegisterValue
+from solala.register import ReadOnlyError, RegisterType, RegisterValue
 
 NEXT_SF = -1  # The special scale factor address to use to nominate the next register.
 
