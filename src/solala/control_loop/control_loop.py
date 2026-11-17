@@ -1,5 +1,4 @@
 import asyncio
-import copy
 import json
 import math
 import re
@@ -607,7 +606,7 @@ async def get_control_mode() -> ControlMode:
     Get what the control loop is aiming to do for the user.
     """
     async with _control_settings_state() as state:
-        return copy.copy(state.control_mode)
+        return state.control_mode.copy()
 
 
 async def get_prev_control_mode() -> ControlMode:
@@ -618,7 +617,7 @@ async def get_prev_control_mode() -> ControlMode:
     commands are retried every iteration, even when a command fails.
     """
     async with _control_settings_state() as state:
-        return copy.copy(state.prev_state.control_mode)
+        return state.prev_state.control_mode.copy()
 
 
 async def get_power_status() -> PowerStatus:
@@ -1463,7 +1462,7 @@ async def _control_step(state: _ControlState) -> None:
     """
     # Fetch pricing without holding the settings lock.
     async with _control_settings_state() as control_state:
-        mode = copy.copy(control_state.control_mode)
+        mode: ControlMode = control_state.control_mode.copy()
         needs_price = (
                 mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
                 or mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
@@ -1482,7 +1481,7 @@ async def _control_step(state: _ControlState) -> None:
             _apply_battery_policy(mode, price)
             _apply_inverter_policy(mode, price)
 
-        requested_mode = copy.copy(mode)
+        requested_mode = mode.copy()
         battery_changed = requested_mode.battery_mode != prev_state.control_mode.battery_mode
         inverter_changed = requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
 
