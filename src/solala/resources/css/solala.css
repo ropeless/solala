@@ -243,23 +243,23 @@ html {
     white-space: nowrap;
 }
 
-.solala-alarm-normal {
+.q-btn.solala-master-alarm.solala-alarm-normal {
     color: var(--solala-normal) !important;
 }
 
-.solala-alarm-caution {
+.q-btn.solala-master-alarm.solala-alarm-caution {
     color: var(--solala-caution) !important;
 }
 
-.solala-alarm-warning {
+.q-btn.solala-master-alarm.solala-alarm-warning {
     color: var(--solala-warning) !important;
 }
 
-.solala-alarm-stalled {
+.q-btn.solala-master-alarm.solala-alarm-stalled {
     color: var(--solala-stalled) !important;
 }
 
-.solala-alarm-disconnected {
+.q-btn.solala-master-alarm.solala-alarm-disconnected {
     color: var(--solala-disconnected) !important;
 }
 
