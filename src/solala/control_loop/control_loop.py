@@ -15,7 +15,7 @@ from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
 
 from solala.constants import Constants, GUI_TIMESTAMP_FORMAT
-from solala.control_loop.control_health import ControlHealth, Severity
+from solala.control_loop.control_health import ControlHealth, HealthIssue, Severity
 from solala.control_loop.errors import ControlLoopError
 from solala.control_loop.loop_listener import LoopListener
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
@@ -304,6 +304,7 @@ class _ControlState:
     # Listener lists are used on the same asyncio event loop; synchronous updates and snapshots need no lock.
     # Internal control loop tracking variables.
     control_loop_running: bool = True
+    control_changed: asyncio.Event = field(default_factory=asyncio.Event)
     control_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_write: bool = True
@@ -352,6 +353,7 @@ class _ControlState:
             assert settings is None
             self.connections.consumers.pop(consumer_name, None)
             self.connections.consumers_settings.pop(consumer_name, None)
+            self.health.report_success(f'consumer_status:{consumer_name}')
         else:
             assert settings is not None
             self.connections.consumers[consumer_name] = consumer
@@ -365,6 +367,17 @@ class _ControlState:
 
 
 _LOG_SRC = '[control loop] '  # prefix for log messages
+
+
+def get_control_health() -> tuple[Severity, tuple[HealthIssue, ...]]:
+    """
+    Return a snapshot of overall control health and active issues.
+
+    Returns:
+        Current highest severity and immutable issue snapshots.
+    """
+    health = _CONTROL_STATE.health
+    return health.severity, health.get_issues()
 
 
 def log_debug(message: str) -> None:
@@ -381,6 +394,13 @@ def log_warn(message: str) -> None:
 
 def log_error(message: str) -> None:
     LOGGER.error(f'{_LOG_SRC}{message}')
+
+
+def log_exception(message: str) -> None:
+    """
+    Should only be used when handling an exception.
+    """
+    LOGGER.exception(f'{_LOG_SRC}{message}')
 
 
 @asynccontextmanager
@@ -485,8 +505,9 @@ def exit_control_loop() -> None:
     """
     Flag to exit the control loop on the next iteration.
     """
-    # We are not concerned with race conditions, so we do not need to get the control loop lock.
+    # We are not concerned with race conditions, so we do not need to get a lock.
     _CONTROL_STATE.control_loop_running = False
+    _CONTROL_STATE.control_changed.set()
 
 
 async def configure_from_settings(settings: Settings) -> None:
@@ -801,10 +822,25 @@ async def get_consumers_status() -> dict[str, ConsumerStatus]:
     async with _connections_state() as connections:
         # Keep consumers connected until all status requests complete.
         consumers = tuple(connections.consumers.items())
-        statuses = await asyncio.gather(*[
-            consumer.get_status() for _, consumer in consumers
-        ])
-    return {name: status for (name, _), status in zip(consumers, statuses)}
+        statuses = await asyncio.gather(
+            *(consumer.get_status() for _, consumer in consumers),
+            return_exceptions=True,
+        )
+
+    result: dict[str, ConsumerStatus] = {}
+    for (name, _), status in zip(consumers, statuses):
+        if isinstance(status, BaseException):
+            if isinstance(status, asyncio.CancelledError):
+                raise status
+            if _CONTROL_STATE.health.report_failure(
+                    f'consumer_status:{name}', Severity.CAUTION,
+                    f'Consumer {name!r} status unavailable'):
+                log_error(f'Consumer {name!r} status unavailable: {status!r}')
+        else:
+            if _CONTROL_STATE.health.report_success(f'consumer_status:{name}'):
+                log_info(f'Consumer {name!r} status recovered')
+            result[name] = status
+    return result
 
 
 async def get_connection_info() -> JSONDict:
@@ -1003,6 +1039,9 @@ async def set_control(
             control_mode.stop_charge_price_threshold = stop_charge_price_threshold
 
             control_json = control_mode.to_json()
+
+        # Wake the loop promptly; the next step will snapshot these settings.
+        _CONTROL_STATE.control_changed.set()
 
         # Saving takes the connections lock before the control-settings lock.
         # Do not call it while already holding the latter.
@@ -1301,8 +1340,16 @@ async def _database_loop() -> None:
             try:
                 async with _database() as db:
                     await _insert_measurement(iteration_start, db)
-            except ConnectionError as err:
-                log_error(f'Database connection error: {err}')
+            except Exception:
+                # A failed measurement must not stop subsequent logging cycles.
+                # Cancellation still propagates to the caller.
+                if _CONTROL_STATE.health.report_failure(
+                        'database_measurement', Severity.CAUTION,
+                        'Database measurement could not be saved'):
+                    log_exception('Database measurement failed')
+            else:
+                if _CONTROL_STATE.health.report_success('database_measurement'):
+                    log_info('Database measurements recovered after previous failure')
 
         listeners = _CONTROL_STATE.database_loop_listeners.copy()
         # Notify listeners without holding a state lock.
@@ -1380,23 +1427,45 @@ async def _control_loop() -> None:
 
     # Sleep to start the loop on a preferred time boundary.
     # Also gives some time to queued async tasks.
-    await asyncio.sleep(_get_sleep_time())
+    await _wait_for_control_change(_CONTROL_STATE, _get_sleep_time())
 
     while _CONTROL_STATE.control_loop_running:
         state = _CONTROL_STATE
         state.iteration_start = iteration_start = now()  # timestamp to calculate loop sleep time
         # Hold the connections lock while issuing commands to prevent
         # controller replacement or closure during a control step.
-        async with _connections_state():
-            await _control_step(state)
-        listeners = state.control_loop_listeners.copy()
-        async with _cache_state() as cache:
-            cache.last_power_valid = False
-        cur_log_registers: re.Pattern[str] | None = state.registers_to_log
+        try:
+            async with _connections_state():
+                await _control_step(state)
+        except Exception:
+            # Do not automatically retry an uncertain hardware command here.
+            # Continue on the next scheduled iteration instead.
+            if state.health.report_failure('control_step', Severity.WARNING,
+                                           'Control step failed'):
+                log_exception('Control step failed')
+        else:
+            if state.health.report_success('control_step'):
+                log_info('Control step recovered after previous failure')
+        # Ancillary work must not prevent the next control iteration.
+        try:
+            async with _cache_state() as cache:
+                cache.last_power_valid = False
+        except Exception:
+            log_exception('Power cache invalidation failed')
 
-        # Update the listeners without holding the connections or cache lock.
-        await _cur_log_registers(cur_log_registers)
-        _update_listeners(listeners)
+        if state.registers_to_log is not None:
+            try:
+                await _cur_log_registers(state.registers_to_log)
+            except Exception:
+                if state.health.report_failure('register_logging', Severity.CAUTION,
+                                               'Diagnostic register logging failed'):
+                    log_exception('Register logging failed')
+            else:
+                if state.health.report_success('register_logging'):
+                    log_info('Diagnostic register logging recovered after previous failure')
+
+        # Listener callbacks are dispatched without holding state locks.
+        _update_listeners(state.control_loop_listeners.copy())
 
         # Sleep for the remaining time until the next loop iteration.
         sleep_time = _get_sleep_time()
@@ -1406,9 +1475,22 @@ async def _control_loop() -> None:
         )
         if loop_time_multiple > 1:
             log_warn(f'Loop time multiple > 1 ({loop_time_multiple})')
-        await asyncio.sleep(sleep_time)
+        await _wait_for_control_change(state, sleep_time)
 
     log_info('Stopped control loop')
+
+
+async def _wait_for_control_change(state: _ControlState, timeout: float) -> None:
+    """
+    Wait until control settings change or the periodic deadline arrives.
+
+    The event is cleared when the next step snapshots settings, not here,
+    so changes during a step cannot be lost.
+    """
+    try:
+        await asyncio.wait_for(state.control_changed.wait(), timeout=timeout)
+    except TimeoutError:
+        pass
 
 
 def _get_sleep_time() -> float:
@@ -1448,46 +1530,46 @@ async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
                 to_log_numeric[name] = value
             elif isinstance(value, str):
                 to_log_text[name] = value
-        try:
-            async with _database() as db:
-                await db.insert_registers_numeric(timestamp, to_log_numeric)
-                await db.insert_registers_text(timestamp, to_log_text)
-        except (ConnectionError, DatabaseError) as err:
-            log_error(f'Database connection error: {err}')
+        async with _database() as db:
+            await db.insert_registers_numeric(timestamp, to_log_numeric)
+            await db.insert_registers_text(timestamp, to_log_text)
 
 
 async def _control_step(state: _ControlState) -> None:
     """
     Perform one functional step while the caller holds the connections lock.
-    """
-    # Fetch pricing without holding the settings lock.
-    async with _control_settings_state() as control_state:
-        mode: ControlMode = control_state.control_mode.copy()
-        needs_price = (
-                mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
-                or mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
-        )
-    price: Price | None = await get_price_now() if state.connections.pricer is not None and needs_price else None
 
+    Each step uses one snapshot of control settings. Changes made during the
+    step are handled on a subsequent iteration.
+    """
     async with _control_settings_state() as control_state:
+        # Acknowledge changes at the start of every step, even without a
+        # connected controller. Later changes will signal the next step.
+        state.control_changed.clear()
         prev_state = control_state.prev_state
         controller = _check_power_controller(state, prev_state)
         if controller is None:
             return
+        requested_mode = control_state.control_mode.copy()
+        # Preserve the effective mode within a policy's hysteresis band.
+        # A policy change starts from the newly requested mode instead.
+        if requested_mode.battery_policy == prev_state.control_mode.battery_policy:
+            if requested_mode.battery_policy != BatteryPolicy.MANUAL:
+                requested_mode.battery_mode = prev_state.control_mode.battery_mode
+        if requested_mode.inverter_policy == prev_state.control_mode.inverter_policy:
+            if requested_mode.inverter_policy != InverterPolicy.MANUAL:
+                requested_mode.inverter_mode = prev_state.control_mode.inverter_mode
+    # Control step operates within locked connections so `pricer` is stable
+    pricer_available: bool = state.connections.pricer is not None
 
-        mode = control_state.control_mode
-        # Policies may have changed during price retrieval.
-        if price is not None:
-            _apply_battery_policy(mode, price)
-            _apply_inverter_policy(mode, price)
+    # Do not hold the settings lock across price retrieval or hardware I/O.
+    # We operate on the settings `requested_mode` copied above.
 
-        requested_mode = mode.copy()
-        battery_changed = requested_mode.battery_mode != prev_state.control_mode.battery_mode
-        inverter_changed = requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
+    await _apply_battery_policy(requested_mode, pricer_available)
+    await _execute_battery_mode(state, prev_state, controller, requested_mode)
 
-    # Hardware commands run outside the settings lock.
-    await _execute_battery_mode(state, prev_state, controller, requested_mode, battery_changed)
-    await _execute_inverter_mode(state, prev_state, controller, requested_mode, inverter_changed)
+    await _apply_inverter_policy(requested_mode, pricer_available)
+    await _execute_inverter_mode(state, prev_state, controller, requested_mode)
 
     async with _control_settings_state():
         # Preserve the last request, even if a command failed.
@@ -1506,26 +1588,32 @@ def _check_power_controller(state: _ControlState, prev_state: _PrevControl) -> P
     return controller
 
 
-def _apply_battery_policy(control_mode: ControlMode, price: Price) -> None:
+async def _apply_battery_policy(control_mode: ControlMode, pricer_available: bool) -> None:
     """
-    Apply the battery pricing policy to the current requested mode.
+    Apply the battery pricing policy to the requested mode.
     """
-    if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
-        if price.buy_price < control_mode.start_charge_price_threshold:
-            control_mode.battery_mode = BatteryMode.FORCE_CHARGE
-        elif price.buy_price > control_mode.stop_charge_price_threshold:
-            control_mode.battery_mode = BatteryMode.ENABLE
+    if not pricer_available or control_mode.battery_policy != BatteryPolicy.CHEAP_CHARGE:
+        return
+
+    price = await get_price_now()
+    if price.buy_price < control_mode.start_charge_price_threshold:
+        control_mode.battery_mode = BatteryMode.FORCE_CHARGE
+    elif price.buy_price > control_mode.stop_charge_price_threshold:
+        control_mode.battery_mode = BatteryMode.ENABLE
 
 
-def _apply_inverter_policy(control_mode: ControlMode, price: Price) -> None:
+async def _apply_inverter_policy(control_mode: ControlMode, pricer_available: bool) -> None:
     """
-    Apply the inverter pricing policy to the current requested mode.
+    Apply the inverter pricing policy to the requested mode.
     """
-    if control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
-        if price.feed_in_price < control_mode.disable_export_price_threshold:
-            control_mode.inverter_mode = InverterMode.ZERO_EXPORT
-        elif price.feed_in_price > control_mode.enable_export_price_threshold:
-            control_mode.inverter_mode = InverterMode.ENABLE
+    if not pricer_available or control_mode.inverter_policy != InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
+        return
+
+    price = await get_price_now()
+    if price.feed_in_price < control_mode.disable_export_price_threshold:
+        control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+    elif price.feed_in_price > control_mode.enable_export_price_threshold:
+        control_mode.inverter_mode = InverterMode.ENABLE
 
 
 async def _execute_battery_mode(
@@ -1533,12 +1621,12 @@ async def _execute_battery_mode(
         prev_state: _PrevControl,
         power_controller: PowerController,
         requested_mode: ControlMode,
-        battery_changed: bool
 ) -> None:
     """
     Execute a changed battery command and record its outcome.
     """
-    if battery_changed:
+    battery_mode_changed: bool = requested_mode.battery_mode != prev_state.control_mode.battery_mode
+    if battery_mode_changed:
         try:
             match requested_mode.battery_mode:
                 case BatteryMode.ENABLE:
@@ -1559,7 +1647,7 @@ async def _execute_battery_mode(
             prev_state.battery_commanded_mode = BatteryMode.UNKNOWN
             if state.health.report_failure('battery_command', Severity.WARNING,
                                            'Battery command outcome is uncertain'):
-                LOGGER.exception('%sBattery command failed: %s', _LOG_SRC, requested_mode.battery_mode)
+                log_exception(f'Battery command failed: {requested_mode.battery_mode}')
         else:
             prev_state.battery_commanded_mode = requested_mode.battery_mode
             if state.health.report_success('battery_command'):
@@ -1571,19 +1659,19 @@ async def _execute_inverter_mode(
         prev_state: _PrevControl,
         power_controller: PowerController,
         requested_mode: ControlMode,
-        inverter_changed: bool
 ) -> None:
     """
     Execute inverter one-shot or live commands and record their outcomes.
     """
-    if inverter_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
+    inverter_mode_changed: bool = requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
+    if inverter_mode_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
         try:
             await power_controller.enable_inverter()
         except Exception:
             prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
             if state.health.report_failure('inverter_command', Severity.WARNING,
                                            'Inverter command outcome is uncertain'):
-                LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
+                log_exception(f'Inverter command failed: {requested_mode.inverter_mode}')
         else:
             prev_state.inverter_commanded_mode = requested_mode.inverter_mode
             if state.health.report_success('inverter_command'):
@@ -1602,7 +1690,7 @@ async def _execute_inverter_mode(
         prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
         if state.health.report_failure('inverter_command', Severity.WARNING,
                                        'Inverter command outcome is uncertain'):
-            LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
+            log_exception(f'Inverter command failed: {requested_mode.inverter_mode}')
     else:
         if requested_mode.inverter_mode in (InverterMode.DISABLE, InverterMode.ZERO_EXPORT):
             prev_state.inverter_commanded_mode = requested_mode.inverter_mode
