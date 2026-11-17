@@ -1781,6 +1781,8 @@ def _connect_dummy_solar_forecaster(forecaster_connection: DummySolarForecasterC
     return DummySolarForecaster(
         panel_capacity=forecaster_connection.panel_capacity,
         inverter_limit=forecaster_connection.inverter_limit,
+        inject_failure_probability=forecaster_connection.inject_failure_probability,
+        inject_failure_description=forecaster_connection.inject_failure_description,
     )
 
 
