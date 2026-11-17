@@ -215,6 +215,40 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
                     task.cancel()
             await asyncio.gather(borrower, replacing, return_exceptions=True)
 
+    async def _cancel_during_pool_close(self, replacing: bool) -> None:
+        old, new = self._pool(), self._pool()
+        self._install(old)
+        close_started = asyncio.Event()
+        allow_close = asyncio.Event()
+
+        async def slow_close():
+            close_started.set()
+            await allow_close.wait()
+
+        old.pool._pool.close = AsyncMock(side_effect=slow_close)
+        operation = asyncio.create_task(
+            self._replace(new) if replacing else control.disconnect_database()
+        )
+        await asyncio.wait_for(close_started.wait(), 2)
+        operation.cancel()
+        await asyncio.sleep(0)
+        self.assertFalse(operation.done())
+        self.assertIsNone(control._CONTROL_STATE.connections.database_connections)
+        allow_close.set()
+        with self.assertRaises(asyncio.CancelledError):
+            await asyncio.wait_for(operation, 2)
+        old.pool._pool.close.assert_awaited_once()
+        self.assertIsNone(control._CONTROL_STATE.connections.database_connections)
+
+        # The lifecycle lock must also be released after cancellation.
+        await asyncio.wait_for(control.disconnect_database(), 2)
+
+    async def test_cancel_disconnect_during_pool_close(self) -> None:
+        await self._cancel_during_pool_close(replacing=False)
+
+    async def test_cancel_replacement_during_pool_close(self) -> None:
+        await self._cancel_during_pool_close(replacing=True)
+
     async def test_replacement_after_cancelled_request(self) -> None:
         old, new = self._pool(), self._pool()
         self._install(old)
