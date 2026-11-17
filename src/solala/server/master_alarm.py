@@ -44,7 +44,8 @@ class MasterAlarm:
         self._state = 'DISCONNECTED'
         self._issues: tuple[HealthIssue, ...] = ()
         with ui.button().props('flat no-caps').classes('solala-master-alarm solala-alarm-disconnected') as button:
-            self._label = ui.label('DISCONNECTED')
+            ui.element('span').classes('solala-alarm-light')
+            self._label = ui.label('disconnected').classes('solala-alarm-label')
         self._button_id = button.id
         self._label_id = self._label.id
         button.on_click(self._open_details)
@@ -78,7 +79,7 @@ class MasterAlarm:
                         'solala-alarm-warning', 'solala-alarm-stalled'
                     );
                     button.classList.add('solala-alarm-disconnected');
-                    label.textContent = 'DISCONNECTED';
+                    label.textContent = 'disconnected';
                 }};
                 const onDisconnect = () => disconnected();
                 const onConnect = () => {{
@@ -99,7 +100,7 @@ class MasterAlarm:
                             'solala-alarm-disconnected'
                         );
                         button.classList.add('solala-alarm-' + state.toLowerCase());
-                        label.textContent = state;
+                        label.textContent = state.toLowerCase();
                     }},
                     close() {{
                         window.clearInterval(watchdog);
