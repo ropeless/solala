@@ -239,16 +239,13 @@ html {
 }
 
 .solala-alarm-caution {
-    color: #a16b00 !important;
+    color: var(--solala-amber) !important;
 }
 
 .solala-alarm-warning,
-.solala-alarm-stalled {
-    color: var(--solala-stale-color) !important;
-}
-
+.solala-alarm-stalled,
 .solala-alarm-disconnected {
-    color: var(--solala-muted) !important;
+    color: var(--solala-stale-color) !important;
 }
 
 @media (max-width: 600px) {
