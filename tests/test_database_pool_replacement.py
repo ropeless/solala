@@ -249,6 +249,44 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancel_replacement_during_pool_close(self) -> None:
         await self._cancel_during_pool_close(replacing=True)
 
+    async def test_cancel_after_detach_still_closes_old_pool(self) -> None:
+        """
+        Cancellation after detachment must not strand the old pool unclosed.
+        """
+        old = self._pool()
+        self._install(old)
+        detached = asyncio.Event()
+        proceed = asyncio.Event()
+        original_reset = control._CONTROL_STATE.reset_database
+
+        async def paused_reset(pool, settings):
+            await original_reset(pool, settings)
+            if pool is None:
+                detached.set()
+                await proceed.wait()
+
+        with patch.object(
+                control._CONTROL_STATE, 'reset_database',
+                side_effect=paused_reset,
+        ):
+            operation = asyncio.create_task(control.disconnect_database())
+            await asyncio.wait_for(detached.wait(), 2)
+            self.assertIsNone(
+                control._CONTROL_STATE.connections.database_connections
+            )
+            operation.cancel()
+            try:
+                with self.assertRaises(asyncio.CancelledError):
+                    await asyncio.wait_for(operation, 2)
+                # A detached pool must still be closed when cancellation
+                # interrupts the transition to the close operation.
+                old.pool._pool.close.assert_awaited_once()
+            finally:
+                proceed.set()
+                if not operation.done():
+                    operation.cancel()
+                await asyncio.gather(operation, return_exceptions=True)
+
     async def test_replacement_after_cancelled_request(self) -> None:
         old, new = self._pool(), self._pool()
         self._install(old)
