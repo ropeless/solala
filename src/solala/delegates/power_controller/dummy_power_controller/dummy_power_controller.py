@@ -56,6 +56,7 @@ class FailureLocation(BaseFailureLocation):
         """
         return self != FailureLocation.get_connection_info
 
+
 class DummyPowerController(PowerController):
     """
     A dummy power controller for testing and demonstration purposes.
