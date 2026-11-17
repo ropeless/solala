@@ -8,7 +8,6 @@ from solala.delegates.solar_forecaster.dummy_solar_forecaster.dummy_solar_foreca
     DummySolarForecaster, FailureLocation,
 )
 from solala.settings import DummySolarFailure, DummySolarForecasterConnection
-from solala.utils.dummy_failure import maybe_inject_failure
 
 
 class DummyFailureInjectorTestCase(unittest.IsolatedAsyncioTestCase):
@@ -69,12 +68,11 @@ class DummyFailureInjectorTestCase(unittest.IsolatedAsyncioTestCase):
             forecaster.get_connection_info()
 
     async def test_sync_delay_is_rejected(self) -> None:
-        failure = DummySolarFailure(
-            location=FailureLocation.get_connection_info,
-            sleep=1.0,
-        )
-        with self.assertRaises(ValueError):
-            maybe_inject_failure(FailureLocation.get_connection_info, failure)
+        with self.assertRaises(ValidationError):
+            DummySolarFailure(
+                location=FailureLocation.get_connection_info,
+                sleep=1.0,
+            )
 
     async def test_settings_json_round_trip(self) -> None:
         settings = DummySolarForecasterConnection(
