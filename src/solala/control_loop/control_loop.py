@@ -304,6 +304,7 @@ class _ControlState:
     # Listener lists are used on the same asyncio event loop; synchronous updates and snapshots need no lock.
     # Internal control loop tracking variables.
     control_loop_running: bool = True
+    control_changed: asyncio.Event = field(default_factory=asyncio.Event)
     control_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_write: bool = True
@@ -1004,6 +1005,9 @@ async def set_control(
 
             control_json = control_mode.to_json()
 
+        # Wake the loop promptly; the next step will snapshot these settings.
+        _CONTROL_STATE.control_changed.set()
+
         # Saving takes the connections lock before the control-settings lock.
         # Do not call it while already holding the latter.
         await _save_settings()
@@ -1380,7 +1384,7 @@ async def _control_loop() -> None:
 
     # Sleep to start the loop on a preferred time boundary.
     # Also gives some time to queued async tasks.
-    await asyncio.sleep(_get_sleep_time())
+    await _wait_for_control_change(_CONTROL_STATE, _get_sleep_time())
 
     while _CONTROL_STATE.control_loop_running:
         state = _CONTROL_STATE
@@ -1406,9 +1410,22 @@ async def _control_loop() -> None:
         )
         if loop_time_multiple > 1:
             log_warn(f'Loop time multiple > 1 ({loop_time_multiple})')
-        await asyncio.sleep(sleep_time)
+        await _wait_for_control_change(state, sleep_time)
 
     log_info('Stopped control loop')
+
+
+async def _wait_for_control_change(state: _ControlState, timeout: float) -> None:
+    """
+    Wait until control settings change or the periodic deadline arrives.
+
+    The event is cleared when the next step snapshots settings, not here,
+    so changes during a step cannot be lost.
+    """
+    try:
+        await asyncio.wait_for(state.control_changed.wait(), timeout=timeout)
+    except TimeoutError:
+        pass
 
 
 def _get_sleep_time() -> float:
@@ -1469,6 +1486,8 @@ async def _control_step(state: _ControlState) -> None:
         if controller is None:
             return
         requested_mode = control_state.control_mode.copy()
+        # Any subsequent settings change must wake another control step.
+        state.control_changed.clear()
 
     # Control step operates within locked connections so `pricer` is stable
     pricer_available: bool = state.connections.pricer is not None
