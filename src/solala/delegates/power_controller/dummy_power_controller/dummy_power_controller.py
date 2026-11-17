@@ -1,11 +1,11 @@
-from enum import Enum, StrEnum, auto
+from enum import Enum, auto
 from functools import partial
 
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 from solala.register import CallRegister
 from solala.register_bank import RegisterBank
 from solala.utils.time_extras import now
-from solala.utils.dummy_failure import DummyFailure, maybe_inject_failure, async_maybe_inject_failure
+from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, async_maybe_inject_failure
 
 
 class BatteryMode(Enum):
@@ -31,7 +31,7 @@ class InverterMode(Enum):
     ZERO_EXPORT = auto()
 
 
-class FailureLocation(StrEnum):
+class FailureLocation(BaseFailureLocation):
     """
     Operations supporting simulated power controller failures.
     """
@@ -50,6 +50,11 @@ class FailureLocation(StrEnum):
     disable_inverter = auto()
     zero_export = auto()
 
+    def is_async(self) -> bool:
+        """
+        Return whether the selected operation is asynchronous.
+        """
+        return self != FailureLocation.get_connection_info
 
 class DummyPowerController(PowerController):
     """
