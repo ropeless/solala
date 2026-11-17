@@ -1489,10 +1489,10 @@ async def _control_step(state: _ControlState) -> None:
         # Preserve the effective mode within a policy's hysteresis band.
         # A policy change starts from the newly requested mode instead.
         if requested_mode.battery_policy == prev_state.control_mode.battery_policy:
-            if requested_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
+            if requested_mode.battery_policy != BatteryPolicy.MANUAL:
                 requested_mode.battery_mode = prev_state.control_mode.battery_mode
         if requested_mode.inverter_policy == prev_state.control_mode.inverter_policy:
-            if requested_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
+            if requested_mode.inverter_policy != InverterPolicy.MANUAL:
                 requested_mode.inverter_mode = prev_state.control_mode.inverter_mode
         # Any subsequent settings change must wake another control step.
         state.control_changed.clear()
