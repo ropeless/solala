@@ -2,7 +2,7 @@ import unittest
 
 from pydantic import BaseModel, ValidationError
 
-from solala.dummy_failure import SerializableException
+from solala.utils.dummy_failure import SerializableException
 
 
 class _FailureSettings(BaseModel):
