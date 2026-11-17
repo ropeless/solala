@@ -125,13 +125,10 @@ def maybe_inject_failure(location: Enum, failure: DummyFailure | None) -> None:
             `location.name == failure.location`.
         failure: An instance of DummyFailure describing the kind of failure possible.
     """
-    if (
-            failure is not None
-            and failure.location == location.name
-            and (failure.probability == 1 or random.random() < failure.probability)
-    ):
-        if failure.sleep != 0:
-            raise ValueError('cannot inject a failure sleep for a synchronous function')
-        # inject the failure
+    if failure is None or failure.location != location.name:
+        return
+    if failure.sleep != 0:
+        raise ValueError('cannot inject a failure sleep for a synchronous function')
+    if failure.probability == 1 or random.random() < failure.probability:
         if failure.exception is not None:
             raise failure.exception
