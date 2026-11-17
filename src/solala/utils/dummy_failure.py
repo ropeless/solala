@@ -1,6 +1,6 @@
 import asyncio
 import random
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated, Any, Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -72,6 +72,20 @@ SerializableException = Annotated[
 ]
 
 
+class FailureLocation(StrEnum):
+    """
+    Base class for delegate failure locations.
+
+    Subclasses define the supported operations and whether each is asynchronous.
+    """
+
+    def is_async(self) -> bool:
+        """
+        Return whether this operation is asynchronous.
+        """
+        raise NotImplementedError
+
+
 class DummyFailure(BaseModel):
     """
     Describe a simulated delay or exception at a delegate operation.
@@ -83,7 +97,7 @@ class DummyFailure(BaseModel):
         sleep: Delay in seconds before returning or raising.
     """
 
-    location: str
+    location: FailureLocation
     probability: float = Field(default=1.0, gt=0.0, le=1.0)
     exception: SerializableException | None = None
     sleep: float = Field(default=0.0, ge=0.0)
@@ -92,10 +106,12 @@ class DummyFailure(BaseModel):
     def validate_failure(self) -> Self:
         if self.sleep == 0.0 and self.exception is None:
             raise ValueError('A failure must have at least an exception or a sleep')
+        if self.sleep > 0 and not self.location.is_async():
+            raise ValueError('Cannot inject a delay into a synchronous operation')
         return self
 
 
-async def async_maybe_inject_failure(location: Enum, failure: DummyFailure | None) -> None:
+async def async_maybe_inject_failure(location: FailureLocation, failure: DummyFailure | None) -> None:
     """
     Inject the configured delay and exception for a matching failure description.
 
