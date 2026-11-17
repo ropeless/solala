@@ -1,12 +1,12 @@
-from enum import StrEnum, auto
+from enum import auto
 
-from solala.utils.dummy_failure import DummyFailure, maybe_inject_failure, async_maybe_inject_failure
+from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, async_maybe_inject_failure
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.register import CallRegister
 from solala.register_bank import RegisterBank
 
 
-class FailureLocation(StrEnum):
+class FailureLocation(BaseFailureLocation):
     """
     Operations supporting simulated power consumer failures.
     """
@@ -15,6 +15,11 @@ class FailureLocation(StrEnum):
     get_status = auto()
     get_connection_info = auto()
 
+    def is_async(self) -> bool:
+        """
+        Return whether the selected operation is asynchronous.
+        """
+        return self != FailureLocation.get_connection_info
 
 class DummyPowerConsumer(PowerConsumer):
     """
