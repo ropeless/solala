@@ -4,7 +4,9 @@ from enum import IntEnum
 
 
 class Severity(IntEnum):
-    """Operational health severity, ordered from normal to critical."""
+    """
+    Operational health severity, ordered from normal to critical.
+    """
 
     NORMAL = 0
     CAUTION = 1
@@ -13,7 +15,8 @@ class Severity(IntEnum):
 
 @dataclass(frozen=True)
 class HealthIssue:
-    """Snapshot of an active operational issue.
+    """
+    Snapshot of an active operational issue.
 
     Attributes:
         key: Stable identifier for the failing operation.
@@ -33,7 +36,8 @@ class HealthIssue:
 
 
 class ControlHealth:
-    """Track operational issues independently of control decisions.
+    """
+    Track operational issues independently of control decisions.
 
     This class does not detect loop stalls, browser disconnections, or decide
     whether a hardware command should be retried. Those responsibilities
@@ -45,17 +49,28 @@ class ControlHealth:
 
     @property
     def severity(self) -> Severity:
-        """Return the highest severity among active issues."""
-        return max((issue.severity for issue in self._issues.values()),
-                   default=Severity.NORMAL)
+        """
+        Return the highest severity among active issues.
+        """
+        return max(
+            (issue.severity for issue in self._issues.values()),
+            default=Severity.NORMAL
+        )
 
     def get_issues(self) -> tuple[HealthIssue, ...]:
-        """Return a severity-ordered immutable snapshot of active issues."""
-        return tuple(sorted(self._issues.values(),
-                            key=lambda issue: (-issue.severity, issue.first_seen, issue.key)))
+        """
+        Return a severity-ordered immutable snapshot of active issues.
+        """
+        return tuple(
+            sorted(
+                self._issues.values(),
+                key=lambda issue: (-issue.severity, issue.first_seen, issue.key)
+            )
+        )
 
     def report_failure(self, key: str, severity: Severity, message: str) -> bool:
-        """Record a failure and return whether the visible issue changed.
+        """
+        Record a failure and return whether the visible issue changed.
 
         Args:
             key: Stable identity of the failing operation.
@@ -69,7 +84,7 @@ class ControlHealth:
             ValueError: If the key or message is blank, or severity is NORMAL.
         """
         if not key.strip() or not message.strip() or severity not in (Severity.CAUTION, Severity.WARNING):
-            raise ValueError('a failure requires a key, message and non-normal severity')
+            raise ValueError('a failure requires a key, a message, and a non-normal severity')
 
         now = datetime.now(timezone.utc)
         previous = self._issues.get(key)
@@ -78,12 +93,15 @@ class ControlHealth:
             return True
 
         changed = previous.severity != severity or previous.message != message
-        self._issues[key] = replace(previous, severity=severity, message=message,
-                                    last_seen=now, occurrences=previous.occurrences + 1)
+        self._issues[key] = replace(
+            previous, severity=severity, message=message,
+            last_seen=now, occurrences=previous.occurrences + 1
+        )
         return changed
 
     def report_success(self, key: str) -> bool:
-        """Clear an issue after its failed requirement is confirmed restored.
+        """
+        Clear an issue after its failed requirement is confirmed restored.
 
         Args:
             key: Stable identity of the recovered operation.
