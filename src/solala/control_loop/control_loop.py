@@ -813,7 +813,7 @@ async def get_consumers_status() -> dict[str, ConsumerStatus]:
         if isinstance(status, BaseException):
             if isinstance(status, asyncio.CancelledError):
                 raise status
-            LOGGER.error('Consumer %r status unavailable: %r', name, status)
+            log_error(f'Consumer {name!r} status unavailable: {status!r}')
         else:
             result[name] = status
     return result
