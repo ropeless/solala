@@ -33,12 +33,8 @@ class DatabaseConnectionLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     @asynccontextmanager
     async def _borrow(self):
-        context = self.pool.reserve_database()
-        try:
-            async with context as db:
-                yield db
-        finally:
-            self.pool._release_request()
+        async with self.pool.reserve_database() as db:
+            yield db
 
     async def _start_borrower(self):
         entered = asyncio.Event()
