@@ -254,10 +254,10 @@ class RegistersUpdater(LoopListener):
 
     @final
     async def update(self) -> None:
-        register_values: dict[str, RegisterValue | None] = await control_loop.get_registers()
+        register_values: dict[str, RegisterValue | Exception] = await control_loop.get_register_bank().get_register_values()
         self._update(register_values)
 
-    def _update(self, register_values: dict[str, JSONPrimitive]) -> None:
+    def _update(self, register_values: dict[str, RegisterValue | Exception]) -> None:
         json_as_str = render_json(
             register_values,
             float_format='.2f',
