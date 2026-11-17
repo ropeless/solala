@@ -1221,6 +1221,9 @@ async def _close_database_pool(pool: SolalaDatabaseConnections) -> None:
     """
     closing = asyncio.create_task(pool.close())
     cancelled = False
+    # Keep awaiting the shielded close after cancellation. This deliberately
+    # delays cancellation propagation until shutdown has completed, so the
+    # lifecycle lock cannot be released while the old pool is still closing.
     while not closing.done():
         try:
             await asyncio.shield(closing)
