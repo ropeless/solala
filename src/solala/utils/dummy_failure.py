@@ -1,5 +1,6 @@
 import asyncio
 import random
+from abc import abstractmethod
 from enum import StrEnum
 from typing import Annotated, Any, Self
 
@@ -79,11 +80,11 @@ class FailureLocation(StrEnum):
     Subclasses define the supported operations and whether each is asynchronous.
     """
 
+    @abstractmethod
     def is_async(self) -> bool:
         """
         Return whether this operation is asynchronous.
         """
-        raise NotImplementedError
 
 
 class DummyFailure(BaseModel):
@@ -132,7 +133,7 @@ async def async_maybe_inject_failure(location: FailureLocation, failure: DummyFa
             raise failure.exception
 
 
-def maybe_inject_failure(location: Enum, failure: DummyFailure | None) -> None:
+def maybe_inject_failure(location: FailureLocation, failure: DummyFailure | None) -> None:
     """
     Inject the configured delay and exception for a matching failure description.
 
