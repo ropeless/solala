@@ -53,6 +53,29 @@ class DatabaseConnectionLifecycleTests(unittest.IsolatedAsyncioTestCase):
         await self.acquiring.wait()
         return task, entered, release
 
+    async def test_reservation_releases_itself(self) -> None:
+        self.allow_acquisition.set()
+        async with self.pool.reserve_database():
+            self.assertEqual(self.pool._active_requests, 1)
+        self.assertEqual(self.pool._active_requests, 0)
+        await asyncio.wait_for(self.pool.close(), 2)
+
+    async def test_unused_reservation_can_be_released(self) -> None:
+        reservation = self.pool.reserve_database()
+        reservation.release()
+        reservation.release()
+        self.assertEqual(self.pool._active_requests, 0)
+        await asyncio.wait_for(self.pool.close(), 2)
+
+    async def test_reservation_cannot_be_reentered(self) -> None:
+        self.allow_acquisition.set()
+        reservation = self.pool.reserve_database()
+        async with reservation:
+            pass
+        with self.assertRaises(RuntimeError):
+            async with reservation:
+                pass
+
     async def test_close_waits_for_active_request(self) -> None:
         task, entered, release = await self._start_borrower()
         self.allow_acquisition.set()
