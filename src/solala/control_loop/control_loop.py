@@ -822,7 +822,7 @@ async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
         prices: list[Price] = await pricer.get_price_forecast(_needed_forecasts() + 1)
         log_info('Price forecast updated')
     except Exception as err:
-        return error(f'Price forecast not available. Error: {err}')
+        return error(f'Price forecast not available. Error: {err!r}')
 
     if pricer is not _CONTROL_STATE.connections.pricer:
         # The pricer got changed, abandon the update
@@ -943,7 +943,7 @@ async def _get_solar_forecast(day: date) -> LifecycleReturn[DailySolarForecast]:
     try:
         forecast: DailySolarForecast = await forecaster.get_forecast(day)
     except Exception as err:
-        return error(f'Solar forecast not available. Error: {err}')
+        return error(f'Solar forecast not available. Error: {err!r}')
 
     if forecaster is not _CONTROL_STATE.connections.forecaster:
         # The forecaster got changed, abandon the update.
@@ -994,7 +994,7 @@ async def solala_database_measurements(day: date) -> Sequence[Measurement]:
         async with _database() as db:
             return await db.get_measurements(day)
     except (ConnectionError, DatabaseError) as err:
-        log_error(f'Database connection error: {err}')
+        log_error(f'Database connection error: {err!r}')
         return []
 
 
@@ -2152,7 +2152,7 @@ async def _save_settings() -> None:
                 with open(settings_path, 'w') as file:
                     print(settings.model_dump_json(), file=file)
             except Exception as err:
-                log_error(f'Error saving settings: {err}')
+                log_error(f'Error saving settings: {err!r}')
 
 
 async def _load_settings() -> bool:
@@ -2171,7 +2171,7 @@ async def _load_settings() -> bool:
             await configure_from_settings(settings)
             return True
         except Exception as err:
-            log_error(f'Error loading settings: {err}')
+            log_error(f'Error loading settings: {err!r}')
     return False
 
 
