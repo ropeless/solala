@@ -1470,11 +1470,16 @@ async def _control_step(state: _ControlState) -> None:
             return
         requested_mode = control_state.control_mode.copy()
 
+    # Control step operates within locked connections so `pricer` is stable
+    pricer_available: bool = state.connections.pricer is not None
+
     # Do not hold the settings lock across price retrieval or hardware I/O.
-    await _apply_battery_policy(requested_mode, state.connections.pricer is not None)
+    # We operate on the settings `requested_mode` copied above.
+
+    await _apply_battery_policy(requested_mode, pricer_available)
     await _execute_battery_mode(state, prev_state, controller, requested_mode)
 
-    await _apply_inverter_policy(requested_mode, state.connections.pricer is not None)
+    await _apply_inverter_policy(requested_mode, pricer_available)
     await _execute_inverter_mode(state, prev_state, controller, requested_mode)
 
     async with _control_settings_state():
