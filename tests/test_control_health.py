@@ -1,4 +1,7 @@
+import importlib
 import unittest
+from unittest.mock import patch
+from dataclasses import FrozenInstanceError
 
 from solala.control_loop.control_health import ControlHealth, Severity
 
@@ -58,6 +61,34 @@ class ControlHealthTestCase(unittest.TestCase):
             with self.subTest(key=key, severity=severity, message=message):
                 with self.assertRaises(ValueError):
                     health.report_failure(key, severity, message)
+
+
+
+class ControlHealthAccessTestCase(unittest.TestCase):
+    """
+    Verify that the GUI-facing health snapshot is independent of later changes.
+    """
+
+    def test_snapshot_reports_severity_and_immutable_issues(self):
+        control_loop = importlib.import_module('solala.control_loop.control_loop')
+        state = control_loop._ControlState()
+        state.health.report_failure('consumer', Severity.CAUTION, 'Consumer unavailable')
+        state.health.report_failure('inverter_command', Severity.WARNING, 'Command uncertain')
+
+        with patch.object(control_loop, '_CONTROL_STATE', state):
+            severity, issues = control_loop.get_control_health()
+            self.assertEqual(severity, Severity.WARNING)
+            self.assertEqual(tuple(issue.key for issue in issues), ('inverter_command', 'consumer'))
+
+            with self.assertRaises(FrozenInstanceError):
+                issues[0].message = 'changed'
+
+            state.health.report_success('inverter_command')
+            self.assertEqual(severity, Severity.WARNING)
+            self.assertEqual(len(issues), 2)
+            new_severity, new_issues = control_loop.get_control_health()
+            self.assertEqual(new_severity, Severity.CAUTION)
+            self.assertEqual(tuple(issue.key for issue in new_issues), ('consumer',))
 
 
 if __name__ == '__main__':
