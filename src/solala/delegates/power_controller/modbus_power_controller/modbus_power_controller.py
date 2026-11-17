@@ -192,7 +192,9 @@ class ModbusPowerController(PowerController):
 
     async def _get_for_status(self, name: str) -> float:
         """
-        Read a numeric register for reporting, returning NaN on failure.
+        Read a numeric register for reporting, returning NaN on failure
+
+        If an exception occurs during read, the error is logged and NaN is returned.
 
         Args:
             name: Name of the register to read.
@@ -330,8 +332,7 @@ class ModbusPowerController(PowerController):
         or the inverter setting reverts after the requested duration.
         """
         with self._log_it('zero_export'):
-            cur_pct: float
-            cur_pct = await self._get_power_limit()
+            cur_pct: float = await self._get_power_limit()
             LOGGER.info(f'Current inverter power limit: {cur_pct!r}%')
             if not math.isfinite(cur_pct):
                 raise ValueError('cannot adjust zero-export limit: inverter power limit is unavailable')
