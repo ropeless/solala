@@ -1568,7 +1568,18 @@ async def _control_step(state: _ControlState) -> None:
     await _apply_battery_policy(requested_mode, pricer_available)
     await _execute_battery_mode(state, prev_state, controller, requested_mode)
 
-    await _apply_inverter_policy(requested_mode, pricer_available)
+    try:
+        await _apply_inverter_policy(requested_mode, pricer_available)
+    except Exception:
+        # Preserve the last effective mode so that an active inverter safety
+        # command still receives its keep-alive when price retrieval fails.
+        requested_mode.inverter_mode = prev_state.control_mode.inverter_mode
+        if state.health.report_failure('inverter_policy', Severity.CAUTION,
+                                       'Inverter price policy could not be evaluated'):
+            log_exception('Inverter price policy failed')
+    else:
+        if state.health.report_success('inverter_policy'):
+            log_info('Inverter price policy recovered after previous failure')
     await _execute_inverter_mode(state, prev_state, controller, requested_mode)
 
     async with _control_settings_state():
