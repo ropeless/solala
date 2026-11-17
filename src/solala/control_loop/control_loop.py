@@ -48,11 +48,11 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     ControllerConnection, PricerConnection, ConsumerConnection, DummyControllerConnection, DummyPricerConnection, \
     DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, DummySolarForecasterConnection, \
     DatabaseConnection, TuyaConnection
-from solala.utils.time_extras import now, local_time_zone
 from solala.utils.json_extras import JSONDict, json_num, JSONValue
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
 from solala.utils.ordered_async_rlock import OrderedAsyncRLock
 from solala.utils.string_extras import split_addresses
+from solala.utils.time_extras import now, local_time_zone
 
 _MIN_DATE = datetime.min.replace(tzinfo=UTC)
 _NO_POWER = PowerStatus(
@@ -1511,100 +1511,104 @@ def _apply_battery_policy(control_mode: ControlMode, price: Price) -> None:
     """
     Apply the battery pricing policy to the current requested mode.
     """
-        if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
-            if price.buy_price < control_mode.start_charge_price_threshold:
-                control_mode.battery_mode = BatteryMode.FORCE_CHARGE
-            elif price.buy_price > control_mode.stop_charge_price_threshold:
-                control_mode.battery_mode = BatteryMode.ENABLE
-    
+    if control_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE:
+        if price.buy_price < control_mode.start_charge_price_threshold:
+            control_mode.battery_mode = BatteryMode.FORCE_CHARGE
+        elif price.buy_price > control_mode.stop_charge_price_threshold:
+            control_mode.battery_mode = BatteryMode.ENABLE
 
 
 def _apply_inverter_policy(control_mode: ControlMode, price: Price) -> None:
     """
     Apply the inverter pricing policy to the current requested mode.
     """
-        if control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
-            if price.feed_in_price < control_mode.disable_export_price_threshold:
-                control_mode.inverter_mode = InverterMode.ZERO_EXPORT
-            elif price.feed_in_price > control_mode.enable_export_price_threshold:
-                control_mode.inverter_mode = InverterMode.ENABLE
+    if control_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT:
+        if price.feed_in_price < control_mode.disable_export_price_threshold:
+            control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+        elif price.feed_in_price > control_mode.enable_export_price_threshold:
+            control_mode.inverter_mode = InverterMode.ENABLE
 
 
 async def _execute_battery_mode(
-        state: _ControlState, prev_state: _PrevControl, power_controller: PowerController,
-        requested_mode: ControlMode, battery_changed: bool
+        state: _ControlState,
+        prev_state: _PrevControl,
+        power_controller: PowerController,
+        requested_mode: ControlMode,
+        battery_changed: bool
 ) -> None:
     """
     Execute a changed battery command and record its outcome.
     """
-        if battery_changed:
-            try:
-                match requested_mode.battery_mode:
-                    case BatteryMode.ENABLE:
-                        await power_controller.enable_battery()
-                    case BatteryMode.DISABLE:
-                        await power_controller.disable_battery()
-                    case BatteryMode.FORCE_CHARGE:
-                        await power_controller.force_charge()
-                    case BatteryMode.FORCE_DISCHARGE:
-                        await power_controller.force_discharge()
-                    case BatteryMode.CHARGE_ONLY:
-                        await power_controller.charge_only()
-                    case BatteryMode.DISCHARGE_ONLY:
-                        await power_controller.discharge_only()
-            except Exception:
-                # A partial write can leave hardware state unknown. Reconciliation
-                # is required before attempting an automatic retry.
-                prev_state.battery_commanded_mode = BatteryMode.UNKNOWN
-                if state.health.report_failure('battery_command', Severity.WARNING,
-                                               'Battery command outcome is uncertain'):
-                    LOGGER.exception('%sBattery command failed: %s', _LOG_SRC, requested_mode.battery_mode)
-            else:
-                prev_state.battery_commanded_mode = requested_mode.battery_mode
-                if state.health.report_success('battery_command'):
-                    log_info('Battery command completed after previous failure')
+    if battery_changed:
+        try:
+            match requested_mode.battery_mode:
+                case BatteryMode.ENABLE:
+                    await power_controller.enable_battery()
+                case BatteryMode.DISABLE:
+                    await power_controller.disable_battery()
+                case BatteryMode.FORCE_CHARGE:
+                    await power_controller.force_charge()
+                case BatteryMode.FORCE_DISCHARGE:
+                    await power_controller.force_discharge()
+                case BatteryMode.CHARGE_ONLY:
+                    await power_controller.charge_only()
+                case BatteryMode.DISCHARGE_ONLY:
+                    await power_controller.discharge_only()
+        except Exception:
+            # A partial write can leave hardware state unknown. Reconciliation
+            # is required before attempting an automatic retry.
+            prev_state.battery_commanded_mode = BatteryMode.UNKNOWN
+            if state.health.report_failure('battery_command', Severity.WARNING,
+                                           'Battery command outcome is uncertain'):
+                LOGGER.exception('%sBattery command failed: %s', _LOG_SRC, requested_mode.battery_mode)
+        else:
+            prev_state.battery_commanded_mode = requested_mode.battery_mode
+            if state.health.report_success('battery_command'):
+                log_info('Battery command completed after previous failure')
 
 
 async def _execute_inverter_mode(
-        state: _ControlState, prev_state: _PrevControl, power_controller: PowerController,
-        requested_mode: ControlMode, inverter_changed: bool
+        state: _ControlState,
+        prev_state: _PrevControl,
+        power_controller: PowerController,
+        requested_mode: ControlMode,
+        inverter_changed: bool
 ) -> None:
     """
     Execute inverter one-shot or live commands and record their outcomes.
     """
-        if inverter_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
-            try:
-                await power_controller.enable_inverter()
-            except Exception:
-                prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
-                if state.health.report_failure('inverter_command', Severity.WARNING,
-                                               'Inverter command outcome is uncertain'):
-                    LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
-            else:
-                prev_state.inverter_commanded_mode = requested_mode.inverter_mode
-                if state.health.report_success('inverter_command'):
-                    log_info('Inverter command completed after previous failure')
-    
-        # These inverter modes require a keep-alive command on every iteration.
-        # A failed command is logged and retried next iteration; the previous mode
-        # records the request, not confirmation of the inverter's actual state.
+    if inverter_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
         try:
-            match requested_mode.inverter_mode:
-                case InverterMode.DISABLE:
-                    await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
-                case InverterMode.ZERO_EXPORT:
-                    await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
+            await power_controller.enable_inverter()
         except Exception:
             prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
             if state.health.report_failure('inverter_command', Severity.WARNING,
                                            'Inverter command outcome is uncertain'):
                 LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
         else:
-            if requested_mode.inverter_mode in (InverterMode.DISABLE, InverterMode.ZERO_EXPORT):
-                prev_state.inverter_commanded_mode = requested_mode.inverter_mode
-                if state.health.report_success('inverter_command'):
-                    log_info('Inverter command completed after previous failure')
+            prev_state.inverter_commanded_mode = requested_mode.inverter_mode
+            if state.health.report_success('inverter_command'):
+                log_info('Inverter command completed after previous failure')
 
+    # These inverter modes require a keep-alive command on every iteration.
+    # A failed command is logged and retried next iteration; the previous mode
+    # records the request, not confirmation of the inverter's actual state.
+    try:
+        match requested_mode.inverter_mode:
+            case InverterMode.DISABLE:
+                await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
+            case InverterMode.ZERO_EXPORT:
+                await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
+    except Exception:
+        prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
+        if state.health.report_failure('inverter_command', Severity.WARNING,
+                                       'Inverter command outcome is uncertain'):
+            LOGGER.exception('%sInverter command failed: %s', _LOG_SRC, requested_mode.inverter_mode)
+    else:
+        if requested_mode.inverter_mode in (InverterMode.DISABLE, InverterMode.ZERO_EXPORT):
+            prev_state.inverter_commanded_mode = requested_mode.inverter_mode
+            if state.health.report_success('inverter_command'):
+                log_info('Inverter command completed after previous failure')
 
 
 def _connect_dummy_controller(controller_connection: DummyControllerConnection) -> PowerController:
