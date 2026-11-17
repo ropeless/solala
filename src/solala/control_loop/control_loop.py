@@ -1462,10 +1462,10 @@ async def _control_step(state: _ControlState) -> None:
     """
     # Fetch pricing without holding the settings lock.
     async with _control_settings_state() as control_state:
-        mode: ControlMode = control_state.control_mode.copy()
+        requested_mode: ControlMode = control_state.control_mode.copy()
         needs_price = (
-                mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
-                or mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
+                requested_mode.battery_policy == BatteryPolicy.CHEAP_CHARGE
+                or requested_mode.inverter_policy == InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
         )
     price: Price | None = await get_price_now() if state.connections.pricer is not None and needs_price else None
 
@@ -1475,19 +1475,19 @@ async def _control_step(state: _ControlState) -> None:
         if controller is None:
             return
 
-        mode = control_state.control_mode
-        # Policies may have changed during price retrieval.
+        # We attempted to get a price assuming the state of policies and pricer above.
+        # The policies may have changes since then so we implement the policies
+        # if we got a price _and_ updating our understanding of the policies.
+        # Applying a policy is effectively a decision to request a particular mode for
+        # the battery or inverter.
+        requested_mode = control_state.control_mode.copy()
         if price is not None:
-            _apply_battery_policy(mode, price)
-            _apply_inverter_policy(mode, price)
-
-        requested_mode = mode.copy()
-        battery_changed = requested_mode.battery_mode != prev_state.control_mode.battery_mode
-        inverter_changed = requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
+            _apply_battery_policy(requested_mode, price)
+            _apply_inverter_policy(requested_mode, price)
 
     # Hardware commands run outside the settings lock.
-    await _execute_battery_mode(state, prev_state, controller, requested_mode, battery_changed)
-    await _execute_inverter_mode(state, prev_state, controller, requested_mode, inverter_changed)
+    await _execute_battery_mode(state, prev_state, controller, requested_mode)
+    await _execute_inverter_mode(state, prev_state, controller, requested_mode)
 
     async with _control_settings_state():
         # Preserve the last request, even if a command failed.
@@ -1533,12 +1533,12 @@ async def _execute_battery_mode(
         prev_state: _PrevControl,
         power_controller: PowerController,
         requested_mode: ControlMode,
-        battery_changed: bool
 ) -> None:
     """
     Execute a changed battery command and record its outcome.
     """
-    if battery_changed:
+    battery_mode_changed: bool = requested_mode.battery_mode != prev_state.control_mode.battery_mode
+    if battery_mode_changed:
         try:
             match requested_mode.battery_mode:
                 case BatteryMode.ENABLE:
@@ -1571,12 +1571,12 @@ async def _execute_inverter_mode(
         prev_state: _PrevControl,
         power_controller: PowerController,
         requested_mode: ControlMode,
-        inverter_changed: bool
 ) -> None:
     """
     Execute inverter one-shot or live commands and record their outcomes.
     """
-    if inverter_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
+    inverter_mode_changed: bool = requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
+    if inverter_mode_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
         try:
             await power_controller.enable_inverter()
         except Exception:
