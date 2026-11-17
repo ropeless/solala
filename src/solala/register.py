@@ -84,7 +84,7 @@ class Register(ABC):
     """
     Base class for typed registers that support asynchronous access.
 
-    A register has a fixed value type and may be either writable or read-only.
+    A register has a fixed value type and may be either writable or read-only.\n    Its value may change between reads, and reading may require I/O and fail.\n    The caller determines how to handle read exceptions.
     """
 
     def __init__(self, register_type: RegisterType, writable: bool) -> None:
