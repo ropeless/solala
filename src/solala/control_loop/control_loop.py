@@ -1406,14 +1406,20 @@ async def _control_loop() -> None:
         else:
             if state.health.report_success('control_step'):
                 log_info('Control step recovered after previous failure')
-        listeners = state.control_loop_listeners.copy()
-        async with _cache_state() as cache:
-            cache.last_power_valid = False
-        cur_log_registers: re.Pattern[str] | None = state.registers_to_log
+        # Ancillary work must not prevent the next control iteration.
+        try:
+            async with _cache_state() as cache:
+                cache.last_power_valid = False
+        except Exception:
+            LOGGER.exception('%sPower cache invalidation failed', _LOG_SRC)
 
-        # Update the listeners without holding the connections or cache lock.
-        await _cur_log_registers(cur_log_registers)
-        _update_listeners(listeners)
+        try:
+            await _cur_log_registers(state.registers_to_log)
+        except Exception:
+            LOGGER.exception('%sRegister logging failed', _LOG_SRC)
+
+        # Listener callbacks are dispatched without holding state locks.
+        _update_listeners(state.control_loop_listeners.copy())
 
         # Sleep for the remaining time until the next loop iteration.
         sleep_time = _get_sleep_time()
