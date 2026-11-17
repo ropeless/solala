@@ -191,33 +191,50 @@ html {
 }
 
 /* ---------------------------------------------------------
-   Control-loop status
+   Persistent master alarm
    --------------------------------------------------------- */
 
-.solala-loop-status-light {
-    width: 0.75rem;
-    height: 0.75rem;
-    border-radius: 50%;
+.solala-alarm-container {
+    flex-shrink: 0;
 }
 
-.solala-loop-status-label {
-    font-size: 0.875rem;
+.q-btn.solala-master-alarm {
+    border: 1px solid currentColor;
+    border-radius: 9px;
+    min-height: 36px;
+    padding: 4px 10px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
 }
 
-.solala-loop-status-light.solala-loop-status-live {
-    background-color: var(--solala-live-color);
+.solala-alarm-normal {
+    color: var(--solala-success);
+    background-color: #e9f7ee;
 }
 
-.solala-loop-status-light.solala-loop-status-stale {
-    background-color: var(--solala-stale-color);
+.solala-alarm-caution {
+    color: #946000;
+    background-color: #fff5d9;
 }
 
-.solala-loop-status-label.solala-loop-status-live {
-    color: var(--solala-live-color);
+.solala-alarm-warning,
+.solala-alarm-stalled {
+    color: #b91c1c;
+    background-color: #feeaea;
 }
 
-.solala-loop-status-label.solala-loop-status-stale {
-    color: var(--solala-stale-color);
+.solala-alarm-disconnected {
+    color: #5e6470;
+    background-color: #eceef1;
+}
+
+@media (max-width: 600px) {
+    .q-btn.solala-master-alarm {
+        min-height: 32px;
+        padding: 3px 7px;
+        font-size: 11px;
+    }
 }
 
 /* ---------------------------------------------------------
