@@ -199,41 +199,65 @@ html {
 }
 
 .q-btn.solala-master-alarm {
-    border: 1px solid currentColor;
-    border-radius: 9px;
-    min-height: 36px;
-    padding: 4px 10px;
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    min-height: 28px;
+    padding: 2px 4px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--solala-muted);
+    font-size: 0.875rem;
+    font-weight: 400;
+    letter-spacing: normal;
+}
+
+.q-btn.solala-master-alarm .q-btn__content {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 7px;
+}
+
+.solala-alarm-light {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    flex: 0 0 0.75rem;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.solala-alarm-label {
+    font-size: 0.875rem;
+    font-weight: 400;
+    text-transform: none;
+    white-space: nowrap;
 }
 
 .solala-alarm-normal {
-    color: var(--solala-success);
-    background-color: #e9f7ee;
+    color: var(--solala-live-color) !important;
 }
 
 .solala-alarm-caution {
-    color: #946000;
-    background-color: #fff5d9;
+    color: #a16b00 !important;
 }
 
 .solala-alarm-warning,
 .solala-alarm-stalled {
-    color: #b91c1c;
-    background-color: #feeaea;
+    color: var(--solala-stale-color) !important;
 }
 
 .solala-alarm-disconnected {
-    color: #5e6470;
-    background-color: #eceef1;
+    color: var(--solala-muted) !important;
 }
 
 @media (max-width: 600px) {
     .q-btn.solala-master-alarm {
-        min-height: 32px;
-        padding: 3px 7px;
-        font-size: 11px;
+        padding: 2px;
+    }
+
+    .solala-alarm-label {
+        font-size: 0.8rem;
     }
 }
 
