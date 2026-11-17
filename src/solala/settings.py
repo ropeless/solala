@@ -7,6 +7,7 @@ from solala.constants import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY
     DEFAULT_DB_HOST, DEFAULT_DB_PORT, DEFAULT_DB_NAME
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, InverterPolicy, BatteryPolicy
 from solala.delegates.solar_forecaster.dummy_solar_forecaster import dummy_solar_forecaster
+from solala.delegates.power_consumer.dummy_power_consumer import dummy_power_consumer
 from solala.utils.dummy_failure import DummyFailure
 
 
@@ -52,6 +53,14 @@ class DummyPricerConnection(BaseModel):
     demand_window: tuple[time, time] | None = None
 
 
+class DummyConsumerFailure(DummyFailure):
+    """
+    Restrict simulated consumer failures to supported operations.
+    """
+
+    location: dummy_power_consumer.FailureLocation
+
+
 class DummyConsumerConnection(BaseModel):
     """
     Configure a simulated power consumer.
@@ -62,6 +71,7 @@ class DummyConsumerConnection(BaseModel):
         power: Active power in watts. Defaults to voltage multiplied by
                 current when omitted. If not None, then must be <= voltage * current.
         on: Is the device switched on. Defaults to True.
+        failure: Optional simulated failure configuration.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -70,6 +80,7 @@ class DummyConsumerConnection(BaseModel):
     current: float = 0
     power: float | None = None
     on: bool = True
+    failure: DummyConsumerFailure | None = None
 
 
 class DummySolarFailure(DummyFailure):
