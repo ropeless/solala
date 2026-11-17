@@ -1,3 +1,4 @@
+import math
 from collections.abc import Iterable
 from contextlib import contextmanager
 from typing import Iterator
@@ -71,7 +72,6 @@ class ModbusPowerController(PowerController):
         self._slaves = list(slaves)
         self._inverters = [self._master] + self._slaves
         self._meter = meter
-        self._log_set_get: bool = False
         self._hunt_history: list[float] = []
 
         # Important registers
@@ -133,7 +133,7 @@ class ModbusPowerController(PowerController):
         if unnamed_device is not None:
             self._connection_info['unnamed_device'] = unnamed_device
 
-        registers: dict[str, Register] = dict(self._modbus.registers)
+        registers: dict[str, Register] = dict(self._modbus)
         registers[_INVERTER_LIMIT_NAME] = AsyncCallRegister(self.get_inverter_limit, float)
         self._registers: RegisterBank = RegisterBank(registers)
 
@@ -159,23 +159,22 @@ class ModbusPowerController(PowerController):
         return self._registers
 
     async def get_status(self) -> PowerStatus:
-        state_of_charge = await self._get(self._ChaState)
-        charge_power = await self._get(self._charge_power)
-        discharge_power = await self._get(self._discharge_power)
-        solar_power = await self._get_sum(self._solar_power)
-        grid_power = await self._get(self._grid_power)
+        state_of_charge = await self._get_for_status(self._ChaState)
+        charge_power = await self._get_for_status(self._charge_power)
+        discharge_power = await self._get_for_status(self._discharge_power)
+        solar_power = await self._get_sum_for_status(self._solar_power)
+        grid_power = await self._get_for_status(self._grid_power)
 
-        accumulated_grid_import = await self._get(self._accumulated_grid_import)
-        accumulated_grid_export = await self._get(self._accumulated_grid_export)
-        accumulated_solar_energy = await self._get_sum(self._accumulated_solar_energy)
-        accumulated_charge_energy = await self._get(self._accumulated_charge_energy)
-        accumulated_discharge_energy = await self._get(self._accumulated_discharge_energy)
-        # accumulated_inverter_power = await self._get_sum(self._accumulated_inverter_power)
+        accumulated_grid_import = await self._get_for_status(self._accumulated_grid_import)
+        accumulated_grid_export = await self._get_for_status(self._accumulated_grid_export)
+        accumulated_solar_energy = await self._get_sum_for_status(self._accumulated_solar_energy)
+        accumulated_charge_energy = await self._get_for_status(self._accumulated_charge_energy)
+        accumulated_discharge_energy = await self._get_for_status(self._accumulated_discharge_energy)
 
         battery_power = charge_power - discharge_power
         house_power = grid_power + solar_power - battery_power
 
-        power_limit, power_limit_enabled = await self._get_power_limit()
+        power_limit = await self._get_power_limit()
 
         return PowerStatus(
             state_of_charge=state_of_charge,
@@ -190,6 +189,39 @@ class ModbusPowerController(PowerController):
             accumulated_battery_energy_charge=accumulated_charge_energy,
             accumulated_battery_energy_discharge=accumulated_discharge_energy,
         )
+
+    async def _get_for_status(self, name: str) -> float:
+        """
+        Read a numeric register for reporting, returning NaN on failure
+
+        If an exception occurs during read, the error is logged and NaN is returned.
+
+        Args:
+            name: Name of the register to read.
+
+        Returns:
+            The numeric value, or NaN when it cannot be read.
+        """
+        try:
+            value = await self._modbus[name].get()
+            if not isinstance(value, (int, float)):
+                raise TypeError(f'expected numeric register {name!r}, got {type(value)}')
+            return value
+        except Exception as err:
+            LOGGER.warning(f'GET status {name}: ERROR: {err}')
+            return math.nan
+
+    async def _get_sum_for_status(self, names: list[str]) -> float:
+        """
+        Sum reporting registers, propagating NaN for unavailable inputs.
+
+        Args:
+            names: Register names to sum.
+
+        Returns:
+            Sum of readings, or NaN if any reading is unavailable.
+        """
+        return sum([await self._get_for_status(name) for name in names])
 
     # =================================================
     #  Battery Control
@@ -300,8 +332,10 @@ class ModbusPowerController(PowerController):
         or the inverter setting reverts after the requested duration.
         """
         with self._log_it('zero_export'):
-            cur_pct: float
-            cur_pct, _ = await self._get_power_limit()
+            cur_pct: float = await self._get_power_limit()
+            LOGGER.info(f'Current inverter power limit: {cur_pct!r}%')
+            if not math.isfinite(cur_pct):
+                raise ValueError('cannot adjust zero-export limit: inverter power limit is unavailable')
             grid_power: float = await self._get(self._grid_power)
             # Only inverters receiving the power-limit command are controllable.
             controlled_limits = await self._get_inverter_limit_array()
@@ -368,38 +402,39 @@ class ModbusPowerController(PowerController):
     #  Support
     # =================================================
 
-    async def _get_power_limit(self) -> tuple[float, bool]:
+    async def _get_power_limit(self) -> float:
         """
-        Get the power limit set on the controlling inverters.
+        Calculate the effective inverter output limit for reporting.
+
+        Unavailable readings produce NaN. Control callers must validate the
+        result before using it.
 
         Returns:
-            tuple[float, bool]: The effective inverter power limit as a percentage
-            and whether a power limit is enabled. When multiple inverters are
-            controlled, the percentage is weighted by each inverter's rated
-            output power.
+            The effective inverter power limit as a percentage, or NaN when
+            it cannot be determined.
         """
-        power_limits: list[float] = await self._get_all(self._WMaxLimPct)
-        power_limits_enabled: list[bool] = [x != 0 for x in await self._get_all(self._WMaxLim_Ena)]
+        power_limits = [await self._get_for_status(name) for name in self._WMaxLimPct]
+        enabled = [await self._get_for_status(name) for name in self._WMaxLim_Ena]
+        if any(not math.isfinite(x) for x in power_limits + enabled):
+            return math.nan
         if len(power_limits) == 1:
-            limit_enabled = power_limits_enabled[0]
-            limit = power_limits[0] if limit_enabled else 100.0
-            return limit, limit_enabled
+            return power_limits[0] if enabled[0] != 0 else 100.0
 
-        else:
-            # all controlling inverters
-            inverter_limits: list[float] = await self._get_inverter_limit_array()
-            assert len(power_limits) == len(inverter_limits)
-
-            total_limit: float = sum(inverter_limits)
-            if total_limit <= 0:
-                raise ValueError('cannot calculate power limit: total inverter capacity is zero')
-            avg_limit: float = 0.0
-            for limit, limit_enabled, inverter_limit in zip(power_limits, power_limits_enabled, inverter_limits):
-                if not limit_enabled:
-                    limit = 100.0
-                pr = inverter_limit / total_limit
-                avg_limit += limit * pr
-            return avg_limit, any(power_limits_enabled)
+        capacities = [
+            min(
+                await self._get_for_status(f'{inverter}/WMax'),
+                await self._get_for_status(f'{inverter}/WRtg'),
+            )
+            for inverter in self._power_controllers
+        ]
+        total = sum(capacities)
+        if not math.isfinite(total) or total <= 0:
+            LOGGER.warning('Cannot calculate power limit: inverter capacity unavailable or zero')
+            return math.nan
+        return sum(
+            (limit if active != 0 else 100.0) * capacity / total
+            for limit, active, capacity in zip(power_limits, enabled, capacities)
+        )
 
     @contextmanager
     def _log_it(self, name: str) -> Iterator[None]:
@@ -409,8 +444,6 @@ class ModbusPowerController(PowerController):
         Args:
             name: Name of the operation to include in the log messages.
         """
-        previous = self._log_set_get
-        self._log_set_get = True
         LOGGER.info(f'{_START} {name}')
         try:
             yield
@@ -419,17 +452,6 @@ class ModbusPowerController(PowerController):
             raise
         finally:
             LOGGER.info(f'{_STOP} {name}')
-            self._log_set_get = previous
-
-    def _logger_get_set(self, message: str) -> None:
-        """
-        Log a register operation when register-operation logging is enabled.
-
-        Args:
-            message: Message describing the register operation.
-        """
-        if self._log_set_get:
-            LOGGER.info(message)
 
     async def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
         """
@@ -455,39 +477,46 @@ class ModbusPowerController(PowerController):
         """
         Set a register value and verify the change.
 
-        The old and new values are logged when register logging is enabled.
-        Modbus write errors and verification failures are logged.
+        The old and new values are logged. Write errors propagate, and
+        verification failures raise ValueError. Non-finite requested values
+        are rejected before any Modbus I/O. If the new value is the
+        same as the old value, then no write will be performed _unless_
+        `force` is true.
 
         Args:
             name: Name of the register to update.
             value: Value to write.
-            force: Write the value even if it is unchanged.
+            force: Write the value even if the new value is the same as the old value.
         """
-        old = await self._modbus.get(name)
+        if not math.isfinite(value):
+            raise ValueError(f'SET {name}: non-finite requested value {value!r}')
+
+        old = await self._modbus[name].get()
         if not force and old == value:
             # No change needed
-            self._logger_get_set(f'SET {name}: {old!r} -> {value!r} UNCHANGED')
+            LOGGER.info(f'SET {name}: {old!r} -> {value!r} UNCHANGED')
         else:
             # Make the change
             try:
-                await self._modbus.set(name, value)
+                await self._modbus[name].set(value)
             except ModbusError as err:
                 LOGGER.error(f'SET {name}: {old!r} -> {value!r} ERROR: {err}')
                 LOGGER.error(f'Modbus message: {err.modbus_message!r}')
-                return
+                raise
 
-            failed: bool
-            new = await self._modbus.get(name)
-            if not isinstance(new, (int, float)):
-                failed = True
+            new = await self._modbus[name].get()
+            if (
+                    not isinstance(new, (int, float))
+                    or not math.isfinite(new)
+                    or abs(new - value) > 10e-6
+            ):
+                message = f'SET {name}: {old!r} -> {value!r} checked {new!r} FAILED'
+                LOGGER.error(message)
+                raise ValueError(message)
+            if force:
+                LOGGER.info(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK FORCED')
             else:
-                failed = abs(new - value) > 10e-6
-            if failed:
-                LOGGER.error(f'SET {name}: {old!r} -> {value!r} checked {new!r} FAILED')
-            elif force:
-                self._logger_get_set(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK FORCED')
-            else:
-                self._logger_get_set(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK')
+                LOGGER.info(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK')
 
     async def _get(self, name: str) -> int | float:
         """
@@ -502,8 +531,8 @@ class ModbusPowerController(PowerController):
         Raises:
             TypeError: If the register value is not numeric.
         """
-        value = await self._modbus.get(name)
-        self._logger_get_set(f'GET {name}: {value!r}')
+        value = await self._modbus[name].get()
+        LOGGER.info(f'GET {name}: {value!r}')
         if not isinstance(value, (int, float)):
             msg = f'getting register {name!r}: Expected int or float, got {type(value)}'
             LOGGER.error(msg)
@@ -546,7 +575,7 @@ class ModbusPowerController(PowerController):
         Returns:
             The sum of the register values.
         """
-        self._logger_get_set(f'SUM {names}')
+        LOGGER.info(f'SUM {names}')
         result = sum(await self._get_all(names))
-        self._logger_get_set(f'SUM = {result}')
+        LOGGER.info(f'SUM = {result}')
         return result
