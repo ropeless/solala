@@ -132,7 +132,7 @@ class _PrevControl:
 
 class _PriceCache(LifecycleCache[Price]):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             _get_price_now,
             log_error=log_error,
@@ -146,7 +146,7 @@ class _PriceCache(LifecycleCache[Price]):
 
 class _PriceForecastCache(LifecycleCache[Sequence[Price]]):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             _get_price_forecast,
             log_error=log_error,
@@ -317,10 +317,12 @@ class _ControlState:
         self.connections.controller = controller
         self.connections.controller_settings = settings
 
-        # Modes are now unknown, but leave the current policies in place.
+        # Replacement hardware has unknown modes; previous policies no longer apply.
         async with _control_settings_state():
             self.control.control_mode.battery_mode = BatteryMode.UNKNOWN
             self.control.control_mode.inverter_mode = InverterMode.UNKNOWN
+            self.control.control_mode.battery_policy = BatteryPolicy.MANUAL
+            self.control.control_mode.inverter_policy = InverterPolicy.MANUAL
 
         # Invalidate cached status
         async with _cache_state():
@@ -476,8 +478,15 @@ async def control_loop(
         await configure_from_settings(settings)
 
     database_task = asyncio.create_task(_database_loop())
-    await _control_loop()
-    database_task.cancel()
+    try:
+        await _control_loop()
+    finally:
+        database_task.cancel()
+        try:
+            await database_task
+        except asyncio.CancelledError:
+            # Expected when shutting down the database loop.
+            pass
 
 
 # =============================================================================
@@ -652,13 +661,28 @@ async def get_power_status() -> PowerStatus:
     """
     async with _connections_state() as connections:
         async with _cache_state() as cache:
-            if not cache.last_power_valid:
-                controller: PowerController | None = connections.controller
-                if controller is None:
+            if cache.last_power_valid:
+                return cache.last_power
+
+            controller: PowerController | None = connections.controller
+            if controller is None:
+                cache.last_power = _NO_POWER
+                if _CONTROL_STATE.health.report_failure(
+                        'power_status', Severity.CAUTION, 'Power status unavailable: controller disconnected'):
                     log_error('Power update not available. Error: power controller not connected')
+            else:
+                try:
+                    status = await controller.get_status()
+                except Exception:
+                    cache.last_power = _NO_POWER
+                    if _CONTROL_STATE.health.report_failure(
+                            'power_status', Severity.CAUTION, 'Power status could not be read'):
+                        log_exception('Power status update failed')
                 else:
-                    cache.last_power = await controller.get_status()
-                cache.last_power_valid = True
+                    cache.last_power = status
+                    cache.last_power_valid = True
+                    if _CONTROL_STATE.health.report_success('power_status'):
+                        log_info('Power status recovered after previous failure')
             return cache.last_power
 
 
@@ -798,7 +822,7 @@ async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
         prices: list[Price] = await pricer.get_price_forecast(_needed_forecasts() + 1)
         log_info('Price forecast updated')
     except Exception as err:
-        return error(f'Price forecast not available. Error: {err}')
+        return error(f'Price forecast not available. Error: {err!r}')
 
     if pricer is not _CONTROL_STATE.connections.pricer:
         # The pricer got changed, abandon the update
@@ -914,19 +938,19 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
 async def _get_solar_forecast(day: date) -> LifecycleReturn[DailySolarForecast]:
     forecaster = _CONTROL_STATE.connections.forecaster
     if forecaster is None:
-        return error('Solar forecast not available. Error: solar forecaster not connected')
+        return error(f'Solar forecast not available for {day.strftime("%Y-%m-%d")}. Error: solar forecaster not connected')
 
     try:
         forecast: DailySolarForecast = await forecaster.get_forecast(day)
     except Exception as err:
-        return error(f'Solar forecast not available. Error: {err}')
+        return error(f'Solar forecast not available for {day.strftime("%Y-%m-%d")}. Error: {err!r}')
 
     if forecaster is not _CONTROL_STATE.connections.forecaster:
         # The forecaster got changed, abandon the update.
         # The issue will be corrected naturally when next polled.
-        return error('Solar forecast not available. Error: solar forecaster changed')
+        return error(f'Solar forecast not available for {day.strftime("%Y-%m-%d")}. Error: solar forecaster changed')
 
-    log_info(f'Updated solar forecast: day = {day.strftime("%Y-%m-%d")}')
+    log_info(f'Updated solar forecast for day {day.strftime("%Y-%m-%d")}')
     return valid(forecast)
 
 
@@ -970,7 +994,7 @@ async def solala_database_measurements(day: date) -> Sequence[Measurement]:
         async with _database() as db:
             return await db.get_measurements(day)
     except (ConnectionError, DatabaseError) as err:
-        log_error(f'Database connection error: {err}')
+        log_error(f'Database connection error: {err!r}')
         return []
 
 
@@ -1040,7 +1064,7 @@ async def set_control(
 
             control_json = control_mode.to_json()
 
-        # Wake the loop promptly; the next step will snapshot these settings.
+        # Wake the loop promptly; the next step will copy the settings.
         _CONTROL_STATE.control_changed.set()
 
         # Saving takes the connections lock before the control-settings lock.
@@ -1054,8 +1078,8 @@ async def log_registers(match: str | re.Pattern[str] | None) -> None:
     Select registers to log to the database.
 
     Args:
-    match: Regular expression matching register names, or None to disable logging.
-        Use `MATCH_ALL` to match all registers.
+        match: Regular expression matching register names, or None to disable logging.
+            Use `MATCH_ALL` to match all registers.
     """
     if match is None:
         _CONTROL_STATE.registers_to_log = None
@@ -1359,7 +1383,7 @@ async def _database_loop() -> None:
         iter_time: int = int(Constants.DATABASE_LOG_LOOP_TIME.total_seconds())
         start_timestamp: int = (int(iteration_start.timestamp() / iter_time) + 1) * iter_time
         sleeptime: float = start_timestamp - now().timestamp()
-        await asyncio.sleep(sleeptime)
+        await asyncio.sleep(max(0.0, sleeptime))
 
     log_info('Stopped database loop')
 
@@ -1565,10 +1589,32 @@ async def _control_step(state: _ControlState) -> None:
     # Do not hold the settings lock across price retrieval or hardware I/O.
     # We operate on the settings `requested_mode` copied above.
 
-    await _apply_battery_policy(requested_mode, pricer_available)
+    try:
+        await _apply_battery_policy(requested_mode, pricer_available)
+    except Exception:
+        # Preserve the last effective battery mode rather than falling back
+        # to the originally requested mode after a failed price lookup.
+        requested_mode.battery_mode = prev_state.control_mode.battery_mode
+        if state.health.report_failure('battery_policy', Severity.CAUTION,
+                                       'Battery price policy could not be evaluated'):
+            log_exception('Battery price policy failed')
+    else:
+        if state.health.report_success('battery_policy'):
+            log_info('Battery price policy issue resolved')
     await _execute_battery_mode(state, prev_state, controller, requested_mode)
 
-    await _apply_inverter_policy(requested_mode, pricer_available)
+    try:
+        await _apply_inverter_policy(requested_mode, pricer_available)
+    except Exception:
+        # Preserve the last effective mode so that an active inverter safety
+        # command still receives its keep-alive when price retrieval fails.
+        requested_mode.inverter_mode = prev_state.control_mode.inverter_mode
+        if state.health.report_failure('inverter_policy', Severity.CAUTION,
+                                       'Inverter price policy could not be evaluated'):
+            log_exception('Inverter price policy failed')
+    else:
+        if state.health.report_success('inverter_policy'):
+            log_info('Inverter price policy issue resolved')
     await _execute_inverter_mode(state, prev_state, controller, requested_mode)
 
     async with _control_settings_state():
@@ -1751,11 +1797,15 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
     clients: list[ModbusTcpClient] = []  # coindexed with address
     errors: list[JSONDict] = []
     for address in addresses:
+        client: ModbusTcpClient | None = None
         try:
-            client = ModbusTcpClient(address.ip_address)
-            client.connect()
+            client: ModbusTcpClient = ModbusTcpClient(address.ip_address)
+            if not client.connect():
+                raise ConnectionError('Modbus TCP connection failed')
             clients.append(client)
         except Exception as err:
+            if client is not None:
+                client.close()
             errors.append({
                 'host': address.ip_address,
                 'mac_address': address.mac_address,
@@ -1763,6 +1813,8 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
             })
     # Fail if there are any errors
     if len(errors) > 0:
+        for client in clients:
+            client.close()
         raise ControlLoopError('could not connect Modbus TCP client', errors=errors)
 
     # Configure power controller
@@ -1992,6 +2044,30 @@ async def _reconfigure_registers(state: _ControlState) -> None:
         registers[f'status/power/{f.name}'] = PriceRegister(f.name, f_type)
 
     # Add controller registers
+    try:
+        await _add_delegate_registers(state, registers)
+    except Exception:
+        # Do not expose any delegate registers after a partial reconfiguration.
+        registers = {name: register for name, register in registers.items()
+                     if not name.startswith(('controller/', 'consumer/'))}
+        state.connections.registers = RegisterBank(registers)
+        if state.health.report_failure('register_configuration', Severity.CAUTION,
+                                       'Register bank reconfiguration failed'):
+            log_exception('Register bank reconfiguration failed')
+    else:
+        state.connections.registers = RegisterBank(registers)
+        if state.health.report_success('register_configuration'):
+            log_info('Register bank reconfiguration recovered')
+
+
+async def _add_delegate_registers(state: _ControlState, registers: dict[str, Register]) -> None:
+    """
+    Add controller and consumer registers to the new register bank.
+
+    Args:
+        state: Current connection state.
+        registers: Register mapping to extend.
+    """
     if state.connections.controller is not None:
         controller_registers: RegisterBank = await state.connections.controller.get_registers()
         for name, register in controller_registers.items():
@@ -2002,8 +2078,6 @@ async def _reconfigure_registers(state: _ControlState) -> None:
         consumer_registers: RegisterBank = await consumer.get_registers()
         for name, register in consumer_registers.items():
             registers[f'consumer/{consumer_name}/{name}'] = register
-
-    state.connections.registers = RegisterBank(registers)
 
 
 def _get_dataclass_properties(cls: type) -> Iterator[tuple[str, Any]]:
@@ -2078,7 +2152,7 @@ async def _save_settings() -> None:
                 with open(settings_path, 'w') as file:
                     print(settings.model_dump_json(), file=file)
             except Exception as err:
-                log_error(f'Error saving settings: {err}')
+                log_error(f'Error saving settings: {err!r}')
 
 
 async def _load_settings() -> bool:
@@ -2097,7 +2171,7 @@ async def _load_settings() -> bool:
             await configure_from_settings(settings)
             return True
         except Exception as err:
-            log_error(f'Error loading settings: {err}')
+            log_error(f'Error loading settings: {err!r}')
     return False
 
 

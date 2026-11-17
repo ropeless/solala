@@ -129,6 +129,61 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         self.controller.zero_export.assert_awaited_once_with(change_duration=Constants.CONTROL_DURATION)
 
 
+    async def test_battery_price_failure_preserves_mode_and_inverter_keep_alive(self) -> None:
+        """
+        Battery price failure must preserve the effective battery mode and allow inverter safety commands.
+        """
+        self.state.control.control_mode.battery_policy = BatteryPolicy.CHEAP_CHARGE
+        self.state.control.control_mode.battery_mode = BatteryMode.ENABLE
+        self.state.control.prev_state.control_mode.battery_policy = BatteryPolicy.CHEAP_CHARGE
+        self.state.control.prev_state.control_mode.battery_mode = BatteryMode.FORCE_CHARGE
+        self.state.control.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+        self.state.control.prev_state.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+        self.price_mock.side_effect = RuntimeError('battery price lookup failed')
+
+        with patch.object(control_loop.LOGGER, 'exception') as log_exception:
+            async with control_loop._connections_state():
+                await control_loop._control_step(self.state)
+        log_exception.assert_called_once()
+
+        self.controller.enable_battery.assert_not_awaited()
+        self.controller.force_charge.assert_not_awaited()
+        self.controller.zero_export.assert_awaited_once_with(
+            change_duration=Constants.CONTROL_DURATION
+        )
+        self.assertEqual(
+            self.state.control.prev_state.control_mode.battery_mode,
+            BatteryMode.FORCE_CHARGE,
+        )
+        self.assertEqual(
+            self.state.control.prev_state.control_mode.inverter_mode,
+            InverterMode.ZERO_EXPORT,
+        )
+
+    async def test_inverter_price_failure_preserves_zero_export_keep_alive(self) -> None:
+        """
+        A failed price lookup must not suppress the active zero-export keep-alive.
+        """
+        self.state.control.control_mode.inverter_policy = InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
+        self.state.control.control_mode.inverter_mode = InverterMode.ENABLE
+        self.state.control.prev_state.control_mode.inverter_policy = InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
+        self.state.control.prev_state.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+        self.price_mock.side_effect = RuntimeError('price lookup failed')
+
+        with patch.object(control_loop.LOGGER, 'exception') as log_exception:
+            async with control_loop._connections_state():
+                await control_loop._control_step(self.state)
+        log_exception.assert_called_once()
+
+        self.controller.zero_export.assert_awaited_once_with(
+            change_duration=Constants.CONTROL_DURATION
+        )
+        self.controller.enable_inverter.assert_not_awaited()
+        self.assertEqual(
+            self.state.control.prev_state.control_mode.inverter_mode,
+            InverterMode.ZERO_EXPORT,
+        )
+
     async def test_failed_zero_export_is_logged_and_retried(self) -> None:
         self.state.control.control_mode.inverter_mode = InverterMode.ZERO_EXPORT
         self.controller.zero_export.side_effect = [RuntimeError('command failed'), None]
