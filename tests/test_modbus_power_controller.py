@@ -1,14 +1,15 @@
+import logging
 import math
 import unittest
 
 from collections.abc import Awaitable, Callable
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
-from unittest.mock import AsyncMock
 
 from solala.register import AsyncCallRegister, Register, RegisterValue
 from solala.register_bank import RegisterBank
+from solala.logger import LOGGER
 
 
 class _WritableRegister(Register):
@@ -32,6 +33,17 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
     """
     Test Modbus control safety without connecting to physical hardware.
     """
+
+    def setUp(self) -> None:
+        """
+        Suppress routine Solala logging without changing other test output.
+        """
+        handlers = patch.object(LOGGER, 'handlers', [logging.NullHandler()])
+        propagation = patch.object(LOGGER, 'propagate', False)
+        handlers.start()
+        propagation.start()
+        self.addCleanup(propagation.stop)
+        self.addCleanup(handlers.stop)
 
     @staticmethod
     def make_controller(registers: dict[str, Register]) -> ModbusPowerController:
