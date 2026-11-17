@@ -62,6 +62,16 @@ class _DatabaseReservation:
         Callers must not release an entered reservation before its context
         manager exits: doing so would allow pool shutdown while a connection
         is still in use. Normal context exit releases it automatically.
+
+        Example:
+            reservation = pool.reserve_database()
+            try:
+                async with reservation as db:
+                    # Use db.
+                    pass
+            finally:
+                # Safe even if the context manager already released it.
+                reservation.release()
         """
         if not self._released:
             self._released = True
