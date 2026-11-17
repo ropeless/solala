@@ -165,7 +165,7 @@ def _update_loop_status(loop_status_light: Element, loop_status_label: Label) ->
         loop_status_label: Label displaying the loop health text.
     """
     overdue: float = control_loop.loop_check_overdue()
-    if overdue > Constants.LOOP_TIME.total_seconds():
+    if overdue > Constants.OVERDUE_THRESHOLD.total_seconds():
         loop_status_light.classes(
             replace='solala-loop-status-light solala-loop-status-stale'
         )
