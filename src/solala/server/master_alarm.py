@@ -4,13 +4,12 @@ Provide the persistent master alarm and browser-side freshness monitoring.
 
 import json
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 
 from nicegui import ui
 
 from solala.constants import Constants
 from solala.control_loop import control_loop
-from solala.control_loop.control_health import HealthIssue, Severity
+from solala.control_loop.control_health import HealthIssue
 
 
 def _alarm_state(previous: str) -> tuple[str, tuple[HealthIssue, ...]]:
@@ -73,15 +72,16 @@ class MasterAlarm:
                 const button = getHtmlElement({self._button_id});
                 const label = getHtmlElement({self._label_id});
                 let lastResponse = 0;
-                let awaitingResponse = true;
                 const disconnected = () => {{
-                    awaitingResponse = true;
-                    button.className = 'q-btn q-btn-item non-selectable no-outline q-btn--flat q-btn--rectangle q-btn--actionable q-focusable q-hoverable no-caps solala-master-alarm solala-alarm-disconnected';
+                    button.classList.remove(
+                        'solala-alarm-normal', 'solala-alarm-caution',
+                        'solala-alarm-warning', 'solala-alarm-stalled'
+                    );
+                    button.classList.add('solala-alarm-disconnected');
                     label.textContent = 'DISCONNECTED';
                 }};
                 const onDisconnect = () => disconnected();
                 const onConnect = () => {{
-                    awaitingResponse = true;
                     disconnected();
                 }};
                 window.socket.on('disconnect', onDisconnect);
@@ -93,7 +93,6 @@ class MasterAlarm:
                     receive(state) {{
                         if (!window.socket.connected) return;
                         lastResponse = Date.now();
-                        awaitingResponse = false;
                         button.classList.remove(
                             'solala-alarm-normal', 'solala-alarm-caution',
                             'solala-alarm-warning', 'solala-alarm-stalled',
