@@ -6,6 +6,8 @@ from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.time_extras import ensure_date, date_to_datetime
 from solala.utils.json_extras import JSONDict
+from solala.utils.dummy_failure import DummyFailureDescription, DummyFailureInjector
+from solala.settings import DummySolarFailureLocation
 
 
 class DummySolarForecaster(SolarForecaster):
@@ -17,7 +19,9 @@ class DummySolarForecaster(SolarForecaster):
     generated forecasts.
     """
 
-    def __init__(self, panel_capacity: float, inverter_limit: float):
+    def __init__(self, panel_capacity: float, inverter_limit: float, *,
+                 inject_failure_probability: float = 0.0,
+                 inject_failure_description: DummyFailureDescription | None = None):
         """
         Initialise the dummy solar forecaster.
 
@@ -25,6 +29,7 @@ class DummySolarForecaster(SolarForecaster):
             panel_capacity: Installed solar panel capacity in W.
             inverter_limit: Maximum inverter output power in W.
         """
+        self._failure_injector = DummyFailureInjector(inject_failure_probability, inject_failure_description)
         self.panel_capacity: float = panel_capacity
         self.inverter_limit: float = inverter_limit
         self._tz = datetime.now().astimezone().tzinfo
@@ -56,6 +61,7 @@ class DummySolarForecaster(SolarForecaster):
         and temperature values, with randomly selected daytime weather
         conditions.
         """
+        await self._failure_injector.maybe_inject_failure(DummySolarFailureLocation.GET_FORECAST)
         day_of_interest: datetime = date_to_datetime(ensure_date(day)).replace(tzinfo=self._tz)
         limit = max(self.panel_capacity, self.inverter_limit)
 
