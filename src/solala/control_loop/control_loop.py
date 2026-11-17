@@ -2047,7 +2047,9 @@ async def _reconfigure_registers(state: _ControlState) -> None:
     try:
         await _add_delegate_registers(state, registers)
     except Exception:
-        # Do not expose register references belonging to disconnected hardware.
+        # Do not expose any delegate registers after a partial reconfiguration.
+        registers = {name: register for name, register in registers.items()
+                     if not name.startswith(('controller/', 'consumer/'))}
         state.connections.registers = RegisterBank(registers)
         if state.health.report_failure('register_configuration', Severity.CAUTION,
                                        'Register bank reconfiguration failed'):
@@ -2076,6 +2078,7 @@ async def _add_delegate_registers(state: _ControlState, registers: dict[str, Reg
         consumer_registers: RegisterBank = await consumer.get_registers()
         for name, register in consumer_registers.items():
             registers[f'consumer/{consumer_name}/{name}'] = register
+
 
 def _get_dataclass_properties(cls: type) -> Iterator[tuple[str, Any]]:
     """
