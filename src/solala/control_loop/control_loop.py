@@ -317,10 +317,12 @@ class _ControlState:
         self.connections.controller = controller
         self.connections.controller_settings = settings
 
-        # Modes are now unknown, but leave the current policies in place.
+        # Replacement hardware has unknown modes; previous policies no longer apply.
         async with _control_settings_state():
             self.control.control_mode.battery_mode = BatteryMode.UNKNOWN
             self.control.control_mode.inverter_mode = InverterMode.UNKNOWN
+            self.control.control_mode.battery_policy = BatteryPolicy.MANUAL
+            self.control.control_mode.inverter_policy = InverterPolicy.MANUAL
 
         # Invalidate cached status
         async with _cache_state():
