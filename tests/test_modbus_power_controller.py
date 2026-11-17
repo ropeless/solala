@@ -1,8 +1,11 @@
 import math
 import unittest
 
-from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
 from collections.abc import Awaitable, Callable
+from unittest.mock import AsyncMock
+
+from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
+from unittest.mock import AsyncMock
 
 from solala.register import AsyncCallRegister, Register, RegisterValue
 from solala.register_bank import RegisterBank
@@ -23,7 +26,6 @@ class _WritableRegister(Register):
 
     async def _set(self, value: RegisterValue) -> None:
         await self._write(value)
-
 
 
 class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
@@ -178,3 +180,86 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await controller._get_power_limit(), 40.0)
         enabled = 0.0
         self.assertEqual(await controller._get_power_limit(), 100.0)
+
+    @staticmethod
+    def make_zero_export_controller(
+            *, grid_power: float, inverter_power: float = 4000.0,
+            limit_pct: float = 50.0, capacity: float = 8000.0,
+            discharge_power: float = 0.0,
+    ) -> ModbusPowerController:
+        controller = object.__new__(ModbusPowerController)
+        controller._hunt_history = []
+        controller._power_controllers = ['master']
+        controller._W = ['master/W']
+        controller._grid_power = 'meter/W'
+        controller._discharge_power = 'master/module/4/DCW'
+        controller._get_power_limit = AsyncMock(return_value=limit_pct)
+        controller._get_inverter_limit_array = AsyncMock(return_value=[capacity])
+        controller._get_sum = AsyncMock(return_value=inverter_power)
+        controller._is_force_discharge_enabled = AsyncMock(return_value=False)
+        controller._set_power_pct = AsyncMock()
+
+        async def get_register(name: str) -> float:
+            if name == controller._grid_power:
+                return grid_power
+            if name == controller._discharge_power:
+                return discharge_power
+            raise AssertionError(f'unexpected register: {name}')
+
+        controller._get = AsyncMock(side_effect=get_register)
+        return controller
+
+    async def test_zero_export_exact_method_reduces_limit_on_export(self) -> None:
+        controller = self.make_zero_export_controller(grid_power=-3000.0)
+        await controller.zero_export(change_duration=11)
+        controller._set_power_pct.assert_awaited_once_with(12.5, 11)
+        self.assertEqual(controller._hunt_history, [])
+
+    async def test_zero_export_exact_method_increases_limit_on_import(self) -> None:
+        controller = self.make_zero_export_controller(grid_power=3000.0)
+        await controller.zero_export(change_duration=11)
+        controller._set_power_pct.assert_awaited_once_with(87.5, 11)
+
+    async def test_zero_export_hunting_method(self) -> None:
+        controller = self.make_zero_export_controller(grid_power=-800.0)
+        await controller.zero_export(change_duration=11)
+        controller._set_power_pct.assert_awaited_once_with(49.0, 11)
+        self.assertEqual(controller._hunt_history, [-800.0])
+
+    async def test_zero_export_deadband(self) -> None:
+        controller = self.make_zero_export_controller(grid_power=-50.0)
+        controller._hunt_history = [100.0]
+        await controller.zero_export(change_duration=11)
+        controller._set_power_pct.assert_awaited_once_with(50.0, 11)
+        self.assertEqual(controller._hunt_history, [])
+
+    async def test_zero_export_accounts_for_battery_discharge(self) -> None:
+        controller = self.make_zero_export_controller(
+            grid_power=-3000.0, inverter_power=3000.0, discharge_power=1000.0,
+        )
+        await controller.zero_export(change_duration=11)
+        controller._set_power_pct.assert_awaited_once_with(12.5, 11)
+
+    async def test_zero_export_rejects_unavailable_limit_without_writes(self) -> None:
+        controller = self.make_zero_export_controller(grid_power=-3000.0, limit_pct=math.nan)
+        with self.assertRaises(ValueError):
+            await controller.zero_export(change_duration=11)
+        controller._set_power_pct.assert_not_awaited()
+        controller._get.assert_not_awaited()
+
+    async def test_zero_export_propagates_meter_failure_without_writes(self) -> None:
+        controller = self.make_zero_export_controller(grid_power=-3000.0)
+        failure = OSError('meter unavailable')
+        controller._get = AsyncMock(side_effect=failure)
+        with self.assertRaises(OSError) as caught:
+            await controller.zero_export(change_duration=11)
+        self.assertIs(caught.exception, failure)
+        controller._set_power_pct.assert_not_awaited()
+
+    async def test_zero_export_propagates_command_failure(self) -> None:
+        controller = self.make_zero_export_controller(grid_power=-3000.0)
+        failure = OSError('write failed')
+        controller._set_power_pct.side_effect = failure
+        with self.assertRaises(OSError) as caught:
+            await controller.zero_export(change_duration=11)
+        self.assertIs(caught.exception, failure)
