@@ -1,14 +1,13 @@
-from enum import StrEnum
 from datetime import time
 from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
-from solala.utils.dummy_failure import DummyFailureDescription
-
 from solala.constants import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, \
     DEFAULT_DB_HOST, DEFAULT_DB_PORT, DEFAULT_DB_NAME
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, InverterPolicy, BatteryPolicy
+from solala.delegates.solar_forecaster.dummy_solar_forecaster import dummy_solar_forecaster
+from solala.utils.dummy_failure import DummyFailure
 
 
 class DummyControllerConnection(BaseModel):
@@ -73,20 +72,11 @@ class DummyConsumerConnection(BaseModel):
     on: bool = True
 
 
-class DummySolarFailureLocation(StrEnum):
-    """
-    Operations supporting simulated solar forecast failures.
-    """
-
-    GET_FORECAST = 'GET_FORECAST'
-
-
-class DummySolarFailureDescription(DummyFailureDescription):
+class DummySolarFailure(DummyFailure):
     """
     Restrict solar forecast fault injection to supported operations.
     """
-
-    location: DummySolarFailureLocation
+    location: dummy_solar_forecaster.FailureLocation
 
 
 class DummySolarForecasterConnection(BaseModel):
@@ -102,8 +92,7 @@ class DummySolarForecasterConnection(BaseModel):
 
     panel_capacity: float = 9000
     inverter_limit: float = 8000
-    inject_failure_probability: float = Field(default=0.0, ge=0.0, le=1.0)
-    inject_failure_description: DummySolarFailureDescription | None = None
+    failure: DummySolarFailure | None = None
 
 
 class ModbusControllerConnection(BaseModel):

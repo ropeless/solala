@@ -1,13 +1,10 @@
 import asyncio
 import random
 from enum import Enum
+from typing import Annotated, Any, Self
 
-from pydantic import BaseModel, Field
-
-from typing import Annotated, Any
-
+from pydantic import BaseModel, Field, model_validator
 from pydantic import PlainSerializer, PlainValidator
-
 
 _ALLOWED_EXCEPTIONS: dict[str, type[Exception]] = {
     'RuntimeError': RuntimeError,
@@ -75,45 +72,64 @@ SerializableException = Annotated[
 ]
 
 
-class DummyFailureDescription(BaseModel):
+class DummyFailure(BaseModel):
     """
     Describe a simulated delay or exception at a delegate operation.
 
     Attributes:
         location: Delegate-specific operation at which injection is possible.
+        probability: Probability of injection.
         exception: Optional exception to raise after the delay.
         sleep: Delay in seconds before returning or raising.
     """
 
     location: str
+    probability: float = Field(default=1.0, gt=0.0, le=1.0)
     exception: SerializableException | None = None
     sleep: float = Field(default=0.0, ge=0.0)
 
+    @model_validator(mode='after')
+    def check_dates(self) -> Self:
+        if self.sleep == 0.0 and self.exception is None:
+            raise ValueError('A failure must have at least an exception or a sleep')
+        return self
 
-class DummyFailureInjector:
+
+async def async_maybe_inject_failure(location: Enum, failure: DummyFailure | None) -> None:
     """
-    Apply probabilistic faults to designated dummy delegate operations.
+    Inject the configured delay and exception for a matching failure description.
+
+    Args:
+        location: where is this method being called; a failure can be raise if
+            `location.name == failure.location`.
+        failure: An instance of DummyFailure describing the kind of failure possible.
     """
+    if (
+            failure is not None
+            and failure.location == location.name
+            and (failure.probability == 1 or random.random() < failure.probability)
+    ):
+        # inject the failure
+        if failure.sleep > 0:
+            await asyncio.sleep(failure.sleep)
+        if failure.exception is not None:
+            raise failure.exception
 
-    def __init__(self, probability: float, description: DummyFailureDescription | None) -> None:
-        self._probability = probability
-        self._description = description
+def maybe_inject_failure(location: Enum, failure: DummyFailure | None) -> None:
+    """
+    Inject the configured delay and exception for a matching failure description.
 
-    async def maybe_inject_failure(self, location: Enum) -> None:
-        """
-        Inject the configured delay and exception for a matching operation.
-
-        Args:
-            location: Operation-specific location enum member.
-        """
-        description = self._description
-        if (
-            description is None
-            or description.location != location.name
-            or random.random() >= self._probability
-        ):
-            return
-        if description.sleep:
-            await asyncio.sleep(description.sleep)
-        if description.exception is not None:
-            raise description.exception
+    Args:
+        location: where is this method being called; a failure can be raise if
+            `location.name == failure.location`.
+        failure: An instance of DummyFailure describing the kind of failure possible.
+    """
+    if (
+            failure is not None
+            and failure.location == location.name
+            and (failure.probability == 1 or random.random() < failure.probability)
+    ):
+        assert failure.sleep == 0, 'cannot inject a failure sleep for a synchronous function'
+        # inject the failure
+        if failure.exception is not None:
+            raise failure.exception

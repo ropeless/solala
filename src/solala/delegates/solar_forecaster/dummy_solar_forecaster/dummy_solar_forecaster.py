@@ -1,13 +1,18 @@
 import random
 from datetime import datetime, timedelta, date
+from enum import StrEnum, auto
 
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
-from solala.utils.time_extras import ensure_date, date_to_datetime
+from solala.utils.dummy_failure import DummyFailure, maybe_inject_failure, async_maybe_inject_failure
 from solala.utils.json_extras import JSONDict
-from solala.utils.dummy_failure import DummyFailureDescription, DummyFailureInjector
-from solala.settings import DummySolarFailureLocation
+from solala.utils.time_extras import ensure_date, date_to_datetime
+
+
+class FailureLocation(StrEnum):
+    get_forecast = auto()
+    get_connection_info = auto()
 
 
 class DummySolarForecaster(SolarForecaster):
@@ -19,9 +24,12 @@ class DummySolarForecaster(SolarForecaster):
     generated forecasts.
     """
 
-    def __init__(self, panel_capacity: float, inverter_limit: float, *,
-                 inject_failure_probability: float = 0.0,
-                 inject_failure_description: DummyFailureDescription | None = None):
+    def __init__(
+            self,
+            panel_capacity: float,
+            inverter_limit: float, *,
+            failure: DummyFailure | None = None,
+    ):
         """
         Initialise the dummy solar forecaster.
 
@@ -29,7 +37,7 @@ class DummySolarForecaster(SolarForecaster):
             panel_capacity: Installed solar panel capacity in W.
             inverter_limit: Maximum inverter output power in W.
         """
-        self._failure_injector = DummyFailureInjector(inject_failure_probability, inject_failure_description)
+        self.failure = failure
         self.panel_capacity: float = panel_capacity
         self.inverter_limit: float = inverter_limit
         self._tz = datetime.now().astimezone().tzinfo
@@ -61,7 +69,10 @@ class DummySolarForecaster(SolarForecaster):
         and temperature values, with randomly selected daytime weather
         conditions.
         """
-        await self._failure_injector.maybe_inject_failure(DummySolarFailureLocation.GET_FORECAST)
+        await async_maybe_inject_failure(
+            FailureLocation.get_forecast,
+            self.failure,
+        )
         day_of_interest: datetime = date_to_datetime(ensure_date(day)).replace(tzinfo=self._tz)
         limit = max(self.panel_capacity, self.inverter_limit)
 
@@ -83,6 +94,10 @@ class DummySolarForecaster(SolarForecaster):
         return DailySolarForecast(forecasts)
 
     def get_connection_info(self) -> JSONDict:
+        maybe_inject_failure(
+            FailureLocation.get_connection_info,
+            self.failure,
+        )
         return {
             'connection': self.__class__.__name__,
             'panel_capacity': self.panel_capacity,
