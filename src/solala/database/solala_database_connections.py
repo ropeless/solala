@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import TracebackType
-from typing import Self, AsyncContextManager
+from typing import Self
 from urllib.parse import quote_plus
 
 from psycopg_pool import AsyncConnectionPool
@@ -50,6 +50,7 @@ class _DatabaseReservation:
             timeout: float | None,
     ) -> None:
         self._pool = pool
+        # noinspection PyProtectedMember
         self._context = pool._borrow_database(commit_on_close, timeout)
         self._entered = False
         self._released = False
@@ -58,6 +59,7 @@ class _DatabaseReservation:
         """Release this reservation exactly once, including when unused."""
         if not self._released:
             self._released = True
+            # noinspection PyProtectedMember
             self._pool._release_request()
 
     async def __aenter__(self) -> SolalaDatabase:

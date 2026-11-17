@@ -344,7 +344,7 @@ class _ControlState:
             self.cache.solar_forecast_cache.clear()
 
     def reset_consumer(self, consumer_name: str, consumer: PowerConsumer | None,
-                             settings: ConsumerConnection | None) -> None:
+                       settings: ConsumerConnection | None) -> None:
         if consumer is None:
             assert settings is None
             self.connections.consumers.pop(consumer_name, None)
@@ -355,7 +355,7 @@ class _ControlState:
             self.connections.consumers_settings[consumer_name] = settings
 
     def reset_database(self, database: SolalaDatabaseConnections | None,
-                             settings: DatabaseConnection | None) -> None:
+                       settings: DatabaseConnection | None) -> None:
         assert (database is None) == (settings is None)
         self.connections.database_connections = database
         self.connections.database_settings = settings
