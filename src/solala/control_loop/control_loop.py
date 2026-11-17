@@ -488,6 +488,7 @@ def exit_control_loop() -> None:
     """
     # We are not concerned with race conditions, so we do not need to get the control loop lock.
     _CONTROL_STATE.control_loop_running = False
+    _CONTROL_STATE.control_changed.set()
 
 
 async def configure_from_settings(settings: Settings) -> None:
