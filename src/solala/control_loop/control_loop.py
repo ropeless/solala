@@ -343,7 +343,7 @@ class _ControlState:
         async with _cache_state():
             self.cache.solar_forecast_cache.clear()
 
-    async def reset_consumer(self, consumer_name: str, consumer: PowerConsumer | None,
+    def reset_consumer(self, consumer_name: str, consumer: PowerConsumer | None,
                              settings: ConsumerConnection | None) -> None:
         if consumer is None:
             assert settings is None
@@ -354,7 +354,7 @@ class _ControlState:
             self.connections.consumers[consumer_name] = consumer
             self.connections.consumers_settings[consumer_name] = settings
 
-    async def reset_database(self, database: SolalaDatabaseConnections | None,
+    def reset_database(self, database: SolalaDatabaseConnections | None,
                              settings: DatabaseConnection | None) -> None:
         assert (database is None) == (settings is None)
         self.connections.database_connections = database
@@ -1148,7 +1148,7 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
             )
 
         await disconnect_consumer(name)
-        await _CONTROL_STATE.reset_consumer(name, consumer, consumer_connection)
+        _CONTROL_STATE.reset_consumer(name, consumer, consumer_connection)
         connection_info = consumer.get_connection_info()
         log_info(f'Power consumer {name!r} connection: {json.dumps(connection_info)}')
         await _save_settings()
@@ -1163,7 +1163,7 @@ async def disconnect_consumer(name: str) -> None:
         consumer: PowerConsumer | None = _CONTROL_STATE.connections.consumers.get(name)
         if consumer is not None:
             await consumer.close()
-            await _CONTROL_STATE.reset_consumer(name, None, None)
+            _CONTROL_STATE.reset_consumer(name, None, None)
             log_info('Power consumer {name!r} disconnected')
         await _save_settings()
         await _reconfigure_registers(_CONTROL_STATE)
@@ -1251,13 +1251,13 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
             old_pool = connections.database_connections
             if old_pool is not None:
                 old_pool.begin_close()
-            await _CONTROL_STATE.reset_database(None, None)
+            _CONTROL_STATE.reset_database(None, None)
 
         if old_pool is not None:
             await _close_database_pool(old_pool)
 
         async with _connections_state():
-            await _CONTROL_STATE.reset_database(database_connections, database_connection)
+            _CONTROL_STATE.reset_database(database_connections, database_connection)
             connection_info = database_connections.get_connection_info()
             log_info(f'Database connection: {json.dumps(connection_info)}')
             await _save_settings()
@@ -1273,7 +1273,7 @@ async def disconnect_database() -> None:
             old_pool = connections.database_connections
             if old_pool is not None:
                 old_pool.begin_close()
-                await _CONTROL_STATE.reset_database(None, None)
+                _CONTROL_STATE.reset_database(None, None)
 
         if old_pool is not None:
             await _close_database_pool(old_pool)
