@@ -12,8 +12,8 @@ def main() -> None:
     run_failing_server(
         'controller status timeout',
         controller_failure=DummyControllerFailure(
-                location=FailureLocation.get_status,
-                exception=TimeoutError('Simulated controller status timeout'),
+            location=FailureLocation.get_status,
+            exception=TimeoutError('Simulated controller status timeout'),
         ),
     )
 
