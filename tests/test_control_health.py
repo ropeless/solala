@@ -1,5 +1,6 @@
 import importlib
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 from dataclasses import FrozenInstanceError
 
@@ -43,6 +44,33 @@ class ControlHealthTestCase(unittest.TestCase):
         self.assertFalse(health.report_success('device'))
         self.assertEqual(health.severity, Severity.NORMAL)
         self.assertEqual(health.get_issues(), ())
+
+    def test_equal_severity_issues_are_ordered_by_time_then_key(self):
+        health = ControlHealth()
+        with patch('solala.control_loop.control_health.datetime') as clock:
+            clock.now.return_value = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            health.report_failure('z', Severity.WARNING, 'Z failed')
+            health.report_failure('a', Severity.WARNING, 'A failed')
+            health.report_failure('c', Severity.CAUTION, 'C failed')
+        self.assertEqual([issue.key for issue in health.get_issues()], ['a', 'z', 'c'])
+
+    def test_message_change_updates_issue_without_resetting_occurrences(self):
+        health = ControlHealth()
+        health.report_failure('device', Severity.CAUTION, 'First failure')
+        self.assertTrue(health.report_failure('device', Severity.CAUTION, 'Different failure'))
+        issue, = health.get_issues()
+        self.assertEqual(issue.message, 'Different failure')
+        self.assertEqual(issue.occurrences, 2)
+
+    def test_recovery_only_clears_matching_issue_and_recurrence_starts_new_count(self):
+        health = ControlHealth()
+        health.report_failure('device', Severity.WARNING, 'Command uncertain')
+        health.report_failure('price', Severity.CAUTION, 'Price unavailable')
+        self.assertTrue(health.report_success('device'))
+        self.assertEqual(health.severity, Severity.CAUTION)
+        self.assertEqual([issue.key for issue in health.get_issues()], ['price'])
+        health.report_failure('device', Severity.WARNING, 'Command uncertain')
+        self.assertEqual(health.get_issues()[0].occurrences, 1)
 
     def test_snapshot_does_not_change(self):
         health = ControlHealth()
