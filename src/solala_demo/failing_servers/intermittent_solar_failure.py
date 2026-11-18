@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from solala.constants import Constants
 from solala.delegates.solar_forecaster.dummy_solar_forecaster.dummy_solar_forecaster import (
     FailureLocation,
 )
@@ -7,8 +10,12 @@ from solala_demo.failing_servers.common import run_failing_server
 
 def main() -> None:
     """
-    Demonstrate intermittent solar forecast failures and recovery.
+    Demonstrate intermittent solar forecast failures with a short-lived cache.
     """
+    # Accelerate cache refreshes for this demo only; production defaults remain unchanged.
+    Constants.SOLAR_FORECAST_YOUNG = timedelta(seconds=5)
+    Constants.SOLAR_FORECAST_OLD = timedelta(seconds=20)
+
     run_failing_server(
         'intermittent solar forecast',
         forecaster_failure=DummyForecasterFailure(
