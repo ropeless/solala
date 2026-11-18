@@ -12,9 +12,9 @@ def main() -> None:
     run_failing_server(
         'intermittent solar forecast',
         forecaster_failure=DummyForecasterFailure(
-                location=FailureLocation.get_forecast,
-                probability=0.5,
-                exception=TimeoutError('Simulated intermittent solar forecast timeout'),
+            location=FailureLocation.get_forecast,
+            probability=0.5,
+            exception=TimeoutError('Simulated intermittent solar forecast timeout'),
         ),
     )
 
