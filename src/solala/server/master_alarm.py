@@ -171,7 +171,6 @@ class MasterAlarm:
         _ = self._dialog.close()
         await self._select_tab('Log')
 
-
     def close(self) -> None:
         """
         Cancel the client-owned timer.

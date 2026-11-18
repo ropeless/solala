@@ -13,8 +13,8 @@ def main() -> None:
     Demonstrate intermittent solar forecast failures with a short-lived cache.
     """
     # Accelerate cache refreshes for this demo only; production defaults remain unchanged.
-    Constants.SOLAR_FORECAST_YOUNG = timedelta(seconds=5)
-    Constants.SOLAR_FORECAST_OLD = timedelta(seconds=20)
+    Constants.SOLAR_FORECAST_YOUNG = timedelta(seconds=1)
+    Constants.SOLAR_FORECAST_OLD = timedelta(seconds=3)
 
     run_failing_server(
         'intermittent solar forecast',
