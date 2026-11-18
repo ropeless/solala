@@ -38,3 +38,12 @@ The first ten reads fail and produce CAUTION. Keep the System Health dialog
 open and continue observing; after a successful read, the issue clears and
 the alarm returns to NORMAL without restarting the server. Status requests
 are driven by the UI and control-loop listeners, so recovery timing varies.
+
+For `intermittent_solar_failure`, the forecast cache is deliberately shortened
+(5 seconds fresh, 20 seconds maximum age) to make retries observable without
+waiting an hour. Open the Solar tab and watch the forecast and server log for
+several refresh cycles. Failed refreshes may continue serving a cached forecast;
+a forecast failure does **not** itself create a master-alarm CAUTION issue.
+The alarm should remain NORMAL unless another health problem occurs. This
+scenario uses random 50% failures, so individual outcomes are not guaranteed.
+These cache durations apply only to this demo process.
