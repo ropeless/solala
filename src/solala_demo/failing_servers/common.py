@@ -1,7 +1,7 @@
 from datetime import time
 
 from solala.constants import Constants
-from solala.delegates.power_controller.power_controller import InverterMode
+from solala.control_loop.modes_and_policies import InverterMode
 from solala.server import server
 from solala.settings import (
     DummyConsumerConnection,
