@@ -105,7 +105,7 @@ class DummyConsumerConnection(BaseModel):
     failure: DummyConsumerFailure | None = None
 
 
-class DummySolarFailure(DummyFailure):
+class DummyForecasterFailure(DummyFailure):
     """
     Restrict solar forecast fault injection to supported operations.
     """
@@ -126,7 +126,7 @@ class DummySolarForecasterConnection(BaseModel):
 
     panel_capacity: float = 9000
     inverter_limit: float = 8000
-    failure: DummySolarFailure | None = None
+    failure: DummyForecasterFailure | None = None
 
 
 class ModbusControllerConnection(BaseModel):

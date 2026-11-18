@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from solala.delegates.solar_forecaster.dummy_solar_forecaster.dummy_solar_forecaster import (
     DummySolarForecaster, FailureLocation,
 )
-from solala.settings import DummySolarFailure, DummySolarForecasterConnection
+from solala.settings import DummyForecasterFailure, DummySolarForecasterConnection
 
 
 class DummyFailureInjectorTestCase(unittest.IsolatedAsyncioTestCase):
@@ -21,7 +21,7 @@ class DummyFailureInjectorTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_probability_one_always_fails(self) -> None:
         forecaster = DummySolarForecaster(
             9000, 8000,
-            failure=DummySolarFailure(
+            failure=DummyForecasterFailure(
                 location=FailureLocation.get_forecast,
                 exception=TimeoutError('simulated'),
             ),
@@ -32,7 +32,7 @@ class DummyFailureInjectorTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_probability_half_respects_random_draw(self) -> None:
         forecaster = DummySolarForecaster(
             9000, 8000,
-            failure=DummySolarFailure(
+            failure=DummyForecasterFailure(
                 location=FailureLocation.get_forecast,
                 probability=0.5,
                 exception=TimeoutError('simulated'),
@@ -47,7 +47,7 @@ class DummyFailureInjectorTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_sleep_without_exception(self) -> None:
         forecaster = DummySolarForecaster(
             9000, 8000,
-            failure=DummySolarFailure(
+            failure=DummyForecasterFailure(
                 location=FailureLocation.get_forecast,
                 sleep=2.0,
             ),
@@ -59,7 +59,7 @@ class DummyFailureInjectorTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_sync_failure_location(self) -> None:
         forecaster = DummySolarForecaster(
             9000, 8000,
-            failure=DummySolarFailure(
+            failure=DummyForecasterFailure(
                 location=FailureLocation.get_connection_info,
                 exception=RuntimeError('simulated'),
             ),
@@ -69,14 +69,14 @@ class DummyFailureInjectorTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_sync_delay_is_rejected(self) -> None:
         with self.assertRaises(ValidationError):
-            DummySolarFailure(
+            DummyForecasterFailure(
                 location=FailureLocation.get_connection_info,
                 sleep=1.0,
             )
 
     async def test_settings_json_round_trip(self) -> None:
         settings = DummySolarForecasterConnection(
-            failure=DummySolarFailure(
+            failure=DummyForecasterFailure(
                 location=FailureLocation.get_forecast,
                 probability=0.5,
                 exception=ConnectionError('simulated'),
@@ -92,15 +92,15 @@ class DummyFailureInjectorTestCase(unittest.IsolatedAsyncioTestCase):
         for probability in (0.0, 1.5):
             with self.subTest(probability=probability):
                 with self.assertRaises(ValidationError):
-                    DummySolarFailure(
+                    DummyForecasterFailure(
                         location=FailureLocation.get_forecast,
                         probability=probability,
                         exception=RuntimeError('simulated'),
                     )
         with self.assertRaises(ValidationError):
-            DummySolarFailure(location='UNKNOWN', exception=RuntimeError('simulated'))
+            DummyForecasterFailure(location='UNKNOWN', exception=RuntimeError('simulated'))
         with self.assertRaises(ValidationError):
-            DummySolarFailure(location=FailureLocation.get_forecast)
+            DummyForecasterFailure(location=FailureLocation.get_forecast)
 
 
 if __name__ == '__main__':

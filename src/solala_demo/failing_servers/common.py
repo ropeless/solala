@@ -7,7 +7,7 @@ from solala.settings import (
     DummyControllerConnection,
     DummyPricerConnection,
     DummySolarForecasterConnection,
-    Settings,
+    Settings, DummyControllerFailure, DummyForecasterFailure, DummyPricerFailure, DummyConsumerFailure, ConsumerConnection,
 )
 from solala.utils.local_config_help import config
 from solala_demo.log import configure_logger
@@ -16,10 +16,10 @@ from solala_demo.log import configure_logger
 def run_failing_server(
         name: str,
         *,
-        controller: DummyControllerConnection | None = None,
-        pricer: DummyPricerConnection | None = None,
-        consumer: DummyConsumerConnection | None = None,
-        forecaster: DummySolarForecasterConnection | None = None,
+        controller_failure: DummyControllerFailure | None = None,
+        pricer_failure: DummyPricerFailure | None = None,
+        consumer_failure: DummyConsumerFailure | None = None,
+        forecaster_failure: DummyForecasterFailure | None = None,
 ) -> None:
     """
     Run a dummy server with one or more configured failure scenarios.
@@ -29,24 +29,27 @@ def run_failing_server(
 
     Args:
         name: Scenario label displayed in the application title.
-        controller: Optional controller configuration.
-        pricer: Optional pricer configuration.
-        consumer: Optional example consumer configuration.
-        forecaster: Optional solar forecaster configuration.
+        controller_failure: Optional controller failure.
+        pricer_failure: Optional pricer failure.
+        consumer_failure: Optional consumer failure.
+        forecaster_failure: Optional solar forecaster failure.
     """
     configure_logger(level=config.APP_LOG_LEVEL)
 
+    consumers: dict[str, ConsumerConnection] = {
+        'example_consumer': DummyConsumerConnection(current=5, failure=consumer_failure),
+    }
     settings = Settings(
-        controller=controller if controller is not None else DummyControllerConnection(),
-        pricer=pricer if pricer is not None else DummyPricerConnection(
+        controller=DummyControllerConnection(failure=controller_failure),
+        pricer=DummyPricerConnection(
             demand_window=(time(15), time(18)),
+            failure=pricer_failure,
         ),
-        consumers={
-            'example_consumer': consumer if consumer is not None else DummyConsumerConnection(current=5),
-        },
-        forecaster=forecaster if forecaster is not None else DummySolarForecasterConnection(
+        consumers=consumers,
+        forecaster=DummySolarForecasterConnection(
             panel_capacity=config.PANEL_CAPACITY,
             inverter_limit=config.INVERTER_LIMIT,
+            failure=forecaster_failure,
         ),
     )
 
