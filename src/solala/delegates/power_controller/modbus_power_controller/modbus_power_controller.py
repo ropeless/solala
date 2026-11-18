@@ -49,7 +49,7 @@ class ModbusPowerController(PowerController):
     * StorCtl_Mod = 2: batt ≤ OutWRte.
     * StorCtl_Mod = 3: -InWRte ≤ batt ≤ OutWRte.
 
-    Here is an example (where batt is battery power, +ve means discharge, -ve means charge):
+    Here is an example (where "batt" is battery power, +ve means discharge, -ve means charge):
 
     | #  | Mod | In  | Out | In meaning    | Out meaning   | Limit          | Interpretation                         |
     |----|-----|-----|-----|---------------|---------------|----------------|----------------------------------------|
@@ -276,7 +276,7 @@ class ModbusPowerController(PowerController):
     async def force_charge(self) -> None:
         with self._log_it('force_charge'):
             await self._set(self._StorCtl_Mod, 0)  # temporary to avoid any invalid value exception
-            await self._set(self._InWRte, 100) # ignored
+            await self._set(self._InWRte, 100)  # ignored
             await self._set(self._OutWRte, -100)  # force charging at the maximum permitted rate
             await self._set(self._StorCtl_Mod, 2)
             await self._set(self._ChaGriSet, 1)
