@@ -75,6 +75,7 @@ class Constants:
     APP_SUBTITLE: str = 'Home Power Management'
 
     LOOP_TIME: timedelta = _seconds(5)  # target duration for each loop iteration - should be a factor of 1 minute
+    OVERDUE_THRESHOLD: timedelta = _seconds(5)  # additional grace period for the control-loop heartbeat
     LOOP_MIN_SLEEP_TIME: timedelta = _seconds(1)  # minimum sleep time for each loop iteration
     CONTROL_DURATION: int = 11  # number of seconds a control remains active
     DATABASE_LOG_LOOP_TIME: timedelta = _minutes(5)  # target duration for each loop iteration - should be a factor of 1 hour

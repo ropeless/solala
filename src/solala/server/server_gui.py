@@ -12,7 +12,6 @@ from typing import Coroutine, Any
 from nicegui import ui, app, events
 from nicegui.element import Element
 from nicegui.elements.button import Button
-from nicegui.elements.label import Label
 
 from solala.constants import Constants
 from solala.control_loop import control_loop
@@ -25,6 +24,7 @@ from solala.server.day_navigator import DayNavigator
 from solala.server.icons import analytics_name_to_icon_url
 from solala.server.infographic import CLICK_ID_HOME, CLICK_ID_SUN, CLICK_ID_GRID, CLICK_ID_BATTERY, \
     CLICK_ID_INVERTER
+from solala.server.master_alarm import MasterAlarm
 from solala.server.page_session import PageSession
 from solala.server.page_updaters import BatteryButtonUpdater, InverterButtonUpdater, InfographicUpdater, \
     SolarForecastUpdater, PriceForecastUpdater, ChartUpdater, StatusUpdater, RegistersUpdater
@@ -42,9 +42,9 @@ _HEAD_HTML = r'''
 '''
 
 
-def _page_header() -> None:
+def _page_header() -> Element:
     """
-    NiceGui snippet to add the Solala title to the page.
+    Build the persistent Solala page header and return its alarm container.
     """
     with ui.element('div').classes('solala-header'):
 
@@ -55,6 +55,8 @@ def _page_header() -> None:
             with ui.element('div'):
                 ui.label(Constants.APP_NAME).classes('solala-brand-name')
                 ui.label(Constants.APP_SUBTITLE).classes('solala-brand-subtitle')
+
+        return ui.element('div').classes('solala-alarm-container')
 
 
 def _control_header(title: str) -> None:
@@ -156,38 +158,6 @@ def _infographic_click(
         pass
 
 
-def _update_loop_status(loop_status_light: Element, loop_status_label: Label) -> None:
-    """
-    Refresh the control-loop health indicator using `control_loop.loop_check_overdue()`.
-
-    Args:
-        loop_status_light: Element displaying the health indicator colour.
-        loop_status_label: Label displaying the loop health text.
-    """
-    overdue: float = control_loop.loop_check_overdue()
-    if overdue > Constants.LOOP_TIME.total_seconds():
-        loop_status_light.classes(
-            replace='solala-loop-status-light solala-loop-status-stale'
-        )
-        loop_status_light.tooltip('Control loop appears to be stalled')
-        loop_status_label.set_text('stalled')
-        loop_status_label.classes(
-            replace='solala-loop-status-label solala-loop-status-stale'
-        )
-    elif overdue == 0:
-        loop_status_light.classes(
-            replace='solala-loop-status-light solala-loop-status-live'
-        )
-        loop_status_light.tooltip('Control loop appears to be active')
-        loop_status_label.set_text('live')
-        loop_status_label.classes(
-            replace='solala-loop-status-label solala-loop-status-live'
-        )
-    else:
-        # Leave it as it is
-        pass
-
-
 # ====================================================================
 #  Tabbed application
 # ====================================================================
@@ -200,37 +170,11 @@ app.add_static_file(url_path='/manifest.json', local_file=str(RESOURCES / 'manif
 
 async def _build_power_page(container: Element, session: PageSession) -> None:
     """
-    Build the power-flow infographic, loop health indicator, and controls.
+    Build the power-flow infographic and controls.
     """
     with container:
         with ui.element('div').classes('dashboard-card infographic-card'):
-            with ui.row().classes('w-full items-center justify-between'):
-                ui.label('Power').classes('dashboard-card-title')
-                with ui.row().classes('items-center gap-2'):
-                    loop_status_light = ui.element('div').classes(
-                        'solala-loop-status-light solala-loop-status-stale'
-                    )
-                    loop_status_label = ui.label('connecting').classes(
-                        'solala-loop-status-label solala-loop-status-stale'
-                    )
-
-                _update_loop_status(loop_status_light, loop_status_label)
-                session.add_timer(
-                    ui.timer(2.0, partial(_update_loop_status, loop_status_light, loop_status_label))
-                )
-
-                # Register the JavaScript to set the status light to stale when disconnected.
-                # Explicitly ignore the awaitable response.
-                _ = ui.run_javascript(f"""
-                    const light = getHtmlElement({loop_status_light.id});
-                    const label = getHtmlElement({loop_status_label.id});
-                    window.socket.on('disconnect', () => {{
-                        light.className = 'solala-loop-status-light solala-loop-status-stale';
-                        light.title = 'Connection to Solala server lost';
-                        label.textContent = 'stale';
-                        label.className = 'solala-loop-status-label solala-loop-status-stale';
-                    }});
-                """)
+            ui.label('Power').classes('dashboard-card-title')
 
             with ui.element('div').classes('infographic-container'):
                 infographic_element = ui.html(
@@ -552,7 +496,7 @@ async def root_page() -> None:
     colours: Colours = await css_colours()  # must come directly after add_head_html.
 
     with ui.element('div').classes('solala-page'):
-        _page_header()
+        alarm_container = _page_header()
 
         with ui.element('div').classes('dashboard-card tab-navigation'):
             button_container = ui.grid(columns=3).classes('w-full gap-2')
@@ -560,5 +504,9 @@ async def root_page() -> None:
         content_container = ui.element('div').classes('tab-content w-full')
         tab_selector = TabSelector(colours, button_container, content_container)
 
+    with alarm_container:
+        master_alarm = MasterAlarm(tab_selector.select_tab)
+
+    ui.context.client.on_disconnect(master_alarm.close)
     ui.context.client.on_disconnect(tab_selector.close_active_session)
     await tab_selector.select_tab(_FIRST_TAB)

@@ -1,4 +1,5 @@
 import math
+from cmath import isfinite
 from collections.abc import Iterable
 from contextlib import contextmanager
 from typing import Iterator
@@ -291,14 +292,17 @@ class ModbusPowerController(PowerController):
         The limit is the lower of the inverter's maximum power rating and
         its rated power.
 
+        Successful register reads are not logged; failed reads produce warnings
+        and return NaN.
+
         Returns:
             The output power limits in watts, in inverter order,
             coindexed with `self._inverters`.
         """
         return [
             min(
-                await self._get(f'{inverter}/WMax'),
-                await self._get(f'{inverter}/WRtg'),
+                await self._get_for_status(f'{inverter}/WMax'),
+                await self._get_for_status(f'{inverter}/WRtg'),
             )
             for inverter in self._inverters
         ]
@@ -340,7 +344,10 @@ class ModbusPowerController(PowerController):
             # Only inverters receiving the power-limit command are controllable.
             controlled_limits = await self._get_inverter_limit_array()
             controlled_limits = controlled_limits[:len(self._power_controllers)]
+            LOGGER.info(f'controlled inverter limits: {",".join(str(limit) for limit in controlled_limits)}')
             max_power: float = sum(controlled_limits)
+            if not isfinite(max_power):
+                raise ValueError('cannot adjust zero-export limit: inverter max power is unavailable')
             cur_power: float = await self._get_sum(self._W)
 
             # Include normal battery discharge when calculating available power.

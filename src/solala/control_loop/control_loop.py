@@ -106,13 +106,26 @@ class _DateKey:
 @dataclass
 class _PrevControl:
     """
-    Used to keep track of the previous control state, so the control loop only
-    makes changes when needed.
+    Track the previous request and outcomes of control commands.
+
+    Attributes:
+        controller: Controller associated with the tracked state.
+        control_mode: Last effective request, used to detect mode changes.
+        battery_commanded_mode: Last successful battery command, or UNKNOWN
+            after a failure; not independently verified hardware state.
+        inverter_commanded_mode: Last successful inverter command, or UNKNOWN
+            after a failure; not independently verified hardware state.
+        failed_battery_mode: Most recent failed battery request, retained to
+            prevent automatic repetition of an uncertain one-shot command.
+        failed_inverter_mode: Most recent failed inverter request, retained
+            for the same purpose when inverter ENABLE fails.
     """
     controller: PowerController | None = None
     control_mode: ControlMode = field(default_factory=ControlMode)
     battery_commanded_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_commanded_mode: InverterMode = InverterMode.UNKNOWN
+    failed_battery_mode: BatteryMode | None = None
+    failed_inverter_mode: InverterMode | None = None
 
     def reset(self, controller: PowerController | None) -> None:
         """
@@ -124,6 +137,8 @@ class _PrevControl:
         self.controller = controller
         self.battery_commanded_mode = BatteryMode.UNKNOWN
         self.inverter_commanded_mode = InverterMode.UNKNOWN
+        self.failed_battery_mode = None
+        self.failed_inverter_mode = None
         self.control_mode.battery_mode = BatteryMode.UNKNOWN
         self.control_mode.inverter_mode = InverterMode.UNKNOWN
         self.control_mode.battery_policy = BatteryPolicy.MANUAL
@@ -140,7 +155,6 @@ class _PriceCache(LifecycleCache[Price]):
             old=Constants.PRICE_OLD.total_seconds(),
             retry=Constants.PRICE_SETTLE_CHECK.total_seconds(),
             default=_NO_PRICE,
-            interim_message='price is an estimate',
         )
 
 
@@ -308,7 +322,8 @@ class _ControlState:
     control_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_write: bool = True
-    iteration_start: datetime = field(default_factory=now)  # used to confirm the control loop is running
+    iteration_start: datetime = field(default_factory=now)  # used for control-loop scheduling
+    last_control_step: datetime = field(default_factory=now)  # last completed control-step attempt
     registers_to_log: re.Pattern[str] | None = None
     registers_to_log_str: str | None = None
 
@@ -496,17 +511,17 @@ async def control_loop(
 
 def loop_check_overdue() -> float:
     """
-    The control loop is expected to iterate each `Constants.LOOP_TIME` seconds.
-    This returns the number of seconds past the last expected loop, i.e.
-    `max(0, now - (iteration_start + Constants.LOOP_TIME))`.
+    The control loop is expected to complete a step every `Constants.LOOP_TIME` seconds.
+    Return the number of seconds past the next expected completion, i.e.
+    `max(0, now - (last_control_step + Constants.LOOP_TIME))`.
 
     Returns:
         The number of seconds the loop check is overdue (a small number if running normally).
     """
-    # We are not concerned with race conditions, so we do not need to get the control loop lock.
+    # The timestamp is updated on the same event loop; no lock is needed.
     return max(
         0,
-        now().timestamp() - (_CONTROL_STATE.iteration_start.timestamp() + Constants.LOOP_TIME.total_seconds())
+        now().timestamp() - (_CONTROL_STATE.last_control_step.timestamp() + Constants.LOOP_TIME.total_seconds())
     )
 
 
@@ -1412,7 +1427,7 @@ async def _insert_measurement(dt_now: datetime, db: SolalaDatabase) -> None:
 
     forecast: SolarForecast | None = daily_forecast.find_contemporary(dt_now)
     if forecast is None:
-        log_warn(f'No solar forecast found for {dt_now}')
+        log_warn(f'No solar forecast found for {dt_now.strftime("%Y-%m-%d")}')
         forecast: SolarForecast = _NO_FORECAST
 
     measurement = Measurement(
@@ -1470,6 +1485,10 @@ async def _control_loop() -> None:
         else:
             if state.health.report_success('control_step'):
                 log_info('Control step recovered after previous failure')
+        # A completed attempt is a heartbeat even when its failure was handled.
+        # Cancellation propagates before this point and must not refresh it.
+        state.last_control_step = now()
+
         # Ancillary work must not prevent the next control iteration.
         try:
             async with _cache_state() as cache:
@@ -1575,6 +1594,7 @@ async def _control_step(state: _ControlState) -> None:
         if controller is None:
             return
         requested_mode = control_state.control_mode.copy()
+        original_mode = requested_mode.copy()
         # Preserve the effective mode within a policy's hysteresis band.
         # A policy change starts from the newly requested mode instead.
         if requested_mode.battery_policy == prev_state.control_mode.battery_policy:
@@ -1601,7 +1621,14 @@ async def _control_step(state: _ControlState) -> None:
     else:
         if state.health.report_success('battery_policy'):
             log_info('Battery price policy issue resolved')
-    await _execute_battery_mode(state, prev_state, controller, requested_mode)
+    # A policy must not repeat an uncertain one-shot command on every tick.
+    # A manual request from UNKNOWN, however, is an explicit new attempt.
+    battery_retry_suppressed = (prev_state.failed_battery_mode == requested_mode.battery_mode
+                                and original_mode.battery_mode == BatteryMode.UNKNOWN)
+    if not battery_retry_suppressed:
+        await _execute_battery_mode(state, prev_state, controller, requested_mode)
+    if prev_state.failed_battery_mode is not None and requested_mode.battery_mode == prev_state.failed_battery_mode:
+        requested_mode.battery_mode = BatteryMode.UNKNOWN
 
     try:
         await _apply_inverter_policy(requested_mode, pricer_available)
@@ -1615,10 +1642,23 @@ async def _control_step(state: _ControlState) -> None:
     else:
         if state.health.report_success('inverter_policy'):
             log_info('Inverter price policy issue resolved')
-    await _execute_inverter_mode(state, prev_state, controller, requested_mode)
+    inverter_retry_suppressed = (prev_state.failed_inverter_mode == requested_mode.inverter_mode
+                                 and original_mode.inverter_mode == InverterMode.UNKNOWN)
+    if not inverter_retry_suppressed:
+        await _execute_inverter_mode(state, prev_state, controller, requested_mode)
+    if prev_state.failed_inverter_mode is not None and requested_mode.inverter_mode == prev_state.failed_inverter_mode:
+        requested_mode.inverter_mode = InverterMode.UNKNOWN
 
-    async with _control_settings_state():
-        # Preserve the last request, even if a command failed.
+    async with _control_settings_state() as control_state:
+        # Publish UNKNOWN only if no newer user request arrived during I/O.
+        if (prev_state.failed_battery_mode is not None
+                and control_state.control_mode.battery_mode == original_mode.battery_mode
+                and control_state.control_mode.battery_policy == original_mode.battery_policy):
+            control_state.control_mode.battery_mode = BatteryMode.UNKNOWN
+        if (prev_state.failed_inverter_mode is not None
+                and control_state.control_mode.inverter_mode == original_mode.inverter_mode
+                and control_state.control_mode.inverter_policy == original_mode.inverter_policy):
+            control_state.control_mode.inverter_mode = InverterMode.UNKNOWN
         prev_state.control_mode = requested_mode
 
 
@@ -1691,11 +1731,13 @@ async def _execute_battery_mode(
             # A partial write can leave hardware state unknown. Reconciliation
             # is required before attempting an automatic retry.
             prev_state.battery_commanded_mode = BatteryMode.UNKNOWN
+            prev_state.failed_battery_mode = requested_mode.battery_mode
             if state.health.report_failure('battery_command', Severity.WARNING,
                                            'Battery command outcome is uncertain'):
                 log_exception(f'Battery command failed: {requested_mode.battery_mode}')
         else:
             prev_state.battery_commanded_mode = requested_mode.battery_mode
+            prev_state.failed_battery_mode = None
             if state.health.report_success('battery_command'):
                 log_info('Battery command completed after previous failure')
 
@@ -1707,7 +1749,7 @@ async def _execute_inverter_mode(
         requested_mode: ControlMode,
 ) -> None:
     """
-    Execute inverter one-shot or live commands and record their outcomes.
+    Execute inverter one-shot or keep-alive commands and record their outcomes.
     """
     inverter_mode_changed: bool = requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
     if inverter_mode_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
@@ -1715,11 +1757,13 @@ async def _execute_inverter_mode(
             await power_controller.enable_inverter()
         except Exception:
             prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
+            prev_state.failed_inverter_mode = requested_mode.inverter_mode
             if state.health.report_failure('inverter_command', Severity.WARNING,
                                            'Inverter command outcome is uncertain'):
                 log_exception(f'Inverter command failed: {requested_mode.inverter_mode}')
         else:
             prev_state.inverter_commanded_mode = requested_mode.inverter_mode
+            prev_state.failed_inverter_mode = None
             if state.health.report_success('inverter_command'):
                 log_info('Inverter command completed after previous failure')
 
@@ -1740,6 +1784,9 @@ async def _execute_inverter_mode(
     else:
         if requested_mode.inverter_mode in (InverterMode.DISABLE, InverterMode.ZERO_EXPORT):
             prev_state.inverter_commanded_mode = requested_mode.inverter_mode
+            # A successful keep-alive resolves any earlier inverter command
+            # uncertainty, including a failed one-shot ENABLE request.
+            prev_state.failed_inverter_mode = None
             if state.health.report_success('inverter_command'):
                 log_info('Inverter command completed after previous failure')
 
@@ -1750,6 +1797,7 @@ def _connect_dummy_controller(controller_connection: DummyControllerConnection) 
         house_power=controller_connection.house_power,
         max_charge_param=controller_connection.max_charge_param,
         max_discharge_param=controller_connection.max_discharge_param,
+        failure=controller_connection.failure,
     )
 
 
@@ -1761,6 +1809,7 @@ def _connect_dummy_pricer(pricer_connection: DummyPricerConnection) -> PowerPric
         feed_in_price_discount_max=pricer_connection.feed_in_price_discount_max,
         cur_price_is_estimate=pricer_connection.cur_price_is_estimate,
         demand_window=pricer_connection.demand_window,
+        failure=pricer_connection.failure,
     )
 
 
@@ -1770,6 +1819,7 @@ def _connect_dummy_consumer(consumer_connection: DummyConsumerConnection) -> Pow
         current=consumer_connection.current,
         power=consumer_connection.power,
         on=consumer_connection.on,
+        failure=consumer_connection.failure,
     )
 
 
@@ -1777,6 +1827,7 @@ def _connect_dummy_solar_forecaster(forecaster_connection: DummySolarForecasterC
     return DummySolarForecaster(
         panel_capacity=forecaster_connection.panel_capacity,
         inverter_limit=forecaster_connection.inverter_limit,
+        failure=forecaster_connection.failure,
     )
 
 

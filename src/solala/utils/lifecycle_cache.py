@@ -221,7 +221,7 @@ class LifecycleCache[T]:
             retry: float | None = None,
             default: T | Sentinel = NO_VALUE,
             valid_message: str = '',
-            interim_message: str = 'interim value received: {value!r}',
+            interim_message: str = '',
             error_message: str = '{message}',
     ) -> None:
         """

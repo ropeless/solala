@@ -3,7 +3,7 @@ from pprint import pprint
 
 from tuya_connector import TuyaOpenAPI
 
-from solala.register import RegisterBank
+from solala.register_bank import RegisterBank
 from solala.utils.local_config_help import config
 from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
 
@@ -50,8 +50,9 @@ async def main() -> None:
             access_secret=config.POWER_POINT_ACCESS_SECRET,
             device_id=config.POWER_POINT_DEVICE,
     ) as device:
-        register: RegisterBank = await device.get_registers()
-        async for name, value in register.items():
+        register_bank: RegisterBank = await device.get_registers()
+        for name, register in register_bank.items():
+            value = await register.get()
             print(f'{name} =  {value!r}')
 
 

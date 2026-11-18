@@ -1,12 +1,31 @@
 import random
 from datetime import datetime, timedelta, date, time
+from enum import auto
 
 from solala.constants import GUI_TIME_FORMAT
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
 from solala.utils.time_extras import ensure_date, local_time_zone
 from solala.utils.json_extras import JSONDict
+from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, async_maybe_inject_failure
 
 _FIVE_MINUTES: timedelta = timedelta(minutes=5)
+
+
+class FailureLocation(BaseFailureLocation):
+    """
+    Operations supporting simulated electricity price failures.
+    """
+
+    get_connection_info = auto()
+    get_price = auto()
+    get_price_forecast = auto()
+    get_demand_window = auto()
+
+    def is_async(self) -> bool:
+        """
+        Return whether the selected operation is asynchronous.
+        """
+        return self != FailureLocation.get_connection_info
 
 
 class DummyPowerPricer(PowerPricer):
@@ -24,6 +43,7 @@ class DummyPowerPricer(PowerPricer):
             feed_in_price_discount_max: float = 5,
             cur_price_is_estimate: bool = False,
             demand_window: tuple[time, time] | None = None,
+            failure: DummyFailure | None = None,
     ) -> None:
         """
         Initialise the simulated price generator.
@@ -41,7 +61,9 @@ class DummyPowerPricer(PowerPricer):
                 as an estimate.
             demand_window: Optional start and end times of the daily demand
                 window, in local time.
+            failure: Optional simulated failure configuration.
         """
+        self.failure = failure
         self._local_tz = local_time_zone()
 
         if demand_window is not None:
@@ -61,6 +83,7 @@ class DummyPowerPricer(PowerPricer):
         self.demand_window: tuple[time, time] | None = demand_window
 
     def get_connection_info(self) -> JSONDict:
+        maybe_inject_failure(FailureLocation.get_connection_info, self.failure)
         demand_window = (
             None if self.demand_window is None else
             [
@@ -79,6 +102,7 @@ class DummyPowerPricer(PowerPricer):
         }
 
     async def get_price(self) -> Price:
+        await async_maybe_inject_failure(FailureLocation.get_price, self.failure)
         now: datetime = datetime.now(self._local_tz)
 
         # Ensure prices are up to date
@@ -92,6 +116,7 @@ class DummyPowerPricer(PowerPricer):
         return self.prices[0]
 
     async def get_price_forecast(self, count: int) -> list[Price]:
+        await async_maybe_inject_failure(FailureLocation.get_price_forecast, self.failure)
         prices_per_30 = 30 // 5
         needed_prices: int = count * prices_per_30
 
@@ -181,6 +206,7 @@ class DummyPowerPricer(PowerPricer):
         return start < to_time and from_time < end
 
     async def get_demand_window(self, day: date) -> tuple[datetime, datetime] | None:
+        await async_maybe_inject_failure(FailureLocation.get_demand_window, self.failure)
         if self.demand_window is None:
             return None
         else:

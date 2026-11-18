@@ -5,6 +5,7 @@ from solala.delegates.power_controller.power_controller import PowerController, 
 from solala.register import CallRegister
 from solala.register_bank import RegisterBank
 from solala.utils.time_extras import now
+from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, async_maybe_inject_failure
 
 
 class BatteryMode(Enum):
@@ -30,6 +31,32 @@ class InverterMode(Enum):
     ZERO_EXPORT = auto()
 
 
+class FailureLocation(BaseFailureLocation):
+    """
+    Operations supporting simulated power controller failures.
+    """
+
+    get_inverter_limit = auto()
+    get_connection_info = auto()
+    get_registers = auto()
+    get_status = auto()
+    enable_battery = auto()
+    disable_battery = auto()
+    charge_only = auto()
+    discharge_only = auto()
+    force_charge = auto()
+    force_discharge = auto()
+    enable_inverter = auto()
+    disable_inverter = auto()
+    zero_export = auto()
+
+    def is_async(self) -> bool:
+        """
+        Return whether the selected operation is asynchronous.
+        """
+        return self != FailureLocation.get_connection_info
+
+
 class DummyPowerController(PowerController):
     """
     A dummy power controller for testing and demonstration purposes.
@@ -50,7 +77,7 @@ class DummyPowerController(PowerController):
             house_power: float,
             max_charge_param: float,
             max_discharge_param: float,
-
+            failure: DummyFailure | None = None,
     ) -> None:
         """
         Initialise a dummy power system.
@@ -60,7 +87,10 @@ class DummyPowerController(PowerController):
             house_power: Fixed simulated house load, in watts.
             max_charge_param: Maximum simulated battery charging power, in watts.
             max_discharge_param: Maximum simulated battery discharging power, in watts.
+            failure: Optional simulated failure configuration.
         """
+        # Disable injection while initialising registers and simulated state.
+        self.failure = None
         self.state_of_charge = 50
 
         self.house_power = house_power
@@ -88,11 +118,14 @@ class DummyPowerController(PowerController):
         })
 
         self.update_status()
+        self.failure = failure
 
     async def get_inverter_limit(self) -> float:
+        await async_maybe_inject_failure(FailureLocation.get_inverter_limit, self.failure)
         return self.inverter_limit
 
     def get_connection_info(self) -> dict[str, int | float | str]:
+        maybe_inject_failure(FailureLocation.get_connection_info, self.failure)
         return {
             'connection': self.__class__.__name__,
             'battery_mode': self.battery_mode.name,
@@ -112,9 +145,11 @@ class DummyPowerController(PowerController):
         return self.get_connection_info()[key]
 
     async def get_registers(self) -> RegisterBank:
+        await async_maybe_inject_failure(FailureLocation.get_registers, self.failure)
         return self.registers
 
     async def get_status(self) -> PowerStatus:
+        await async_maybe_inject_failure(FailureLocation.get_status, self.failure)
         self.update_status()
         return PowerStatus(
             state_of_charge=self.state_of_charge,
@@ -131,38 +166,47 @@ class DummyPowerController(PowerController):
         )
 
     async def enable_battery(self) -> None:
+        await async_maybe_inject_failure(FailureLocation.enable_battery, self.failure)
         self.battery_mode = BatteryMode.ENABLE
         self.update_status()
 
     async def disable_battery(self) -> None:
+        await async_maybe_inject_failure(FailureLocation.disable_battery, self.failure)
         self.battery_mode = BatteryMode.DISABLE
         self.update_status()
 
     async def charge_only(self) -> None:
+        await async_maybe_inject_failure(FailureLocation.charge_only, self.failure)
         self.battery_mode = BatteryMode.CHARGE_ONLY
         self.update_status()
 
     async def discharge_only(self) -> None:
+        await async_maybe_inject_failure(FailureLocation.discharge_only, self.failure)
         self.battery_mode = BatteryMode.DISCHARGE_ONLY
         self.update_status()
 
     async def force_charge(self) -> None:
+        await async_maybe_inject_failure(FailureLocation.force_charge, self.failure)
         self.battery_mode = BatteryMode.FORCE_CHARGE
         self.update_status()
 
     async def force_discharge(self) -> None:
+        await async_maybe_inject_failure(FailureLocation.force_discharge, self.failure)
         self.battery_mode = BatteryMode.FORCE_DISCHARGE
         self.update_status()
 
     async def enable_inverter(self) -> None:
+        await async_maybe_inject_failure(FailureLocation.enable_inverter, self.failure)
         self.inverter_mode = InverterMode.ENABLE
         self.update_status()
 
     async def disable_inverter(self, *, change_duration: int) -> None:
+        await async_maybe_inject_failure(FailureLocation.disable_inverter, self.failure)
         self.inverter_mode = InverterMode.DISABLE
         self.update_status()
 
     async def zero_export(self, *, change_duration: int) -> None:
+        await async_maybe_inject_failure(FailureLocation.zero_export, self.failure)
         self.inverter_mode = InverterMode.ZERO_EXPORT
         self.update_status()
 
