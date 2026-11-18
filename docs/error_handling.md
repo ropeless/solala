@@ -4,10 +4,12 @@ Error Handling and Recovery Policy
 Status
 ------
 
-This document defines the **intended** error-handling and recovery policy for
-Solala. It is a design contract, not a claim that every behaviour described
-here is already implemented. Implementation will be introduced and tested
-incrementally.
+This document describes Solala's implemented error-handling and recovery
+mechanisms and the safety requirements governing them. The control loop,
+`ControlHealth`, lifecycle caches and persistent master alarm implement the
+mechanisms described below. Requirements concerning hardware command
+verification and reconciliation remain obligations of each delegate; the
+master alarm does not independently establish hardware safety.
 
 Purpose and principles
 ----------------------
@@ -31,16 +33,17 @@ an uncertain system state into an apparently successful control operation.
 Failure handling
 ----------------
 
-The control loop should survive recoverable failures and unexpected exceptions
-within an iteration. A failed subsystem must not stop unrelated work: for
+The control loop isolates handled operational failures so that independent
+work can continue within an iteration. A failed subsystem does not by itself
+prevent unrelated work: for
 example, a failed battery command should not prevent an independent inverter
 command from being attempted when that command is safe.
 
 Errors in individual consumers, forecasts, price services, measurement
-persistence, register logging and UI listeners should be isolated at suitable
-boundaries. The database loop must also remain operational after recoverable
-database failures. A failure in one reporting source must not be represented
-as a valid zero measurement or as a successful operation.
+persistence, register logging and UI listeners are handled at their respective
+operation boundaries. Recoverable database failures are handled without
+terminating the database loop. A reporting failure is not evidence of a
+valid zero measurement or a successful hardware operation.
 
 Normal shutdown and asyncio task cancellation are not operational failures.
 Cancellation must propagate, and background tasks and connections must be
@@ -77,22 +80,22 @@ requested state.
 Recovery and logging
 --------------------
 
-Transient failures should be retried automatically when safe, with retry
-frequency appropriate to the operation and provider. Repeated failures may
-require backoff, particularly for rate-limited cloud services. A subsequent
-successful operation should clear the corresponding active health issue.
+Recoverable operations are retried according to their control-loop or cache
+schedule. Rate-limited services require provider-appropriate retry behaviour;
+not every delegate implements exponential backoff. A successful recovery
+clears the corresponding active health issue when that operation reports success.
 
-Each distinct issue should have a stable identity, allowing Solala to track
-its first occurrence, latest occurrence and recovery. Log the initial
-failure, meaningful changes, occasional summaries of persistent problems
-and recovery. Avoid logging identical errors every iteration. Unexpected
-exceptions should retain traceback information. The log remains the
-authoritative detailed diagnostic record.
+`ControlHealth` identifies active issues by stable keys and records severity,
+message, first and latest occurrence times, and occurrence count. Repeated
+reports increment the count; a successful operation removes its active issue.
+Callers use the return value from `report_failure()` to suppress unchanged
+error messages where appropriate. The log remains the detailed diagnostic
+record, including traceback context for unexpected exceptions.
 
 System health and master alarm
 ------------------------------
 
-The master alarm has **five displayed conditions**. Each has two distinct
+The persistent master alarm implements **five displayed conditions**. Each has two distinct
 interpretations: **user understanding** describes the potential operational
 impact in plain language; **system understanding** specifies the evidence
 used to select the state. The user interpretation is not a claim that the
@@ -114,19 +117,19 @@ also cause it. **DISCONNECTED** means the browser cannot verify the server's
 current state. The browser must not infer STALLED merely because a server
 response is late.
 
-The master alarm applies these rules in order:
+The master alarm selects its state using these precedence rules:
 
-1. Without a fresh server response, display DISCONNECTED.
-2. With a fresh server response reporting an overdue control-loop heartbeat,
-   display STALLED, regardless of previously reported health.
-3. Otherwise, display NORMAL, CAUTION or WARNING according to the highest
-   active severity reported by ControlHealth.
+1. The browser displays DISCONNECTED when its socket disconnects or its
+   response watchdog expires (6.5 seconds since the last received update).
+2. The server reports STALLED when the control-loop heartbeat exceeds
+   `Constants.OVERDUE_THRESHOLD`, regardless of active health issues.
+3. Otherwise, the server reports NORMAL, CAUTION or WARNING according to the
+   highest active severity in `ControlHealth`.
 
-A restored browser connection alone does not establish current system health.
-After reconnection, retain DISCONNECTED until a fresh server response is received.
-That response may establish STALLED or one of the three operational health
-levels. In particular, never restore a previously displayed NORMAL solely
-because the network connection has returned.
+A restored socket connection first displays DISCONNECTED. The browser accepts
+an operational state only after a subsequent server update. The server sends
+updates every two seconds; the browser watchdog checks freshness every second.
+The browser does not infer STALLED from network silence.
 
 Control-loop heartbeat and timing
 ---------------------------------
@@ -149,37 +152,38 @@ if overdue > Constants.OVERDUE_THRESHOLD.total_seconds():
     # The control-loop heartbeat is overdue.
 ```
 
-The intended configuration is `LOOP_TIME = 5 seconds`,
+The current configuration is `LOOP_TIME = 5 seconds`,
 `OVERDUE_THRESHOLD = 5 seconds` and `CONTROL_DURATION = 11 seconds`.
-Maintain the invariant:
+The timing configuration satisfies the invariant:
 
 ```text
 LOOP_TIME + OVERDUE_THRESHOLD < CONTROL_DURATION
 ```
 
-The overdue calculation must consistently account for the normal loop
-interval and the completion-based heartbeat. The intermediate hysteresis
-region may retain the previous displayed operational indication while the
-server remains reachable; it must not override a known disconnection.
+The overdue calculation accounts for the normal loop interval and the
+completion-based heartbeat. Once STALLED is reported, the server retains it
+while the heartbeat remains overdue, until the control loop catches up.
+Browser-side DISCONNECTED takes precedence over any server-reported state.
 
 User interface
 --------------
 
-The master alarm should remain visible across tabs. Normal operation should
-be reassuring and unobtrusive. CAUTION and WARNING should be conspicuous,
-but should not generate repeated pop-ups, sounds or notifications.
+The master alarm remains visible in the page header across tabs. It uses a
+coloured light and text label without repeated pop-ups, sounds or notifications.
 
-Selecting the alarm should reveal active issues in plain language, ordered
-by severity, including relevant timestamps and occurrence counts, with access
-to the existing Log tab. For STALLED, direct the user to the log; for DISCONNECTED,
-explain that the connection should be checked and displayed log data may be
-stale.
-Resolved issues should disappear from the active alarm automatically while
-remaining in the log. Acknowledgement is not required initially and must
-never be confused with recovery.
+Selecting the alarm opens the **System Health** dialog. It displays the
+server-confirmed status and active issues in severity order, with descriptions,
+first and latest occurrence times, and counts. While open, the dialog updates
+when the health snapshot changes. It provides **Go to Log** and **Close**
+controls. STALLED includes guidance to inspect the log. During a browser
+disconnection, the header shows DISCONNECTED; an open dialog may retain stale
+server-confirmed details because updates have stopped.
 
-Responsibilities and implementation direction
----------------------------------------------
+Recovered issues disappear from the active issue list automatically. No
+acknowledgement mechanism is implemented; historical details remain in the log.
+
+Implementation responsibilities
+-------------------------------
 
 - **Control loop:** Decides which actions are safe, isolates operation
   failures, preserves user intent, reports outcomes, and records completion
@@ -191,11 +195,21 @@ Responsibilities and implementation direction
   without making hardware control decisions. It does not detect a stalled
   control loop or browser disconnection.
 - **Server:** Reports current operational health and heartbeat freshness.
-- **Browser/GUI:** Determines whether a fresh server response is available,
-  applies the five-state precedence rules and presents the persistent alarm.
+- **Browser/GUI:** Detects socket disconnection and stale server responses,
+  overriding the server state with DISCONNECTED when necessary. Presents the
+  persistent alarm and its details.
 - **Log:** Retains technical failure and recovery details.
 
-The precise severity assigned to individual failures, retry schedules and
-command reconciliation procedures remain implementation decisions to be
-established and tested as this policy is implemented.
+**Scope of health reporting:** `ControlHealth` receives explicit failure and
+recovery reports from operational call sites. A failed solar forecast refresh
+handled by `LifecycleCache` does not automatically create a CAUTION issue:
+an unexpired cached forecast may remain available, and cache failures are
+logged separately. The master alarm is not an exhaustive inventory of every
+transient service error.
+
+**Hardware safety boundary:** Severity assignments, retry schedules and
+command reconciliation depend on each operation and delegate. NORMAL means
+no active issues are currently reported; it is not independent verification
+that every physical device is in its requested state. The safety requirements
+above continue to apply to hardware integrations.
 
