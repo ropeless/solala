@@ -15,7 +15,8 @@ Available scenarios:
 - `pricer_failure`: persistent current-price timeout
 - `consumer_failure`: persistent example-consumer status timeout
 - `combined_failure`: simultaneous controller and example-consumer status timeouts
-- `command_failure`: persistent inverter disable command timeout; exercises WARNING
+- `command_failure_keep_alive`: persistent inverter disable timeout; exercises repeated keep-alive WARNING
+- `command_failure_one_shot`: persistent battery disable timeout; exercises one-shot WARNING and recovery
 - `stalled_control_loop`: 18-second battery disable delay; exercises STALLED and recovery
 
 Each module has a `main()` entry point. The common runner forces the
@@ -47,3 +48,8 @@ a forecast failure does **not** itself create a master-alarm CAUTION issue.
 The alarm should remain NORMAL unless another health problem occurs. This
 scenario uses random 50% failures, so individual outcomes are not guaranteed.
 These cache durations apply only to this demo process.
+
+For `command_failure_one_shot`, select **Disable** for the battery. The
+command fails once, the reported mode becomes UNKNOWN, and WARNING persists
+without automatic retries. Select a different battery mode to verify that a
+successful command restores the reported mode and clears the warning.
