@@ -142,7 +142,9 @@ class MasterAlarm:
         self._details_snapshot = snapshot
         self._details.clear()
         with self._details:
-            ui.label(f'Status: {self._state.lower()}').classes('text-subtitle1')
+            ui.label(f'Status: {self._state.lower()}').classes(
+                f'text-subtitle1 solala-alarm-label solala-alarm-{self._state.lower()}'
+            )
             if self._state == 'STALLED':
                 ui.label('Suspected total loss of hardware control. Check the Solala log.')
             elif self._state == 'WARNING':
