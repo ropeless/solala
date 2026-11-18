@@ -6,6 +6,19 @@ from pydantic import BaseModel, Field
 from solala.constants import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, \
     DEFAULT_DB_HOST, DEFAULT_DB_PORT, DEFAULT_DB_NAME
 from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, InverterPolicy, BatteryPolicy
+from solala.delegates.solar_forecaster.dummy_solar_forecaster import dummy_solar_forecaster
+from solala.delegates.power_consumer.dummy_power_consumer import dummy_power_consumer
+from solala.delegates.power_pricer.dummy_power_pricer import dummy_power_pricer
+from solala.delegates.power_controller.dummy_power_controller import dummy_power_controller
+from solala.utils.dummy_failure import DummyFailure
+
+
+class DummyControllerFailure(DummyFailure):
+    """
+    Restrict simulated controller failures to supported operations.
+    """
+
+    location: dummy_power_controller.FailureLocation
 
 
 class DummyControllerConnection(BaseModel):
@@ -17,6 +30,7 @@ class DummyControllerConnection(BaseModel):
         house_power: Simulated household power consumption in watts.
         max_charge_param: Maximum battery charging power in watts.
         max_discharge_param: Maximum battery discharging power in watts.
+        failure: Optional simulated failure configuration.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -25,6 +39,15 @@ class DummyControllerConnection(BaseModel):
     house_power: float = 3000
     max_charge_param: float = 3000
     max_discharge_param: float = 3000
+    failure: DummyControllerFailure | None = None
+
+
+class DummyPricerFailure(DummyFailure):
+    """
+    Restrict simulated price failures to supported operations.
+    """
+
+    location: dummy_power_pricer.FailureLocation
 
 
 class DummyPricerConnection(BaseModel):
@@ -38,6 +61,7 @@ class DummyPricerConnection(BaseModel):
         feed_in_price_discount_max: Upper bound for the simulated feed-in price discount.
         cur_price_is_estimate: Whether the current simulated price is marked as estimated.
         demand_window: Optional start and end times of a demand window.
+        failure: Optional simulated failure configuration.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -48,6 +72,15 @@ class DummyPricerConnection(BaseModel):
     feed_in_price_discount_max: float = 5
     cur_price_is_estimate: bool = False
     demand_window: tuple[time, time] | None = None
+    failure: DummyPricerFailure | None = None
+
+
+class DummyConsumerFailure(DummyFailure):
+    """
+    Restrict simulated consumer failures to supported operations.
+    """
+
+    location: dummy_power_consumer.FailureLocation
 
 
 class DummyConsumerConnection(BaseModel):
@@ -60,6 +93,7 @@ class DummyConsumerConnection(BaseModel):
         power: Active power in watts. Defaults to voltage multiplied by
                 current when omitted. If not None, then must be <= voltage * current.
         on: Is the device switched on. Defaults to True.
+        failure: Optional simulated failure configuration.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -68,6 +102,14 @@ class DummyConsumerConnection(BaseModel):
     current: float = 0
     power: float | None = None
     on: bool = True
+    failure: DummyConsumerFailure | None = None
+
+
+class DummyForecasterFailure(DummyFailure):
+    """
+    Restrict solar forecast fault injection to supported operations.
+    """
+    location: dummy_solar_forecaster.FailureLocation
 
 
 class DummySolarForecasterConnection(BaseModel):
@@ -77,12 +119,14 @@ class DummySolarForecasterConnection(BaseModel):
     Attributes:
         panel_capacity: Rated solar panel capacity in watts.
         inverter_limit: Maximum inverter output in watts.
+        failure: Optional configured simulated failure.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
 
     panel_capacity: float = 9000
     inverter_limit: float = 8000
+    failure: DummyForecasterFailure | None = None
 
 
 class ModbusControllerConnection(BaseModel):

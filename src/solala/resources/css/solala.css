@@ -8,20 +8,29 @@
    --------------------------------------------------------- */
 
 :root {
-    --solala-font-family: Arial, Helvetica, sans-serif;
-
-    --solala-text: #25313b;
-    --solala-danger: #dc2626;
+    /* traffic light colours */
+    --solala-green: #15803d;
     --solala-amber: #ff8c00;
+    --solala-red: #dc2626;
+
+    /* text */
+    --solala-font-family: Arial, Helvetica, sans-serif;
+    --solala-text: #25313b;
+    --solala-danger: var(--solala-red);
+
+    /* master alarm colours */
+    --solala-normal: var(--solala-green);
+    --solala-caution: var(--solala-amber);
+    --solala-warning: var(--solala-red);
+    --solala-stalled: var(--solala-red);
+    --solala-disconnected: var(--solala-red);
 
     --solala-page-bg: #ffffff;
     --solala-card-bg: #f5f7f9;
     --solala-muted: #687078;
     --solala-border: #e1e6ea;
     --solala-accent: #c58b28;
-    --solala-success: #16805b;
-    --solala-live-color: #15803d;
-    --solala-stale-color: #dc2626;
+
 
     --solala-radius: 14px;
     --solala-control-radius: 7px;
@@ -191,33 +200,78 @@ html {
 }
 
 /* ---------------------------------------------------------
-   Control-loop status
+   Persistent master alarm
    --------------------------------------------------------- */
 
-.solala-loop-status-light {
+.solala-alarm-container {
+    flex-shrink: 0;
+}
+
+.solala-master-alarm {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 2px 4px;
+    cursor: pointer;
+}
+
+.solala-alarm-light {
     width: 0.75rem;
     height: 0.75rem;
+    flex: 0 0 0.75rem;
     border-radius: 50%;
 }
 
-.solala-loop-status-label {
+.solala-alarm-label {
     font-size: 0.875rem;
+    font-weight: 400;
+    text-transform: none;
+    white-space: nowrap;
 }
 
-.solala-loop-status-light.solala-loop-status-live {
-    background-color: var(--solala-live-color);
+.solala-alarm-light.solala-alarm-normal {
+    background-color: var(--solala-normal);
+}
+.solala-alarm-label.solala-alarm-normal {
+    color: var(--solala-normal);
 }
 
-.solala-loop-status-light.solala-loop-status-stale {
-    background-color: var(--solala-stale-color);
+.solala-alarm-light.solala-alarm-caution {
+    background-color: var(--solala-caution);
+}
+.solala-alarm-label.solala-alarm-caution {
+    color: var(--solala-caution);
 }
 
-.solala-loop-status-label.solala-loop-status-live {
-    color: var(--solala-live-color);
+.solala-alarm-light.solala-alarm-warning {
+    background-color: var(--solala-warning);
+}
+.solala-alarm-label.solala-alarm-warning {
+    color: var(--solala-warning);
 }
 
-.solala-loop-status-label.solala-loop-status-stale {
-    color: var(--solala-stale-color);
+.solala-alarm-light.solala-alarm-stalled {
+    background-color: var(--solala-stalled);
+}
+.solala-alarm-label.solala-alarm-stalled {
+    color: var(--solala-stalled);
+}
+
+.solala-alarm-light.solala-alarm-disconnected {
+    background-color: var(--solala-disconnected);
+}
+.solala-alarm-label.solala-alarm-disconnected {
+    color: var(--solala-disconnected);
+}
+
+@media (max-width: 600px) {
+    .solala-master-alarm {
+        padding: 2px;
+    }
+
+    .solala-alarm-label {
+        font-size: 0.8rem;
+    }
 }
 
 /* ---------------------------------------------------------
