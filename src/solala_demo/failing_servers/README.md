@@ -15,6 +15,7 @@ Available scenarios:
 - `consumer_failure`: persistent example-consumer status timeout
 - `combined_failure`: simultaneous controller and example-consumer status timeouts
 - `command_failure`: persistent inverter disable command timeout; exercises WARNING
+- `stalled_control_loop`: 18-second battery disable delay; exercises STALLED and recovery
 
 Each module has a `main()` entry point. The common runner forces the
 scenario settings so existing saved dummy settings do not override them.
@@ -25,3 +26,8 @@ starting another scenario on the same port.
 The intermittent scenario is probabilistic; a successful request is not
 guaranteed immediately after a failure. The master alarm's behaviour depends
 on the control loop's error handling and recovery policy.
+
+For `stalled_control_loop`, start the server, wait for NORMAL, then select
+**Disable** for the battery in the Power tab. The dummy controller delays
+that command asynchronously for 18 seconds, after which the control loop
+resumes. The web server should remain responsive during the delay.
