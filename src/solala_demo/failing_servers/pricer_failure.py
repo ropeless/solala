@@ -10,8 +10,8 @@ def main() -> None:
     run_failing_server(
         'electricity price timeout',
         pricer_failure=DummyPricerFailure(
-                location=FailureLocation.get_price,
-                exception=TimeoutError('Simulated electricity price timeout'),
+            location=FailureLocation.get_price,
+            exception=TimeoutError('Simulated electricity price timeout'),
         ),
     )
 
