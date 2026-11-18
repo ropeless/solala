@@ -85,6 +85,7 @@ class FailureLocation(StrEnum):
         """
         Return whether this operation is asynchronous.
         """
+        raise NotImplementedError()
 
 
 class DummyFailure(BaseModel):
