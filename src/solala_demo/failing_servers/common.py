@@ -7,7 +7,12 @@ from solala.settings import (
     DummyControllerConnection,
     DummyPricerConnection,
     DummySolarForecasterConnection,
-    Settings, DummyControllerFailure, DummyForecasterFailure, DummyPricerFailure, DummyConsumerFailure, ConsumerConnection,
+    Settings,
+    DummyControllerFailure,
+    DummyForecasterFailure,
+    DummyPricerFailure,
+    DummyConsumerFailure,
+    ConsumerConnection,
 )
 from solala.utils.local_config_help import config
 from solala_demo.log import configure_logger
