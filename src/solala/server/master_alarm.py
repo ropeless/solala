@@ -42,6 +42,7 @@ class MasterAlarm:
         self._select_tab = select_tab
         self._state = 'DISCONNECTED'
         self._issues: tuple[HealthIssue, ...] = ()
+        self._details_snapshot: tuple[str, tuple[HealthIssue, ...]] | None = None
         with ui.element('div').classes('solala-master-alarm') as indicator:
             self._light = ui.element('div').classes('solala-alarm-light solala-alarm-disconnected')
             self._label = ui.label('disconnected').classes('solala-alarm-label solala-alarm-disconnected')
@@ -120,12 +121,25 @@ class MasterAlarm:
         _ = ui.run_javascript(
             f'window.solalaMasterAlarm?.receive({json.dumps(self._state)});'
         )
+        if self._dialog.value:
+            self._refresh_details()
 
     def _open_details(self) -> None:
         """
         Show the current alarm state and active issue details.
         """
         self._state, self._issues = _alarm_state(self._state)
+        self._refresh_details()
+        self._dialog.open()
+
+    def _refresh_details(self) -> None:
+        """
+        Refresh visible details only when the health snapshot changes.
+        """
+        snapshot = (self._state, self._issues)
+        if snapshot == self._details_snapshot:
+            return
+        self._details_snapshot = snapshot
         self._details.clear()
         with self._details:
             ui.label(f'Status: {self._state.lower()}').classes('text-subtitle1')
@@ -147,7 +161,6 @@ class MasterAlarm:
                     ui.label(f'Last: {issue.last_seen.astimezone().strftime("%Y-%m-%d %H:%M:%S")}').classes(
                         'text-caption')
                     ui.label(f'Occurrences: {issue.occurrences}').classes('text-caption')
-        self._dialog.open()
 
     async def _open_log(self) -> None:
         """
