@@ -1,6 +1,7 @@
 from datetime import time
 
 from solala.constants import Constants
+from solala.delegates.power_controller.power_controller import InverterMode
 from solala.server import server
 from solala.settings import (
     DummyConsumerConnection,
@@ -22,6 +23,7 @@ def run_failing_server(
         name: str,
         *,
         controller_failure: DummyControllerFailure | None = None,
+        inverter_mode: InverterMode | None = None,
         pricer_failure: DummyPricerFailure | None = None,
         consumer_failure: DummyConsumerFailure | None = None,
         forecaster_failure: DummyForecasterFailure | None = None,
@@ -35,6 +37,7 @@ def run_failing_server(
     Args:
         name: Scenario label displayed in the application title.
         controller_failure: Optional controller failure.
+        inverter_mode: Optional initial inverter mode.
         pricer_failure: Optional pricer failure.
         consumer_failure: Optional consumer failure.
         forecaster_failure: Optional solar forecaster failure.
@@ -46,6 +49,7 @@ def run_failing_server(
     }
     settings = Settings(
         controller=DummyControllerConnection(failure=controller_failure),
+        inverter_mode=inverter_mode,
         pricer=DummyPricerConnection(
             demand_window=(time(15), time(18)),
             failure=pricer_failure,
