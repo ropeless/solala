@@ -4,7 +4,7 @@ from abc import abstractmethod
 from enum import StrEnum
 from typing import Annotated, Any, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 from pydantic import PlainSerializer, PlainValidator
 
 _ALLOWED_EXCEPTIONS: dict[str, type[Exception]] = {
@@ -97,12 +97,26 @@ class DummyFailure(BaseModel):
         probability: Probability of injection.
         exception: Optional exception to raise after the delay.
         sleep: Delay in seconds before returning or raising.
+        max_injections: Optional number of times to inject the failure.
     """
 
     location: FailureLocation
     probability: float = Field(default=1.0, gt=0.0, le=1.0)
     exception: SerializableException | None = None
     sleep: float = Field(default=0.0, ge=0.0)
+    max_injections: int | None = Field(default=None, ge=1)
+    _injections: int = PrivateAttr(default=0)
+
+    def should_inject(self) -> bool:
+        """
+        Decide whether to inject, respecting the optional injection limit.
+        """
+        if self.max_injections is not None and self._injections >= self.max_injections:
+            return False
+        if self.probability != 1 and random.random() >= self.probability:
+            return False
+        self._injections += 1
+        return True
 
     @model_validator(mode='after')
     def validate_failure(self) -> Self:
@@ -125,7 +139,7 @@ async def async_maybe_inject_failure(location: FailureLocation, failure: DummyFa
     if (
             failure is not None
             and failure.location == location.name
-            and (failure.probability == 1 or random.random() < failure.probability)
+            and failure.should_inject()
     ):
         # inject the failure
         if failure.sleep > 0:
@@ -150,6 +164,5 @@ def maybe_inject_failure(location: FailureLocation, failure: DummyFailure | None
         return
     if failure.sleep != 0:
         raise ValueError('cannot inject a failure sleep for a synchronous function')
-    if failure.probability == 1 or random.random() < failure.probability:
-        if failure.exception is not None:
-            raise failure.exception
+    if failure.should_inject() and failure.exception is not None:
+        raise failure.exception
