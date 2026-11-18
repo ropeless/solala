@@ -1,7 +1,7 @@
 from solala.delegates.power_controller.dummy_power_controller.dummy_power_controller import (
     FailureLocation,
 )
-from solala.settings import DummyControllerConnection, DummyControllerFailure
+from solala.settings import DummyControllerFailure
 from solala_demo.failing_servers.common import run_failing_server
 
 
@@ -11,11 +11,9 @@ def main() -> None:
     """
     run_failing_server(
         'controller status timeout',
-        controller=DummyControllerConnection(
-            failure=DummyControllerFailure(
+        controller_failure=DummyControllerFailure(
                 location=FailureLocation.get_status,
                 exception=TimeoutError('Simulated controller status timeout'),
-            ),
         ),
     )
 
