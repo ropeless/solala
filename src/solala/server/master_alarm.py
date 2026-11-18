@@ -57,6 +57,8 @@ class MasterAlarm:
                 ui.button('Go to Log', on_click=self._open_log).props('flat')
                 ui.button('Close', on_click=self._dialog.close).props('flat')
 
+        self._dialog_id = self._dialog.id
+
         # Keep this timer alive across tab switches; root_page owns its clean-up.
         self._timer = ui.timer(2.0, self._refresh)
         self._initialise_browser()
@@ -72,6 +74,7 @@ class MasterAlarm:
                 window[key]?.close();
                 const light = getHtmlElement({self._light_id});
                 const label = getHtmlElement({self._label_id});
+                const dialog = getElement({self._dialog_id});
                 let lastResponse = 0;
                 const states = ['normal', 'caution', 'warning', 'stalled', 'disconnected'];
                 const setState = (state) => {{
@@ -82,7 +85,10 @@ class MasterAlarm:
                     }}
                     label.textContent = name;
                 }};
-                const disconnected = () => setState('disconnected');
+                const disconnected = () => {{
+                    setState('disconnected');
+                    dialog?.hide();
+                }};
                 const onDisconnect = () => disconnected();
                 const onConnect = () => {{
                     disconnected();
