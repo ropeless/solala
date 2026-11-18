@@ -113,6 +113,8 @@ class _PrevControl:
     control_mode: ControlMode = field(default_factory=ControlMode)
     battery_commanded_mode: BatteryMode = BatteryMode.UNKNOWN
     inverter_commanded_mode: InverterMode = InverterMode.UNKNOWN
+    failed_battery_mode: BatteryMode | None = None
+    failed_inverter_mode: InverterMode | None = None
 
     def reset(self, controller: PowerController | None) -> None:
         """
@@ -124,6 +126,8 @@ class _PrevControl:
         self.controller = controller
         self.battery_commanded_mode = BatteryMode.UNKNOWN
         self.inverter_commanded_mode = InverterMode.UNKNOWN
+        self.failed_battery_mode = None
+        self.failed_inverter_mode = None
         self.control_mode.battery_mode = BatteryMode.UNKNOWN
         self.control_mode.inverter_mode = InverterMode.UNKNOWN
         self.control_mode.battery_policy = BatteryPolicy.MANUAL
@@ -1579,6 +1583,7 @@ async def _control_step(state: _ControlState) -> None:
         if controller is None:
             return
         requested_mode = control_state.control_mode.copy()
+        original_mode = requested_mode.copy()
         # Preserve the effective mode within a policy's hysteresis band.
         # A policy change starts from the newly requested mode instead.
         if requested_mode.battery_policy == prev_state.control_mode.battery_policy:
@@ -1605,7 +1610,14 @@ async def _control_step(state: _ControlState) -> None:
     else:
         if state.health.report_success('battery_policy'):
             log_info('Battery price policy issue resolved')
-    await _execute_battery_mode(state, prev_state, controller, requested_mode)
+    # A policy must not repeat an uncertain one-shot command on every tick.
+    # A manual request from UNKNOWN, however, is an explicit new attempt.
+    retry_suppressed = (prev_state.failed_battery_mode == requested_mode.battery_mode
+                        and original_mode.battery_mode == BatteryMode.UNKNOWN)
+    if not retry_suppressed:
+        await _execute_battery_mode(state, prev_state, controller, requested_mode)
+    if prev_state.failed_battery_mode is not None and requested_mode.battery_mode == prev_state.failed_battery_mode:
+        requested_mode.battery_mode = BatteryMode.UNKNOWN
 
     try:
         await _apply_inverter_policy(requested_mode, pricer_available)
@@ -1619,10 +1631,23 @@ async def _control_step(state: _ControlState) -> None:
     else:
         if state.health.report_success('inverter_policy'):
             log_info('Inverter price policy issue resolved')
-    await _execute_inverter_mode(state, prev_state, controller, requested_mode)
+    retry_suppressed = (prev_state.failed_inverter_mode == requested_mode.inverter_mode
+                        and original_mode.inverter_mode == InverterMode.UNKNOWN)
+    if not retry_suppressed:
+        await _execute_inverter_mode(state, prev_state, controller, requested_mode)
+    if prev_state.failed_inverter_mode is not None and requested_mode.inverter_mode == prev_state.failed_inverter_mode:
+        requested_mode.inverter_mode = InverterMode.UNKNOWN
 
-    async with _control_settings_state():
-        # Preserve the last request, even if a command failed.
+    async with _control_settings_state() as control_state:
+        # Publish UNKNOWN only if no newer user request arrived during I/O.
+        if (prev_state.failed_battery_mode is not None
+                and control_state.control_mode.battery_mode == original_mode.battery_mode
+                and control_state.control_mode.battery_policy == original_mode.battery_policy):
+            control_state.control_mode.battery_mode = BatteryMode.UNKNOWN
+        if (prev_state.failed_inverter_mode is not None
+                and control_state.control_mode.inverter_mode == original_mode.inverter_mode
+                and control_state.control_mode.inverter_policy == original_mode.inverter_policy):
+            control_state.control_mode.inverter_mode = InverterMode.UNKNOWN
         prev_state.control_mode = requested_mode
 
 
@@ -1695,11 +1720,13 @@ async def _execute_battery_mode(
             # A partial write can leave hardware state unknown. Reconciliation
             # is required before attempting an automatic retry.
             prev_state.battery_commanded_mode = BatteryMode.UNKNOWN
+            prev_state.failed_battery_mode = requested_mode.battery_mode
             if state.health.report_failure('battery_command', Severity.WARNING,
                                            'Battery command outcome is uncertain'):
                 log_exception(f'Battery command failed: {requested_mode.battery_mode}')
         else:
             prev_state.battery_commanded_mode = requested_mode.battery_mode
+            prev_state.failed_battery_mode = None
             if state.health.report_success('battery_command'):
                 log_info('Battery command completed after previous failure')
 
@@ -1719,11 +1746,13 @@ async def _execute_inverter_mode(
             await power_controller.enable_inverter()
         except Exception:
             prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
+            prev_state.failed_inverter_mode = requested_mode.inverter_mode
             if state.health.report_failure('inverter_command', Severity.WARNING,
                                            'Inverter command outcome is uncertain'):
                 log_exception(f'Inverter command failed: {requested_mode.inverter_mode}')
         else:
             prev_state.inverter_commanded_mode = requested_mode.inverter_mode
+            prev_state.failed_inverter_mode = None
             if state.health.report_success('inverter_command'):
                 log_info('Inverter command completed after previous failure')
 
