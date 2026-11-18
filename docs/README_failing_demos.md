@@ -35,7 +35,7 @@ that command asynchronously for 18 seconds, after which the control loop
 resumes. The web server should remain responsive during the delay.
 
 For `recovering_controller`, open the Power tab to request controller status.
-The first ten reads fail and produce CAUTION. Keep the System Health dialog
+The first ten reads fail and produce CAUTION. Keep the System Health dialogue
 open and continue observing; after a successful read, the issue clears and
 the alarm returns to NORMAL without restarting the server. Status requests
 are driven by the UI and control-loop listeners, so recovery timing varies.
