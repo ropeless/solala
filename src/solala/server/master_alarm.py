@@ -87,7 +87,7 @@ class MasterAlarm:
                 }};
                 const disconnected = () => {{
                     setState('disconnected');
-                    dialog?.hide();
+                    if (dialog) dialog.$emit('update:modelValue', false);
                 }};
                 const onDisconnect = () => disconnected();
                 const onConnect = () => {{
