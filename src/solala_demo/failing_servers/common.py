@@ -8,7 +8,6 @@ from solala.settings import (
     DummyPricerConnection,
     DummySolarForecasterConnection,
     Settings,
-    consumers,
 )
 from solala.utils.local_config_help import config
 from solala_demo.log import configure_logger
@@ -42,9 +41,9 @@ def run_failing_server(
         pricer=pricer if pricer is not None else DummyPricerConnection(
             demand_window=(time(15), time(18)),
         ),
-        consumers=consumers(
-            example_consumer=consumer if consumer is not None else DummyConsumerConnection(current=5),
-        ),
+        consumers={
+            'example_consumer': consumer if consumer is not None else DummyConsumerConnection(current=5),
+        },
         forecaster=forecaster if forecaster is not None else DummySolarForecasterConnection(
             panel_capacity=config.PANEL_CAPACITY,
             inverter_limit=config.INVERTER_LIMIT,
