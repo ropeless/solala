@@ -137,7 +137,10 @@ class OneShotCommandTestCase(unittest.IsolatedAsyncioTestCase):
         state.control.control_mode.battery_mode = BatteryMode.DISABLE
         state.control.control_mode.battery_policy = BatteryPolicy.MANUAL
 
-        with patch.object(control_loop, '_CONTROL_STATE', state):
+        with (
+            patch.object(control_loop, '_CONTROL_STATE', state),
+            patch.object(control_loop, 'log_exception'),
+        ):
             await control_loop._control_step(state)
             self.assertEqual((await control_loop.get_control_mode()).battery_mode, BatteryMode.UNKNOWN)
             self.assertEqual((await control_loop.get_control_mode()).battery_policy, BatteryPolicy.MANUAL)
@@ -172,7 +175,10 @@ class OneShotCommandTestCase(unittest.IsolatedAsyncioTestCase):
         state.connections.controller = controller
         state.control.control_mode.inverter_mode = InverterMode.ENABLE
 
-        with patch.object(control_loop, '_CONTROL_STATE', state):
+        with (
+            patch.object(control_loop, '_CONTROL_STATE', state),
+            patch.object(control_loop, 'log_exception'),
+        ):
             await control_loop._control_step(state)
             self.assertEqual((await control_loop.get_control_mode()).inverter_mode, InverterMode.UNKNOWN)
             self.assertEqual(state.health.severity, Severity.WARNING)
