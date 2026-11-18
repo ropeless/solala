@@ -77,6 +77,37 @@ the user's intent where appropriate, report the failure, and continue other
 safe operations. It must not claim that the physical system has reached the
 requested state.
 
+One-shot commands and keep-alive commands
+-----------------------------------------
+
+Battery mode commands and inverter ENABLE are **one-shot commands**: the
+control loop issues them when a new mode is requested, rather than on every
+iteration. If a one-shot command raises an exception, its outcome is uncertain.
+The control loop reports the affected mode as **UNKNOWN**, preserves its
+selected policy, and records a **WARNING** health issue for that command.
+The Status page therefore reports UNKNOWN, and the Power page does not
+highlight the failed mode as though it had succeeded. UNKNOWN describes the
+command outcome; it is not a measurement of the physical device state.
+
+The control loop remembers the failed attempt separately from the reported
+mode so that publishing UNKNOWN does **not** automatically retry the failed
+one-shot command. A user can explicitly select a mode again, including the
+same mode that failed. Each failed explicit attempt increases the issue's
+occurrence count. A subsequent successful mode command updates the reported
+mode and clears that command's WARNING. An automatic policy remains selected
+through a failure; its next genuinely changed mode request may likewise
+trigger a new command, but an unchanged failed request is not retried merely
+because another loop iteration runs.
+
+Inverter DISABLE and ZERO_EXPORT differ: they require **keep-alive commands**
+reissued on each control-loop iteration. The reported mode remains the
+requested DISABLE or ZERO_EXPORT even when a keep-alive fails, so the loop
+continues attempting the restriction. The command health issue remains at
+WARNING while those attempts fail, and its occurrence count increases with
+each failure. A successful keep-alive clears that issue. The displayed mode
+in this case represents the **requested restriction**, not proof that the
+inverter is obeying it; the WARNING communicates the uncertainty.
+
 Recovery and logging
 --------------------
 
