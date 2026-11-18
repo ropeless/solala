@@ -74,7 +74,12 @@ class MasterAlarm:
                 window[key]?.close();
                 const light = getHtmlElement({self._light_id});
                 const label = getHtmlElement({self._label_id});
-                const dialog = getElement({self._dialog_id});
+                const closeHealthDialog = () => {{
+                    const backdrop = document.querySelector('.q-dialog:not(.q-dialog--hidden) .q-dialog__backdrop');
+                    if (backdrop) backdrop.click();
+                    else if (document.querySelector('.q-dialog:not(.q-dialog--hidden)'))
+                        console.warn('Solala: visible health dialog has no backdrop to dismiss');
+                }};
                 let lastResponse = 0;
                 const states = ['normal', 'caution', 'warning', 'stalled', 'disconnected'];
                 const setState = (state) => {{
@@ -87,7 +92,7 @@ class MasterAlarm:
                 }};
                 const disconnected = () => {{
                     setState('disconnected');
-                    if (dialog) dialog.$emit('update:modelValue', false);
+                    closeHealthDialog();
                 }};
                 const onDisconnect = () => disconnected();
                 const onConnect = () => {{
