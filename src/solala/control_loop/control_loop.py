@@ -106,8 +106,19 @@ class _DateKey:
 @dataclass
 class _PrevControl:
     """
-    Used to keep track of the previous control state, so the control loop only
-    makes changes when needed.
+    Track the previous request and outcomes of control commands.
+
+    Attributes:
+        controller: Controller associated with the tracked state.
+        control_mode: Last effective request, used to detect mode changes.
+        battery_commanded_mode: Last successful battery command, or UNKNOWN
+            after a failure; not independently verified hardware state.
+        inverter_commanded_mode: Last successful inverter command, or UNKNOWN
+            after a failure; not independently verified hardware state.
+        failed_battery_mode: Most recent failed battery request, retained to
+            prevent automatic repetition of an uncertain one-shot command.
+        failed_inverter_mode: Most recent failed inverter request, retained
+            for the same purpose when inverter ENABLE fails.
     """
     controller: PowerController | None = None
     control_mode: ControlMode = field(default_factory=ControlMode)
@@ -1612,9 +1623,9 @@ async def _control_step(state: _ControlState) -> None:
             log_info('Battery price policy issue resolved')
     # A policy must not repeat an uncertain one-shot command on every tick.
     # A manual request from UNKNOWN, however, is an explicit new attempt.
-    retry_suppressed = (prev_state.failed_battery_mode == requested_mode.battery_mode
-                        and original_mode.battery_mode == BatteryMode.UNKNOWN)
-    if not retry_suppressed:
+    battery_retry_suppressed = (prev_state.failed_battery_mode == requested_mode.battery_mode
+                                and original_mode.battery_mode == BatteryMode.UNKNOWN)
+    if not battery_retry_suppressed:
         await _execute_battery_mode(state, prev_state, controller, requested_mode)
     if prev_state.failed_battery_mode is not None and requested_mode.battery_mode == prev_state.failed_battery_mode:
         requested_mode.battery_mode = BatteryMode.UNKNOWN
@@ -1631,9 +1642,9 @@ async def _control_step(state: _ControlState) -> None:
     else:
         if state.health.report_success('inverter_policy'):
             log_info('Inverter price policy issue resolved')
-    retry_suppressed = (prev_state.failed_inverter_mode == requested_mode.inverter_mode
-                        and original_mode.inverter_mode == InverterMode.UNKNOWN)
-    if not retry_suppressed:
+    inverter_retry_suppressed = (prev_state.failed_inverter_mode == requested_mode.inverter_mode
+                                 and original_mode.inverter_mode == InverterMode.UNKNOWN)
+    if not inverter_retry_suppressed:
         await _execute_inverter_mode(state, prev_state, controller, requested_mode)
     if prev_state.failed_inverter_mode is not None and requested_mode.inverter_mode == prev_state.failed_inverter_mode:
         requested_mode.inverter_mode = InverterMode.UNKNOWN
@@ -1738,7 +1749,7 @@ async def _execute_inverter_mode(
         requested_mode: ControlMode,
 ) -> None:
     """
-    Execute inverter one-shot or live commands and record their outcomes.
+    Execute inverter one-shot or keep-alive commands and record their outcomes.
     """
     inverter_mode_changed: bool = requested_mode.inverter_mode != prev_state.control_mode.inverter_mode
     if inverter_mode_changed and requested_mode.inverter_mode == InverterMode.ENABLE:
