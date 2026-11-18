@@ -7,8 +7,8 @@ from datetime import timedelta
 
 from solala.utils.json_extras import JSONDict, to_json
 
-DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.1  # disable export below this price
-DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD: float = 0.1  # re-enable export above this price
+DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.01  # disable export below this price
+DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD: float = 0.01  # re-enable export above this price
 DEFAULT_START_CHARGE_PRICE_THRESHOLD: float = 10  # start force charging below this price
 DEFAULT_STOP_CHARGE_PRICE_THRESHOLD: float = 11  # stop force charging above this price
 
