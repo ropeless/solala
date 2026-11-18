@@ -1,7 +1,7 @@
 from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import (
     FailureLocation,
 )
-from solala.settings import DummyConsumerConnection, DummyConsumerFailure
+from solala.settings import DummyConsumerFailure
 from solala_demo.failing_servers.common import run_failing_server
 
 
@@ -11,12 +11,9 @@ def main() -> None:
     """
     run_failing_server(
         'consumer status timeout',
-        consumer=DummyConsumerConnection(
-            current=5,
-            failure=DummyConsumerFailure(
+        consumer_failure=DummyConsumerFailure(
                 location=FailureLocation.get_status,
                 exception=TimeoutError('Simulated consumer status timeout'),
-            ),
         ),
     )
 
