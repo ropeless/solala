@@ -1,7 +1,6 @@
 """
 Provide the persistent master alarm and browser-side freshness monitoring.
 """
-
 import json
 from collections.abc import Awaitable, Callable
 
@@ -143,8 +142,10 @@ class MasterAlarm:
             for issue in self._issues:
                 with ui.card().classes('w-full'):
                     ui.label(f'{issue.severity.name}: {issue.message}').classes('text-weight-medium')
-                    ui.label(f'First: {issue.first_seen.astimezone().strftime("%Y-%m-%d %H:%M:%S")}').classes('text-caption')
-                    ui.label(f'Last: {issue.last_seen.astimezone().strftime("%Y-%m-%d %H:%M:%S")}').classes('text-caption')
+                    ui.label(f'First: {issue.first_seen.astimezone().strftime("%Y-%m-%d %H:%M:%S")}').classes(
+                        'text-caption')
+                    ui.label(f'Last: {issue.last_seen.astimezone().strftime("%Y-%m-%d %H:%M:%S")}').classes(
+                        'text-caption')
                     ui.label(f'Occurrences: {issue.occurrences}').classes('text-caption')
         self._dialog.open()
 
@@ -152,11 +153,12 @@ class MasterAlarm:
         """
         Close details and navigate to the Log tab.
         """
-        await self._dialog.close()
+        _ = self._dialog.close()
         await self._select_tab('Log')
 
-    def close(self) -> None:
-        """
-        Cancel the client-owned timer.
-        """
-        self._timer.cancel()
+
+def close(self) -> None:
+    """
+    Cancel the client-owned timer.
+    """
+    self._timer.cancel()
