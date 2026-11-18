@@ -84,12 +84,15 @@ class Constants:
     PRICE_OLD: timedelta = _minutes(5)  # duration a price forecast is valid
 
     PRICE_FORECAST_DURATION: timedelta = _hours(18)  # how many hours into the future to forecast price
+    PRICE_FORECAST_RETRY: timedelta = _seconds(30)  # time duration a price forecast to retry after an error
     PRICE_FORECAST_YOUNG: timedelta = _minutes(5)  # time duration a price forecast cache is fresh
     PRICE_FORECAST_OLD: timedelta = _hours(1)  # time duration a price forecast cache is valid
 
-    PRICE_DEMAND_WINDOW_YOUNG: timedelta = _hours(1)  # time duration a price demand window cache is fresh
-    PRICE_DEMAND_WINDOW_OLD: timedelta = _hours(12)  # time duration a price demand window cache is valid
+    PRICE_DEMAND_WINDOW_RETRY: timedelta = _seconds(30)  # time duration a demand window to retry after an error
+    PRICE_DEMAND_WINDOW_YOUNG: timedelta = _hours(1)  # time duration a demand window cache is fresh
+    PRICE_DEMAND_WINDOW_OLD: timedelta = _hours(12)  # time duration a demand window cache is valid
 
+    SOLAR_FORECAST_RETRY: timedelta = _seconds(30)  # time duration a solar forecast to retry after an error
     SOLAR_FORECAST_YOUNG: timedelta = _hours(1)  # time duration a solar forecast is valid
     SOLAR_FORECAST_OLD: timedelta = _hours(3)  # time duration a solar forecast is valid
 
