@@ -76,6 +76,9 @@ class MasterAlarm:
                 const label = getHtmlElement({self._label_id});
                 let hiddenDialog = null;
                 let awaitingReset = false;
+                // NiceGUI/Quasar cannot reliably dismiss an open dialog after socket loss.
+                // Hide its DOM locally, then close it through NiceGUI after reconnecting
+                // before removing the temporary style, so stale details never reappear.
                 const hideHealthDialog = () => {{
                     const dialog = [...document.querySelectorAll('.q-dialog')]
                         .find(el => el.textContent?.includes('System Health'));
