@@ -14,6 +14,7 @@ Available scenarios:
 - `pricer_failure`: persistent current-price timeout
 - `consumer_failure`: persistent example-consumer status timeout
 - `combined_failure`: simultaneous controller and example-consumer status timeouts
+- `command_failure`: persistent inverter disable command timeout; exercises WARNING
 
 Each module has a `main()` entry point. The common runner forces the
 scenario settings so existing saved dummy settings do not override them.
