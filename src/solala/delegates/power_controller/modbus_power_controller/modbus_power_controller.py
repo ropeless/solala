@@ -42,6 +42,34 @@ class ModbusPowerController(PowerController):
 
     By default, inverter power curtailment is applied only to the master inverter.
     Set `power_control_slaves` to True to apply power curtailment to all inverters.
+
+    A note about battery control. The governing inequalities are:
+    * StorCtl_Mod = 0: No limits applied.
+    * StorCtl_Mod = 1: -InWRte ≤ batt.
+    * StorCtl_Mod = 2: batt ≤ OutWRte.
+    * StorCtl_Mod = 3: -InWRte ≤ batt ≤ OutWRte.
+
+    Here is an example (where batt is battery power, +ve means discharge, -ve means charge):
+
+    | #  | Mod | In  | Out | In meaning    | Out meaning   | Limit          | Interpretation                         |
+    |----|-----|-----|-----|---------------|---------------|----------------|----------------------------------------|
+    | 1  | 0   |     |     | Ignored       | Ignored       | Unrestricted   | No limits                              |
+    | 2  | 1   | +3  |     | Max charge    | Ignored       | -3 ≤ batt      | Charge ≤ 3; discharge unrestricted     |
+    | 3  | 1   | 0   |     | No charge     | Ignored       | 0 ≤ batt       | Charging prohibited                    |
+    | 4  | 1   | -3  |     | Min discharge | Ignored       | 3 ≤ batt       | Force discharge ≥ 3                    |
+    | 5  | 2   |     | +4  | Ignored       | Max discharge | batt ≤ 4       | Discharge ≤ 4; charge unrestricted     |
+    | 6  | 2   |     | 0   | Ignored       | No discharge  | batt ≤ 0       | Discharging prohibited                 |
+    | 7  | 2   |     | -4  | Ignored       | Min charge    | batt ≤ -4      | Force charge ≥ 4                       |
+    | 8  | 3   | +3  | +4  | Max charge    | Max discharge | -3 ≤ batt ≤ 4  | Charge ≤ 3 or discharge ≤ 4            |
+    | 9  | 3   | +3  | 0   | Max charge    | No discharge  | -3 ≤ batt ≤ 0  | Charge only, ≤ 3                       |
+    | 10 | 3   | +3  | -4  | Max charge    | Min charge    | -3 ≤ batt ≤ -4 | INVALID                                |
+    | 11 | 3   | 0   | +4  | No charge     | Max discharge | 0 ≤ batt ≤ 4   | Discharge only, ≤ 4                    |
+    | 12 | 3   | 0   | 0   | No charge     | No discharge  | 0 ≤ batt ≤ 0   | No battery power                       |
+    | 13 | 3   | 0   | -4  | No charge     | Min charge    | 0 ≤ batt ≤ -4  | INVALID                                |
+    | 14 | 3   | -3  | +4  | Min discharge | Max discharge | 3 ≤ batt ≤ 4   | Force discharge between 3 and 4        |
+    | 15 | 3   | -3  | 0   | Min discharge | No discharge  | 3 ≤ batt ≤ 0   | INVALID                                |
+    | 16 | 3   | -3  | -4  | Min discharge | Min charge    | 3 ≤ batt ≤ -4  | INVALID                                |
+
     """
 
     def __init__(
@@ -238,7 +266,7 @@ class ModbusPowerController(PowerController):
 
     async def disable_battery(self) -> None:
         with self._log_it('disable_battery'):
-            await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            await self._set(self._StorCtl_Mod, 0)  # temporary to avoid any invalid value exception
             await self._set(self._InWRte, 0)
             await self._set(self._OutWRte, 0)
             await self._set(self._StorCtl_Mod, 3)
@@ -247,25 +275,25 @@ class ModbusPowerController(PowerController):
 
     async def force_charge(self) -> None:
         with self._log_it('force_charge'):
-            await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
-            await self._set(self._InWRte, 100)
-            await self._set(self._OutWRte, -100)  # Force charging at the maximum permitted rate
-            await self._set(self._StorCtl_Mod, 3)
+            await self._set(self._StorCtl_Mod, 0)  # temporary to avoid any invalid value exception
+            await self._set(self._InWRte, 100) # ignored
+            await self._set(self._OutWRte, -100)  # force charging at the maximum permitted rate
+            await self._set(self._StorCtl_Mod, 2)
             await self._set(self._ChaGriSet, 1)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
 
     async def force_discharge(self) -> None:
         with self._log_it('force_discharge'):
-            await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
-            await self._set(self._InWRte, -100)  # negative flow
-            await self._set(self._OutWRte, 100)
-            await self._set(self._StorCtl_Mod, 3)
+            await self._set(self._StorCtl_Mod, 0)  # temporary to avoid any invalid value exception
+            await self._set(self._InWRte, -100)  # force discharging at the maximum permitted rate
+            await self._set(self._OutWRte, 100)  # ignored
+            await self._set(self._StorCtl_Mod, 1)
             await self._set(self._ChaGriSet, 0)
             await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
 
     async def charge_only(self) -> None:
         with self._log_it('charge_only'):
-            await self._set(self._StorCtl_Mod, 0)  # Temp to avoid any invalid value exception
+            await self._set(self._StorCtl_Mod, 0)  # temporary to avoid any invalid value exception
             await self._set(self._InWRte, 100)
             await self._set(self._OutWRte, 0)
             await self._set(self._StorCtl_Mod, 3)
