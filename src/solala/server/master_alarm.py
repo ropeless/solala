@@ -157,8 +157,8 @@ class MasterAlarm:
         await self._select_tab('Log')
 
 
-def close(self) -> None:
-    """
-    Cancel the client-owned timer.
-    """
-    self._timer.cancel()
+    def close(self) -> None:
+        """
+        Cancel the client-owned timer.
+        """
+        self._timer.cancel()
