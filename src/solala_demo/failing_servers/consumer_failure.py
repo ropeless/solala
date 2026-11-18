@@ -12,8 +12,8 @@ def main() -> None:
     run_failing_server(
         'consumer status timeout',
         consumer_failure=DummyConsumerFailure(
-                location=FailureLocation.get_status,
-                exception=TimeoutError('Simulated consumer status timeout'),
+            location=FailureLocation.get_status,
+            exception=TimeoutError('Simulated consumer status timeout'),
         ),
     )
 
