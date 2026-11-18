@@ -44,6 +44,56 @@ class DummyFailureInjectorTestCase(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(TimeoutError):
                 await forecaster.get_forecast(date.today())
 
+    async def test_max_injections_stops_after_exact_limit(self) -> None:
+        forecaster = DummySolarForecaster(
+            9000, 8000,
+            failure=DummyForecasterFailure(
+                location=FailureLocation.get_forecast,
+                exception=TimeoutError('simulated'),
+                max_injections=2,
+            ),
+        )
+        for _ in range(2):
+            with self.assertRaises(TimeoutError):
+                await forecaster.get_forecast(date.today())
+        await forecaster.get_forecast(date.today())
+        await forecaster.get_forecast(date.today())
+
+    async def test_failed_probability_draw_does_not_consume_injection_limit(self) -> None:
+        forecaster = DummySolarForecaster(
+            9000, 8000,
+            failure=DummyForecasterFailure(
+                location=FailureLocation.get_forecast,
+                probability=0.5,
+                exception=TimeoutError('simulated'),
+                max_injections=1,
+            ),
+        )
+        with patch('solala.utils.dummy_failure.random.random', side_effect=[0.9, 0.1]):
+            await forecaster.get_forecast(date.today())
+            with self.assertRaises(TimeoutError):
+                await forecaster.get_forecast(date.today())
+        await forecaster.get_forecast(date.today())
+
+    async def test_max_injections_settings_round_trip(self) -> None:
+        settings = DummySolarForecasterConnection(
+            failure=DummyForecasterFailure(
+                location=FailureLocation.get_forecast,
+                exception=TimeoutError('simulated'),
+                max_injections=3,
+            ),
+        )
+        restored = DummySolarForecasterConnection.model_validate_json(settings.model_dump_json())
+        self.assertEqual(restored.failure.max_injections, 3)
+
+    async def test_invalid_max_injections_is_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            DummyForecasterFailure(
+                location=FailureLocation.get_forecast,
+                exception=TimeoutError('simulated'),
+                max_injections=0,
+            )
+
     async def test_sleep_without_exception(self) -> None:
         forecaster = DummySolarForecaster(
             9000, 8000,
