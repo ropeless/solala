@@ -202,12 +202,12 @@ User interface
 The master alarm remains visible in the page header across tabs. It uses a
 coloured light and text label without repeated pop-ups, sounds or notifications.
 
-Selecting the alarm opens the **System Health** dialog. It displays the
+Selecting the alarm opens the **System Health** dialogue. It displays the
 server-confirmed status and active issues in severity order, with descriptions,
-first and latest occurrence times, and counts. While open, the dialog updates
+first and latest occurrence times, and counts. While open, the dialogue updates
 when the health snapshot changes. It provides **Go to Log** and **Close**
 controls. STALLED includes guidance to inspect the log. During a browser
-disconnection, the header shows DISCONNECTED; an open dialog may retain stale
+disconnection, the header shows DISCONNECTED; an open dialogue may retain stale
 server-confirmed details because updates have stopped.
 
 Recovered issues disappear from the active issue list automatically. No

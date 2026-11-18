@@ -2,7 +2,7 @@ from solala.delegates.power_controller.dummy_power_controller.dummy_power_contro
     FailureLocation,
 )
 from solala.settings import DummyControllerFailure
-from solala_demo.failing_servers.common import run_failing_server
+from solala_demo.failing_servers._common import run_failing_server
 
 
 def main() -> None:

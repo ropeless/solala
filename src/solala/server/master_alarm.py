@@ -139,7 +139,7 @@ class MasterAlarm:
 
     def _close_after_reconnect(self) -> None:
         """
-        Reset a browser-hidden dialog after connectivity is restored.
+        Reset a browser-hidden dialogue after connectivity is restored.
         """
         self._dialog.close()
         _ = ui.run_javascript('window.solalaMasterAlarm?.dialogClosed();')

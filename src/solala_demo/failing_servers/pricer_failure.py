@@ -1,6 +1,6 @@
 from solala.delegates.power_pricer.dummy_power_pricer.dummy_power_pricer import FailureLocation
 from solala.settings import DummyPricerFailure
-from solala_demo.failing_servers.common import run_failing_server
+from solala_demo.failing_servers._common import run_failing_server
 
 
 def main() -> None:

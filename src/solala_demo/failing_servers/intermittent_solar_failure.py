@@ -5,7 +5,7 @@ from solala.delegates.solar_forecaster.dummy_solar_forecaster.dummy_solar_foreca
     FailureLocation,
 )
 from solala.settings import DummyForecasterFailure
-from solala_demo.failing_servers.common import run_failing_server
+from solala_demo.failing_servers._common import run_failing_server
 
 
 def main() -> None:
