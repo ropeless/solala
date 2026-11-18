@@ -57,7 +57,7 @@ class MasterAlarm:
                 ui.button('Go to Log', on_click=self._open_log).props('flat')
                 ui.button('Close', on_click=self._dialog.close).props('flat')
 
-        self._dialog_id = self._dialog.id
+        ui.on('solala_health_reconnected', self._close_after_reconnect)
 
         # Keep this timer alive across tab switches; root_page owns its clean-up.
         self._timer = ui.timer(2.0, self._refresh)
@@ -74,11 +74,19 @@ class MasterAlarm:
                 window[key]?.close();
                 const light = getHtmlElement({self._light_id});
                 const label = getHtmlElement({self._label_id});
-                const closeHealthDialog = () => {{
-                    const backdrop = document.querySelector('.q-dialog:not(.q-dialog--hidden) .q-dialog__backdrop');
-                    if (backdrop) backdrop.click();
-                    else if (document.querySelector('.q-dialog:not(.q-dialog--hidden)'))
-                        console.warn('Solala: visible health dialog has no backdrop to dismiss');
+                let hiddenDialog = null;
+                let awaitingReset = false;
+                const hideHealthDialog = () => {{
+                    const dialog = [...document.querySelectorAll('.q-dialog')]
+                        .find(el => el.textContent?.includes('System Health'));
+                    if (!dialog) return;
+                    hiddenDialog = dialog;
+                    dialog.style.setProperty('display', 'none', 'important');
+                }};
+                const resetHealthDialog = () => {{
+                    if (hiddenDialog) hiddenDialog.style.removeProperty('display');
+                    hiddenDialog = null;
+                    awaitingReset = false;
                 }};
                 let lastResponse = 0;
                 const states = ['normal', 'caution', 'warning', 'stalled', 'disconnected'];
@@ -92,7 +100,7 @@ class MasterAlarm:
                 }};
                 const disconnected = () => {{
                     setState('disconnected');
-                    closeHealthDialog();
+                    hideHealthDialog();
                 }};
                 const onDisconnect = () => disconnected();
                 const onConnect = () => {{
@@ -108,8 +116,14 @@ class MasterAlarm:
                         if (!window.socket.connected) return;
                         lastResponse = Date.now();
                         setState(state);
+                        if (hiddenDialog && !awaitingReset) {{
+                            awaitingReset = true;
+                            emitEvent('solala_health_reconnected');
+                        }}
                     }},
+                    dialogClosed() {{ resetHealthDialog(); }},
                     close() {{
+                        resetHealthDialog();
                         window.clearInterval(watchdog);
                         window.socket.off('disconnect', onDisconnect);
                         window.socket.off('connect', onConnect);
@@ -119,6 +133,13 @@ class MasterAlarm:
             }})();
         """
         _ = ui.run_javascript(script)
+
+    def _close_after_reconnect(self) -> None:
+        """
+        Reset a browser-hidden dialog after connectivity is restored.
+        """
+        self._dialog.close()
+        _ = ui.run_javascript('window.solalaMasterAlarm?.dialogClosed();')
 
     def _refresh(self) -> None:
         """
