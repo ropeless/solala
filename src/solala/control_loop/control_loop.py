@@ -1784,6 +1784,9 @@ async def _execute_inverter_mode(
     else:
         if requested_mode.inverter_mode in (InverterMode.DISABLE, InverterMode.ZERO_EXPORT):
             prev_state.inverter_commanded_mode = requested_mode.inverter_mode
+            # A successful keep-alive resolves any earlier inverter command
+            # uncertainty, including a failed one-shot ENABLE request.
+            prev_state.failed_inverter_mode = None
             if state.health.report_success('inverter_command'):
                 log_info('Inverter command completed after previous failure')
 
