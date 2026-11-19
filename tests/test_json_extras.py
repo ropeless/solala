@@ -241,7 +241,6 @@ class TestRenderJson(unittest.TestCase):
             ']',
         )
 
-
     def test_nested_units(self) -> None:
         self.check_render(
             {'system': {'battery': {'power': 1.25}}},
@@ -324,12 +323,26 @@ class TestRenderJson(unittest.TestCase):
             indent=4,
         )
 
-
     def test_string_with_colon(self) -> None:
         self.check_render('status: ready', "'status: ready'")
 
     def test_dictionary_string_with_colon(self) -> None:
         self.check_render({'message': 'status: ready'}, "  message = 'status: ready'")
+
+    def test_dictionary_key_with_colon(self) -> None:
+        self.check_render({'message: status': 'ready'}, "  'message: status' = 'ready'")
+
+    def test_dictionary_key_with_equals(self) -> None:
+        self.check_render({'message = status': 'ready'}, "  'message = status' = 'ready'")
+
+    def test_dictionary_key_with_tab(self) -> None:
+        self.check_render({'message\tstatus': 'ready'}, "  'message\\tstatus' = 'ready'")
+
+    def test_dictionary_key_with_quote(self) -> None:
+        self.check_render({"message'status": 'ready'}, "  \"message'status\" = 'ready'")
+
+    def test_dictionary_key_with_double_quote(self) -> None:
+        self.check_render({'message"status': 'ready'}, "  'message\"status' = 'ready'")
 
     def test_string_with_double_quote(self) -> None:
         self.check_render('a"b', "'a\"b'")
@@ -358,13 +371,13 @@ class TestRenderJson(unittest.TestCase):
     def test_dictionary_key_with_dot(self) -> None:
         self.check_render({'grid.power': 123}, '  grid.power = 123')
 
-    def test_dictionary_key_with_colon(self) -> None:
+    def test_dictionary_key_with_colon_int_value(self) -> None:
         self.check_render({'grid:power': 123}, '  grid:power = 123')
 
     def test_dictionary_key_with_slash(self) -> None:
         self.check_render({'grid/power': 123}, '  grid/power = 123')
 
-    def test_dictionary_key_with_double_quote(self) -> None:
+    def test_dictionary_key_with_double_quote_int_value(self) -> None:
         self.check_render({'a"b': 1}, '  a"b = 1')
 
     def test_dictionary_key_with_unicode(self) -> None:
@@ -453,4 +466,3 @@ class TestRenderJson(unittest.TestCase):
             '  -123\n'
             ']',
         )
-
