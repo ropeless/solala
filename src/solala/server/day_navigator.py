@@ -33,6 +33,7 @@ class DayNavigator:
             auto_height: bool = False,
             title: str = '',
             on_day_change: Callable[[date], Awaitable[None]] | None = None,
+            track_task: Callable[[asyncio.Task[None]], None] | None = None,
     ) -> None:
         """
         Create a carousel of infinite cards, where each card represents a date.
@@ -58,10 +59,12 @@ class DayNavigator:
                 Call `initialise_auto_height()` after the client is ready.
             title: Optional heading above the date navigator.
             on_day_change: Callback invoked when the selected date changes.
+            track_task: Optional callback to register background tasks for cleanup.
         """
 
         self._day: date = _SENTINEL_DATE
         self._on_day_change = on_day_change
+        self._track_task = track_task
         self._focus_slide: int = 0
         self._updaters: Sequence[Updater] = ()  # mapping from slide number to `updater`
         self._touch_start_x: float | None = None  # for our own swipe detection
@@ -261,7 +264,7 @@ class DayNavigator:
         if day_shift == -1:
             self._focus_slide = self._left_slide()
             self._set_display_slide(self._focus_slide)
-            asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+            self._schedule_update(self._update_element(self._left_slide(), day - _ONE_DAY))
 
         elif day_shift == 1:
             self._focus_slide = self._right_slide()
@@ -273,6 +276,14 @@ class DayNavigator:
             await self._update_element(self._focus_slide, day)
             asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
             asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+
+    def _schedule_update(self, update: Awaitable[None]) -> None:
+        """
+        Schedule a neighbouring slide update with optional lifecycle tracking.
+        """
+        task = asyncio.create_task(update)
+        if self._track_task is not None:
+            self._track_task(task)
 
     def refresh_day_label(self) -> None:
         """
