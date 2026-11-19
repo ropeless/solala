@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import date, timedelta
+from typing import Coroutine, Any
 
 from nicegui import ui, events
 from nicegui.element import Element
@@ -24,6 +25,7 @@ class DayNavigator:
     content for the selected, previous, or next day. The carousel supports date-picker,
     button, swipe, and keyboard navigation.
     """
+
     def __init__(
             self,
             *,
@@ -59,7 +61,7 @@ class DayNavigator:
                 Call `initialise_auto_height()` after the client is ready.
             title: Optional heading above the date navigator.
             on_day_change: Callback invoked when the selected date changes.
-            track_task: Optional callback to register background tasks for cleanup.
+            track_task: Optional callback to register background tasks for clean-up.
         """
 
         self._day: date = _SENTINEL_DATE
@@ -277,7 +279,7 @@ class DayNavigator:
             self._schedule_update(self._update_element(self._right_slide(), day + _ONE_DAY))
             self._schedule_update(self._update_element(self._left_slide(), day - _ONE_DAY))
 
-    def _schedule_update(self, update: Awaitable[None]) -> None:
+    def _schedule_update(self, update: Coroutine[Any, Any, None]) -> None:
         """
         Schedule a neighbouring slide update with optional lifecycle tracking.
         """

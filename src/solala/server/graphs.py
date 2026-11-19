@@ -1,7 +1,7 @@
 from abc import abstractmethod, ABC
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from collections.abc import Awaitable, Callable, Sequence
 
 import numpy as np
 from nicegui import ui, events
@@ -69,13 +69,14 @@ class SolalaChart(ABC):
             'series': series,
         }
         if show_legend:
-            options['legend'] = _legend()
-            options['legend']['selected'] = selected_series.copy() if selected_series else {}
+            options['legend'] = _legend(selected_series)
         self.chart = ui.echart(options).classes('w-full')
         if show_legend and on_legend_change is not None:
             async def legend_changed(event: events.GenericEventArguments) -> None:
-                selected = event.args['selected']
+                selected: dict[str, bool] = event.args['selected']
+                assert on_legend_change is not None
                 await on_legend_change(name, selected)
+
             self.chart.on('chart:legendselectchanged', legend_changed)
         self.demand_window_colour = demand_window_colour
 
@@ -137,6 +138,7 @@ class EnergyChart(SolalaChart):
     """
     Display accumulated solar, grid, and battery energy with a forecast.
     """
+
     def __init__(
             self,
             colours: Colours,
@@ -175,6 +177,7 @@ class PowerChart(SolalaChart):
     """
     Display instantaneous solar, grid, battery, and house power.
     """
+
     def __init__(self, colours: Colours, selected_series: dict[str, bool] | None = None,
                  on_legend_change: Callable[[str, dict[str, bool]], Awaitable[None]] | None = None) -> None:
         super().__init__(
@@ -209,6 +212,7 @@ class PriceChart(SolalaChart):
 
     Forecast values are hidden wherever corresponding actual prices exist.
     """
+
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Price',
@@ -251,6 +255,7 @@ class ChargeChart(SolalaChart):
     """
     Plot battery state of charge as a percentage.
     """
+
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Charge',
@@ -365,7 +370,7 @@ def _grid(legend_space: bool) -> JSONDict:
     }
 
 
-def _legend() -> JSONDict:
+def _legend(selected_series: dict[str, bool] | None = None) -> dict[str, JSONValue]:
     """
     Configure a horizontal chart legend.
     """
@@ -381,6 +386,7 @@ def _legend() -> JSONDict:
             'color': '#888',
             'fontSize': 12
         },
+        'selected': {} if selected_series is None else selected_series.copy(),
     }
 
 

@@ -2,7 +2,7 @@ import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
 from datetime import date
-from typing import Any, Protocol
+from typing import Any, Protocol, Coroutine
 
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
@@ -124,7 +124,7 @@ class PageSession:
     async def _add_listener(
             self,
             listener: LoopListener,
-            register: Callable[[LoopListener], Awaitable[None]],
+            register: Callable[[LoopListener], Coroutine[Any, Any, None]],
             unregister: Callable[[LoopListener], Awaitable[None]],
     ) -> None:
         """
@@ -157,7 +157,7 @@ class PageSession:
 
         if self._closed:
             # The session may have closed while registration was in progress.
-            # Its cleanup loop cannot own this listener, so release it here.
+            # Its clean-up loop cannot own this listener, so release it here.
             await cleanup()
             raise RuntimeError('Cannot add resources to a closed page session')
 

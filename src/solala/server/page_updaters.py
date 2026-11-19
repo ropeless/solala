@@ -4,9 +4,9 @@ Provides page updaters for NiceGUI pages.
 
 import asyncio
 from abc import abstractmethod
+from collections.abc import Sequence
 from datetime import datetime, date
 from functools import partial
-from collections.abc import Sequence
 from typing import final
 
 from nicegui import ui
@@ -29,8 +29,8 @@ from solala.server.icons import weather_code_to_icon_url
 from solala.server.infographic import Infographic
 from solala.server.page_session import PageSession
 from solala.server.units_lookup import STATUS_UNITS
+from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json
 from solala.utils.time_extras import now
-from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json, JSONPrimitive
 
 
 class StatusListener(LoopListener):
@@ -231,7 +231,7 @@ class InfographicUpdater(StatusListener):
     """
     Render the SVG power-flow infographic in a page element.
     """
-    
+
     def __init__(self, infographic_element: ContentElement) -> None:
         super().__init__()
         self.infographic_element = infographic_element
@@ -254,7 +254,8 @@ class RegistersUpdater(LoopListener):
 
     @final
     async def update(self) -> None:
-        register_values: dict[str, RegisterValue | Exception] = await control_loop.get_register_bank().get_register_values()
+        register_values: dict[
+            str, RegisterValue | Exception] = await control_loop.get_register_bank().get_register_values()
         self._update(register_values)
 
     def _update(self, register_values: dict[str, RegisterValue | Exception]) -> None:
