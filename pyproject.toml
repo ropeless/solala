@@ -21,6 +21,7 @@ numpy = "*"
 scipy = "*"
 httpx = "*"
 tuya-connector-python = "*"
+python-kasa = "*"
 
 [build-system]
 requires = ["setuptools"]
