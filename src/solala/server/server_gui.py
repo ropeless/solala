@@ -247,7 +247,8 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
                 for element in navigator.get_elements()
             ]
             navigator.set_listeners(*(updater.set_day for updater in updaters))
-            await navigator.set_day(date.today())
+            await navigator.set_day(session.initial_day or date.today())
+            session.add_timer(ui.timer(60, navigator.refresh_day_label))
             await navigator.initialise_auto_height()
             for updater in updaters:
                 await session.add_database_listener(updater)
@@ -411,6 +412,12 @@ class TabSelector:
         self._build_task: asyncio.Task[None] | None = None
         self._transition_lock = asyncio.Lock()
 
+    def restore_state(self, state: UIState) -> None:
+        """
+        Supply the state loaded for this browser page before initial selection.
+        """
+        self._state = state
+
     async def select_tab(self, tab_name: str, *, restored_day: date | None = None) -> None:
         """
         Select a tab, cancelling and cleaning up the previous tab first.
@@ -530,5 +537,5 @@ async def root_page() -> None:
     ui.context.client.on_disconnect(master_alarm.close)
     ui.context.client.on_disconnect(tab_selector.close_active_session)
     state = await state_storage.load()
-    tab_selector._state = state
+    tab_selector.restore_state(state)
     await tab_selector.select_tab(state.tab, restored_day=state.displayed_day)
