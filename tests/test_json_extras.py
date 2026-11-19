@@ -303,6 +303,9 @@ class TestRenderJson(unittest.TestCase):
             ']',
         )
 
+    def test_recursively_empty_dictionaries(self) -> None:
+        self.check_render({'outer': {'inner': {}}}, '')
+
     def test_empty_dictionary_nested_at_multiple_depths(self) -> None:
         self.check_render(
             {'outer': {'empty': {}, 'value': 1}},
