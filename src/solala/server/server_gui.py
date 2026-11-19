@@ -510,3 +510,16 @@ async def root_page() -> None:
     ui.context.client.on_disconnect(master_alarm.close)
     ui.context.client.on_disconnect(tab_selector.close_active_session)
     await tab_selector.select_tab(_FIRST_TAB)
+
+
+@ui.page('/storage_test')
+async def storage_test() -> None:
+    """
+    Diagnose NiceGUI user-storage persistence on the development server.
+    """
+    count = app.storage.user.get('solala_storage_test_count', 0) + 1
+    app.storage.user['solala_storage_test_count'] = count
+
+    ui.label(f'User-storage page loads: {count}')
+    ui.label(f'NiceGUI client ID: {ui.context.client.id}')
+    ui.button('Reload page', on_click=ui.navigate.reload)
