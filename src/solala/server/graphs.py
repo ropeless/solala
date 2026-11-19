@@ -78,7 +78,7 @@ class SolalaChart(ABC):
                 LOGGER.info('Graph legend event: chart=%s args=%r', name, event.args)
                 selected = event.args['selected']
                 await on_legend_change(name, selected)
-            self.chart.on('legendselectchanged', changed)
+            self.chart.on('chart:legendselectchanged', changed)
         self.demand_window_colour = demand_window_colour
 
     def set_selected_series(self, selections: dict[str, bool]) -> None:
