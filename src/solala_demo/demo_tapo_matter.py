@@ -1,4 +1,3 @@
-import argparse
 import asyncio
 import json
 from typing import Any
@@ -9,7 +8,9 @@ from solala.utils.local_config_help import config
 
 
 async def request(ws: aiohttp.ClientWebSocketResponse, command: str, **args: Any) -> Any:
-    '''\n    Send a Matter Server command and wait for its matching response.\n    '''
+    """
+    Send a Matter Server command and wait for its matching response.
+    """
     message_id = 'solala-demo'
     message: dict[str, Any] = {'message_id': message_id, 'command': command}
     if args:
@@ -38,25 +39,19 @@ async def main() -> None:
     Inspect commissioned Matter nodes or operate a selected plug
     """
 
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--server', default=config.MATTER_SERVER_URL)
-    parser.add_argument('--action', choices=('status', 'on', 'off', 'commission'), default='status')
-    parser.add_argument('--node', type=int, help='Matter node ID for on/off')
-    parser.add_argument('--endpoint', type=int, default=1, help='OnOff endpoint (default 1)')
-    args = parser.parse_args()
-
-    if args.action in ('on', 'off') and args.node is None:
-        parser.error('--node is required for on/off')
-    if args.action == 'commission' and not config.MATTER_PAIRING_CODE:
-        parser.error('Set MATTER_PAIRING_CODE to the pairing code from the Tapo app')
+    action = config.MATTER_ACTION  # 'status', 'commission', 'on', or 'off'
+    if action not in ('status', 'commission', 'on', 'off'):
+        raise ValueError(f'Invalid MATTER_ACTION: {action!r}')
+    if action == 'commission' and not config.MATTER_PAIRING_CODE:
+        raise ValueError('MATTER_PAIRING_CODE is required for commissioning')
 
     timeout = aiohttp.ClientTimeout(total=90)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.ws_connect(args.server) as ws:
+        async with session.ws_connect(config.MATTER_SERVER_URL) as ws:
             greeting = await ws.receive_json(timeout=15)
             print(f'Server greeting: {json.dumps(greeting, indent=2, default=str)}')
 
-            if args.action == 'commission':
+            if action == 'commission':
                 # Network-only commissioning: the plug is already on Wi-Fi.
                 # Enable Matter pairing / multi-admin in the Tapo app first.
                 result = await request(
@@ -64,11 +59,11 @@ async def main() -> None:
                     code=config.MATTER_PAIRING_CODE, network_only=True,
                 )
                 print(f'Commissioning result: {json.dumps(result, indent=2, default=str)}')
-            elif args.action in ('on', 'off'):
+            elif action in ('on', 'off'):
                 result = await request(
-                    ws, 'device_command', node_id=args.node,
-                    endpoint_id=args.endpoint, cluster_id=6,
-                    command_name='On' if args.action == 'on' else 'Off',
+                    ws, 'device_command', node_id=config.MATTER_NODE_ID,
+                    endpoint_id=config.MATTER_ENDPOINT_ID, cluster_id=6,
+                    command_name='On' if action == 'on' else 'Off',
                     payload={},
                 )
                 print(f'Switch result: {result!r}')
