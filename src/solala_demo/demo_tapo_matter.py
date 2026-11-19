@@ -96,7 +96,8 @@ async def main() -> None:
     Inspect commissioned Matter nodes or operate a selected plug
     """
 
-    action = config.MATTER_ACTION  # 'status', 'commission', 'on', or 'off'
+    action = 'status'  # 'status', 'commission', 'on', or 'off'
+
     if action not in ('status', 'commission', 'on', 'off'):
         raise ValueError(f'Invalid MATTER_ACTION: {action!r}')
     if action == 'commission' and not config.MATTER_PAIRING_CODE:
