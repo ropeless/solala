@@ -34,6 +34,7 @@ class TuyaPowerConsumer(PowerConsumer):
             current_scale_factor: float = 0.001,
             power_scale_factor: float = 0.1,
             cache_duration: float = 300,
+            include_accumulated_energy: bool = False,
     ) -> None:
         """
         Configure the Tuya API client and device measurements.
@@ -50,8 +51,10 @@ class TuyaPowerConsumer(PowerConsumer):
                 'cur_power' value to watts.
             cache_duration: How long to cache the device status. Use this to reduce how often the
                 API is called. The default value is 300 seconds (5 minutes).
+            include_accumulated_energy: Whether to report Tuya's 'add_ele' value as Wh.
         """
         super().__init__(can_switch=True)
+        self._include_accumulated_energy = include_accumulated_energy
         self._command_url: str = f'/v1.0/iot-03/devices/{device_id}/commands'
         self._voltage_scale_factor: float = voltage_scale_factor
         self._current_scale_factor: float = current_scale_factor
@@ -70,6 +73,7 @@ class TuyaPowerConsumer(PowerConsumer):
             'voltage_scale_factor': self._voltage_scale_factor,
             'current_scale_factor': self._current_scale_factor,
             'power_scale_factor': self._power_scale_factor,
+            'include_accumulated_energy': include_accumulated_energy,
         }
 
         # Cache Tuya device status for the requested duration to limit cloud API usage.
@@ -115,7 +119,7 @@ class TuyaPowerConsumer(PowerConsumer):
             current=current,
             power=power,
             on=on,
-            accumulated_energy=None,
+            accumulated_energy=(json_num(device_status['add_ele']) if self._include_accumulated_energy else None),
         )
 
     async def _get_switch(self) -> bool:
