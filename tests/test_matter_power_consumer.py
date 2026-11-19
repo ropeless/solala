@@ -45,11 +45,15 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_switch_register_and_measurements(self) -> None:
         bank = await self.consumer.get_registers()
         self.assertIs(bank, await self.consumer.get_registers())
-        self.assertTrue(bank['switch'].writable)
-        self.assertTrue(await bank['switch'].get())
-        self.assertEqual(await bank['power'].get(), 125)
-        self.assertEqual(await bank['voltage'].get(), 239)
-        self.assertEqual(await bank['current'].get(), 0.53)
+        self.assertTrue(bank['1/6/0'].writable)
+        self.assertTrue(await bank['1/6/0'].get())
+        self.assertEqual(await bank['1/144/8'].get(), 125000)
+        self.assertEqual(await bank['1/144/11'].get(), 239000)
+        self.assertEqual(await bank['1/144/12'].get(), 530)
+        self.assertNotIn('switch', bank)
+        self.assertNotIn('power', bank)
+        self.assertNotIn('voltage', bank)
+        self.assertNotIn('current', bank)
 
     async def test_missing_node_and_unavailable_node(self) -> None:
         self.consumer._request.return_value = []
@@ -93,6 +97,7 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await bank['0/40/1'].get(), 'Vendor')
         self.assertEqual(await bank['1/145/1/0'].get(), 1234000)
         self.assertFalse(bank['1/145/1/0'].writable)
+        self.assertFalse(bank['1/144/8'].writable)
         self.assertNotIn('0/62/0', bank)
         self.assertNotIn('1/99/0', bank)
 
