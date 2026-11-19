@@ -35,8 +35,8 @@ class PowerConsumer(ABC):
         Get the current electrical status of the consumer.
 
         Returns:
-            The consumer's voltage and current measurements, together with
-            its active power in watts.
+            The consumer's switch state, voltage, current, active power in watts,
+            and accumulated energy in Wh where available.
         """
         ...
 
@@ -69,7 +69,7 @@ class PowerConsumer(ABC):
     async def get_switch(self) -> bool:
         """
         Get the switch state of the consumer (on = True, off = False).
-        This should be equivalent to `self.get_status.on`.
+        This should be equivalent to the on field returned by get_status().
         """
         return await self._get_switch()
 
@@ -77,7 +77,12 @@ class PowerConsumer(ABC):
     async def set_switch(self, on: bool) -> None:
         """
         Set the switch state of the consumer (on = True, off = False).
-        If the switch is not writeable, then
+
+        Args:
+            on: True to switch on, False to switch off.
+
+        Raises:
+            ReadOnlyError: If the consumer does not support switching.
         """
         if self._can_switch:
             await self._set_switch(on)
@@ -135,10 +140,8 @@ class SwitchRegister(Register):
         self._consumer: PowerConsumer = consumer
 
     async def _get(self) -> bool:
-        # noinspection PyProtectedMember
-        return await self._consumer._get_switch()
+        return await self._consumer.get_switch()
 
     async def _set(self, value: RegisterValue) -> None:
         assert isinstance(value, bool), 'should be ensured by the parent class'
-        # noinspection PyProtectedMember
-        return await self._consumer._set_switch(value)
+        await self._consumer.set_switch(value)
