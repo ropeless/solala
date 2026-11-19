@@ -57,12 +57,6 @@ class MatterPowerConsumer(PowerConsumer):
         self._attributes_cache = AsyncMicroCache(self.__fetch_node_attributes, 0.1)
         self._register_bank_lock = asyncio.Lock()
         self._register_bank: RegisterBank | None = None
-        self._status_registers: dict[str, Register] = {
-            'switch': SwitchRegister(self),
-            'voltage': AsyncCallRegister(self._voltage, float),
-            'current': AsyncCallRegister(self._current, float),
-            'power': AsyncCallRegister(self._power, float),
-        }
         self._connection_info: JSONDict = {
             'connection': 'Matter',
             'host': host,
@@ -221,15 +215,6 @@ class MatterPowerConsumer(PowerConsumer):
         )
         await self._attributes_cache.invalidate()
 
-    async def _voltage(self) -> float:
-        return (await self.get_status()).voltage
-
-    async def _current(self) -> float:
-        return (await self.get_status()).current
-
-    async def _power(self) -> float:
-        return (await self.get_status()).power
-
     async def get_registers(self) -> RegisterBank:
         bank = self._register_bank
         if bank is None:
@@ -237,7 +222,7 @@ class MatterPowerConsumer(PowerConsumer):
                 bank = self._register_bank
                 if bank is None:
                     attributes = await self._node_attributes()
-                    registers = dict(self._status_registers)
+                    registers: dict[str, Register] = {}
                     for key, value in self._flatten_attributes(attributes).items():
                         if key in registers:
                             continue
@@ -245,9 +230,12 @@ class MatterPowerConsumer(PowerConsumer):
                             register_type = check_type(type(value))
                         except TypeError:
                             continue
-                        registers[key] = AsyncCallRegister(
-                            partial(self._raw_register_value, key), register_type,
-                        )
+                        if key == f'{self._endpoint_id}/6/0' and register_type is bool:
+                            registers[key] = SwitchRegister(self)
+                        else:
+                            registers[key] = AsyncCallRegister(
+                                partial(self._raw_register_value, key), register_type,
+                            )
                     bank = RegisterBank(registers)
                     self._register_bank = bank
         return bank
