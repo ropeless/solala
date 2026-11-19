@@ -6,7 +6,7 @@ import aiohttp
 
 from solala.delegates.power_consumer.consumer_status import ConsumerStatus
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, SwitchRegister
-from solala.register import AsyncCallRegister, Register
+from solala.register import AsyncCallRegister
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict
 
@@ -23,9 +23,9 @@ class MatterPowerConsumer(PowerConsumer):
             self,
             host: str,
             port: int,
-            node_id: int,
-            endpoint_id: int = 1,
             *,
+            node_id: int,
+            endpoint_id: int,
             token: str | None = None,
             secure: bool = False,
             timeout: float = 30,
@@ -74,9 +74,10 @@ class MatterPowerConsumer(PowerConsumer):
         if self._ws is not None and not self._ws.closed:
             return self._ws
         await self._disconnect()
-        self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self._timeout))
+        session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self._timeout))
+        self._session = session
         try:
-            ws = await self._session.ws_connect(self._url, headers=self._headers)
+            ws = await session.ws_connect(self._url, headers=self._headers)
             self._ws = ws
             greeting = await ws.receive_json(timeout=self._timeout)
             if not isinstance(greeting, dict) or 'sdk_version' not in greeting:
@@ -143,10 +144,10 @@ class MatterPowerConsumer(PowerConsumer):
             raise ConnectionError(f'Invalid Matter switch state: {on!r}')
 
         def measurement(cluster: int, attribute: int) -> float:
-            value = self._attribute(attributes, cluster, attribute)
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
+            _value = self._attribute(attributes, cluster, attribute)
+            if isinstance(_value, bool) or not isinstance(_value, (int, float)):
                 raise ConnectionError(f'Invalid Matter measurement: {value!r}')
-            return float(value) / 1000
+            return float(_value) / 1000
 
         energy = attributes.get(f'{self._endpoint_id}/145/1')
         accumulated_energy: float | None = None
