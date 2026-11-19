@@ -303,6 +303,9 @@ class TestRenderJson(unittest.TestCase):
             ']',
         )
 
+    def test_empty_dictionary_omitted_but_empty_list_preserved(self) -> None:
+        self.check_render({'empty_dict': {}, 'empty_list': []}, '  empty list = []')
+
     def test_recursively_empty_dictionaries(self) -> None:
         self.check_render({'outer': {'inner': {}}}, '')
 
