@@ -3,6 +3,7 @@ Start the Solala web server and control loop on a configured event loop.
 """
 
 import asyncio
+import os
 import selectors
 from pathlib import Path
 
@@ -69,7 +70,12 @@ async def _async_run_server(
     """
     app = FastAPI()
     favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
-    ui.run_with(app, title=Constants.APP_NAME, favicon=favicon)
+    ui.run_with(
+        app,
+        title=Constants.APP_NAME,
+        favicon=favicon,
+        storage_secret=os.environ.get('SOLALA_STORAGE_SECRET'),
+    )
 
     config = uvicorn.Config(
         app,
