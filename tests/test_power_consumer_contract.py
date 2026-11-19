@@ -1,3 +1,4 @@
+import importlib
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -92,6 +93,25 @@ class PowerConsumerContractTestCase(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(TuyaConnection.model_validate_json(tuya.model_dump_json()), tuya)
 
+
+
+    async def test_factory_forwards_dummy_options(self) -> None:
+        control_loop = importlib.import_module('solala.control_loop.control_loop')
+        config = DummyConsumerConnection(can_switch=False, include_accumulated_energy=False)
+        consumer = control_loop._connect_dummy_consumer(config)
+        self.assertFalse(consumer.can_switch)
+        self.assertIsNone((await consumer.get_status()).accumulated_energy)
+
+    async def test_factory_forwards_tuya_options(self) -> None:
+        control_loop = importlib.import_module('solala.control_loop.control_loop')
+        config = TuyaConnection(
+            access_id='test', access_secret='secret', device_id='device',
+            include_accumulated_energy=True, cache_duration=42,
+        )
+        with patch.object(control_loop, 'TuyaPowerConsumer') as factory:
+            control_loop._connect_tuya(config)
+        self.assertEqual(factory.call_args.kwargs['include_accumulated_energy'], True)
+        self.assertEqual(factory.call_args.kwargs['cache_duration'], 42)
 
 class TuyaSwitchContractTestCase(unittest.IsolatedAsyncioTestCase):
     """
