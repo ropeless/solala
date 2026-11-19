@@ -208,6 +208,31 @@ class TuyaConnection(BaseModel):
     include_accumulated_energy: bool = False
 
 
+class MatterConnection(BaseModel):
+    """
+    Configure a Matter power consumer through a Matter Server.
+
+    Attributes:
+        host: Matter Server hostname or IP address.
+        port: Matter Server WebSocket port.
+        node_id: Commissioned Matter node identifier.
+        endpoint_id: Endpoint containing the power consumer.
+        token: Optional bearer token for server authentication.
+        secure: Whether to use a TLS-protected WebSocket.
+        timeout: Server request timeout in seconds.
+    """
+    TYPE: ClassVar[Literal['matter']] = 'matter'
+    type: Literal['matter'] = 'matter'
+
+    host: str
+    port: int
+    node_id: int
+    endpoint_id: int = 1
+    token: str | None = None
+    secure: bool = False
+    timeout: float = 30
+
+
 class OpenMeteoConnection(BaseModel):
     """
     Configure the Open-Meteo solar forecast and photovoltaic system model.
@@ -261,7 +286,7 @@ type PricerConnection = Annotated[
 ]
 
 type ConsumerConnection = Annotated[
-    DummyConsumerConnection | TeslaWallConnectorConnection | TuyaConnection,
+    DummyConsumerConnection | TeslaWallConnectorConnection | TuyaConnection | MatterConnection,
     Field(discriminator='type')
 ]
 
