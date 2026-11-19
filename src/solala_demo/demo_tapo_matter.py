@@ -75,10 +75,10 @@ async def main() -> None:
     """
     Inspect the commissioned P110M and optionally test its relay.
 
-    Set action to 'on' or 'off' to test switching; 'status' makes no changes.
+    Set action to 'toggle' to invert the current switch state; 'status' makes no changes.
     """
-    action = 'status'  # 'status', 'on', 'off'
-    if action not in ('status', 'on', 'off'):
+    action = 'status'  # 'status', 'toggle'
+    if action not in ('status', 'toggle'):
         raise ValueError(f'Invalid action: {action!r}')
 
     url = f'ws://{config.MATTER_SERVER_HOST}:{config.MATTER_SERVER_PORT}/ws'
@@ -98,12 +98,17 @@ async def main() -> None:
             if action != 'status':
                 if len(nodes) != 1:
                     raise RuntimeError('Switch test requires exactly one commissioned node')
-                node_id = nodes[0]['node_id']
-                print(f'Sending {action} command to node {node_id}')
+                node = nodes[0]
+                node_id = node['node_id']
+                switch_state = node.get('attributes', {}).get('1/6/0')
+                if not isinstance(switch_state, bool):
+                    raise RuntimeError(f'Cannot toggle: unknown switch state {switch_state!r}')
+                command_name = 'Off' if switch_state else 'On'
+                print(f'Sending {command_name} command to node {node_id}')
                 await request(
                     ws, 'device_command',
                     node_id=node_id, endpoint_id=1, cluster_id=6,
-                    command_name='On' if action == 'on' else 'Off', payload={},
+                    command_name=command_name, payload={},
                 )
                 print('Command accepted; fetching updated status')
                 nodes = await request(ws, 'get_nodes')
