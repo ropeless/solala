@@ -52,7 +52,7 @@ class GraphLegendTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_one_slide_updates_shared_state_and_all_slides(self) -> None:
         shared: dict[str, dict[str, bool]] = {}
         save_legend = AsyncMock()
-        session = SimpleNamespace(graph_series=shared, on_legend_change=None)
+        session = SimpleNamespace(graph_series=shared, on_legend_change=None, closed=False)
         updaters = [ChartUpdater.__new__(ChartUpdater) for _ in range(3)]
         for updater in updaters:
             updater._session = session
@@ -78,6 +78,18 @@ class GraphLegendTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(shared['Energy'], {'Import': False})
         for updater in updaters:
             updater._energy_chart.set_selected_series.assert_called_once_with({'Import': False})
+
+    async def test_late_legend_change_does_not_modify_shared_state(self) -> None:
+        shared = {'Power': {'Solar': True}}
+        persist = AsyncMock()
+        session = SimpleNamespace(graph_series=shared, on_legend_change=persist, closed=True)
+        updater = ChartUpdater.__new__(ChartUpdater)
+        updater._session = session
+
+        await updater._legend_changed('Power', {'Solar': False})
+
+        self.assertEqual(shared, {'Power': {'Solar': True}})
+        persist.assert_not_awaited()
 
     def test_synchronising_chart_updates_legend_options(self) -> None:
         with patch('solala.server.graphs.ui.echart', side_effect=_fake_echart):
@@ -148,6 +160,35 @@ class PageLifecycleTestCase(unittest.IsolatedAsyncioTestCase):
         await started.wait()
         await session.close()
         self.assertTrue(finished.is_set())
+
+    async def test_navigator_cancels_task_if_registration_fails(self) -> None:
+        navigator = DayNavigator.__new__(DayNavigator)
+        tracked_tasks: list[asyncio.Task[None]] = []
+
+        def reject(task: asyncio.Task[None]) -> None:
+            tracked_tasks.append(task)
+            raise RuntimeError('Session closed')
+
+        navigator._track_task = reject
+        ran = False
+
+        async def update() -> None:
+            nonlocal ran
+            ran = True
+
+        with self.assertRaisesRegex(RuntimeError, 'Session closed'):
+            navigator._schedule_update(update())
+
+        await asyncio.sleep(0)
+        self.assertEqual(len(tracked_tasks), 1)
+        self.assertTrue(tracked_tasks[0].cancelled())
+        self.assertFalse(ran)
+
+    async def test_page_session_reports_closed_state(self) -> None:
+        session = PageSession(MagicMock(), AsyncMock())
+        self.assertFalse(session.closed)
+        await session.close()
+        self.assertTrue(session.closed)
 
     async def test_closed_listener_ignores_late_updates(self) -> None:
         underlying = MagicMock()
