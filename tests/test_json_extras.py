@@ -28,6 +28,9 @@ class TestRenderJson(unittest.TestCase):
     def test_zero(self) -> None:
         self.check_render(0, '0')
 
+    def test_zero_float(self) -> None:
+        self.check_render(0.0, '0')
+
     def test_float_default_precision(self) -> None:
         self.check_render(1.234, '1.2')
 
@@ -39,6 +42,15 @@ class TestRenderJson(unittest.TestCase):
 
     def test_negative_zero(self) -> None:
         self.check_render(-0.0, '0')
+
+    def test_nan(self) -> None:
+        self.check_render(float('nan'), 'nan')
+
+    def test_inf(self) -> None:
+        self.check_render(float('inf'), 'inf')
+
+    def test_neg_inf(self) -> None:
+        self.check_render(float('-inf'), '-inf')
 
     def test_small_float(self) -> None:
         self.check_render(0.0000123, '1.2e-05')
@@ -66,6 +78,9 @@ class TestRenderJson(unittest.TestCase):
 
     def test_mixed_list(self) -> None:
         self.check_render([1, 'hello', True, None], "[\n  1\n  'hello'\n  true\n  none\n]")
+
+    def test_empty_dictionary(self) -> None:
+        self.check_render({}, '')
 
     def test_single_dictionary_entry(self) -> None:
         self.check_render({'power': 123}, '  power = 123')
