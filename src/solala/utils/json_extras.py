@@ -26,6 +26,7 @@ type JSONContainer = JSONDict | JSONList
 _LINE_ENDINGS_PATTERN = re.compile(r'[,{} \t]*\s*(?=\n|$)')
 _BLANK_LINES_PATTERN = re.compile(r'^[ \t]*\r?\n', flags=re.MULTILINE)
 _DICT_ENTRY_SEPARATOR_PATTERN = re.compile(r'(\s*[\w+"]): ')
+_REMOVE_QUOTES_PATTERN = re.compile(r'"([a-zA-Z0-9_$/ ]+)"(\s*:)|"([^"\\]*(?:\\.[^"\\]*)*)"(?!\s*:)')
 
 
 def json_str(value: JSONValue) -> str:
@@ -236,12 +237,17 @@ def render_json(
     )
 
     text = json.dumps(data, indent=indent, ensure_ascii=ensure_ascii)
+
+    # Remove the quotes from around dictionary keys
+    # Remove the quotes from around string values as they are already quoted by _stringify_values
+    text = _REMOVE_QUOTES_PATTERN.sub(
+        lambda m: f"{m.group(1)}{m.group(2)}" if m.group(1) is not None else m.group(3),
+        text
+    )
+
     text = _LINE_ENDINGS_PATTERN.sub('', text)
     text = _BLANK_LINES_PATTERN.sub('', text).rstrip()
     text = _DICT_ENTRY_SEPARATOR_PATTERN.sub(r'\1 = ', text)
-
-    text = text.replace('""', "''")  # empty string ->  ''
-    text = text.replace('"', '')
 
     return text
 
@@ -404,14 +410,17 @@ def _stringify_values(
     elif isinstance(value, bool):
         # Always show booleans in lower case
         value_str = str(value).lower()
+    elif isinstance(value, str):
+        value_str = repr(value)
+    elif value is None:
+        value_str = 'none'
     else:
         value_str = str(value)
 
     # Add units.
-    # noinspection PyTypeChecker
-    unit_str: str | None = units.get(key)
-    if unit_str is not None:
-        value_str += unit_str
+    if isinstance(value, (int, float)) and key in units:
+        # noinspection PyTypeChecker
+        value_str += units[key]
 
     # Remove underscores
     if remove_value_underscores:
