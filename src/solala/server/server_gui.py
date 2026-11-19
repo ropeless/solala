@@ -48,7 +48,6 @@ def _page_header() -> Element:
     Build the persistent Solala page header and return its alarm container.
     """
     with ui.element('div').classes('solala-header'):
-
         with ui.element('div').classes('solala-brand'):
             image = ui.image('/images/solala.svg')
             image.classes('w-12 h-12 bg-transparent')
@@ -203,8 +202,12 @@ async def _build_solar_page(container: Element, session: PageSession) -> None:
     Build the date-navigable solar forecast with session-owned listeners.
     """
     with container:
-        navigator = DayNavigator(enable_swipe_content=True, auto_height=True, title='Solar Forecast',
-                                 on_day_change=session.on_day_change, track_task=session.add_task)
+        navigator = DayNavigator(
+            title='Solar Forecast',
+            enable_swipe_content=True,
+            on_day_change=session.on_day_change,
+            track_task=session.add_task,
+        )
         updaters = [
             SolarForecastUpdater(element, session)
             for element in navigator.get_elements()
@@ -240,8 +243,11 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
     with container:
         swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
         with swipe_area:
-            navigator = DayNavigator(auto_height=True, title='Daily Graphs',
-                                     on_day_change=session.on_day_change, track_task=session.add_task)
+            navigator = DayNavigator(
+                title='Daily Graphs',
+                on_day_change=session.on_day_change,
+                track_task=session.add_task,
+            )
             updaters = [
                 ChartUpdater(element, session=session)
                 for element in navigator.get_elements()
