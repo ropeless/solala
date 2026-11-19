@@ -133,7 +133,9 @@ class TestRenderJson(unittest.TestCase):
     def test_deeply_nested_dictionaries(self) -> None:
         self.check_render(
             {'outer': {'inner': {'value': 42}}},
-            '  outer:\n    inner:\n      value = 42',
+            '  outer:\n'
+            '    inner:\n'
+            '      value = 42',
         )
 
     def test_nested_list_of_dictionaries(self) -> None:
