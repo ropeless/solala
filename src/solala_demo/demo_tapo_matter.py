@@ -77,7 +77,7 @@ async def main() -> None:
 
     Set action to 'toggle' to invert the current switch state; 'status' makes no changes.
     """
-    action = 'status'  # 'status', 'toggle'
+    action = 'toggle'  # 'status', 'toggle'
     if action not in ('status', 'toggle'):
         raise ValueError(f'Invalid action: {action!r}')
 

@@ -12,7 +12,7 @@ class PowerConsumer(ABC):
     High-level interface for monitoring an instrumented power consumer.
 
     Implementations provide access to device registers, current status,
-    connection information, and connection cleanup.
+    connection information, and connection clean-up.
     """
 
     @abstractmethod
@@ -34,6 +34,14 @@ class PowerConsumer(ABC):
             The consumer's voltage and current measurements, together with
             its active power in watts.
         """
+        ...
+
+    @abstractmethod
+    def can_switch(self) -> bool:
+        ...
+
+    @abstractmethod
+    def set_switch(self, switch_state: bool) -> None:
         ...
 
     @abstractmethod
