@@ -389,11 +389,11 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
             ],
             'force_charge': [
                 ('StorCtl_Mod', 0), ('InWRte', 100), ('OutWRte', -100),
-                ('StorCtl_Mod', 3), ('ChaGriSet', 1),
+                ('StorCtl_Mod', 2), ('ChaGriSet', 1),
             ],
             'force_discharge': [
                 ('StorCtl_Mod', 0), ('InWRte', -100), ('OutWRte', 100),
-                ('StorCtl_Mod', 3), ('ChaGriSet', 0),
+                ('StorCtl_Mod', 1), ('ChaGriSet', 0),
             ],
             'charge_only': [
                 ('StorCtl_Mod', 0), ('InWRte', 100), ('OutWRte', 0),

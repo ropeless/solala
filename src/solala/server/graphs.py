@@ -1,10 +1,10 @@
 from abc import abstractmethod, ABC
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from collections.abc import Sequence
 
 import numpy as np
-from nicegui import ui
+from nicegui import ui, events
 
 from solala.constants import Units, GUI_TIME_FORMAT
 from solala.server.css_colours import Colours, rgba
@@ -45,6 +45,8 @@ class SolalaChart(ABC):
             series: list[JSONDict],
             demand_window_colour: str = '',
             show_legend: bool = True,
+            selected_series: dict[str, bool] | None = None,
+            on_legend_change: Callable[[str, dict[str, bool]], Awaitable[None]] | None = None,
     ) -> None:
         """
         Create a chart with the supplied series and display options.
@@ -55,6 +57,8 @@ class SolalaChart(ABC):
             series: ECharts series definitions in display order.
             demand_window_colour: CSS colour for a highlighted demand window.
             show_legend: Whether to reserve space and display a legend.
+            selected_series: Previously selected legend entries.
+            on_legend_change: Callback to propagate legend changes.
         """
         options: dict[str, JSONValue] = {
             'backgroundColor': 'transparent',
@@ -65,9 +69,25 @@ class SolalaChart(ABC):
             'series': series,
         }
         if show_legend:
-            options['legend'] = _legend()
+            options['legend'] = _legend(selected_series)
         self.chart = ui.echart(options).classes('w-full')
+        if show_legend and on_legend_change is not None:
+            callback: Callable[[str, dict[str, bool]], Awaitable[None]] = on_legend_change
+
+            async def legend_changed(event: events.GenericEventArguments) -> None:
+                selected: dict[str, bool] = event.args['selected']
+                await callback(name, selected)
+
+            self.chart.on('chart:legendselectchanged', legend_changed)
         self.demand_window_colour = demand_window_colour
+
+    def set_selected_series(self, selections: dict[str, bool]) -> None:
+        """
+        Synchronise this chart's legend with other carousel slides.
+        """
+        if 'legend' in self.chart.options:
+            self.chart.options['legend']['selected'] = selections.copy()
+            self.chart.update()
 
     def update(self, data: GraphingInterpolator) -> None:
         """
@@ -119,7 +139,13 @@ class EnergyChart(SolalaChart):
     """
     Display accumulated solar, grid, and battery energy with a forecast.
     """
-    def __init__(self, colours: Colours) -> None:
+
+    def __init__(
+            self,
+            colours: Colours,
+            selected_series: dict[str, bool] | None = None,
+            on_legend_change: Callable[[str, dict[str, bool]], Awaitable[None]] | None = None,
+    ) -> None:
         super().__init__(
             'Energy',
             Units.KILOWATT_HOURS,
@@ -130,7 +156,9 @@ class EnergyChart(SolalaChart):
                 _create_series('Export', colours.inverter),
                 _create_series('Charge', colours.battery_charge),
                 _create_series('Discharge', colours.battery),
-            ]
+            ],
+            selected_series=selected_series,
+            on_legend_change=on_legend_change,
         )
 
     def _get_series_data(self, data: GraphingInterpolator) -> SeriesData:
@@ -150,7 +178,9 @@ class PowerChart(SolalaChart):
     """
     Display instantaneous solar, grid, battery, and house power.
     """
-    def __init__(self, colours: Colours) -> None:
+
+    def __init__(self, colours: Colours, selected_series: dict[str, bool] | None = None,
+                 on_legend_change: Callable[[str, dict[str, bool]], Awaitable[None]] | None = None) -> None:
         super().__init__(
             'Power',
             Units.KILOWATTS,
@@ -160,7 +190,9 @@ class PowerChart(SolalaChart):
                 _create_series('Grid', colours.grid),
                 _create_series('Battery', colours.battery),
                 _create_series('House', colours.house),
-            ]
+            ],
+            selected_series=selected_series,
+            on_legend_change=on_legend_change,
         )
 
     def _get_series_data(self, data: GraphingInterpolator) -> SeriesData:
@@ -181,6 +213,7 @@ class PriceChart(SolalaChart):
 
     Forecast values are hidden wherever corresponding actual prices exist.
     """
+
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Price',
@@ -223,6 +256,7 @@ class ChargeChart(SolalaChart):
     """
     Plot battery state of charge as a percentage.
     """
+
     def __init__(self, colours: Colours) -> None:
         super().__init__(
             'Charge',
@@ -337,7 +371,7 @@ def _grid(legend_space: bool) -> JSONDict:
     }
 
 
-def _legend() -> JSONDict:
+def _legend(selected_series: dict[str, bool] | None = None) -> dict[str, JSONValue]:
     """
     Configure a horizontal chart legend.
     """
@@ -353,6 +387,7 @@ def _legend() -> JSONDict:
             'color': '#888',
             'fontSize': 12
         },
+        'selected': {} if selected_series is None else selected_series.copy(),
     }
 
 

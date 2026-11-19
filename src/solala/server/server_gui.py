@@ -28,6 +28,7 @@ from solala.server.master_alarm import MasterAlarm
 from solala.server.page_session import PageSession
 from solala.server.page_updaters import BatteryButtonUpdater, InverterButtonUpdater, InfographicUpdater, \
     SolarForecastUpdater, PriceForecastUpdater, ChartUpdater, StatusUpdater, RegistersUpdater
+from solala.server.ui_state import UIState, UIStateStorage
 from solala.server.units_lookup import CONNECTION_UNITS, PARAMETERS_UNITS, CONSTANTS_UNITS
 from solala.utils.json_extras import JSONDict, render_json
 
@@ -202,13 +203,15 @@ async def _build_solar_page(container: Element, session: PageSession) -> None:
     Build the date-navigable solar forecast with session-owned listeners.
     """
     with container:
-        navigator = DayNavigator(enable_swipe_content=True, auto_height=True, title='Solar Forecast')
+        navigator = DayNavigator(enable_swipe_content=True, auto_height=True, title='Solar Forecast',
+                                 on_day_change=session.on_day_change, track_task=session.add_task)
         updaters = [
             SolarForecastUpdater(element, session)
             for element in navigator.get_elements()
         ]
         navigator.set_listeners(*(updater.set_day for updater in updaters))
-        await navigator.set_day(date.today())
+        await navigator.set_day(session.initial_day or date.today())
+        session.add_timer(ui.timer(60, navigator.refresh_day_label))
         await navigator.initialise_auto_height()
         for updater in updaters:
             await session.add_control_listener(updater)
@@ -237,13 +240,24 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
     with container:
         swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
         with swipe_area:
-            navigator = DayNavigator(auto_height=True, title='Daily Graphs')
+            navigator = DayNavigator(auto_height=True, title='Daily Graphs',
+                                     on_day_change=session.on_day_change, track_task=session.add_task)
             updaters = [
                 ChartUpdater(element, session=session)
                 for element in navigator.get_elements()
             ]
+            persist_legend = session.on_legend_change
+
+            async def sync_legend(chart: str, selected: dict[str, bool]) -> None:
+                for updater in updaters:
+                    updater.sync_legend(chart, selected)
+                if persist_legend is not None:
+                    await persist_legend(chart, selected)
+
+            session.on_legend_change = sync_legend
             navigator.set_listeners(*(updater.set_day for updater in updaters))
-            await navigator.set_day(date.today())
+            await navigator.set_day(session.initial_day or date.today())
+            session.add_timer(ui.timer(60, navigator.refresh_day_label))
             await navigator.initialise_auto_height()
             for updater in updaters:
                 await session.add_database_listener(updater)
@@ -381,8 +395,11 @@ class TabSelector:
             colours: Colours,
             button_container: Element,
             content_container: Element,
+            state_storage: UIStateStorage,
     ) -> None:
         self.content_container: Element = content_container
+        self._state_storage = state_storage
+        self._state = UIState(tab=_FIRST_TAB)
 
         self.buttons: dict[str, Button] = {}
         self.builder: dict[str, Builder] = {}
@@ -404,12 +421,19 @@ class TabSelector:
         self._build_task: asyncio.Task[None] | None = None
         self._transition_lock = asyncio.Lock()
 
-    async def select_tab(self, tab_name: str) -> None:
+    def restore_state(self, state: UIState) -> None:
+        """
+        Supply the state loaded for this browser page before initial selection.
+        """
+        self._state = state
+
+    async def select_tab(self, tab_name: str, *, restored_day: date | None = None) -> None:
         """
         Select a tab, cancelling and cleaning up the previous tab first.
 
         Args:
             tab_name: Name of a configured tab.
+            restored_day: Date restored after a browser refresh, if available.
         """
         async with self._transition_lock:
             if tab_name == self.active_tab:
@@ -418,6 +442,9 @@ class TabSelector:
             await self._close_active_session()
             self.content_container.clear()
             self.active_tab = tab_name
+            self._state.tab = tab_name
+            self._state.displayed_day = restored_day if tab_name in (_SOLAR_TAB, 'Graphs') else None
+            await self._state_storage.save(self._state)
 
             for name, button in self.buttons.items():
                 if name == tab_name:
@@ -428,7 +455,23 @@ class TabSelector:
                     button.props('color=white text-color=black')
                     button.classes(remove='solala-tab-button-active')
 
-            session = PageSession(self.colours, self.select_tab)
+            async def save_day(day: date) -> None:
+                if self.active_session is session:
+                    self._state.displayed_day = day
+                    await self._state_storage.save(self._state)
+
+            async def save_legend(chart: str, selected: dict[str, bool]) -> None:
+                if self.active_session is session:
+                    self._state.graph_series[chart] = selected.copy()
+                    await self._state_storage.save(self._state)
+
+            session = PageSession(
+                self.colours, self.select_tab,
+                initial_day=restored_day,
+                on_day_change=save_day if tab_name in (_SOLAR_TAB, 'Graphs') else None,
+                graph_series=self._state.graph_series,
+                on_legend_change=save_legend if tab_name == 'Graphs' else None,
+            )
             self.active_session = session
             self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
 
@@ -502,11 +545,14 @@ async def root_page() -> None:
             button_container = ui.grid(columns=3).classes('w-full gap-2')
 
         content_container = ui.element('div').classes('tab-content w-full')
-        tab_selector = TabSelector(colours, button_container, content_container)
+        state_storage = UIStateStorage({tab.name for tab in _TABS}, _FIRST_TAB)
+        tab_selector = TabSelector(colours, button_container, content_container, state_storage)
 
     with alarm_container:
         master_alarm = MasterAlarm(tab_selector.select_tab)
 
     ui.context.client.on_disconnect(master_alarm.close)
     ui.context.client.on_disconnect(tab_selector.close_active_session)
-    await tab_selector.select_tab(_FIRST_TAB)
+    state = await state_storage.load()
+    tab_selector.restore_state(state)
+    await tab_selector.select_tab(state.tab, restored_day=state.displayed_day)
