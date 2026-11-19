@@ -5,7 +5,7 @@ from functools import partial
 from tuya_connector import TuyaOpenAPI
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus, SwitchRegister
-from solala.register import RegisterType, check_type, AsyncCallRegister, check_value, RegisterValue
+from solala.register import RegisterType, check_type, AsyncCallRegister, check_value, RegisterValue, Register
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_num, json_bool
 from solala.utils.micro_cache import AsyncMicroCache
@@ -98,10 +98,9 @@ class TuyaPowerConsumer(PowerConsumer):
             async with self._register_bank_lock:
                 reg_bank = self._register_bank
                 if reg_bank is None:
-                    registers = {
-                        key: AsyncCallRegister(partial(self._get_register_value, key), reg_type)
-                        async for key, reg_type in self._get_register_keys()
-                    }
+                    registers: dict[str, Register] = {}
+                    async for key, reg_type in self._get_register_keys():
+                        registers[key] = AsyncCallRegister(partial(self._get_register_value, key), reg_type)
                     registers['switch_1'] = SwitchRegister(self)
                     reg_bank = RegisterBank(registers)
                     self._register_bank = reg_bank
