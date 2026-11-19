@@ -21,16 +21,13 @@ def main():
             access_secret=config.POWER_POINT_ACCESS_SECRET,
         )
 
-    matter_host: str | None = config.get('MATTER_SERVER_HOST')
-    matter_port: int | None = config.get('MATTER_SERVER_PORT')
     matter_device_ids: list[int] = config.get('MATTER_DEVICE_IDS', [])
-    if matter_host and matter_port:
-        for node_id in matter_device_ids:
-            consumers[f'matter_{node_id}'] = MatterConnection(
-                host=matter_host,
-                port=matter_port,
-                node_id=node_id,
-            )
+    for node_id in matter_device_ids:
+        consumers[f'matter_plug_{node_id}'] = MatterConnection(
+            host=config.MATTER_SERVER_HOST,
+            port=config.MATTER_SERVER_PORT,
+            node_id=node_id,
+        )
 
     settings = Settings(
         controller=ModbusControllerConnection(address=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}'),
