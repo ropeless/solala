@@ -28,6 +28,7 @@ from solala.server.master_alarm import MasterAlarm
 from solala.server.page_session import PageSession
 from solala.server.page_updaters import BatteryButtonUpdater, InverterButtonUpdater, InfographicUpdater, \
     SolarForecastUpdater, PriceForecastUpdater, ChartUpdater, StatusUpdater, RegistersUpdater
+from solala.server.ui_state import UIState, UIStateStorage
 from solala.server.units_lookup import CONNECTION_UNITS, PARAMETERS_UNITS, CONSTANTS_UNITS
 from solala.utils.json_extras import JSONDict, render_json
 
@@ -381,8 +382,10 @@ class TabSelector:
             colours: Colours,
             button_container: Element,
             content_container: Element,
+            state_storage: UIStateStorage,
     ) -> None:
         self.content_container: Element = content_container
+        self._state_storage = state_storage
 
         self.buttons: dict[str, Button] = {}
         self.builder: dict[str, Builder] = {}
@@ -418,6 +421,7 @@ class TabSelector:
             await self._close_active_session()
             self.content_container.clear()
             self.active_tab = tab_name
+            await self._state_storage.save(UIState(tab=tab_name))
 
             for name, button in self.buttons.items():
                 if name == tab_name:
@@ -502,51 +506,13 @@ async def root_page() -> None:
             button_container = ui.grid(columns=3).classes('w-full gap-2')
 
         content_container = ui.element('div').classes('tab-content w-full')
-        tab_selector = TabSelector(colours, button_container, content_container)
+        state_storage = UIStateStorage({tab.name for tab in _TABS}, _FIRST_TAB)
+        tab_selector = TabSelector(colours, button_container, content_container, state_storage)
 
     with alarm_container:
         master_alarm = MasterAlarm(tab_selector.select_tab)
 
     ui.context.client.on_disconnect(master_alarm.close)
     ui.context.client.on_disconnect(tab_selector.close_active_session)
-    await tab_selector.select_tab(_FIRST_TAB)
-
-
-@ui.page('/storage_test')
-async def storage_test() -> None:
-    """
-    Diagnose NiceGUI user-storage persistence on the development server.
-    """
-    count = app.storage.user.get('solala_storage_test_count', 0) + 1
-    app.storage.user['solala_storage_test_count'] = count
-
-    ui.label(f'User-storage page loads: {count}')
-    ui.label(f'NiceGUI client ID: {ui.context.client.id}')
-    ui.button('Reload page', on_click=ui.navigate.reload)
-
-
-@ui.page('/session_storage_test')
-async def session_storage_test() -> None:
-    """
-    Diagnose browser-tab sessionStorage across reloads and server restarts.
-    """
-    ui.label('Browser sessionStorage diagnostic')
-    count_label = ui.label('Reading sessionStorage...')
-    identity_label = ui.label('Reading tab identity...')
-    ui.label(f'NiceGUI client ID: {ui.context.client.id}')
-    ui.button('Reload page', on_click=ui.navigate.reload)
-
-    result = await ui.run_javascript('''(() => {
-        const countKey = 'solala_session_test_count';
-        const identityKey = 'solala_session_test_identity';
-        const count = Number(sessionStorage.getItem(countKey) || '0') + 1;
-        sessionStorage.setItem(countKey, String(count));
-        let identity = sessionStorage.getItem(identityKey);
-        if (!identity) {
-            identity = crypto.randomUUID();
-            sessionStorage.setItem(identityKey, identity);
-        }
-        return {count, identity};
-    })()''')
-    count_label.set_text(f'Session-storage page loads: {result["count"]}')
-    identity_label.set_text(f'Session-storage identity: {result["identity"]}')
+    state = await state_storage.load()
+    await tab_selector.select_tab(state.tab)
