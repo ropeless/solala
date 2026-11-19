@@ -55,6 +55,7 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
         self.consumer._request.return_value = []
         with self.assertRaises(ConnectionError):
             await self.consumer.get_status()
+        await self.consumer._attributes_cache.invalidate()
         self.consumer._request.return_value = [
             {'node_id': 1, 'available': False, 'attributes': self.attributes},
         ]
@@ -66,12 +67,38 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ConnectionError):
             await self.consumer.get_status()
         self.attributes['1/144/8'] = 'invalid'
+        await self.consumer._attributes_cache.invalidate()
         with self.assertRaises(ConnectionError):
             await self.consumer.get_status()
 
     async def test_server_error_propagates(self) -> None:
         self.consumer._request.side_effect = ConnectionError('server unavailable')
         with self.assertRaises(ConnectionError):
+            await self.consumer.get_status()
+
+    async def test_cached_snapshot_and_invalidation(self) -> None:
+        await self.consumer.get_status()
+        await self.consumer.get_status()
+        self.consumer._request.assert_awaited_once()
+        await self.consumer.set_switch(False)
+        await self.consumer.get_status()
+        self.assertEqual(self.consumer._request.await_count, 3)
+
+    async def test_diagnostic_registers_and_flattening(self) -> None:
+        self.attributes['0/40/1'] = 'Vendor'
+        self.attributes['1/145/1'] = {'0': 1234000}
+        self.attributes['0/62/0'] = 'sensitive'
+        self.attributes['1/99/0'] = ['unsupported']
+        bank = await self.consumer.get_registers()
+        self.assertEqual(await bank['0/40/1'].get(), 'Vendor')
+        self.assertEqual(await bank['1/145/1/0'].get(), 1234000)
+        self.assertFalse(bank['1/145/1/0'].writable)
+        self.assertNotIn('0/62/0', bank)
+        self.assertNotIn('1/99/0', bank)
+
+    async def test_invalid_measurement_raises_connection_error(self) -> None:
+        self.attributes['1/144/8'] = 'bad'
+        with self.assertRaisesRegex(ConnectionError, 'bad'):
             await self.consumer.get_status()
 
     async def test_settings_and_factory(self) -> None:
