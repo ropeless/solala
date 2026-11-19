@@ -399,7 +399,7 @@ class TestRenderJson(unittest.TestCase):
         self.check_render({'power ': 1}, "  'power ' = 1")
 
     def test_dictionary_key_with_empty_string(self) -> None:
-        self.check_render({'': 1}, '   = 1')
+        self.check_render({'': 1}, "  '' = 1")
 
     def test_nested_dictionary_key_with_punctuation(self) -> None:
         self.check_render(
