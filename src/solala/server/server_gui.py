@@ -551,7 +551,7 @@ async def root_page() -> None:
             button_container = ui.grid(columns=3).classes('w-full gap-2')
 
         content_container = ui.element('div').classes('tab-content w-full')
-        state_storage = UIStateStorage({tab.name for tab in _TABS}, _FIRST_TAB)
+        state_storage = UIStateStorage(ui.context.client, {tab.name for tab in _TABS}, _FIRST_TAB)
         tab_selector = TabSelector(colours, button_container, content_container, state_storage)
 
     with alarm_container:
