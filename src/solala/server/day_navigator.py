@@ -31,7 +31,8 @@ class DayNavigator:
             enable_swipe_navigator: bool = True,
             enable_arrow_keys: bool = True,
             auto_height: bool = False,
-            title: str = ''
+            title: str = '',
+            on_day_change: Callable[[date], Awaitable[None]] | None = None,
     ) -> None:
         """
         Create a carousel of infinite cards, where each card represents a date.
@@ -56,9 +57,11 @@ class DayNavigator:
             auto_height: Allow the carousel to follow its active slide's height.
                 Call `initialise_auto_height()` after the client is ready.
             title: Optional heading above the date navigator.
+            on_day_change: Callback invoked when the selected date changes.
         """
 
         self._day: date = _SENTINEL_DATE
+        self._on_day_change = on_day_change
         self._focus_slide: int = 0
         self._updaters: Sequence[Updater] = ()  # mapping from slide number to `updater`
         self._touch_start_x: float | None = None  # for our own swipe detection
@@ -239,11 +242,10 @@ class DayNavigator:
         vis_delta: int = ((self._display_slide - self._focus_slide + 1) % 3) - 1
 
         # Update the navigator state
-        self.date_element.set_text(day.strftime(GUI_DATE_FORMAT))
-        today = date.today()
-        self.day_status.set_visibility(day == today)
-        self.today_button.set_visibility(day != today)
         self._day = day
+        self.refresh_day_label()
+        if day_shift != 0 and self._on_day_change is not None:
+            await self._on_day_change(day)
 
         # Update the carousel state
 
@@ -271,6 +273,15 @@ class DayNavigator:
             await self._update_element(self._focus_slide, day)
             asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
             asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+
+    def refresh_day_label(self) -> None:
+        """
+        Refresh date labels without changing the displayed day or slide content.
+        """
+        self.date_element.set_text(self._day.strftime(GUI_DATE_FORMAT))
+        today = date.today()
+        self.day_status.set_visibility(self._day == today)
+        self.today_button.set_visibility(self._day != today)
 
     def _add_swipe_handler(self, element: Element) -> None:
         element.on(
