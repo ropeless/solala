@@ -48,8 +48,8 @@ def show_node(node: dict[str, Any]) -> None:
     attributes = node.get('attributes', {})
     endpoint = 1
 
-    def attribute(cluster: int, number: int) -> Any:
-        return attributes.get(f'{endpoint}/{cluster}/{number}')
+    def attribute(_cluster: int, _number: int) -> Any:
+        return attributes.get(f'{endpoint}/{_cluster}/{_number}')
 
     print(f'Node: {node["node_id"]}, available: {node.get("available")}')
     print(f'  Device: {attributes.get("0/40/1")} {attributes.get("0/40/3")}')
@@ -62,13 +62,13 @@ def show_node(node: dict[str, Any]) -> None:
         ('Current', 144, 12, 1000, 'A'),
     ):
         value = attribute(cluster, number)
-        print(f'  {label}: {value / divisor:g} {unit}' if isinstance(value, (int, float)) else f'  {label}: unavailable')
+        print(f'  {label}: {value / divisor} {unit}' if isinstance(value, (int, float)) else f'  {label}: unavailable')
 
     energy = attribute(145, 1)
     if isinstance(energy, dict) and isinstance(energy.get('0'), (int, float)):
-        print(f'  Imported energy: {energy["0"] / 1000000:g} kWh')
+        print(f'  Energy: {energy["0"]} mWh')
     else:
-        print('  Imported energy: unavailable')
+        print('  Energy: unavailable')
 
 
 async def main() -> None:
