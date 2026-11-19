@@ -1,4 +1,6 @@
-"""Regression tests for the established render_json display behaviour."""
+"""
+Regression tests for the established render_json display behaviour.
+"""
 
 import unittest
 from typing import Any
@@ -7,10 +9,14 @@ from solala.utils.json_extras import JSONValue, render_json
 
 
 class TestRenderJson(unittest.TestCase):
-    """Characterise currently correct rendering before refactoring."""
+    """
+    Characterise currently correct rendering before refactoring.
+    """
 
     def check_render(self, value: JSONValue, expected: str, **kwargs: Any) -> None:
-        """Compare the complete rendered output with an explicit expectation."""
+        """
+        Compare the complete rendered output with an explicit expectation.
+        """
         self.assertEqual(expected, render_json(value, **kwargs))
 
     def test_positive_integer(self) -> None:
