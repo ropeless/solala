@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from solala.delegates.power_consumer.matter_power_consumer import MatterPowerConsumer
+from solala.delegates.power_consumer.matter_power_consumer.matter_power_consumer import MatterPowerConsumer
 from solala.settings import MatterConnection, Settings
 
 
@@ -11,7 +11,7 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
     """
 
     def setUp(self) -> None:
-        self.consumer = MatterPowerConsumer('localhost', 5580, 1, endpoint_id=1)
+        self.consumer = MatterPowerConsumer('localhost', 5580, node_id=1, endpoint_id=1)
         self.attributes = {
             '1/6/0': True,
             '1/144/8': 125000,

@@ -23,7 +23,7 @@ from solala.control_loop.resolve_addresses import ResolvedAddress, resolve_addre
 from solala.database.solala_database import SolalaDatabase, Measurement
 from solala.database.solala_database_connections import SolalaDatabaseConnections
 from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
-from solala.delegates.power_consumer.matter_power_consumer import MatterPowerConsumer
+from solala.delegates.power_consumer.matter_power_consumer.matter_power_consumer import MatterPowerConsumer
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
