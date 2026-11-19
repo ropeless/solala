@@ -1,7 +1,8 @@
-from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Self
+from typing import Self
+
+from nicegui import ui
 
 from solala.utils.json_extras import JSONDict
 
@@ -83,27 +84,32 @@ class UIState:
 
 class UIStateStorage:
     """
-    Read and write a UI state snapshot in a NiceGUI-compatible storage mapping.
-
-    The caller supplies the appropriate browser-scoped storage mapping.
+    Persist UI state in the current browser tab's sessionStorage.
     """
 
-    def __init__(self, storage: MutableMapping[str, Any], valid_tabs: set[str], default_tab: str) -> None:
-        self._storage = storage
+    def __init__(self, valid_tabs: set[str], default_tab: str) -> None:
         self._valid_tabs = valid_tabs
         self._default_tab = default_tab
 
-    def load(self) -> UIState:
+    async def load(self) -> UIState:
         """
-        Return a validated snapshot of the stored UI state.
+        Load the current browser tab's saved UI state.
         """
-        return UIState.from_dict(self._storage.get(_STORAGE_KEY), self._valid_tabs, self._default_tab)
+        value = await ui.run_javascript(
+            f'JSON.parse(sessionStorage.getItem({_STORAGE_KEY!r}) || "null")'
+        )
+        return UIState.from_dict(value, self._valid_tabs, self._default_tab)
 
-    def save(self, state: UIState) -> None:
+    async def save(self, state: UIState) -> None:
         """
-        Persist a JSON-compatible snapshot of the UI state.
+        Save a UI state snapshot for the current browser tab.
 
         Args:
             state: Current UI state to persist.
         """
-        self._storage[_STORAGE_KEY] = state.to_dict()
+        import json
+
+        payload = json.dumps(state.to_dict())
+        await ui.run_javascript(
+            f'sessionStorage.setItem({_STORAGE_KEY!r}, {payload!r})'
+        )
