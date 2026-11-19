@@ -94,6 +94,13 @@ class PageSession:
         self._select_tab: Callable[[str], Awaitable[None]] = select_tab
 
     @property
+    def closed(self) -> bool:
+        """
+        Report whether this page session has been closed.
+        """
+        return self._closed
+
+    @property
     def colours(self) -> Colours:
         """
         Return the page's colour palette.
