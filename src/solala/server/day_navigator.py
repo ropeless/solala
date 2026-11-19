@@ -121,8 +121,7 @@ class DayNavigator:
 
         carousel = ui.carousel(animated=True, arrows=False, navigation=False). \
             props(_CAROUSEL_PROPS).classes('w-full')
-        if self._auto_height_id is not None:
-            carousel.props(f'id={self._auto_height_id}')
+        carousel.props(f'id={self._auto_height_id}')
         with carousel as self._carousel:
             with ui.carousel_slide('0').classes('!p-0'):
                 element_0 = ui.element('div').classes('w-full')
