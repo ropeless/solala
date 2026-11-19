@@ -38,25 +38,24 @@ class UIState:
         }
 
     @classmethod
-    def from_dict(cls, value: JSONDict | None, valid_tabs: set[str], default_tab: str) -> Self:
+    def from_dict(cls, value: object, valid_tabs: set[str], default_tab: str) -> Self:
         """
         Create a UI state from a JSON compatible dictionary.
 
-        This method reads data from persistent browser storage, which might
-        contain a `value` written by an earlier version of Solala or has been
-        corrupted, so we interpret `value` defensively.
-
-        Restore valid fields, falling back safely for invalid stored values.
+        Browser storage may contain invalid data or values written by an older
+        version of Solala. Restore valid fields and use defaults otherwise.
 
         Args:
             value: Untrusted serialized state.
             valid_tabs: Currently supported tab names.
-            default_tab: the tab to record as current tab if not available in `value`.
+            default_tab: Tab to use when no valid selection is stored.
+
+        Returns:
+            Validated UI state with defaults for missing or invalid fields.
         """
         if not isinstance(value, dict):
             return cls(default_tab)
 
-        # Read the needed parameters directly from the `value` dict.
         tab = value.get('tab')
         raw_day = value.get('displayed_day')
         raw_series = value.get('graph_series')

@@ -8,6 +8,7 @@ from solala.server.day_navigator import DayNavigator
 from solala.server.graphs import PowerChart, EnergyChart
 from solala.server.page_session import PageSession, _SessionListener
 from solala.server.page_updaters import ChartUpdater
+from solala.utils.json_extras import JSONValue
 
 
 def _test_colours() -> Colours:
@@ -17,7 +18,7 @@ def _test_colours() -> Colours:
     return Colours(*(['#123456'] * 10))
 
 
-def _fake_echart(options: dict) -> MagicMock:
+def _fake_echart(options: dict[str, JSONValue]) -> MagicMock:
     """
     Capture ECharts options without constructing NiceGUI UI elements.
     """
@@ -93,14 +94,11 @@ class GraphLegendTestCase(unittest.IsolatedAsyncioTestCase):
 
     def test_synchronising_chart_updates_legend_options(self) -> None:
         with patch('solala.server.graphs.ui.echart', side_effect=_fake_echart):
-            chart = PowerChart(_test_colours()).chart
+            power = PowerChart(_test_colours())
 
-        chart.options['legend']['selected'] = {}
+        chart = power.chart
         selections = {'Solar': False}
-        # Exercise the existing chart instance without a running browser.
-        chart_wrapper = PowerChart.__new__(PowerChart)
-        chart_wrapper.chart = chart
-        chart_wrapper.set_selected_series(selections)
+        power.set_selected_series(selections)
         self.assertEqual(chart.options['legend']['selected'], selections)
         chart.update.assert_called_once()
 

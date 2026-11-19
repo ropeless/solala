@@ -433,6 +433,7 @@ class TabSelector:
 
         Args:
             tab_name: Name of a configured tab.
+            restored_day: Date restored after a browser refresh, if available.
         """
         async with self._transition_lock:
             if tab_name == self.active_tab:

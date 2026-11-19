@@ -73,10 +73,10 @@ class SolalaChart(ABC):
             options['legend']['selected'] = selected_series.copy() if selected_series else {}
         self.chart = ui.echart(options).classes('w-full')
         if show_legend and on_legend_change is not None:
-            async def changed(event: events.GenericEventArguments) -> None:
+            async def legend_changed(event: events.GenericEventArguments) -> None:
                 selected = event.args['selected']
                 await on_legend_change(name, selected)
-            self.chart.on('chart:legendselectchanged', changed)
+            self.chart.on('chart:legendselectchanged', legend_changed)
         self.demand_window_colour = demand_window_colour
 
     def set_selected_series(self, selections: dict[str, bool]) -> None:
@@ -137,8 +137,12 @@ class EnergyChart(SolalaChart):
     """
     Display accumulated solar, grid, and battery energy with a forecast.
     """
-    def __init__(self, colours: Colours, selected_series: dict[str, bool] | None = None,
-                 on_legend_change: Callable[[str, dict[str, bool]], Awaitable[None]] | None = None) -> None:
+    def __init__(
+            self,
+            colours: Colours,
+            selected_series: dict[str, bool] | None = None,
+            on_legend_change: Callable[[str, dict[str, bool]], Awaitable[None]] | None = None,
+    ) -> None:
         super().__init__(
             'Energy',
             Units.KILOWATT_HOURS,
