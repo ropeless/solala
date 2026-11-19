@@ -339,7 +339,16 @@ class TestRenderJson(unittest.TestCase):
         self.check_render({'message\tstatus': 'ready'}, "  'message\\tstatus' = 'ready'")
 
     def test_dictionary_key_with_quote(self) -> None:
-        self.check_render({"message'status": 'ready'}, "  \"message'status\" = 'ready'")
+        self.check_render({"message'status": 'ready'}, "  message'status = 'ready'")
+
+    def test_dictionary_key_with_quote_and_space(self) -> None:
+        self.check_render({"message' status": 'ready'}, "  \"message' status\" = 'ready'")
+
+    def test_dictionary_key_with_colon_without_space(self) -> None:
+        self.check_render({'message:status': 'ready'}, "  message:status = 'ready'")
+
+    def test_dictionary_key_with_equals_without_space(self) -> None:
+        self.check_render({'message=status': 'ready'}, "  message=status = 'ready'")
 
     def test_dictionary_key_with_double_quote(self) -> None:
         self.check_render({'message"status': 'ready'}, "  'message\"status' = 'ready'")
