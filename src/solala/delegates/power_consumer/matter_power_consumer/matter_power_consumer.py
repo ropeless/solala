@@ -120,9 +120,6 @@ class MatterPowerConsumer(PowerConsumer):
                 raise
 
     async def __fetch_node_attributes(self) -> dict[str, Any]:
-        return await self._attributes_cache()
-
-    async def __fetch_node_attributes(self) -> dict[str, Any]:
         """
         Retrieve attributes of the configured node, requiring it to be available.
         """
@@ -249,7 +246,7 @@ class MatterPowerConsumer(PowerConsumer):
                         except TypeError:
                             continue
                         registers[key] = AsyncCallRegister(
-                            partial(self._get_raw_register, key), register_type,
+                            partial(self._raw_register_value, key), register_type,
                         )
                     bank = RegisterBank(registers)
                     self._register_bank = bank
