@@ -269,13 +269,13 @@ class DayNavigator:
         elif day_shift == 1:
             self._focus_slide = self._right_slide()
             self._set_display_slide(self._focus_slide)
-            asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
+            self._schedule_update(self._update_element(self._right_slide(), day + _ONE_DAY))
 
         else:
             # Just recreate all three slides
             await self._update_element(self._focus_slide, day)
             asyncio.create_task(self._update_element(self._right_slide(), day + _ONE_DAY))
-            asyncio.create_task(self._update_element(self._left_slide(), day - _ONE_DAY))
+            self._schedule_update(self._update_element(self._left_slide(), day - _ONE_DAY))
 
     def _schedule_update(self, update: Awaitable[None]) -> None:
         """
@@ -283,7 +283,11 @@ class DayNavigator:
         """
         task = asyncio.create_task(update)
         if self._track_task is not None:
-            self._track_task(task)
+            try:
+                self._track_task(task)
+            except BaseException:
+                task.cancel()
+                raise
 
     def refresh_day_label(self) -> None:
         """
