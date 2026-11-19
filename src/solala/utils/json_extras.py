@@ -1,6 +1,4 @@
 import inspect
-import json
-import re
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from datetime import datetime, date, timedelta
 from enum import Enum
@@ -22,11 +20,6 @@ type JSONValue = JSONPrimitive | Sequence[JSONValue] | Mapping[str, JSONValue]
 type JSONDict = Mapping[str, JSONValue]
 type JSONList = Sequence[JSONValue]
 type JSONContainer = JSONDict | JSONList
-
-_LINE_ENDINGS_PATTERN = re.compile(r'[,{} \t]*\s*(?=\n|$)')
-_BLANK_LINES_PATTERN = re.compile(r'^[ \t]*\r?\n', flags=re.MULTILINE)
-_DICT_ENTRY_SEPARATOR_PATTERN = re.compile(r'(\s*[\w+"]): ')
-_REMOVE_QUOTES_PATTERN = re.compile(r'"([a-zA-Z0-9_$/ ]+)"(\s*:)|"([^"\\]*(?:\\.[^"\\]*)*)"(?!\s*:)')
 
 
 def json_str(value: JSONValue) -> str:
@@ -210,46 +203,123 @@ def render_json(
         ensure_ascii: bool = False,
 ) -> str:
     """
-    Custom function to render JSON data as a formatted string for a human to read.
+    Render JSON-compatible values as readable, indented text.
+
+    Dictionaries use key = value, with key: for nested dictionaries.
+    Empty dictionaries are omitted recursively; empty lists are retained.
+    Tuples render as lists. Lists with at most nine scalar elements use
+    one line unless a string contains a comma or square bracket, or its
+    rendered length exceeds 20 characters. Other lists use one-based
+    numbered entries. Units apply to numeric dictionary values at any
+    depth, using original keys, but never to booleans.
 
     Args:
-        value: The value to stringify.
-        indent: Indentation used for dictionaries and lists.
-        float_format: Format string for floats.
-        units: A lookup table of units to append to values.
-        remove_key_underscores: if true, remove underscores from keys.
-        remove_value_underscores: if true, remove underscores from values.
-        ensure_ascii: passed to `json.dumps`.
+        value: JSON-compatible value to render.
+        indent: Spaces per nesting level.
+        float_format: Python format specification for nonintegral floats.
+        units: Optional mapping from original keys to numeric unit suffixes.
+        remove_key_underscores: Replace underscores in displayed keys.
+        remove_value_underscores: Replace underscores in string values.
+        ensure_ascii: Escape non-ASCII characters in displayed strings.
+
     Returns:
-        JSON value rendered as a string.
+        Human-readable text, or an empty string for an empty dictionary.
     """
-    if units is None:
-        units = {}
+    unit_map = units if units is not None else {}
+    spacing = ' ' * indent
 
-    # Replace floats with formatted strings, add units, remove underscores.
-    data = _stringify_values(
-        key=None,
-        value=value,
-        float_format=float_format,
-        units=units,
-        remove_key_underscores=remove_key_underscores,
-        remove_value_underscores=remove_value_underscores,
-    )
+    def quoted(text: str) -> str:
+        if ensure_ascii:
+            text = text.encode('unicode_escape').decode('ascii')
+        else:
+            text = text.replace('\\', '\\\\')
+            text = text.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+        quote = '"' if "'" in text else "'"
+        if quote == "'":
+            text = text.replace('"', '\\"')
+        return f'{quote}{text}{quote}'
 
-    text = json.dumps(data, indent=indent, ensure_ascii=ensure_ascii)
+    def display_key(key: str) -> str:
+        text = key.replace('_', ' ') if remove_key_underscores else key
+        if (not text or text != text.strip()
+                or any(ch.isspace() and ch != ' ' for ch in text)
+                or ': ' in text or ' = ' in text or "' " in text):
+            return quoted(text)
+        return text
 
-    # Remove the quotes from around dictionary keys
-    # Remove the quotes from around string values as they are already quoted by _stringify_values
-    text = _REMOVE_QUOTES_PATTERN.sub(
-        lambda m: f"{m.group(1)}{m.group(2)}" if m.group(1) is not None else m.group(3),
-        text
-    )
+    def scalar(item: JSONPrimitive, key: str | None = None) -> str:
+        if item is None:
+            return 'none'
+        if isinstance(item, bool):
+            return 'true' if item else 'false'
+        if isinstance(item, str):
+            text = item.replace('_', ' ') if remove_value_underscores else item
+            return quoted(text)
+        if isinstance(item, float):
+            if item.is_integer():
+                text = str(int(item))
+            else:
+                text = format(item, float_format)
+                if '.' in text and 'e' not in text.lower():
+                    text = text.rstrip('0').rstrip('.')
+                if text == '-0':
+                    text = '0'
+                if text == '0' and abs(item) > 1e-7:
+                    text = format(item, '.2g')
+        else:
+            text = str(item)
+        return text + unit_map.get(key, '') if key is not None else text
 
-    text = _LINE_ENDINGS_PATTERN.sub('', text)
-    text = _BLANK_LINES_PATTERN.sub('', text).rstrip()
-    text = _DICT_ENTRY_SEPARATOR_PATTERN.sub(r'\1 = ', text)
+    def visible(item: JSONValue) -> bool:
+        if isinstance(item, Mapping):
+            return any(visible(child) for child in item.values())
+        return True
 
-    return text
+    def simple(items: Sequence[JSONValue]) -> bool:
+        if len(items) > 9:
+            return False
+        for item in items:
+            if isinstance(item, (Mapping, Sequence)) and not isinstance(item, str):
+                return False
+            if isinstance(item, str):
+                if any(char in item for char in ',[]') or len(scalar(item)) > 20:
+                    return False
+        return True
+
+    def render(item: JSONValue, level: int, key: str | None = None) -> str:
+        if isinstance(item, Mapping):
+            lines: list[str] = []
+            for child_key, child in item.items():
+                if not visible(child):
+                    continue
+                label = display_key(child_key)
+                if isinstance(child, Mapping):
+                    lines.append(f'{spacing * (level + 1)}{label}:')
+                    lines.append(render(child, level + 1))
+                else:
+                    prefix = f'{spacing * (level + 1)}{label} = '
+                    lines.append(prefix + render(child, level + 1, child_key))
+            return '\n'.join(lines)
+
+        if isinstance(item, Sequence) and not isinstance(item, str):
+            if simple(item):
+                return '[' + ', '.join(scalar(child) for child in item) + ']'
+            lines = ['[']
+            for index, child in enumerate(item, 1):
+                if not visible(child):
+                    continue
+                prefix = f'{spacing * (level + 1)}{index}:'
+                if isinstance(child, Mapping):
+                    lines.append(prefix)
+                    lines.append(render(child, level + 1))
+                else:
+                    lines.append(prefix + ' ' + render(child, level + 1))
+            lines.append(f'{spacing * level}]')
+            return '\n'.join(lines)
+
+        return scalar(item, key)
+
+    return render(value, 0)
 
 
 def to_json(
@@ -353,80 +423,6 @@ def _ignore(value: Any) -> bool:
             or inspect.isframe(value)
             or inspect.istraceback(value)
     )
-
-
-def _stringify_values(
-        key: str | None,
-        value: JSONValue,
-        float_format: str,
-        units: Mapping[str, str],
-        remove_key_underscores: bool,
-        remove_value_underscores: bool,
-) -> JSONValue:
-    """
-    If `value` is a number, return a string rendering of it, including appending units if
-    the key is in the `units` dictionary.
-    If `value` is a container, return a copy with the items recursively stringified.
-
-    Args:
-        key: The key for this value - used to look up units.
-        value: The value to stringify.
-        float_format: Format string for floats.
-        units: A lookup table of units to append to values.
-        remove_key_underscores: if true, remove underscores from keys.
-        remove_value_underscores: if true, remove underscores from values.
-    Returns:
-        transformed JSON value.
-    """
-    # Recursive cases: dictionary and list.
-    if isinstance(value, Mapping):
-        if remove_key_underscores:
-            key_f = _remove_underscores
-        else:
-            key_f = lambda k: k
-
-        return {
-            key_f(k): _stringify_values(k, v, float_format, units, remove_key_underscores, remove_value_underscores)
-            for k, v in value.items()
-        }
-    elif isinstance(value, Sequence) and not isinstance(value, str):
-        return [
-            _stringify_values(None, v, float_format, units, remove_key_underscores, remove_value_underscores)
-            for v in value
-        ]
-
-    # Stringify values
-    value_str: str
-    if isinstance(value, float):
-        value_str = f'{value:{float_format}}'
-        if '.' in value_str:
-            # Clean up trailing zeros and decimal point for rendered float
-            value_str = value_str.rstrip('0').rstrip('.')
-        if value_str == '-0':
-            value_str = '0'
-        # Check for misleading formatting
-        if value_str == '0' and abs(value) > 0.0000001:
-            value_str = f'{value:.2g}'
-    elif isinstance(value, bool):
-        # Always show booleans in lower case
-        value_str = str(value).lower()
-    elif isinstance(value, str):
-        value_str = repr(value)
-    elif value is None:
-        value_str = 'none'
-    else:
-        value_str = str(value)
-
-    # Add units.
-    if isinstance(value, (int, float)) and key in units:
-        # noinspection PyTypeChecker
-        value_str += units[key]
-
-    # Remove underscores
-    if remove_value_underscores:
-        value_str = _remove_underscores(value_str)
-
-    return value_str
 
 
 def _remove_underscores(value: str) -> str:
