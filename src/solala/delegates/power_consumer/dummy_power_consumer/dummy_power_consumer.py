@@ -29,6 +29,9 @@ class DummyPowerConsumer(PowerConsumer):
     Simulated power consumer with configurable electrical status.
 
     Voltage, current, power, and on can be changed after construction.
+    Energy is accumulated using elapsed monotonic time and the active power
+    before each state change. When current changes, active power is adjusted
+    to preserve the existing power factor.
     Callers must keep voltage, current, and power consistent: changing voltage
     does not adjust power, and changing current from zero does not restore a
     previously zero power value. The power setter validates the relationship
@@ -55,6 +58,7 @@ class DummyPowerConsumer(PowerConsumer):
             current: Current draw in amperes.
             on: Is the device switched on. Defaults to True.
             failure: Optional simulated failure configuration.
+            can_switch: Whether the simulated consumer supports switching.
 
         Raises:
             ValueError: If power is negative or exceeds voltage multiplied by current.
@@ -88,9 +92,9 @@ class DummyPowerConsumer(PowerConsumer):
 
     @voltage.setter
     def voltage(self, value: float) -> None:
-        self._check_energy()
         if value < 0:
             raise ValueError('voltage < 0')
+        self._check_energy()
         self._voltage = value
 
     @property
@@ -102,9 +106,9 @@ class DummyPowerConsumer(PowerConsumer):
 
     @current.setter
     def current(self, value: float) -> None:
-        self._check_energy()
         if value < 0:
             raise ValueError('current < 0')
+        self._check_energy()
         if self._current > 0:
             self._power *= value / self._current
         self._current = value
@@ -127,6 +131,7 @@ class DummyPowerConsumer(PowerConsumer):
         if value > apparent_power:
             raise ValueError('power > voltage * current')
 
+        self._check_energy()
         self._power = value
         self._power_factor = value / apparent_power if apparent_power > 0 else 1
 
