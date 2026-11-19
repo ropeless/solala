@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 
+from solala.delegates.power_consumer.power_consumer import PowerConsumer
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
 from solala.utils.micro_cache import AsyncMicroCache
@@ -53,6 +54,8 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_tuya_api_failure_propagates_and_retries(self) -> None:
         consumer = object.__new__(TuyaPowerConsumer)
+        PowerConsumer.__init__(consumer, can_switch=True)
+        consumer._include_accumulated_energy = False
         consumer._connected = True
         consumer._status_url = '/test/status'
         consumer._connection_info = {'device_id': 'test-device'}
@@ -79,6 +82,8 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_tuya_failed_discovery_does_not_cache_bank(self) -> None:
         consumer = object.__new__(TuyaPowerConsumer)
+        PowerConsumer.__init__(consumer, can_switch=True)
+        consumer._include_accumulated_energy = False
         consumer._connected = True
         consumer._status_url = '/test/status'
         consumer._connection_info = {'device_id': 'test-device'}

@@ -67,4 +67,5 @@ def run_failing_server(
         settings=settings,
         force_settings=True,
         database_write=False,
+        solala_storage_secret=config.SOLALA_STORAGE_SECRET,
     )

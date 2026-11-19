@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from types import TracebackType
-from typing import Self
+from typing import Self, final
 
 from solala.delegates.power_consumer.consumer_status import ConsumerStatus
+from solala.register import ReadOnlyError, Register, RegisterValue
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict
 
@@ -12,8 +13,11 @@ class PowerConsumer(ABC):
     High-level interface for monitoring an instrumented power consumer.
 
     Implementations provide access to device registers, current status,
-    connection information, and connection cleanup.
+    connection information, and connection clean-up.
     """
+
+    def __init__(self, can_switch: bool) -> None:
+        self._can_switch: bool = can_switch
 
     @abstractmethod
     async def get_registers(self) -> RegisterBank:
@@ -31,8 +35,8 @@ class PowerConsumer(ABC):
         Get the current electrical status of the consumer.
 
         Returns:
-            The consumer's voltage and current measurements, together with
-            its active power in watts.
+            The consumer's switch state, voltage, current, active power in watts,
+            and accumulated energy in Wh where available.
         """
         ...
 
@@ -53,6 +57,50 @@ class PowerConsumer(ABC):
         """
         ...
 
+    # =================================================
+    #  Switch Control
+    # =================================================
+
+    @property
+    def can_switch(self) -> bool:
+        return self._can_switch
+
+    @final
+    async def get_switch(self) -> bool:
+        """
+        Get the switch state of the consumer (on = True, off = False).
+        This should be equivalent to the on field returned by get_status().
+        """
+        return await self._get_switch()
+
+    @final
+    async def set_switch(self, on: bool) -> None:
+        """
+        Set the switch state of the consumer (on = True, off = False).
+
+        Args:
+            on: True to switch on, False to switch off.
+
+        Raises:
+            ReadOnlyError: If the consumer does not support switching.
+        """
+        if self._can_switch:
+            await self._set_switch(on)
+        else:
+            raise ReadOnlyError()
+
+    @abstractmethod
+    async def _get_switch(self) -> bool:
+        ...
+
+    @abstractmethod
+    async def _set_switch(self, on: bool) -> None:
+        ...
+
+    # =================================================
+    #  Async context manager
+    # =================================================
+
     async def __aenter__(self) -> Self:
         """
         Enter the asynchronous context manager.
@@ -72,3 +120,28 @@ class PowerConsumer(ABC):
         Exit the asynchronous context manager and close the consumer.
         """
         await self.close()
+
+
+class SwitchRegister(Register):
+    """
+    A register to expose the switch of a power consumer.
+
+    This is a helper class for implementers of `PowerConsumer`.
+    """
+
+    def __init__(self, consumer: PowerConsumer) -> None:
+        """
+        Initialise the register giving access to the switch of a power consumer.
+
+        Args:
+            consumer: The power consumer.
+        """
+        super().__init__(bool, consumer.can_switch)
+        self._consumer: PowerConsumer = consumer
+
+    async def _get(self) -> bool:
+        return await self._consumer.get_switch()
+
+    async def _set(self, value: RegisterValue) -> None:
+        assert isinstance(value, bool), 'should be ensured by the parent class'
+        await self._consumer.set_switch(value)

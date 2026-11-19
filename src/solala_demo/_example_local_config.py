@@ -16,6 +16,11 @@ POWER_POINT_DEVICE = 'kjhasgdfkjhgaskdjhfgkashdgf'
 POWER_POINT_ACCESS_ID = 'jfkaskdjfh87193456ka8g'
 POWER_POINT_ACCESS_SECRET = 'aflsknotarealsecretdsafjpa127859'
 
+MATTER_SERVER_HOST = '192.168.0.203'
+MATTER_SERVER_PORT = 5580
+MATTER_PAIRING_CODE = '298735082340582304587023485'
+MATTER_DEVICE_IDS: dict[int, str] = {1: 'plug_1'}
+
 AMBER_API_TOKEN = 'psk_k56thisisnotarealapitokenlm5t0adf0f'
 NMI = '4109999999'
 

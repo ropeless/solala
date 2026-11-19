@@ -94,6 +94,8 @@ class DummyConsumerConnection(BaseModel):
                 current when omitted. If not None, then must be <= voltage * current.
         on: Is the device switched on. Defaults to True.
         failure: Optional simulated failure configuration.
+        can_switch: Whether the simulated consumer supports switching.
+        include_accumulated_energy: Whether to expose simulated accumulated energy.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -103,6 +105,8 @@ class DummyConsumerConnection(BaseModel):
     power: float | None = None
     on: bool = True
     failure: DummyConsumerFailure | None = None
+    can_switch: bool = True
+    include_accumulated_energy: bool = True
 
 
 class DummyForecasterFailure(DummyFailure):
@@ -187,6 +191,7 @@ class TuyaConnection(BaseModel):
         power_scale_factor: Multiplier applied to reported power values.
         cache_duration: How long to cache the device status. Use this to reduce how often the
                 API is called. The default value is 300 seconds (5 minutes).
+        include_accumulated_energy: Whether to use Tuya's 'add_ele' as accumulated energy in Wh.
 
     """
     TYPE: ClassVar[Literal['tuya']] = 'tuya'
@@ -200,6 +205,32 @@ class TuyaConnection(BaseModel):
     current_scale_factor: float = 0.001
     power_scale_factor: float = 0.1
     cache_duration: float = 300
+    include_accumulated_energy: bool = False
+
+
+class MatterConnection(BaseModel):
+    """
+    Configure a Matter power consumer through a Matter Server.
+
+    Attributes:
+        host: Matter Server hostname or IP address.
+        port: Matter Server WebSocket port.
+        node_id: Commissioned Matter node identifier.
+        endpoint_id: Endpoint containing the power consumer.
+        token: Optional bearer token for server authentication.
+        secure: Whether to use a TLS-protected WebSocket.
+        timeout: Server request timeout in seconds.
+    """
+    TYPE: ClassVar[Literal['matter']] = 'matter'
+    type: Literal['matter'] = 'matter'
+
+    host: str
+    port: int
+    node_id: int
+    endpoint_id: int = 1
+    token: str | None = None
+    secure: bool = False
+    timeout: float = 30
 
 
 class OpenMeteoConnection(BaseModel):
@@ -255,7 +286,7 @@ type PricerConnection = Annotated[
 ]
 
 type ConsumerConnection = Annotated[
-    DummyConsumerConnection | TeslaWallConnectorConnection | TuyaConnection,
+    DummyConsumerConnection | TeslaWallConnectorConnection | TuyaConnection | MatterConnection,
     Field(discriminator='type')
 ]
 

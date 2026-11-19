@@ -1,0 +1,132 @@
+import unittest
+from unittest.mock import AsyncMock, patch
+
+from solala.delegates.power_consumer.matter_power_consumer.matter_power_consumer import MatterPowerConsumer
+from solala.settings import MatterConnection, Settings
+
+
+class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
+    """
+    Verify Matter measurements, switching, errors, and configuration.
+    """
+
+    def setUp(self) -> None:
+        self.consumer = MatterPowerConsumer('localhost', 5580, node_id=1, endpoint_id=1)
+        self.attributes = {
+            '1/6/0': True,
+            '1/144/8': 125000,
+            '1/144/11': 239000,
+            '1/144/12': 530,
+            '1/145/1': {'0': 1234000},
+        }
+        self.consumer._request = AsyncMock(return_value=[
+            {'node_id': 1, 'available': True, 'attributes': self.attributes},
+        ])
+
+    async def test_status_converts_milliunits(self) -> None:
+        status = await self.consumer.get_status()
+        self.assertTrue(status.on)
+        self.assertEqual(status.power, 125)
+        self.assertEqual(status.voltage, 239)
+        self.assertEqual(status.current, 0.53)
+        self.assertEqual(status.accumulated_energy, 1234)
+
+    async def test_optional_energy(self) -> None:
+        self.attributes.pop('1/145/1')
+        self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
+
+    async def test_switch_command(self) -> None:
+        await self.consumer.set_switch(False)
+        self.consumer._request.assert_awaited_once_with(
+            'device_command', node_id=1, endpoint_id=1,
+            cluster_id=6, command_name='Off', payload={},
+        )
+
+    async def test_switch_register_and_measurements(self) -> None:
+        bank = await self.consumer.get_registers()
+        self.assertIs(bank, await self.consumer.get_registers())
+        self.assertTrue(bank['1/6/0'].writable)
+        self.assertTrue(await bank['1/6/0'].get())
+        self.assertEqual(await bank['1/144/8'].get(), 125000)
+        self.assertEqual(await bank['1/144/11'].get(), 239000)
+        self.assertEqual(await bank['1/144/12'].get(), 530)
+        self.assertNotIn('switch', bank)
+        self.assertNotIn('power', bank)
+        self.assertNotIn('voltage', bank)
+        self.assertNotIn('current', bank)
+
+    async def test_missing_node_and_unavailable_node(self) -> None:
+        self.consumer._request.return_value = []
+        with self.assertRaises(ConnectionError):
+            await self.consumer.get_status()
+        await self.consumer._attributes_cache.invalidate()
+        self.consumer._request.return_value = [
+            {'node_id': 1, 'available': False, 'attributes': self.attributes},
+        ]
+        with self.assertRaises(ConnectionError):
+            await self.consumer.get_status()
+
+    async def test_missing_or_invalid_required_attribute(self) -> None:
+        self.attributes.pop('1/144/8')
+        with self.assertRaises(ConnectionError):
+            await self.consumer.get_status()
+        self.attributes['1/144/8'] = 'invalid'
+        await self.consumer._attributes_cache.invalidate()
+        with self.assertRaises(ConnectionError):
+            await self.consumer.get_status()
+
+    async def test_server_error_propagates(self) -> None:
+        self.consumer._request.side_effect = ConnectionError('server unavailable')
+        with self.assertRaises(ConnectionError):
+            await self.consumer.get_status()
+
+    async def test_cached_snapshot_and_invalidation(self) -> None:
+        await self.consumer.get_status()
+        await self.consumer.get_status()
+        self.consumer._request.assert_awaited_once()
+        await self.consumer.set_switch(False)
+        await self.consumer.get_status()
+        self.assertEqual(self.consumer._request.await_count, 3)
+
+    async def test_diagnostic_registers_and_flattening(self) -> None:
+        self.attributes['0/40/1'] = 'Vendor'
+        self.attributes['1/145/1'] = {'0': 1234000}
+        excluded_clusters = (31, 48, 49, 53, 54, 62)
+        for cluster in excluded_clusters:
+            self.attributes[f'0/{cluster}/0'] = 'sensitive'
+        self.attributes['1/99/0'] = ['unsupported']
+        bank = await self.consumer.get_registers()
+        self.assertEqual(await bank['0/40/1'].get(), 'Vendor')
+        self.assertEqual(await bank['1/145/1/0'].get(), 1234000)
+        self.assertFalse(bank['1/145/1/0'].writable)
+        self.assertFalse(bank['1/144/8'].writable)
+        for cluster in excluded_clusters:
+            self.assertNotIn(f'0/{cluster}/0', bank)
+        self.assertNotIn('1/99/0', bank)
+
+    async def test_invalid_measurement_raises_connection_error(self) -> None:
+        self.attributes['1/144/8'] = 'bad'
+        with self.assertRaisesRegex(ConnectionError, 'bad'):
+            await self.consumer.get_status()
+
+    async def test_settings_and_factory(self) -> None:
+        config = MatterConnection(host='localhost', port=5580, node_id=1, token='test')
+        settings = Settings(consumers={'plug': config})
+        restored = Settings.model_validate_json(settings.model_dump_json())
+        self.assertEqual(restored.consumers['plug'], config)
+
+        import importlib
+        control_loop = importlib.import_module('solala.control_loop.control_loop')
+        with patch.object(control_loop, 'MatterPowerConsumer') as factory:
+            control_loop._connect_matter(config)
+        self.assertEqual(factory.call_args.kwargs['host'], 'localhost')
+        self.assertEqual(factory.call_args.kwargs['token'], 'test')
+        self.assertEqual(factory.call_args.kwargs['node_id'], 1)
+
+    async def test_close_is_idempotent(self) -> None:
+        await self.consumer.close()
+        await self.consumer.close()
+
+
+if __name__ == '__main__':
+    unittest.main()

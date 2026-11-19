@@ -171,6 +171,10 @@ class PowerController(ABC):
         """
         ...
 
+    # =================================================
+    #  Async context manager
+    # =================================================
+
     async def __aenter__(self) -> Self:
         """
         Enter the asynchronous context manager.

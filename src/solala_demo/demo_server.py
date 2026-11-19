@@ -2,7 +2,7 @@ from solala.utils.local_config_help import config
 from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
-    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, TuyaConnection, ConsumerConnection
+    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, TuyaConnection, MatterConnection, ConsumerConnection
 from solala_demo.log import configure_logger
 
 
@@ -19,6 +19,14 @@ def main():
             device_id=outlet_charger,
             access_id=config.POWER_POINT_ACCESS_ID,
             access_secret=config.POWER_POINT_ACCESS_SECRET,
+        )
+
+    matter_device_ids: dict[int, str] = config.get('MATTER_DEVICE_IDS', {})
+    for node_id, name in matter_device_ids.items():
+        consumers[name] = MatterConnection(
+            host=config.MATTER_SERVER_HOST,
+            port=config.MATTER_SERVER_PORT,
+            node_id=node_id,
         )
 
     settings = Settings(
@@ -64,6 +72,7 @@ def main():
         settings=settings,
         force_settings=config.FORCE_SETTINGS,
         database_write=config.DATABASE_WRITE,
+        solala_storage_secret=config.SOLALA_STORAGE_SECRET,
     )
 
 
