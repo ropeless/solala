@@ -1,6 +1,5 @@
 import asyncio
 import unittest
-from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,14 +10,14 @@ from solala.server.page_session import PageSession, _SessionListener
 from solala.server.page_updaters import ChartUpdater
 
 
-def test_colours() -> Colours:
+def _test_colours() -> Colours:
     """
     Provide concrete CSS colours for chart construction without a browser.
     """
     return Colours(*(['#123456'] * 10))
 
 
-def fake_echart(options: dict) -> MagicMock:
+def _fake_echart(options: dict) -> MagicMock:
     """
     Capture ECharts options without constructing NiceGUI UI elements.
     """
@@ -36,10 +35,9 @@ class GraphLegendTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_echarts_legend_event_is_forwarded(self) -> None:
         on_change = AsyncMock()
 
-        with patch('solala.server.graphs.ui.echart', side_effect=fake_echart) as create_chart:
-            power = PowerChart(test_colours(), {'Solar': False}, on_change)
+        with patch('solala.server.graphs.ui.echart', side_effect=_fake_echart):
+            power = PowerChart(_test_colours(), {'Solar': False}, on_change)
         chart = power.chart
-
 
         options = chart.options
         self.assertEqual(options['legend']['selected'], {'Solar': False})
@@ -81,9 +79,22 @@ class GraphLegendTestCase(unittest.IsolatedAsyncioTestCase):
         for updater in updaters:
             updater._energy_chart.set_selected_series.assert_called_once_with({'Import': False})
 
+    def test_synchronising_chart_updates_legend_options(self) -> None:
+        with patch('solala.server.graphs.ui.echart', side_effect=_fake_echart):
+            chart = PowerChart(_test_colours()).chart
+
+        chart.options['legend']['selected'] = {}
+        selections = {'Solar': False}
+        # Exercise the existing chart instance without a running browser.
+        chart_wrapper = PowerChart.__new__(PowerChart)
+        chart_wrapper.chart = chart
+        chart_wrapper.set_selected_series(selections)
+        self.assertEqual(chart.options['legend']['selected'], selections)
+        chart.update.assert_called_once()
+
     def test_restored_selections_applied_to_energy_chart(self) -> None:
-        with patch('solala.server.graphs.ui.echart', side_effect=fake_echart):
-            chart = EnergyChart(test_colours(), {'Import': False}, AsyncMock()).chart
+        with patch('solala.server.graphs.ui.echart', side_effect=_fake_echart):
+            chart = EnergyChart(_test_colours(), {'Import': False}, AsyncMock()).chart
 
         self.assertEqual(chart.options['legend']['selected'],
                          {'Import': False})
