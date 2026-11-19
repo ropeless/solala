@@ -4,7 +4,7 @@ from datetime import datetime
 from collections.abc import Awaitable, Callable, Sequence
 
 import numpy as np
-from nicegui import ui
+from nicegui import ui, events
 
 from solala.constants import Units, GUI_TIME_FORMAT
 from solala.server.css_colours import Colours, rgba
@@ -73,7 +73,7 @@ class SolalaChart(ABC):
             options['legend']['selected'] = selected_series.copy() if selected_series else {}
         self.chart = ui.echart(options).classes('w-full')
         if show_legend and on_legend_change is not None:
-            async def changed(event: object) -> None:
+            async def changed(event: events.GenericEventArguments) -> None:
                 selected = event.args['selected']
                 await on_legend_change(name, selected)
             self.chart.on('legendselectchanged', changed)
