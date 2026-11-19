@@ -25,12 +25,29 @@ class TestRenderJson(unittest.TestCase):
     def test_negative_integer(self) -> None:
         self.check_render(-12, '-12')
 
-    # TODO currently fails
-    # def test_positive_float_integer(self) -> None:
-    #     self.check_render(123.0, '123')
+    def test_positive_float_integer_simple(self) -> None:
+        self.check_render(1.0, '1')
+
+    def test_negative_float_integer_simple(self) -> None:
+        self.check_render(-2.0, '-2')
+
+    def test_positive_float_integer(self) -> None:
+        self.check_render(12.0, '12')
 
     def test_negative_float_integer(self) -> None:
         self.check_render(-12.0, '-12')
+
+    def test_positive_integral_float(self) -> None:
+        self.check_render(123.0, '123')
+
+    def test_negative_integral_float(self) -> None:
+        self.check_render(-123.0, '-123')
+
+    def test_large_integral_float(self) -> None:
+        self.check_render(1000.0, '1000')
+
+    def test_large_negative_integral_float(self) -> None:
+        self.check_render(-1000.0, '-1000')
 
     def test_zero(self) -> None:
         self.check_render(0, '0')
@@ -40,6 +57,9 @@ class TestRenderJson(unittest.TestCase):
 
     def test_float_default_precision(self) -> None:
         self.check_render(1.234, '1.2')
+
+    def test_integral_float_with_custom_format(self) -> None:
+        self.check_render(123.0, '123', float_format='.2f')
 
     def test_float_custom_precision(self) -> None:
         self.check_render(1.234, '1.23', float_format='.2f')
@@ -290,18 +310,6 @@ class TestRenderJson(unittest.TestCase):
             '  outer:\n'
             '    value = 1',
         )
-
-    def test_positive_integral_float(self) -> None:
-        self.check_render(123.0, '123')
-
-    def test_large_integral_float(self) -> None:
-        self.check_render(1000.0, '1000')
-
-    def test_negative_integral_float(self) -> None:
-        self.check_render(-123.0, '-123')
-
-    def test_integral_float_with_custom_format(self) -> None:
-        self.check_render(123.0, '123', float_format='.2f')
 
     def test_unicode_ascii_escaping(self) -> None:
         self.check_render('café', r"'caf\u00e9'", ensure_ascii=True)
