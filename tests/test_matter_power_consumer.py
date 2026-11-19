@@ -91,14 +91,17 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_diagnostic_registers_and_flattening(self) -> None:
         self.attributes['0/40/1'] = 'Vendor'
         self.attributes['1/145/1'] = {'0': 1234000}
-        self.attributes['0/62/0'] = 'sensitive'
+        excluded_clusters = (31, 48, 49, 53, 54, 62)
+        for cluster in excluded_clusters:
+            self.attributes[f'0/{cluster}/0'] = 'sensitive'
         self.attributes['1/99/0'] = ['unsupported']
         bank = await self.consumer.get_registers()
         self.assertEqual(await bank['0/40/1'].get(), 'Vendor')
         self.assertEqual(await bank['1/145/1/0'].get(), 1234000)
         self.assertFalse(bank['1/145/1/0'].writable)
         self.assertFalse(bank['1/144/8'].writable)
-        self.assertNotIn('0/62/0', bank)
+        for cluster in excluded_clusters:
+            self.assertNotIn(f'0/{cluster}/0', bank)
         self.assertNotIn('1/99/0', bank)
 
     async def test_invalid_measurement_raises_connection_error(self) -> None:
