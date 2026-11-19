@@ -32,6 +32,7 @@ class DayNavigator:
             enable_swipe_content: bool = False,
             enable_swipe_navigator: bool = True,
             enable_arrow_keys: bool = True,
+            show_carousel_arrows: bool = True,
             auto_height: bool = False,
             title: str = '',
             on_day_change: Callable[[date], Awaitable[None]] | None = None,
@@ -57,6 +58,7 @@ class DayNavigator:
             enable_swipe_content: Enable horizontal swipes over slide content.
             enable_swipe_navigator: Enable horizontal swipes over the date bar.
             enable_arrow_keys: Enable left arrow, right arrow, and home key navigation.
+            show_carousel_arrows: Show the carousel's built-in overlay arrows.
             auto_height: Allow the carousel to follow its active slide's height.
                 Call `initialise_auto_height()` after the client is ready.
             title: Optional heading above the date navigator.
@@ -122,7 +124,7 @@ class DayNavigator:
                     button_classes
                 ).tooltip('Next day')
 
-        carousel = ui.carousel(animated=True, arrows=True, navigation=False). \
+        carousel = ui.carousel(animated=True, arrows=show_carousel_arrows, navigation=False). \
             props(_CAROUSEL_PROPS).classes('w-full')
         if self._auto_height_id is not None:
             carousel.props(f'id={self._auto_height_id}')
