@@ -94,6 +94,7 @@ class DummyConsumerConnection(BaseModel):
                 current when omitted. If not None, then must be <= voltage * current.
         on: Is the device switched on. Defaults to True.
         failure: Optional simulated failure configuration.
+        include_accumulated_energy: Whether to expose simulated accumulated energy.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
     type: Literal['dummy'] = 'dummy'
@@ -103,6 +104,7 @@ class DummyConsumerConnection(BaseModel):
     power: float | None = None
     on: bool = True
     failure: DummyConsumerFailure | None = None
+    include_accumulated_energy: bool = True
 
 
 class DummyForecasterFailure(DummyFailure):
@@ -187,6 +189,7 @@ class TuyaConnection(BaseModel):
         power_scale_factor: Multiplier applied to reported power values.
         cache_duration: How long to cache the device status. Use this to reduce how often the
                 API is called. The default value is 300 seconds (5 minutes).
+        include_accumulated_energy: Whether to use Tuya's 'add_ele' as accumulated energy in Wh.
 
     """
     TYPE: ClassVar[Literal['tuya']] = 'tuya'
@@ -200,6 +203,7 @@ class TuyaConnection(BaseModel):
     current_scale_factor: float = 0.001
     power_scale_factor: float = 0.1
     cache_duration: float = 300
+    include_accumulated_energy: bool = False
 
 
 class OpenMeteoConnection(BaseModel):
