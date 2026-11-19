@@ -240,7 +240,7 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
     with container:
         swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
         with swipe_area:
-            navigator = DayNavigator(auto_height=True, title='Daily Graphs',
+            navigator = DayNavigator(auto_height=True, show_carousel_arrows=False, title='Daily Graphs',
                                      on_day_change=session.on_day_change, track_task=session.add_task)
             updaters = [
                 ChartUpdater(element, session=session)
