@@ -1,14 +1,16 @@
 import asyncio
 import json
+from functools import partial
 from typing import Any
 
 import aiohttp
 
 from solala.delegates.power_consumer.consumer_status import ConsumerStatus
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, SwitchRegister
-from solala.register import AsyncCallRegister
+from solala.register import AsyncCallRegister, Register, RegisterValue, check_type, check_value
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict
+from solala.utils.micro_cache import AsyncMicroCache
 
 
 class MatterPowerConsumer(PowerConsumer):
@@ -52,12 +54,15 @@ class MatterPowerConsumer(PowerConsumer):
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._lock = asyncio.Lock()
         self._request_id = 0
-        self._register_bank = RegisterBank({
+        self._attributes_cache = AsyncMicroCache(self.__fetch_node_attributes, 0.1)
+        self._register_bank_lock = asyncio.Lock()
+        self._register_bank: RegisterBank | None = None
+        self._status_registers: dict[str, Register] = {
             'switch': SwitchRegister(self),
             'voltage': AsyncCallRegister(self._voltage, float),
             'current': AsyncCallRegister(self._current, float),
             'power': AsyncCallRegister(self._power, float),
-        })
+        }
         self._connection_info: JSONDict = {
             'connection': 'Matter',
             'host': host,
@@ -115,6 +120,9 @@ class MatterPowerConsumer(PowerConsumer):
                 raise
 
     async def _node_attributes(self) -> dict[str, Any]:
+        return await self._attributes_cache()
+
+    async def __fetch_node_attributes(self) -> dict[str, Any]:
         """
         Retrieve attributes of the configured node, requiring it to be available.
         """
@@ -146,7 +154,7 @@ class MatterPowerConsumer(PowerConsumer):
         def measurement(cluster: int, attribute: int) -> float:
             _value = self._attribute(attributes, cluster, attribute)
             if isinstance(_value, bool) or not isinstance(_value, (int, float)):
-                raise ConnectionError(f'Invalid Matter measurement: {value!r}')
+                raise ConnectionError(f'Invalid Matter measurement: {_value!r}')
             return float(_value) / 1000
 
         energy = attributes.get(f'{self._endpoint_id}/145/1')
@@ -178,6 +186,7 @@ class MatterPowerConsumer(PowerConsumer):
             command_name='On' if on else 'Off',
             payload={},
         )
+        await self._attributes_cache.invalidate()
 
     async def _voltage(self) -> float:
         return (await self.get_status()).voltage
@@ -189,7 +198,49 @@ class MatterPowerConsumer(PowerConsumer):
         return (await self.get_status()).power
 
     async def get_registers(self) -> RegisterBank:
-        return self._register_bank
+        bank = self._register_bank
+        if bank is None:
+            async with self._register_bank_lock:
+                bank = self._register_bank
+                if bank is None:
+                    attributes = await self._node_attributes()
+                    registers = dict(self._status_registers)
+                    for key, value in self._flatten_attributes(attributes).items():
+                        if key in registers:
+                            continue
+                        try:
+                            register_type = check_type(type(value))
+                        except TypeError:
+                            continue
+                        registers[key] = AsyncCallRegister(
+                            partial(self._get_raw_register, key), register_type,
+                        )
+                    bank = RegisterBank(registers)
+                    self._register_bank = bank
+        return bank
+
+    @staticmethod
+    def _flatten_attributes(attributes: dict[str, Any]) -> dict[str, RegisterValue]:
+        """Flatten nested Matter attributes into scalar diagnostic registers."""
+        flattened: dict[str, RegisterValue] = {}
+
+        def visit(key: str, value: Any) -> None:
+            if isinstance(value, dict):
+                for child, item in value.items():
+                    visit(f'{key}/{child}', item)
+            elif isinstance(value, (str, int, float, bool)):
+                flattened[key] = check_value(value)
+
+        for key, value in attributes.items():
+            visit(key, value)
+        return flattened
+
+    async def _get_raw_register(self, key: str) -> RegisterValue:
+        attributes = await self._node_attributes()
+        values = self._flatten_attributes(attributes)
+        if key not in values:
+            raise ConnectionError(f'Matter diagnostic attribute {key} is unavailable')
+        return values[key]
 
     def get_connection_info(self) -> JSONDict:
         return self._connection_info
