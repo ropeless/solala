@@ -47,6 +47,7 @@ class DummyPowerConsumer(PowerConsumer):
             *,
             failure: DummyFailure | None = None,
             can_switch: bool = True,
+            include_accumulated_energy: bool = True,
     ) -> None:
         """
         Initialise the simulated consumer.
@@ -59,11 +60,13 @@ class DummyPowerConsumer(PowerConsumer):
             on: Is the device switched on. Defaults to True.
             failure: Optional simulated failure configuration.
             can_switch: Whether the simulated consumer supports switching.
+            include_accumulated_energy: Whether to expose accumulated energy in Wh.
 
         Raises:
             ValueError: If power is negative or exceeds voltage multiplied by current.
         """
         super().__init__(can_switch)
+        self._include_accumulated_energy = include_accumulated_energy
 
         self.failure = failure
         self._voltage: float = 0
@@ -152,7 +155,7 @@ class DummyPowerConsumer(PowerConsumer):
             current=self.current,
             power=self.power,
             on=self._on,
-            accumulated_energy=self._energy,
+            accumulated_energy=self._energy if self._include_accumulated_energy else None,
         )
 
     def get_connection_info(self) -> dict[str, int | float | str]:
@@ -164,6 +167,7 @@ class DummyPowerConsumer(PowerConsumer):
             'voltage': self._voltage,
             'current': self._current,
             'can_switch': self.can_switch,
+            'include_accumulated_energy': self._include_accumulated_energy,
         }
 
     async def close(self) -> None:
