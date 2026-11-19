@@ -1,5 +1,6 @@
 import unittest
 from datetime import date
+from unittest.mock import AsyncMock, patch
 
 from solala.server.ui_state import UIState, UIStateStorage
 
@@ -46,24 +47,35 @@ class UIStateTestCase(unittest.TestCase):
     def test_missing_fields(self) -> None:
         self.assertEqual(UIState.from_dict({}, TABS, DEFAULT_TAB), UIState(tab=DEFAULT_TAB))
 
-    def test_storage_round_trip(self) -> None:
-        storage: dict[str, object] = {}
-        adapter = UIStateStorage(storage, TABS, DEFAULT_TAB)
-        state = UIState(tab='Solar', displayed_day=date(2026, 11, 19))
-        adapter.save(state)
-        self.assertEqual(adapter.load(), state)
+class UIStateStorageTestCase(unittest.IsolatedAsyncioTestCase):
+    """
+    Verify browser sessionStorage access.
+    """
 
-    def test_storage_snapshot_is_independent(self) -> None:
-        storage: dict[str, object] = {}
-        adapter = UIStateStorage(storage, TABS, DEFAULT_TAB)
-        state = UIState(tab=DEFAULT_TAB, graph_series={'Energy': {'Solar': False}})
-        adapter.save(state)
-        state.graph_series['Energy']['Solar'] = True
-        self.assertFalse(adapter.load().graph_series['Energy']['Solar'])
+    async def test_load_missing_state(self) -> None:
+        storage = UIStateStorage(TABS, DEFAULT_TAB)
+        with patch('solala.server.ui_state.ui.run_javascript', new_callable=AsyncMock) as run:
+            run.return_value = None
+            self.assertEqual(await storage.load(), UIState(tab=DEFAULT_TAB))
+            self.assertIn('sessionStorage.getItem', run.await_args.args[0])
 
-        loaded = adapter.load()
-        loaded.graph_series['Energy']['Solar'] = True
-        self.assertFalse(adapter.load().graph_series['Energy']['Solar'])
+    async def test_load_saved_state(self) -> None:
+        storage = UIStateStorage(TABS, DEFAULT_TAB)
+        state = UIState(tab='Graphs', displayed_day=date(2026, 11, 18))
+        with patch('solala.server.ui_state.ui.run_javascript', new_callable=AsyncMock) as run:
+            run.return_value = state.to_dict()
+            self.assertEqual(await storage.load(), state)
+
+    async def test_save_serializes_state(self) -> None:
+        storage = UIStateStorage(TABS, DEFAULT_TAB)
+        state = UIState(tab='Solar', graph_series={'Power': {'Solar': False}})
+        with patch('solala.server.ui_state.ui.run_javascript', new_callable=AsyncMock) as run:
+            await storage.save(state)
+            run.assert_awaited_once()
+            script = run.await_args.args[0]
+            self.assertIn('sessionStorage.setItem', script)
+            self.assertIn('solala_ui_state', script)
+            self.assertIn('Solar', script)
 
 
 if __name__ == '__main__':
