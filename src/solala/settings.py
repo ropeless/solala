@@ -94,6 +94,7 @@ class DummyConsumerConnection(BaseModel):
                 current when omitted. If not None, then must be <= voltage * current.
         on: Is the device switched on. Defaults to True.
         failure: Optional simulated failure configuration.
+        can_switch: Whether the simulated consumer supports switching.
         include_accumulated_energy: Whether to expose simulated accumulated energy.
     """
     TYPE: ClassVar[Literal['dummy']] = 'dummy'
@@ -104,6 +105,7 @@ class DummyConsumerConnection(BaseModel):
     power: float | None = None
     on: bool = True
     failure: DummyConsumerFailure | None = None
+    can_switch: bool = True
     include_accumulated_energy: bool = True
 
 
