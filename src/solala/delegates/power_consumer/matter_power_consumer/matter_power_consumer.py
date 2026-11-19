@@ -13,6 +13,18 @@ from solala.utils.json_extras import JSONDict
 from solala.utils.micro_cache import AsyncMicroCache
 
 
+# Exclude potentially sensitive Matter clusters from diagnostic registers.
+# Comment out individual entries to expose their attributes when appropriate.
+_EXCLUDED_CLUSTERS = {
+    31,  # Access Control
+    48,  # General Commissioning
+    49,  # Network Commissioning
+    53,  # Thread Network Diagnostics
+    54,  # Wi-Fi Network Diagnostics
+    62,  # Operational Credentials
+}
+
+
 class MatterPowerConsumer(PowerConsumer):
     """
     Monitor and switch a Matter device through a Matter Server WebSocket.
@@ -141,8 +153,8 @@ class MatterPowerConsumer(PowerConsumer):
         """
         Flatten scalar and nested dictionary attributes for diagnostic registers.
 
-        Operational Credentials cluster (62) is excluded because it can contain
-        sensitive certificate and fabric information.
+        Exclude clusters listed in _EXCLUDED_CLUSTERS to avoid exposing
+        potentially sensitive commissioning, network, and fabric information.
         """
         result: dict[str, RegisterValue] = {}
 
@@ -155,7 +167,7 @@ class MatterPowerConsumer(PowerConsumer):
 
         for key, value in attributes.items():
             parts = key.split('/')
-            if len(parts) >= 2 and parts[1] == '62':
+            if len(parts) >= 3 and parts[1].isdigit() and int(parts[1]) in _EXCLUDED_CLUSTERS:
                 continue
             add(key, value)
         return result
