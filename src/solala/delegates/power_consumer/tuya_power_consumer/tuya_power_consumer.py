@@ -1,10 +1,11 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
 from tuya_connector import TuyaOpenAPI
 
-from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
+from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus, SwitchRegister
 from solala.register import RegisterType, check_type, AsyncCallRegister, check_value, RegisterValue
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_num, json_bool
@@ -50,6 +51,8 @@ class TuyaPowerConsumer(PowerConsumer):
             cache_duration: How long to cache the device status. Use this to reduce how often the
                 API is called. The default value is 300 seconds (5 minutes).
         """
+        super().__init__(can_switch=True)
+        self._command_url: str = f'/v1.0/iot-03/devices/{device_id}/commands'
         self._voltage_scale_factor: float = voltage_scale_factor
         self._current_scale_factor: float = current_scale_factor
         self._power_scale_factor: float = power_scale_factor
@@ -92,10 +95,12 @@ class TuyaPowerConsumer(PowerConsumer):
             async with self._register_bank_lock:
                 reg_bank = self._register_bank
                 if reg_bank is None:
-                    reg_bank = RegisterBank({
+                    registers = {
                         key: AsyncCallRegister(partial(self._get_register_value, key), reg_type)
                         async for key, reg_type in self._get_register_keys()
-                    })
+                    }
+                    registers['switch_1'] = SwitchRegister(self)
+                    reg_bank = RegisterBank(registers)
                     self._register_bank = reg_bank
         return reg_bank
 
@@ -110,7 +115,28 @@ class TuyaPowerConsumer(PowerConsumer):
             current=current,
             power=power,
             on=on,
+            accumulated_energy=None,
         )
+
+    async def _get_switch(self) -> bool:
+        """
+        Return the switch state reported by Tuya.
+        """
+        device_status: JSONDict = await self._cache()
+        return json_bool(device_status['switch_1'])
+
+    async def _set_switch(self, on: bool) -> None:
+        """
+        Set the Tuya switch state.
+
+        Args:
+            on: True to switch on, False to switch off.
+        """
+        await self._connect()
+        payload = json.dumps({'commands': [{'code': 'switch_1', 'value': on}]})
+        response = await asyncio.to_thread(self._tuya.post, self._command_url, payload)
+        if not response.get('success', False):
+            raise ConnectionError(response)
 
     def get_connection_info(self) -> JSONDict:
         return self._connection_info
