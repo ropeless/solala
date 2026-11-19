@@ -23,6 +23,7 @@ from solala.control_loop.resolve_addresses import ResolvedAddress, resolve_addre
 from solala.database.solala_database import SolalaDatabase, Measurement
 from solala.database.solala_database_connections import SolalaDatabaseConnections
 from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
+from solala.delegates.power_consumer.matter_power_consumer import MatterPowerConsumer
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
@@ -46,7 +47,7 @@ from solala.register_bank import RegisterBank, EMPTY_REGISTER_BANK
 from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, TeslaWallConnectorConnection, \
     ControllerConnection, PricerConnection, ConsumerConnection, DummyControllerConnection, DummyPricerConnection, \
     DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, DummySolarForecasterConnection, \
-    DatabaseConnection, TuyaConnection
+    DatabaseConnection, TuyaConnection, MatterConnection
 from solala.utils.json_extras import JSONDict, json_num, JSONValue
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
 from solala.utils.ordered_async_rlock import OrderedAsyncRLock
@@ -1215,6 +1216,9 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
         elif consumer_connection.type == TeslaWallConnectorConnection.TYPE:
             assert isinstance(consumer_connection, TeslaWallConnectorConnection)
             consumer = _connect_tesla_wall_connector(consumer_connection)
+        elif consumer_connection.type == MatterConnection.TYPE:
+            assert isinstance(consumer_connection, MatterConnection)
+            consumer = _connect_matter(consumer_connection)
         elif consumer_connection.type == TuyaConnection.TYPE:
             assert isinstance(consumer_connection, TuyaConnection)
             consumer = _connect_tuya(consumer_connection)
@@ -1943,6 +1947,24 @@ def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnect
         return TeslaWallConnector(address.ip_address, address.mac_address)
     except Exception as err:
         raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
+
+
+def _connect_matter(consumer_connection: MatterConnection) -> PowerConsumer:
+    """
+    Construct a Matter consumer from explicitly supplied connection settings.
+    """
+    try:
+        return MatterPowerConsumer(
+            host=consumer_connection.host,
+            port=consumer_connection.port,
+            node_id=consumer_connection.node_id,
+            endpoint_id=consumer_connection.endpoint_id,
+            token=consumer_connection.token,
+            secure=consumer_connection.secure,
+            timeout=consumer_connection.timeout,
+        )
+    except Exception as err:
+        raise ControlLoopError('could not configure Matter consumer', errors=[str(err)])
 
 
 def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
