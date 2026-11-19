@@ -18,7 +18,7 @@ async def main() -> None:
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.ws_connect(config.MATTER_SERVER_URL) as ws:
             greeting = await ws.receive_json(timeout=15)
-            if greeting.get('message_type') != 'server_info':
+            if 'sdk_version' not in greeting:
                 raise RuntimeError(f'Unexpected Matter Server greeting: {greeting!r}')
             print(f'Server: {greeting.get("sdk_version", "unknown")}')
 
