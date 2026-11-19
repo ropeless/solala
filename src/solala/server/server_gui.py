@@ -536,7 +536,7 @@ async def session_storage_test() -> None:
     ui.label(f'NiceGUI client ID: {ui.context.client.id}')
     ui.button('Reload page', on_click=ui.navigate.reload)
 
-    result = await ui.run_javascript('''() => {
+    result = await ui.run_javascript('''(() => {
         const countKey = 'solala_session_test_count';
         const identityKey = 'solala_session_test_identity';
         const count = Number(sessionStorage.getItem(countKey) || '0') + 1;
@@ -547,6 +547,6 @@ async def session_storage_test() -> None:
             sessionStorage.setItem(identityKey, identity);
         }
         return {count, identity};
-    }''')
+    })()''')
     count_label.set_text(f'Session-storage page loads: {result["count"]}')
     identity_label.set_text(f'Session-storage identity: {result["identity"]}')
