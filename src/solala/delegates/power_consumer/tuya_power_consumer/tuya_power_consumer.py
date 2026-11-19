@@ -1,5 +1,4 @@
 import asyncio
-import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
@@ -137,7 +136,7 @@ class TuyaPowerConsumer(PowerConsumer):
             on: True to switch on, False to switch off.
         """
         await self._connect()
-        payload = json.dumps({'commands': [{'code': 'switch_1', 'value': on}]})
+        payload = {'commands': [{'code': 'switch_1', 'value': on}]}
         response = await asyncio.to_thread(self._tuya.post, self._command_url, payload)
         if not response.get('success', False):
             raise ConnectionError(response)
