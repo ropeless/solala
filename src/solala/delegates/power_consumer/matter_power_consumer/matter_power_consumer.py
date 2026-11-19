@@ -7,10 +7,9 @@ import aiohttp
 
 from solala.delegates.power_consumer.consumer_status import ConsumerStatus
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, SwitchRegister
-from solala.register import AsyncCallRegister, Register, check_type, RegisterValue, Register, RegisterValue, check_type, check_value
+from solala.register import AsyncCallRegister, Register, RegisterValue, check_type
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict
-from solala.utils.micro_cache import AsyncMicroCache
 from solala.utils.micro_cache import AsyncMicroCache
 
 
@@ -55,8 +54,6 @@ class MatterPowerConsumer(PowerConsumer):
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._lock = asyncio.Lock()
         self._request_id = 0
-        self._attributes_cache = AsyncMicroCache(self.__fetch_node_attributes, 0.1)
-        self._register_bank_lock = asyncio.Lock()
         self._attributes_cache = AsyncMicroCache(self.__fetch_node_attributes, 0.1)
         self._register_bank_lock = asyncio.Lock()
         self._register_bank: RegisterBank | None = None
@@ -257,29 +254,6 @@ class MatterPowerConsumer(PowerConsumer):
                     bank = RegisterBank(registers)
                     self._register_bank = bank
         return bank
-
-    @staticmethod
-    def _flatten_attributes(attributes: dict[str, Any]) -> dict[str, RegisterValue]:
-        """Flatten nested Matter attributes into scalar diagnostic registers."""
-        flattened: dict[str, RegisterValue] = {}
-
-        def visit(key: str, value: Any) -> None:
-            if isinstance(value, dict):
-                for child, item in value.items():
-                    visit(f'{key}/{child}', item)
-            elif isinstance(value, (str, int, float, bool)):
-                flattened[key] = check_value(value)
-
-        for key, value in attributes.items():
-            visit(key, value)
-        return flattened
-
-    async def _get_raw_register(self, key: str) -> RegisterValue:
-        attributes = await self._node_attributes()
-        values = self._flatten_attributes(attributes)
-        if key not in values:
-            raise ConnectionError(f'Matter diagnostic attribute {key} is unavailable')
-        return values[key]
 
     def get_connection_info(self) -> JSONDict:
         return self._connection_info
