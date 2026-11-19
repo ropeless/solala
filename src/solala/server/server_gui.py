@@ -246,6 +246,15 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
                 ChartUpdater(element, session=session)
                 for element in navigator.get_elements()
             ]
+            persist_legend = session.on_legend_change
+
+            async def sync_legend(chart: str, selected: dict[str, bool]) -> None:
+                for updater in updaters:
+                    updater.sync_legend(chart, selected)
+                if persist_legend is not None:
+                    await persist_legend(chart, selected)
+
+            session.on_legend_change = sync_legend
             navigator.set_listeners(*(updater.set_day for updater in updaters))
             await navigator.set_day(session.initial_day or date.today())
             session.add_timer(ui.timer(60, navigator.refresh_day_label))
@@ -450,10 +459,17 @@ class TabSelector:
                     self._state.displayed_day = day
                     await self._state_storage.save(self._state)
 
+            async def save_legend(chart: str, selected: dict[str, bool]) -> None:
+                if self.active_tab == tab_name:
+                    self._state.graph_series[chart] = selected.copy()
+                    await self._state_storage.save(self._state)
+
             session = PageSession(
                 self.colours, self.select_tab,
                 initial_day=restored_day,
                 on_day_change=save_day if tab_name in (_SOLAR_TAB, 'Graphs') else None,
+                graph_series=self._state.graph_series,
+                on_legend_change=save_legend if tab_name == 'Graphs' else None,
             )
             self.active_session = session
             self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
