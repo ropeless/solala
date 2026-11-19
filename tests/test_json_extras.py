@@ -130,6 +130,34 @@ class TestRenderJson(unittest.TestCase):
     def test_none_does_not_get_unit(self) -> None:
         self.check_render({'power': None}, '  power = none', units={'power': ' W'})
 
+    def test_deeply_nested_dictionaries(self) -> None:
+        self.check_render(
+            {'outer': {'inner': {'value': 42}}},
+            '  outer:\\n    inner:\\n      value = 42',
+        )
+
+    def test_nested_list_of_dictionaries(self) -> None:
+        self.check_render(
+            {'groups': [{'name': 'alpha', 'readings': [1, 2]}, {'name': 'beta', 'readings': [3, 4]}]},
+            "  groups = [\\n      name = 'alpha'\\n      readings = [\\n        1\\n        2\\n      ]"
+            "\\n      name = 'beta'\\n      readings = [\\n        3\\n        4\\n      ]\\n  ]",
+        )
+
+    def test_deeply_nested_mixed_containers(self) -> None:
+        self.check_render(
+            {'a': [{'b': {'c': [1, {'d': None}]}}]},
+            '  a = [\\n      b:\\n        c = [\\n          1\\n            d = none\\n        ]\\n  ]',
+        )
+
+    def test_nested_containers_with_empty_list(self) -> None:
+        self.check_render(
+            [{'section': {'measurements': [{'power': 1.25, 'active': True}, {'power': 2.5, 'active': False}]}},
+             {'section': {'measurements': []}}],
+            '[\\n    section:\\n      measurements = [\\n          power = 1.2\\n          active = true'
+            '\\n          power = 2.5\\n          active = false\\n      ]'
+            '\\n    section:\\n      measurements = []\\n]',
+        )
+
     def test_custom_indent(self) -> None:
         self.check_render([1, 2], '[\n    1\n    2\n]', indent=4)
 
