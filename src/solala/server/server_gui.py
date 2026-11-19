@@ -523,3 +523,30 @@ async def storage_test() -> None:
     ui.label(f'User-storage page loads: {count}')
     ui.label(f'NiceGUI client ID: {ui.context.client.id}')
     ui.button('Reload page', on_click=ui.navigate.reload)
+
+
+@ui.page('/session_storage_test')
+async def session_storage_test() -> None:
+    """
+    Diagnose browser-tab sessionStorage across reloads and server restarts.
+    """
+    ui.label('Browser sessionStorage diagnostic')
+    count_label = ui.label('Reading sessionStorage...')
+    identity_label = ui.label('Reading tab identity...')
+    ui.label(f'NiceGUI client ID: {ui.context.client.id}')
+    ui.button('Reload page', on_click=ui.navigate.reload)
+
+    result = await ui.run_javascript('''() => {
+        const countKey = 'solala_session_test_count';
+        const identityKey = 'solala_session_test_identity';
+        const count = Number(sessionStorage.getItem(countKey) || '0') + 1;
+        sessionStorage.setItem(countKey, String(count));
+        let identity = sessionStorage.getItem(identityKey);
+        if (!identity) {
+            identity = crypto.randomUUID();
+            sessionStorage.setItem(identityKey, identity);
+        }
+        return {count, identity};
+    }''')
+    count_label.set_text(f'Session-storage page loads: {result["count"]}')
+    identity_label.set_text(f'Session-storage identity: {result["identity"]}')
