@@ -323,3 +323,134 @@ class TestRenderJson(unittest.TestCase):
             ']',
             indent=4,
         )
+
+
+    def test_string_with_colon(self) -> None:
+        self.check_render('status: ready', "'status: ready'")
+
+    def test_dictionary_string_with_colon(self) -> None:
+        self.check_render({'message': 'status: ready'}, "  message = 'status: ready'")
+
+    def test_string_with_double_quote(self) -> None:
+        self.check_render('a"b', "'a\"b'")
+
+    def test_string_with_single_quote(self) -> None:
+        self.check_render("a'b", '"a\'b"')
+
+    def test_string_with_backslash(self) -> None:
+        self.check_render('a\\b', r"'a\\b'")
+
+    def test_string_with_newline(self) -> None:
+        self.check_render('a\nb', r"'a\nb'")
+
+    def test_string_with_tab(self) -> None:
+        self.check_render('a\tb', r"'a\tb'")
+
+    def test_string_with_carriage_return(self) -> None:
+        self.check_render('a\rb', r"'a\rb'")
+
+    def test_string_with_colon_and_underscore(self) -> None:
+        self.check_render('FORCE_CHARGE: active', "'FORCE CHARGE: active'")
+
+    def test_dictionary_key_with_dash(self) -> None:
+        self.check_render({'grid-power': 123}, '  grid-power = 123')
+
+    def test_dictionary_key_with_dot(self) -> None:
+        self.check_render({'grid.power': 123}, '  grid.power = 123')
+
+    def test_dictionary_key_with_colon(self) -> None:
+        self.check_render({'grid:power': 123}, '  grid:power = 123')
+
+    def test_dictionary_key_with_slash(self) -> None:
+        self.check_render({'grid/power': 123}, '  grid/power = 123')
+
+    def test_dictionary_key_with_double_quote(self) -> None:
+        self.check_render({'a"b': 1}, '  a"b = 1')
+
+    def test_dictionary_key_with_unicode(self) -> None:
+        self.check_render({'café': 1}, '  café = 1')
+
+    def test_dictionary_key_with_leading_space(self) -> None:
+        self.check_render({' power': 1}, '   power = 1')
+
+    def test_dictionary_key_with_trailing_space(self) -> None:
+        self.check_render({'power ': 1}, '  power  = 1')
+
+    def test_dictionary_key_with_empty_string(self) -> None:
+        self.check_render({'': 1}, '   = 1')
+
+    def test_nested_dictionary_key_with_punctuation(self) -> None:
+        self.check_render(
+            {'system': {'grid.power': 123}},
+            '  system:\n'
+            '    grid.power = 123',
+        )
+
+    def test_boolean_does_not_get_unit(self) -> None:
+        self.check_render({'enabled': True}, '  enabled = true', units={'enabled': ' W'})
+
+    def test_false_does_not_get_unit(self) -> None:
+        self.check_render({'enabled': False}, '  enabled = false', units={'enabled': ' W'})
+
+    def test_units_in_nested_list_dictionary(self) -> None:
+        self.check_render(
+            {'readings': [{'power': 12}, {'power': 34}]},
+            '  readings = [\n'
+            '      power = 12 W\n'
+            '      power = 34 W\n'
+            '  ]',
+            units={'power': ' W'},
+        )
+
+    def test_units_on_nested_integral_float(self) -> None:
+        self.check_render(
+            {'battery': {'power': 123.0}},
+            '  battery:\n'
+            '    power = 123 W',
+            units={'power': ' W'},
+        )
+
+    def test_empty_dictionary_as_only_nested_value(self) -> None:
+        self.check_render({'empty': {}}, '')
+
+    def test_empty_dictionaries_only_in_list(self) -> None:
+        self.check_render([{}, {}], '[\n]')
+
+    def test_empty_dictionary_in_tuple(self) -> None:
+        self.check_render(
+            ({}, {'power': 1}),
+            '[\n'
+            '    power = 1\n'
+            ']',
+        )
+
+    def test_empty_tuple(self) -> None:
+        self.check_render((), '[]')
+
+    def test_nested_tuple_and_list(self) -> None:
+        self.check_render(
+            [(1, 2), [3, 4]],
+            '[\n'
+            '  [\n'
+            '    1\n'
+            '    2\n'
+            '  ]\n'
+            '  [\n'
+            '    3\n'
+            '    4\n'
+            '  ]\n'
+            ']',
+        )
+
+    def test_float_exponent_preserved(self) -> None:
+        self.check_render(1.234e20, '1.2e+20')
+
+    def test_integral_float_in_list(self) -> None:
+        self.check_render(
+            [123.0, -123.0],
+            '[\n'
+            '  123\n'
+            '  -123\n'
+            ']',
+        )
+
