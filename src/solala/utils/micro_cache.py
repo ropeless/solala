@@ -92,6 +92,14 @@ class AsyncMicroCache[T](_BaseMicroCache):
             self._cache = _UNSET
             self._cache_timestamp = float('-inf')
 
+    async def invalidate(self) -> None:
+        """
+        Invalidate the cached value, waiting for any active refresh.
+        """
+        async with self._lock:
+            self._cache = _UNSET
+            self._cache_timestamp = float('-inf')
+
     async def __call__(self) -> T:
         """
         Return the cached value, awaiting a refresh when expired.
