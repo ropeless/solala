@@ -93,7 +93,7 @@ class TeslaWallConnector(PowerConsumer):
         return (await self.get_status()).on
 
     async def _set_switch(self, on: bool) -> None:
-        assert False, 'not reached'
+        raise NotImplementedError('Tesla Wall Connector does not support switching')
 
     async def _get_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
         """
