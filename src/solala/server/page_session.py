@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
+from datetime import date
 from typing import Any, Protocol
 
 from solala.control_loop import control_loop
@@ -67,6 +68,8 @@ class PageSession:
             self,
             colours: Colours,
             select_tab: Callable[[str], Awaitable[None]],
+            initial_day: date | None = None,
+            on_day_change: Callable[[date], Awaitable[None]] | None = None,
     ) -> None:
         """
         Initialise the session with page colours and tab navigation delegation.
@@ -74,7 +77,11 @@ class PageSession:
         Args:
             colours: Colours used by the page.
             select_tab: Asynchronous callback for selecting a named tab.
+            initial_day: Date restored on refresh, if available.
+            on_day_change: Callback to persist date navigation.
         """
+        self.initial_day = initial_day
+        self.on_day_change = on_day_change
         self._cleanup: list[Callable[[], Awaitable[None] | None]] = []
         self._closed: bool = False
         self._colours: Colours = colours
