@@ -1,7 +1,8 @@
 import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol
+from datetime import date
+from typing import Any, Protocol, Coroutine
 
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
@@ -67,6 +68,10 @@ class PageSession:
             self,
             colours: Colours,
             select_tab: Callable[[str], Awaitable[None]],
+            initial_day: date | None = None,
+            on_day_change: Callable[[date], Awaitable[None]] | None = None,
+            graph_series: dict[str, dict[str, bool]] | None = None,
+            on_legend_change: Callable[[str, dict[str, bool]], Awaitable[None]] | None = None,
     ) -> None:
         """
         Initialise the session with page colours and tab navigation delegation.
@@ -74,11 +79,26 @@ class PageSession:
         Args:
             colours: Colours used by the page.
             select_tab: Asynchronous callback for selecting a named tab.
+            initial_day: Date restored on refresh, if available.
+            on_day_change: Callback to persist date navigation.
+            graph_series: Shared graph legend selections.
+            on_legend_change: Callback to persist graph legend changes.
         """
+        self.initial_day = initial_day
+        self.on_day_change = on_day_change
+        self.graph_series = graph_series if graph_series is not None else {}
+        self.on_legend_change = on_legend_change
         self._cleanup: list[Callable[[], Awaitable[None] | None]] = []
         self._closed: bool = False
         self._colours: Colours = colours
         self._select_tab: Callable[[str], Awaitable[None]] = select_tab
+
+    @property
+    def closed(self) -> bool:
+        """
+        Report whether this page session has been closed.
+        """
+        return self._closed
 
     @property
     def colours(self) -> Colours:
@@ -104,7 +124,7 @@ class PageSession:
     async def _add_listener(
             self,
             listener: LoopListener,
-            register: Callable[[LoopListener], Awaitable[None]],
+            register: Callable[[LoopListener], Coroutine[Any, Any, None]],
             unregister: Callable[[LoopListener], Awaitable[None]],
     ) -> None:
         """
@@ -137,7 +157,7 @@ class PageSession:
 
         if self._closed:
             # The session may have closed while registration was in progress.
-            # Its cleanup loop cannot own this listener, so release it here.
+            # Its clean-up loop cannot own this listener, so release it here.
             await cleanup()
             raise RuntimeError('Cannot add resources to a closed page session')
 

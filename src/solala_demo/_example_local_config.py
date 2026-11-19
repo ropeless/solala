@@ -1,5 +1,12 @@
+# This is an example local configuration file. It defines
+# environment variables can can be defined in the OS environment,
+# a `local_config.py` module or a mixture thereof.
+# See `solala.utils.local_config_help` for more details.
+
 APP_NAME_POSTFIX = ' ***DEMO***'
 APP_LOG_LEVEL = 'INFO'
+
+SOLALA_STORAGE_SECRET = 'some-large-random-string'  # e.g. use `openssl rand -hex 32` to generate one
 
 MASTER_INVERTER_ADDR = '192.168.0.200'
 SLAVE_INVERTER_ADDR = '192.168.0.201'
