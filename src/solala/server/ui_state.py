@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Self
 
-from nicegui import ui
+from nicegui.client import Client
 
 from solala.utils.json_extras import JSONDict
 
@@ -85,10 +85,11 @@ class UIState:
 
 class UIStateStorage:
     """
-    Persist UI state in the current browser tab's sessionStorage.
+    Persist UI state in a specific browser client's sessionStorage.
     """
 
-    def __init__(self, valid_tabs: set[str], default_tab: str) -> None:
+    def __init__(self, client: Client, valid_tabs: set[str], default_tab: str) -> None:
+        self._client = client
         self._valid_tabs = valid_tabs
         self._default_tab = default_tab
         self._save_lock = asyncio.Lock()
@@ -97,7 +98,7 @@ class UIStateStorage:
         """
         Load the current browser tab's saved UI state.
         """
-        value = await ui.run_javascript(
+        value = await self._client.run_javascript(
             f'''(() => {{
                 try {{
                     return JSON.parse(sessionStorage.getItem({_STORAGE_KEY!r}) || 'null');
@@ -117,6 +118,6 @@ class UIStateStorage:
         """
         async with self._save_lock:
             payload = json.dumps(state.to_dict())
-            await ui.run_javascript(
+            await self._client.run_javascript(
                 f'sessionStorage.setItem({_STORAGE_KEY!r}, {json.dumps(payload)})'
             )
