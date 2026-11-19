@@ -72,10 +72,11 @@ class SolalaChart(ABC):
             options['legend'] = _legend(selected_series)
         self.chart = ui.echart(options).classes('w-full')
         if show_legend and on_legend_change is not None:
+            callback: Callable[[str, dict[str, bool]], Awaitable[None]] = on_legend_change
+
             async def legend_changed(event: events.GenericEventArguments) -> None:
                 selected: dict[str, bool] = event.args['selected']
-                assert on_legend_change is not None
-                await on_legend_change(name, selected)
+                await callback(name, selected)
 
             self.chart.on('chart:legendselectchanged', legend_changed)
         self.demand_window_colour = demand_window_colour
