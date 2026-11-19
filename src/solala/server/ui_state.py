@@ -1,8 +1,9 @@
 from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any
+from typing import Any, Self
 
+from solala.utils.json_extras import JSONDict
 
 _STORAGE_KEY = 'solala_ui_state'
 
@@ -13,14 +14,14 @@ class UIState:
     Describe the browser UI state needed to restore the active page on refresh.
 
     The displayed day is a concrete date, not a preference for future visits.
-    Ordinary tab navigation must initialize date-sensitive pages to today.
+    Ordinary tab navigation must initialise date-sensitive pages to `today`.
     """
 
-    tab: str = 'Power'
+    tab: str
     displayed_day: date | None = None
     graph_series: dict[str, dict[str, bool]] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> JSONDict:
         """
         Serialize the UI state using JSON-compatible values.
         """
@@ -34,29 +35,38 @@ class UIState:
         }
 
     @classmethod
-    def from_dict(cls, value: object, valid_tabs: set[str]) -> 'UIState':
+    def from_dict(cls, value: JSONDict | None, valid_tabs: set[str], default_tab: str) -> Self:
         """
+        Create a UI state from a JSON compatible dictionary.
+
+        This method reads data from persistent browser storage, which might
+        contain a `value` written by an earlier version of Solala or has been
+        corrupted, so we interpret `value` defensively.
+
         Restore valid fields, falling back safely for invalid stored values.
 
         Args:
             value: Untrusted serialized state.
             valid_tabs: Currently supported tab names.
+            default_tab: the tab to record as current tab if not available in `value`.
         """
-        if not isinstance(value, dict):
-            return cls()
+        if value is None:
+            return cls(default_tab)
 
+        # Read the needed parameters directly from the `value` dict.
         tab = value.get('tab')
-        if not isinstance(tab, str) or tab not in valid_tabs:
-            tab = 'Power'
-
         raw_day = value.get('displayed_day')
+        raw_series = value.get('graph_series')
+
+        if not isinstance(tab, str) or tab not in valid_tabs:
+            tab = default_tab
+
         try:
             displayed_day = date.fromisoformat(raw_day) if isinstance(raw_day, str) else None
         except ValueError:
             displayed_day = None
 
         graph_series: dict[str, dict[str, bool]] = {}
-        raw_series = value.get('graph_series')
         if isinstance(raw_series, dict):
             for chart, selections in raw_series.items():
                 if not isinstance(chart, str) or not isinstance(selections, dict):
@@ -78,15 +88,16 @@ class UIStateStorage:
     The caller supplies the appropriate browser-scoped storage mapping.
     """
 
-    def __init__(self, storage: MutableMapping[str, Any], valid_tabs: set[str]) -> None:
+    def __init__(self, storage: MutableMapping[str, Any], valid_tabs: set[str], default_tab: str) -> None:
         self._storage = storage
         self._valid_tabs = valid_tabs
+        self._default_tab = default_tab
 
     def load(self) -> UIState:
         """
         Return a validated snapshot of the stored UI state.
         """
-        return UIState.from_dict(self._storage.get(_STORAGE_KEY), self._valid_tabs)
+        return UIState.from_dict(self._storage.get(_STORAGE_KEY), self._valid_tabs, self._default_tab)
 
     def save(self, state: UIState) -> None:
         """
