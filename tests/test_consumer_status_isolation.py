@@ -24,7 +24,7 @@ class ConsumerStatusIsolationTestCase(unittest.IsolatedAsyncioTestCase):
         """
         Return successful statuses and omit a consumer whose request fails.
         """
-        expected = ConsumerStatus(on=True, power=120.0, voltage=240.0, current=0.5)
+        expected = ConsumerStatus(on=True, power=120.0, voltage=240.0, current=0.5, accumulated_energy=None)
         working = AsyncMock()
         working.get_status.return_value = expected
         failing = AsyncMock()
@@ -55,7 +55,7 @@ class ConsumerStatusIsolationTestCase(unittest.IsolatedAsyncioTestCase):
         """
         Track a consumer's failures until its next successful reading.
         """
-        expected = ConsumerStatus(on=True, power=120.0, voltage=240.0, current=0.5)
+        expected = ConsumerStatus(on=True, power=120.0, voltage=240.0, current=0.5, accumulated_energy=None)
         consumer = AsyncMock()
         consumer.get_status.side_effect = [
             ConnectionError('offline'),
