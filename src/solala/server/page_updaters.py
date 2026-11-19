@@ -481,10 +481,31 @@ class ChartUpdater(LoopListener):
             with self._graphs:
                 self._charge_chart = ChargeChart(session.colours)
                 self._price_chart = PriceChart(session.colours)
-                self._power_chart = PowerChart(session.colours)
-                self._energy_chart = EnergyChart(session.colours)
+                self._power_chart = PowerChart(
+                    session.colours, session.graph_series.get('Power'), self._legend_changed,
+                )
+                self._energy_chart = EnergyChart(
+                    session.colours, session.graph_series.get('Energy'), self._legend_changed,
+                )
 
         self._session.add_task(asyncio.create_task(self.update()))
+
+    async def _legend_changed(self, chart: str, selected: dict[str, bool]) -> None:
+        """
+        Apply a legend selection to all carousel slides and persist it.
+        """
+        self._session.graph_series[chart] = selected.copy()
+        if self._session.on_legend_change is not None:
+            await self._session.on_legend_change(chart, selected)
+
+    def sync_legend(self, chart: str, selected: dict[str, bool]) -> None:
+        """
+        Apply a shared legend selection to this slide.
+        """
+        if chart == 'Power':
+            self._power_chart.set_selected_series(selected)
+        elif chart == 'Energy':
+            self._energy_chart.set_selected_series(selected)
 
     @property
     def day(self) -> date:
