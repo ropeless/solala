@@ -74,7 +74,8 @@ class DummyPowerConsumer(PowerConsumer):
         self._power: float = 0
         self._power_factor: float = 1
         self._energy: float = 0
-        self._time: float = monotonic()
+        self._create_time = monotonic()
+        self._time: float = self._create_time
         self._on: bool = on
 
         self.voltage: float = voltage
@@ -86,6 +87,7 @@ class DummyPowerConsumer(PowerConsumer):
             'voltage': CallRegister(lambda: self.voltage, float),
             'current': CallRegister(lambda: self.current, float),
             'energy': CallRegister(lambda: self.energy, float),
+            'uptime': CallRegister(lambda: self.uptime, float),
             'switch': SwitchRegister(self),
         })
 
@@ -143,6 +145,10 @@ class DummyPowerConsumer(PowerConsumer):
         self._check_energy()
         return self._energy
 
+    @property
+    def uptime(self) -> float:
+        return monotonic() - self._create_time
+
     async def get_registers(self) -> RegisterBank:
         await async_maybe_inject_failure(FailureLocation.get_registers, self.failure)
         return self._register_bank
@@ -168,6 +174,7 @@ class DummyPowerConsumer(PowerConsumer):
             'current': self._current,
             'can_switch': self.can_switch,
             'include_accumulated_energy': self._include_accumulated_energy,
+            'create_time': self._create_time,
         }
 
     async def close(self) -> None:
