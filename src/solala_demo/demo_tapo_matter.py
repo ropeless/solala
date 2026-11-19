@@ -1,9 +1,3 @@
-''"Explore a Tapo P110M through a separate Matter controller server.
-
-Requires an already-running Matter Server with a WebSocket endpoint.
-The plug's LAN IP and Tapo account credentials are not used by Matter.
-''"
-
 import argparse
 import asyncio
 import json
@@ -35,7 +29,15 @@ async def request(ws: aiohttp.ClientWebSocketResponse, command: str, **args: Any
 
 
 async def main() -> None:
-    '''\n    Inspect commissioned Matter nodes or operate a selected plug.\n    '''
+    """
+    Explore a Tapo P110M through a separate Matter controller server.
+
+    Requires an already-running Matter Server with a WebSocket endpoint.
+    The plug's LAN IP and Tapo account credentials are not used by Matter.
+
+    Inspect commissioned Matter nodes or operate a selected plug
+    """
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--server', default=config.MATTER_SERVER_URL)
     parser.add_argument('--action', choices=('status', 'on', 'off', 'commission'), default='status')
