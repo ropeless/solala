@@ -13,10 +13,12 @@ async def main() -> None:
 
     The P110M must already be commissioned through the Matter Server dashboard.
     """
+    url = f'ws://{config.MATTER_SERVER_HOST}:{config.MATTER_SERVER_PORT}/ws'
+
     timeout = aiohttp.ClientTimeout(total=30)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.ws_connect(config.MATTER_SERVER_URL) as ws:
+        async with session.ws_connect(url) as ws:
             greeting = await ws.receive_json(timeout=15)
             if 'sdk_version' not in greeting:
                 raise RuntimeError(f'Unexpected Matter Server greeting: {greeting!r}')
