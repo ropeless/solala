@@ -17,10 +17,10 @@ from solala.utils.micro_cache import AsyncMicroCache
 # Comment out individual entries to expose their attributes when appropriate.
 _EXCLUDED_CLUSTERS = {
     31,  # Access Control
-    48,  # General Commissioning
+    # 48,  # General Commissioning
     49,  # Network Commissioning
     53,  # Thread Network Diagnostics
-    54,  # Wi-Fi Network Diagnostics
+    # 54,  # Wi-Fi Network Diagnostics
     62,  # Operational Credentials
 }
 
@@ -158,12 +158,12 @@ class MatterPowerConsumer(PowerConsumer):
         """
         result: dict[str, RegisterValue] = {}
 
-        def add(key: str, value: Any) -> None:
-            if isinstance(value, dict):
-                for part, child in value.items():
-                    add(f'{key}/{part}', child)
-            elif type(value) in (str, int, float, bool):
-                result[key] = value
+        def add(_key: str, _value: Any) -> None:
+            if isinstance(_value, dict):
+                for part, child in _value.items():
+                    add(f'{_key}/{part}', child)
+            elif type(_value) in (str, int, float, bool):
+                result[_key] = _value
 
         for key, value in attributes.items():
             parts = key.split('/')

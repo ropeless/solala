@@ -21,9 +21,9 @@ def main():
             access_secret=config.POWER_POINT_ACCESS_SECRET,
         )
 
-    matter_device_ids: list[int] = config.get('MATTER_DEVICE_IDS', [])
-    for node_id in matter_device_ids:
-        consumers[f'matter_plug_{node_id}'] = MatterConnection(
+    matter_device_ids: dict[int, str] = config.get('MATTER_DEVICE_IDS', {})
+    for node_id, name in matter_device_ids.items():
+        consumers[name] = MatterConnection(
             host=config.MATTER_SERVER_HOST,
             port=config.MATTER_SERVER_PORT,
             node_id=node_id,
