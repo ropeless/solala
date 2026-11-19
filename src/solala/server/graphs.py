@@ -7,7 +7,6 @@ import numpy as np
 from nicegui import ui, events
 
 from solala.constants import Units, GUI_TIME_FORMAT
-from solala.logger import LOGGER
 from solala.server.css_colours import Colours, rgba
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.utils.json_extras import JSONDict, JSONValue
@@ -75,7 +74,6 @@ class SolalaChart(ABC):
         self.chart = ui.echart(options).classes('w-full')
         if show_legend and on_legend_change is not None:
             async def changed(event: events.GenericEventArguments) -> None:
-                LOGGER.info('Graph legend event: chart=%s args=%r', name, event.args)
                 selected = event.args['selected']
                 await on_legend_change(name, selected)
             self.chart.on('chart:legendselectchanged', changed)
