@@ -29,12 +29,10 @@ class DayNavigator:
     def __init__(
             self,
             *,
+            title: str = '',
             enable_swipe_content: bool = False,
             enable_swipe_navigator: bool = True,
             enable_arrow_keys: bool = True,
-            show_carousel_arrows: bool = True,
-            auto_height: bool = False,
-            title: str = '',
             on_day_change: Callable[[date], Awaitable[None]] | None = None,
             track_task: Callable[[asyncio.Task[None]], None] | None = None,
     ) -> None:
@@ -58,9 +56,6 @@ class DayNavigator:
             enable_swipe_content: Enable horizontal swipes over slide content.
             enable_swipe_navigator: Enable horizontal swipes over the date bar.
             enable_arrow_keys: Enable left arrow, right arrow, and home key navigation.
-            show_carousel_arrows: Show the carousel's built-in overlay arrows.
-            auto_height: Allow the carousel to follow its active slide's height.
-                Call `initialise_auto_height()` after the client is ready.
             title: Optional heading above the date navigator.
             on_day_change: Callback invoked when the selected date changes.
             track_task: Optional callback to register background tasks for clean-up.
@@ -72,7 +67,7 @@ class DayNavigator:
         self._focus_slide: int = 0
         self._updaters: Sequence[Updater] = ()  # mapping from slide number to `updater`
         self._touch_start_x: float | None = None  # for our own swipe detection
-        self._auto_height_id = f'solala-carousel-{id(self)}' if auto_height else None
+        self._auto_height_id = f'solala-carousel-{id(self)}'
 
         with ui.element('div'):
             if title != '':
@@ -124,7 +119,7 @@ class DayNavigator:
                     button_classes
                 ).tooltip('Next day')
 
-        carousel = ui.carousel(animated=True, arrows=show_carousel_arrows, navigation=False). \
+        carousel = ui.carousel(animated=True, arrows=False, navigation=False). \
             props(_CAROUSEL_PROPS).classes('w-full')
         if self._auto_height_id is not None:
             carousel.props(f'id={self._auto_height_id}')
@@ -159,11 +154,7 @@ class DayNavigator:
     async def initialise_auto_height(self) -> None:
         """
         Install browser observers to follow the active slide's content height.
-
-        Has no effect when `auto_height` was disabled at construction.
         """
-        if self._auto_height_id is None:
-            return
 
         await ui.run_javascript(f"""
             (() => {{
