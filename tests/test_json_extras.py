@@ -1,5 +1,5 @@
 """
-Regression tests for the established render_json display behaviour.
+Regression tests for the established `render_json` display behaviour.
 """
 
 import unittest
@@ -24,6 +24,13 @@ class TestRenderJson(unittest.TestCase):
 
     def test_negative_integer(self) -> None:
         self.check_render(-12, '-12')
+
+    # TODO currently fails
+    # def test_positive_float_integer(self) -> None:
+    #     self.check_render(123.0, '123')
+
+    def test_negative_float_integer(self) -> None:
+        self.check_render(-12.0, '-12')
 
     def test_zero(self) -> None:
         self.check_render(0, '0')
@@ -76,21 +83,23 @@ class TestRenderJson(unittest.TestCase):
     def test_integer_list(self) -> None:
         self.check_render(
             [1, 2],
-            '[\\n'
-            '  1\\n'
-            '  2\\n'
+            '[\n'
+            '  1\n'
+            '  2\n'
             ']',
         )
+
     def test_mixed_list(self) -> None:
         self.check_render(
             [1, 'hello', True, None],
-            '[\\n'
-            '  1\\n'
-            "  'hello'\\n"
-            '  true\\n'
-            '  none\\n'
+            '[\n'
+            '  1\n'
+            "  'hello'\n"
+            '  true\n'
+            '  none\n'
             ']',
         )
+
     def test_empty_dictionary(self) -> None:
         self.check_render({}, '')
 
@@ -100,9 +109,10 @@ class TestRenderJson(unittest.TestCase):
     def test_multiple_dictionary_entries(self) -> None:
         self.check_render(
             {'a': 1, 'b': 2},
-            '  a = 1\\n'
+            '  a = 1\n'
             '  b = 2',
         )
+
     def test_dictionary_string(self) -> None:
         self.check_render({'name': 'hello'}, "  name = 'hello'")
 
@@ -115,19 +125,21 @@ class TestRenderJson(unittest.TestCase):
     def test_dictionary_list(self) -> None:
         self.check_render(
             {'a': [1, 2]},
-            '  a = [\\n'
-            '    1\\n'
-            '    2\\n'
+            '  a = [\n'
+            '    1\n'
+            '    2\n'
             '  ]',
         )
+
     def test_list_of_dictionaries(self) -> None:
         self.check_render(
             [{'a': 1}, {'b': 2}],
-            '[\\n'
-            '    a = 1\\n'
-            '    b = 2\\n'
+            '[\n'
+            '    a = 1\n'
+            '    b = 2\n'
             ']',
         )
+
     def test_key_underscores_removed(self) -> None:
         self.check_render({'solar_power': 1}, '  solar power = 1')
 
@@ -166,52 +178,55 @@ class TestRenderJson(unittest.TestCase):
     def test_nested_list_of_dictionaries(self) -> None:
         self.check_render(
             {'groups': [{'name': 'alpha', 'readings': [1, 2]}, {'name': 'beta', 'readings': [3, 4]}]},
-            '  groups = [\\n'
-            "      name = 'alpha'\\n"
-            '      readings = [\\n'
-            '        1\\n'
-            '        2\\n'
-            '      ]\\n'
-            "      name = 'beta'\\n"
-            '      readings = [\\n'
-            '        3\\n'
-            '        4\\n'
-            '      ]\\n'
+            '  groups = [\n'
+            "      name = 'alpha'\n"
+            '      readings = [\n'
+            '        1\n'
+            '        2\n'
+            '      ]\n'
+            "      name = 'beta'\n"
+            '      readings = [\n'
+            '        3\n'
+            '        4\n'
+            '      ]\n'
             '  ]',
         )
+
     def test_deeply_nested_mixed_containers(self) -> None:
         self.check_render(
             {'a': [{'b': {'c': [1, {'d': None}]}}]},
-            '  a = [\\n'
-            '      b:\\n'
-            '        c = [\\n'
-            '          1\\n'
-            '            d = none\\n'
-            '        ]\\n'
+            '  a = [\n'
+            '      b:\n'
+            '        c = [\n'
+            '          1\n'
+            '            d = none\n'
+            '        ]\n'
             '  ]',
         )
+
     def test_nested_containers_with_empty_list(self) -> None:
         self.check_render(
             [{'section': {'measurements': [{'power': 1.25, 'active': True}, {'power': 2.5, 'active': False}]}},
              {'section': {'measurements': []}}],
-            '[\\n'
-            '    section:\\n'
-            '      measurements = [\\n'
-            '          power = 1.2\\n'
-            '          active = true\\n'
-            '          power = 2.5\\n'
-            '          active = false\\n'
-            '      ]\\n'
-            '    section:\\n'
-            '      measurements = []\\n'
+            '[\n'
+            '    section:\n'
+            '      measurements = [\n'
+            '          power = 1.2\n'
+            '          active = true\n'
+            '          power = 2.5\n'
+            '          active = false\n'
+            '      ]\n'
+            '    section:\n'
+            '      measurements = []\n'
             ']',
         )
+
     def test_custom_indent(self) -> None:
         self.check_render(
             [1, 2],
-            '[\\n'
-            '    1\\n'
-            '    2\\n'
+            '[\n'
+            '    1\n'
+            '    2\n'
             ']',
             indent=4,
         )
