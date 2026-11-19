@@ -204,7 +204,7 @@ async def _build_solar_page(container: Element, session: PageSession) -> None:
     """
     with container:
         navigator = DayNavigator(enable_swipe_content=True, auto_height=True, title='Solar Forecast',
-                                 on_day_change=session.on_day_change)
+                                 on_day_change=session.on_day_change, track_task=session.add_task)
         updaters = [
             SolarForecastUpdater(element, session)
             for element in navigator.get_elements()
@@ -241,7 +241,7 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
         swipe_area = ui.element('div').classes('w-full').style('touch-action: pan-y;')
         with swipe_area:
             navigator = DayNavigator(auto_height=True, title='Daily Graphs',
-                                     on_day_change=session.on_day_change)
+                                     on_day_change=session.on_day_change, track_task=session.add_task)
             updaters = [
                 ChartUpdater(element, session=session)
                 for element in navigator.get_elements()
@@ -455,12 +455,12 @@ class TabSelector:
                     button.classes(remove='solala-tab-button-active')
 
             async def save_day(day: date) -> None:
-                if self.active_tab == tab_name:
+                if self.active_session is session:
                     self._state.displayed_day = day
                     await self._state_storage.save(self._state)
 
             async def save_legend(chart: str, selected: dict[str, bool]) -> None:
-                if self.active_tab == tab_name:
+                if self.active_session is session:
                     self._state.graph_series[chart] = selected.copy()
                     await self._state_storage.save(self._state)
 
