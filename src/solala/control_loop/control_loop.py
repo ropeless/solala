@@ -1823,6 +1823,7 @@ def _connect_dummy_consumer(consumer_connection: DummyConsumerConnection) -> Pow
         power=consumer_connection.power,
         on=consumer_connection.on,
         failure=consumer_connection.failure,
+        can_switch=consumer_connection.can_switch,
         include_accumulated_energy=consumer_connection.include_accumulated_energy,
     )
 
