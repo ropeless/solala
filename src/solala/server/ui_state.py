@@ -1,3 +1,5 @@
+import asyncio
+import json
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Self
@@ -51,7 +53,7 @@ class UIState:
             valid_tabs: Currently supported tab names.
             default_tab: the tab to record as current tab if not available in `value`.
         """
-        if value is None:
+        if not isinstance(value, dict):
             return cls(default_tab)
 
         # Read the needed parameters directly from the `value` dict.
@@ -90,13 +92,20 @@ class UIStateStorage:
     def __init__(self, valid_tabs: set[str], default_tab: str) -> None:
         self._valid_tabs = valid_tabs
         self._default_tab = default_tab
+        self._save_lock = asyncio.Lock()
 
     async def load(self) -> UIState:
         """
         Load the current browser tab's saved UI state.
         """
         value = await ui.run_javascript(
-            f'JSON.parse(sessionStorage.getItem({_STORAGE_KEY!r}) || "null")'
+            f'''(() => {{
+                try {{
+                    return JSON.parse(sessionStorage.getItem({_STORAGE_KEY!r}) || 'null');
+                }} catch {{
+                    return null;
+                }}
+            }})()'''
         )
         return UIState.from_dict(value, self._valid_tabs, self._default_tab)
 
@@ -107,9 +116,8 @@ class UIStateStorage:
         Args:
             state: Current UI state to persist.
         """
-        import json
-
-        payload = json.dumps(state.to_dict())
-        await ui.run_javascript(
-            f'sessionStorage.setItem({_STORAGE_KEY!r}, {payload!r})'
-        )
+        async with self._save_lock:
+            payload = json.dumps(state.to_dict())
+            await ui.run_javascript(
+                f'sessionStorage.setItem({_STORAGE_KEY!r}, {json.dumps(payload)})'
+            )
