@@ -494,6 +494,8 @@ class ChartUpdater(LoopListener):
         """
         Apply a legend selection to all carousel slides and persist it.
         """
+        if self._session.closed:
+            return
         self._session.graph_series[chart] = selected.copy()
         if self._session.on_legend_change is not None:
             await self._session.on_legend_change(chart, selected)
