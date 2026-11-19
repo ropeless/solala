@@ -1,9 +1,11 @@
 from enum import auto
+from time import monotonic
 
-from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, async_maybe_inject_failure
-from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
+from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus, SwitchRegister
 from solala.register import CallRegister
 from solala.register_bank import RegisterBank
+from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, \
+    async_maybe_inject_failure
 
 
 class FailureLocation(BaseFailureLocation):
@@ -41,6 +43,7 @@ class DummyPowerConsumer(PowerConsumer):
             on: bool = True,
             *,
             failure: DummyFailure | None = None,
+            can_switch: bool = True,
     ) -> None:
         """
         Initialise the simulated consumer.
@@ -56,21 +59,27 @@ class DummyPowerConsumer(PowerConsumer):
         Raises:
             ValueError: If power is negative or exceeds voltage multiplied by current.
         """
+        super().__init__(can_switch)
+
         self.failure = failure
         self._voltage: float = 0
         self._current: float = 0
         self._power: float = 0
+        self._power_factor: float = 1
+        self._energy: float = 0
+        self._time: float = monotonic()
+        self._on: bool = on
 
-        self.on: bool = on
-        self.voltage = voltage
-        self.current = current
-        self.power = power
+        self.voltage: float = voltage
+        self.current: float = current
+        self.power: float | None = power
 
         self._register_bank = RegisterBank({
-            'on': CallRegister(lambda: self.on, bool),
             'power': CallRegister(lambda: self.power, float),
             'voltage': CallRegister(lambda: self.voltage, float),
             'current': CallRegister(lambda: self.current, float),
+            'energy': CallRegister(lambda: self.energy, float),
+            'switch': SwitchRegister(self),
         })
 
     @property
@@ -79,19 +88,21 @@ class DummyPowerConsumer(PowerConsumer):
 
     @voltage.setter
     def voltage(self, value: float) -> None:
+        self._check_energy()
         if value < 0:
             raise ValueError('voltage < 0')
         self._voltage = value
 
     @property
     def current(self) -> float:
-        if self.on:
+        if self._on:
             return self._current
         else:
             return 0
 
     @current.setter
     def current(self, value: float) -> None:
+        self._check_energy()
         if value < 0:
             raise ValueError('current < 0')
         if self._current > 0:
@@ -100,21 +111,29 @@ class DummyPowerConsumer(PowerConsumer):
 
     @property
     def power(self) -> float:
-        if self.on:
+        if self._on:
             return self._power
         else:
             return 0
 
     @power.setter
     def power(self, value: float | None) -> None:
+        apparent_power = self._voltage * self._current
+
         if value is None:
-            value = self.voltage * self._current
+            value = apparent_power * self._power_factor
         if value < 0:
             raise ValueError('power < 0')
-        if value > self.voltage * self._current:
+        if value > apparent_power:
             raise ValueError('power > voltage * current')
 
         self._power = value
+        self._power_factor = value / apparent_power if apparent_power > 0 else 1
+
+    @property
+    def energy(self) -> float:
+        self._check_energy()
+        return self._energy
 
     async def get_registers(self) -> RegisterBank:
         await async_maybe_inject_failure(FailureLocation.get_registers, self.failure)
@@ -122,23 +141,42 @@ class DummyPowerConsumer(PowerConsumer):
 
     async def get_status(self) -> ConsumerStatus:
         await async_maybe_inject_failure(FailureLocation.get_status, self.failure)
+        self._check_energy()
         return ConsumerStatus(
             voltage=self.voltage,
             current=self.current,
             power=self.power,
-            on=self.on,
+            on=self._on,
+            accumulated_energy=self._energy,
         )
 
     def get_connection_info(self) -> dict[str, int | float | str]:
         maybe_inject_failure(FailureLocation.get_connection_info, self.failure)
         return {
             'connection': self.__class__.__name__,
-            'on': self.on,
+            'on': self._on,
             'power': self._power,
             'voltage': self._voltage,
             'current': self._current,
+            'can_switch': self.can_switch,
         }
 
     async def close(self) -> None:
         # nothing to do
         pass
+
+    async def _get_switch(self) -> bool:
+        return self._on
+
+    async def _set_switch(self, on: bool) -> None:
+        self._check_energy()
+        self._on = on
+
+    def _check_energy(self) -> None:
+        """
+        Accumulate the energy of the power consumer since the last timestamp.
+        """
+        now = monotonic()
+        duration = (now - self._time) / 3600  # in hours
+        self._time = now
+        self._energy += duration * self.power  # in Wh.

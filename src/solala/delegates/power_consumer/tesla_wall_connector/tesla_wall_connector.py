@@ -33,6 +33,8 @@ class TeslaWallConnector(PowerConsumer):
             host: Hostname or IP address of the connector.
             mac_address: Optional MAC address included in connection information.
         """
+        super().__init__(can_switch=False)
+
         # noinspection HttpUrlsUsage
         self._api = f'http://{host}/api/1/'
         self._client = httpx.AsyncClient()
@@ -68,11 +70,17 @@ class TeslaWallConnector(PowerConsumer):
         voltage: float = json_num(data['voltageA_v'])
         current: float = json_num(data['currentA_a'])
         on: bool = json_bool(data['contactor_closed'])
+
+        # not provided by a Tesla Wall Connector
+        # TODO - accumulated_energy may be estimated by tracking "session_energy_wh"
+        accumulated_energy = None
+
         return ConsumerStatus(
             voltage=voltage,
             current=current,
             power=voltage * current,  # assumes a pure resistive load
             on=on,
+            accumulated_energy=accumulated_energy,
         )
 
     def get_connection_info(self) -> JSONDict:
@@ -80,6 +88,12 @@ class TeslaWallConnector(PowerConsumer):
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    async def _get_switch(self) -> bool:
+        return (await self.get_status()).on
+
+    async def _set_switch(self, on: bool) -> None:
+        assert False, 'not reached'
 
     async def _get_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
         """
