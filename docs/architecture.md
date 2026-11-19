@@ -15,7 +15,8 @@ used to implement them. The main components are:
   electricity prices; `SolarForecaster` supplies weather-based solar forecasts;
   and `PowerConsumer` exposes monitored electrical loads. Concrete
   implementations include Modbus/Fronius, Amber, Open-Meteo, Tesla Wall
-  Connector and Tuya integrations, alongside dummy implementations for testing and demos.
+  Connector, Tuya and Matter (via Matter Server) integrations, alongside dummy
+  implementations for testing and demos.
 
 - **Register abstraction** (`src/solala/register.py`): Provides typed,
   asynchronous access to named registers. The Modbus implementation maps
