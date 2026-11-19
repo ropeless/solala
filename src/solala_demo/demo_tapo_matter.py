@@ -66,7 +66,7 @@ def show_node(node: dict[str, Any]) -> None:
 
     energy = attribute(145, 1)
     if isinstance(energy, dict) and isinstance(energy.get('0'), (int, float)):
-        print(f'  Energy: {energy["0"]} mWh')
+        print(f'  Energy: {energy["0"] / 1000} Wh')
     else:
         print('  Energy: unavailable')
 
