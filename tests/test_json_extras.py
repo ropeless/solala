@@ -44,7 +44,7 @@ class TestRenderJson(unittest.TestCase):
     def test_float_custom_precision(self) -> None:
         self.check_render(1.234, '1.23', float_format='.2f')
 
-    def test_float_trailing_zeros(self) -> None:
+    def test_float_trailing_zeros_removed(self) -> None:
         self.check_render(1.5, '1.5', float_format='.3f')
 
     def test_negative_zero(self) -> None:
@@ -220,6 +220,91 @@ class TestRenderJson(unittest.TestCase):
             '      measurements = []\n'
             ']',
         )
+
+
+    def test_nested_units(self) -> None:
+        self.check_render(
+            {'system': {'battery': {'power': 1.25}}},
+            '  system:\n'
+            '    battery:\n'
+            '      power = 1.25 W',
+            units={'power': ' W'},
+            float_format='.2f',
+        )
+
+    def test_nested_key_underscores_preserved(self) -> None:
+        self.check_render(
+            {'solar_data': {'battery_power': 123}},
+            '  solar_data:\n'
+            '    battery_power = 123',
+            remove_key_underscores=False,
+        )
+
+    def test_nested_value_underscores_preserved(self) -> None:
+        self.check_render(
+            {'system': {'battery_mode': 'FORCE_CHARGE'}},
+            '  system:\n'
+            "    battery mode = 'FORCE_CHARGE'",
+            remove_value_underscores=False,
+        )
+
+    def test_unicode_string(self) -> None:
+        self.check_render('café', "'café'")
+
+    def test_unicode_string_ascii_disabled(self) -> None:
+        self.check_render('café', "'café'", ensure_ascii=False)
+
+    def test_tuple_like_list(self) -> None:
+        self.check_render(
+            (1, 'hello', True),
+            '[\n'
+            '  1\n'
+            "  'hello'\n"
+            '  true\n'
+            ']',
+        )
+
+    def test_nested_tuple_like_list(self) -> None:
+        self.check_render(
+            {'values': (1, 2)},
+            '  values = [\n'
+            '    1\n'
+            '    2\n'
+            '  ]',
+        )
+
+    def test_empty_dictionary_nested_in_dictionary(self) -> None:
+        self.check_render({'empty': {}, 'value': 1}, '  value = 1')
+
+    def test_empty_dictionary_nested_in_list(self) -> None:
+        self.check_render(
+            [{}, {'value': 1}],
+            '[\n'
+            '    value = 1\n'
+            ']',
+        )
+
+    def test_empty_dictionary_nested_at_multiple_depths(self) -> None:
+        self.check_render(
+            {'outer': {'empty': {}, 'value': 1}},
+            '  outer:\n'
+            '    value = 1',
+        )
+
+    def test_positive_integral_float(self) -> None:
+        self.check_render(123.0, '123')
+
+    def test_large_integral_float(self) -> None:
+        self.check_render(1000.0, '1000')
+
+    def test_negative_integral_float(self) -> None:
+        self.check_render(-123.0, '-123')
+
+    def test_integral_float_with_custom_format(self) -> None:
+        self.check_render(123.0, '123', float_format='.2f')
+
+    def test_unicode_ascii_escaping(self) -> None:
+        self.check_render('café', r"'caf\u00e9'", ensure_ascii=True)
 
     def test_custom_indent(self) -> None:
         self.check_render(
