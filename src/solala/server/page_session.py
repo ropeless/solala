@@ -70,6 +70,8 @@ class PageSession:
             select_tab: Callable[[str], Awaitable[None]],
             initial_day: date | None = None,
             on_day_change: Callable[[date], Awaitable[None]] | None = None,
+            graph_series: dict[str, dict[str, bool]] | None = None,
+            on_legend_change: Callable[[str, dict[str, bool]], Awaitable[None]] | None = None,
     ) -> None:
         """
         Initialise the session with page colours and tab navigation delegation.
@@ -79,9 +81,13 @@ class PageSession:
             select_tab: Asynchronous callback for selecting a named tab.
             initial_day: Date restored on refresh, if available.
             on_day_change: Callback to persist date navigation.
+            graph_series: Shared graph legend selections.
+            on_legend_change: Callback to persist graph legend changes.
         """
         self.initial_day = initial_day
         self.on_day_change = on_day_change
+        self.graph_series = graph_series if graph_series is not None else {}
+        self.on_legend_change = on_legend_change
         self._cleanup: list[Callable[[], Awaitable[None] | None]] = []
         self._closed: bool = False
         self._colours: Colours = colours
