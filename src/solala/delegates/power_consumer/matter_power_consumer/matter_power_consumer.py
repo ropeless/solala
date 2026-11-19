@@ -7,9 +7,10 @@ import aiohttp
 
 from solala.delegates.power_consumer.consumer_status import ConsumerStatus
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, SwitchRegister
-from solala.register import AsyncCallRegister, Register, RegisterValue, check_type, check_value
+from solala.register import AsyncCallRegister, Register, check_type, RegisterValue, Register, RegisterValue, check_type, check_value
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict
+from solala.utils.micro_cache import AsyncMicroCache
 from solala.utils.micro_cache import AsyncMicroCache
 
 
@@ -54,6 +55,8 @@ class MatterPowerConsumer(PowerConsumer):
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._lock = asyncio.Lock()
         self._request_id = 0
+        self._attributes_cache = AsyncMicroCache(self.__fetch_node_attributes, 0.1)
+        self._register_bank_lock = asyncio.Lock()
         self._attributes_cache = AsyncMicroCache(self.__fetch_node_attributes, 0.1)
         self._register_bank_lock = asyncio.Lock()
         self._register_bank: RegisterBank | None = None
@@ -119,7 +122,7 @@ class MatterPowerConsumer(PowerConsumer):
                 await self._disconnect()
                 raise
 
-    async def _node_attributes(self) -> dict[str, Any]:
+    async def __fetch_node_attributes(self) -> dict[str, Any]:
         return await self._attributes_cache()
 
     async def __fetch_node_attributes(self) -> dict[str, Any]:
@@ -138,6 +141,42 @@ class MatterPowerConsumer(PowerConsumer):
                     raise ConnectionError('Matter node has no attribute dictionary')
                 return attributes
         raise ConnectionError(f'Matter node {self._node_id} not found')
+
+    async def _node_attributes(self) -> dict[str, Any]:
+        """
+        Return a short-lived shared snapshot of Matter attributes.
+        """
+        return await self._attributes_cache()
+
+    @staticmethod
+    def _flatten_attributes(attributes: dict[str, Any]) -> dict[str, RegisterValue]:
+        """
+        Flatten scalar and nested dictionary attributes for diagnostic registers.
+
+        Operational Credentials cluster (62) is excluded because it can contain
+        sensitive certificate and fabric information.
+        """
+        result: dict[str, RegisterValue] = {}
+
+        def add(key: str, value: Any) -> None:
+            if isinstance(value, dict):
+                for part, child in value.items():
+                    add(f'{key}/{part}', child)
+            elif type(value) in (str, int, float, bool):
+                result[key] = value
+
+        for key, value in attributes.items():
+            parts = key.split('/')
+            if len(parts) >= 2 and parts[1] == '62':
+                continue
+            add(key, value)
+        return result
+
+    async def _raw_register_value(self, key: str) -> RegisterValue:
+        values = self._flatten_attributes(await self._node_attributes())
+        if key not in values:
+            raise ConnectionError(f'Matter diagnostic attribute {key} unavailable')
+        return values[key]
 
     def _attribute(self, attributes: dict[str, Any], cluster: int, attribute: int) -> Any:
         key = f'{self._endpoint_id}/{cluster}/{attribute}'
