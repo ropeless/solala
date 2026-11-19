@@ -3,7 +3,6 @@ Start the Solala web server and control loop on a configured event loop.
 """
 
 import asyncio
-import os
 import selectors
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES
 from solala.server.server_gui import ui
 from solala.settings import Settings
+from solala.utils.local_config_help import config
 
 
 def run_server(
@@ -74,17 +74,17 @@ async def _async_run_server(
         app,
         title=Constants.APP_NAME,
         favicon=favicon,
-        storage_secret=os.environ.get('SOLALA_STORAGE_SECRET'),
+        storage_secret=config.SOLALA_STORAGE_SECRET,
     )
 
-    config = uvicorn.Config(
+    server_config = uvicorn.Config(
         app,
         host=host,
         port=port,
         workers=1,
         log_level='info',
     )
-    server = uvicorn.Server(config)
+    server = uvicorn.Server(server_config)
 
     await asyncio.gather(
         control_loop.control_loop(settings_path, settings, force_settings, database_write),
