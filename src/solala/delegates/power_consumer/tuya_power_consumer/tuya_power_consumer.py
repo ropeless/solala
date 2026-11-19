@@ -76,7 +76,7 @@ class TuyaPowerConsumer(PowerConsumer):
         }
 
         # Cache Tuya device status for the requested duration to limit cloud API usage.
-        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_device_status, cache_duration)
+        self._cache = AsyncMicroCache(self.__get_device_status, cache_duration)
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
@@ -139,6 +139,7 @@ class TuyaPowerConsumer(PowerConsumer):
         response = await asyncio.to_thread(self._tuya.post, self._command_url, payload)
         if not response.get('success', False):
             raise ConnectionError(response)
+        await self._cache.invalidate()
 
     def get_connection_info(self) -> JSONDict:
         return self._connection_info
