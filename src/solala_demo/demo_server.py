@@ -64,6 +64,7 @@ def main():
         settings=settings,
         force_settings=config.FORCE_SETTINGS,
         database_write=config.DATABASE_WRITE,
+        solala_storage_secret=config.SOLALA_STORAGE_SECRET,
     )
 
 

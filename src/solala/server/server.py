@@ -15,12 +15,13 @@ from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES
 from solala.server.server_gui import ui
 from solala.settings import Settings
-from solala.utils.local_config_help import config
 
 
 def run_server(
         host: str,
         port: int,
+        *,
+        solala_storage_secret: str,
         settings_path: Path | str | None = None,
         settings: Settings | None = None,
         force_settings: bool = False,
@@ -41,10 +42,19 @@ def run_server(
             using values loaded from the settings file.
         database_write: Whether the control loop writes measurements to the
             database. The argument is useful for testing.
+        solala_storage_secret: a long random string specific to the server.
     """
     try:
         with asyncio.Runner(loop_factory=_loop_factory) as runner:
-            runner.run(_async_run_server(host, port, settings_path, settings, force_settings, database_write))
+            runner.run(_async_run_server(
+                host=host,
+                port=port,
+                solala_storage_secret=solala_storage_secret,
+                settings_path=settings_path,
+                settings=settings,
+                force_settings=force_settings,
+                database_write=database_write,
+            ))
     except KeyboardInterrupt:
         LOGGER.info(f'killed by keyboard interrupt')
 
@@ -52,6 +62,8 @@ def run_server(
 async def _async_run_server(
         host: str,
         port: int,
+        *,
+        solala_storage_secret: str,
         settings_path: Path | str | None = None,
         settings: Settings | None = None,
         force_settings: bool = False,
@@ -67,6 +79,7 @@ async def _async_run_server(
         settings: Optional control-loop settings.
         force_settings: Whether supplied settings override loaded settings.
         database_write: Whether to persist measurements to the database.
+        solala_storage_secret: a long random string specific to the server.
     """
     app = FastAPI()
     favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
@@ -74,7 +87,7 @@ async def _async_run_server(
         app,
         title=Constants.APP_NAME,
         favicon=favicon,
-        storage_secret=config.SOLALA_STORAGE_SECRET,
+        storage_secret=solala_storage_secret,
     )
 
     server_config = uvicorn.Config(
