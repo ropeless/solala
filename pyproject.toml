@@ -22,6 +22,7 @@ scipy = "*"
 httpx = "*"
 tuya-connector-python = "*"
 python-kasa = "*"
+aiohttp = "*"
 
 [build-system]
 requires = ["setuptools"]
