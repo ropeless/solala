@@ -57,9 +57,9 @@ def show_node(node: dict[str, Any]) -> None:
 
     # Matter ElectricalPowerMeasurement reports milliwatts, millivolts and milliamps.
     for label, cluster, number, divisor, unit in (
-        ('Power', 144, 0, 1000, 'W'),
-        ('Voltage', 144, 5, 1000, 'V'),
-        ('Current', 144, 6, 1000, 'A'),
+        ('Power', 144, 8, 1000, 'W'),
+        ('Voltage', 144, 11, 1000, 'V'),
+        ('Current', 144, 12, 1000, 'A'),
     ):
         value = attribute(cluster, number)
         print(f'  {label}: {value / divisor:g} {unit}' if isinstance(value, (int, float)) else f'  {label}: unavailable')
