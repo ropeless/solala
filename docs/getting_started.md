@@ -59,13 +59,29 @@ initial dummy connections instead of previously saved settings.
 The real-hardware demonstration is
 `src/solala_demo/demo_server.py`. Its sample configuration connects to
 Fronius inverters over Modbus, Amber for electricity pricing, Open-Meteo
-for solar forecasting, Tesla and Tuya power consumers, and PostgreSQL
-for historical data.
+for solar forecasting, Tesla, Tuya and Matter power consumers, and
+PostgreSQL for historical data.
 
 Configure the corresponding values in `local_config.py`, including
 inverter addresses, the Amber API token and NMI, solar installation
 parameters, and any consumer or database credentials. Edit
 `demo_server.py` if your system does not use all of these integrations.
+
+For Matter devices, run a compatible Matter Server separately and commission
+its devices before starting Solala. Set `MATTER_SERVER_HOST` and
+`MATTER_SERVER_PORT` to the Matter Server WebSocket endpoint, and configure
+`MATTER_DEVICE_IDS` as a dictionary mapping commissioned node IDs to Solala
+consumer names, for example:
+
+```python
+MATTER_SERVER_HOST = '192.168.0.203'
+MATTER_SERVER_PORT = 5580
+MATTER_DEVICE_IDS = {1: 'plug_1'}
+```
+
+The Matter pairing code is used during commissioning, not by Solala when
+connecting to an already commissioned device. The default Matter endpoint ID
+is `1`; other connection options can be configured through `MatterConnection`.
 
 Run it from the repository checkout:
 

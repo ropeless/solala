@@ -27,7 +27,8 @@ solution for every solar system.
   not established; slave power curtailment depends on configuration.
 - **Electricity prices and forecasts:** Amber for live electricity pricing
   and Open-Meteo for solar forecasting.
-- **Other devices:** Optional Tesla Wall Connector and Tuya integrations.
+- **Other devices:** Optional Tesla Wall Connector, Tuya, and Matter smart plug
+  integrations. Matter devices connect through a separately running Matter Server.
 - **History:** PostgreSQL for measurement storage.
 - **Networking:** The server needs access to configured devices, locally or
   through suitable network routing; remote browser access should be secured.
