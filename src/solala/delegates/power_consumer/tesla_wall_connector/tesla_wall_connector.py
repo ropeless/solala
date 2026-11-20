@@ -19,7 +19,7 @@ class TeslaWallConnector(PowerConsumer):
     Power consumer implementation for a Tesla Wall Connector.
 
     Reads the connector's local HTTP API to retrieve electrical measurements
-    and expose the available data as registers.
+    and lifetime accumulated energy, and exposes vitals as registers.
 
     Important: the active power is estimated as voltage multiplied by current, assuming
     a purely resistive load.
@@ -30,7 +30,7 @@ class TeslaWallConnector(PowerConsumer):
             self,
             host: str,
             mac_address: str = '',
-            cache_duration: float = 0.01,
+            cache_duration: float = 0.1,
     ):
         """
         Initialise the connection to a Tesla Wall Connector.
@@ -38,8 +38,8 @@ class TeslaWallConnector(PowerConsumer):
         Args:
             host: Hostname or IP address of the connector.
             mac_address: Optional MAC address included in connection information.
-            cache_duration: How long to cache the device status. Use this to reduce how often the
-                API is called. The default value is 0.01 seconds.
+            cache_duration: How long to cache each API response, in seconds. The same duration
+                applies independently to vitals and lifetime data. Defaults to 0.1 seconds.
         """
         super().__init__(can_switch=False)
 
@@ -53,8 +53,10 @@ class TeslaWallConnector(PowerConsumer):
         if mac_address != '':
             self._connection_info['mac_address'] = mac_address
 
-        # Cache `__get_vitals` for 0.01s each call
         self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_vitals, cache_duration)
+        self._lifetime_cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(
+            self.__get_lifetime, cache_duration
+        )
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
@@ -86,8 +88,15 @@ class TeslaWallConnector(PowerConsumer):
         current: float = apparent_power / voltage
         on: bool = json_bool(data['contactor_closed'])
 
-        # not provided by a Tesla Wall Connector
-        accumulated_energy = None
+        # Lifetime energy is optional; a failure here must not hide valid vitals.
+        accumulated_energy: float | None = None
+        try:
+            lifetime = await self._lifetime_cache()
+            energy = json_num(lifetime['energy_wh'])
+            if math.isfinite(energy) and energy >= 0:
+                accumulated_energy = energy
+        except Exception:
+            pass
 
         return ConsumerStatus(
             voltage=voltage,
@@ -151,4 +160,15 @@ class TeslaWallConnector(PowerConsumer):
         """
         url = self._api + 'vitals'
         response = await self._client.get(url)
+        return json_dict(response.json())
+
+    async def __get_lifetime(self) -> JSONDict:
+        """
+        Retrieve lifetime counters from the connector's local HTTP API.
+
+        Returns:
+            The lifetime response as a JSON dictionary.
+        """
+        response = await self._client.get(self._api + 'lifetime')
+        response.raise_for_status()
         return json_dict(response.json())
