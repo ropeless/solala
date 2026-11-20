@@ -129,7 +129,7 @@ class TuyaSwitchContractTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_concurrent_tuya_connection_initializes_once(self) -> None:
         self.consumer._connected = False
-        self.client.connect.return_value = {\'success\': True}
+        self.client.connect.return_value = {'success': True}
         await asyncio.gather(self.consumer._connect(), self.consumer._connect())
         self.client.connect.assert_called_once_with()
         self.assertTrue(self.consumer._connected)
