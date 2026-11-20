@@ -18,11 +18,31 @@ class TeslaWallConnector(PowerConsumer):
     """
     Power consumer implementation for a Tesla Wall Connector.
 
-    Reads the connector's local HTTP API to retrieve electrical measurements
-    and expose the available data as registers.
+    Reads the connector's local HTTP API to retrieve electrical measurements,
+    expose the available data as registers, and estimate accumulated charging energy.
 
-    Important: the active power is estimated as voltage multiplied by current, assuming
-    a purely resistive load.
+    Accumulated energy is measured in Wh and is estimated from successive
+    `session_energy_wh` readings. A decrease in session energy or `session_s`
+    indicates a new charging session; the new session's energy is then added to
+    the running total. The first observation includes energy already delivered
+    in the current session. The total is maintained in memory and resets when
+    the connector instance is recreated. Charging sessions that start and finish
+    entirely between observations cannot always be recovered.
+
+    The first call to `get_status()` starts a background energy monitor. The
+    monitor waits 60 seconds before each check and runs independently of status
+    requests. Every `get_status()` call also checks the latest energy reading.
+    Concurrent and cached reads do not count the same observation twice.
+    Temporary device communication failures do not stop the monitor or discard
+    accumulated energy. Missing or invalid session measurements leave the last
+    valid energy state unchanged.
+
+    Construction does not require a running event loop. `close()` cancels and
+    awaits the monitor before closing the HTTP client, and prevents the monitor
+    from restarting. Closing more than once is safe.
+
+    Important: active power is estimated from phase voltage and current
+    measurements, assuming a power factor of one.
 
     """
 
@@ -38,8 +58,9 @@ class TeslaWallConnector(PowerConsumer):
         Args:
             host: Hostname or IP address of the connector.
             mac_address: Optional MAC address included in connection information.
-            cache_duration: How long to cache the device status. Use this to reduce how often the
-                API is called. The default value is 0.01 seconds.
+            cache_duration: How long to cache device vitals, in seconds. Fresh
+                observations update the accumulated energy at most once.
+                The default value is 0.01 seconds.
         """
         super().__init__(can_switch=False)
 
@@ -74,6 +95,15 @@ class TeslaWallConnector(PowerConsumer):
         return reg_bank
 
     async def get_status(self) -> ConsumerStatus:
+        """
+        Return current electrical measurements and accumulated charging energy.
+
+        Starts periodic energy monitoring on first use and checks energy on
+        every call. The accumulated energy is the in-memory total in Wh.
+
+        Returns:
+            The latest consumer status, including accumulated energy.
+        """
         data: JSONDict = await self._cache()
         voltage: float = json_num(data['grid_v'])
         apparent_power = (
@@ -101,6 +131,12 @@ class TeslaWallConnector(PowerConsumer):
         return self._connection_info
 
     async def close(self) -> None:
+        """
+        Stop energy monitoring and close the HTTP connection.
+
+        Cancels and awaits the background monitor before closing the client.
+        Repeated calls are safe, and monitoring cannot restart after closing.
+        """
         await self._client.aclose()
 
     async def _get_switch(self) -> bool:
