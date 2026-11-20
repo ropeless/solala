@@ -437,16 +437,3 @@ def _ignore(value: Any) -> bool:
             or inspect.isframe(value)
             or inspect.istraceback(value)
     )
-
-
-def _remove_underscores(value: str) -> str:
-    """
-    Replace underscores with spaces in display text.
-
-    Args:
-        value: Text to transform.
-
-    Returns:
-        Text with underscores replaced by spaces.
-    """
-    return value.replace('_', ' ')
