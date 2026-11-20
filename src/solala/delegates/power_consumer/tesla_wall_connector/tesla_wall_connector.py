@@ -10,8 +10,9 @@ from solala.logger import LOGGER
 from solala.utils.math_extra import safe_divide
 from solala.register import check_type, RegisterType, AsyncCallRegister, RegisterValue, check_value
 from solala.register_bank import RegisterBank
-from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
+from solala.utils.json_extras import JSONDict, json_dict
 from solala.utils.micro_cache import AsyncMicroCache
+from solala.utils.type_extras import check_num, check_bool
 
 NAME: str = 'Tesla Wall Charger'
 
@@ -84,16 +85,16 @@ class TeslaWallConnector(PowerConsumer):
 
     async def get_status(self) -> ConsumerStatus:
         data: JSONDict = await self._vitals_cache()
-        voltage: float = json_num(data['grid_v'])
+        voltage: float = check_num(data['grid_v'])
         apparent_power = (
-                json_num(data['currentA_a']) * json_num(data['voltageA_v'])
-                + json_num(data['currentB_a']) * json_num(data['voltageB_v'])
-                + json_num(data['currentC_a']) * json_num(data['voltageC_v'])
+                check_num(data['currentA_a']) * check_num(data['voltageA_v'])
+                + check_num(data['currentB_a']) * check_num(data['voltageB_v'])
+                + check_num(data['currentC_a']) * check_num(data['voltageC_v'])
         )
         # Equivalent single phase current, assuming  phase-to-neutral voltage measurement
         # We are assuming a power factor or 1 (purely resistive load).
         current: float = safe_divide(apparent_power, voltage)
-        on: bool = json_bool(data['contactor_closed'])
+        on: bool = check_bool(data['contactor_closed'])
 
         # Lifetime energy is optional; a failure here must not hide valid vitals.
         accumulated_energy: float | None = None
@@ -102,7 +103,7 @@ class TeslaWallConnector(PowerConsumer):
             raw_energy = lifetime['energy_wh']
             if isinstance(raw_energy, bool):
                 raise ValueError('Lifetime energy must be numeric, not boolean')
-            energy = json_num(raw_energy)
+            energy = check_num(raw_energy)
             if not math.isfinite(energy) or energy < 0:
                 raise ValueError(f'Invalid lifetime energy: {energy!r}')
             accumulated_energy = energy
