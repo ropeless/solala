@@ -36,6 +36,14 @@ class TeslaEnergyTestCase(unittest.IsolatedAsyncioTestCase):
         self.consumer._client.get = AsyncMock()
         self.addAsyncCleanup(self.consumer.close)
 
+    def replace_consumer(self, *, cache_duration: float = 0, energy_check_cadence: float = 60) -> None:
+        """Replace the test consumer and register cleanup for the new instance."""
+        self.consumer = TeslaWallConnector(
+            'tesla.example', cache_duration=cache_duration,
+            energy_check_cadence=energy_check_cadence,
+        )
+        self.addAsyncCleanup(self.consumer.close)
+
     def readings(self, *values: dict | Exception) -> None:
         """Supply successive uncached vitals observations."""
         results = []
@@ -119,7 +127,7 @@ class TeslaEnergyTestCase(unittest.IsolatedAsyncioTestCase):
         self.readings(vitals(100, 10))
         # A long cache duration forces concurrent requests to share one observation.
         await self.consumer.close()
-        self.consumer = TeslaWallConnector('tesla.example', cache_duration=60)
+        self.replace_consumer(cache_duration=60)
         self.consumer._client.get = AsyncMock(
             return_value=Mock(json=Mock(return_value=vitals(100, 10)))
         )
@@ -144,49 +152,66 @@ class TeslaEnergyTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.consumer._energy_task.done())
 
     async def test_background_monitor_updates_energy_without_status_calls(self) -> None:
-        """The monitor continues sampling when no caller requests status."""
+        """Advance monitoring explicitly rather than waiting for elapsed time."""
         await self.consumer.close()
-        self.consumer = TeslaWallConnector(
-            'tesla.example', cache_duration=0, energy_check_cadence=0.005,
-        )
-        observed = asyncio.Event()
-        calls = 0
+        self.replace_consumer()
+        sleep_started = asyncio.Event()
+        release_sleep = asyncio.Event()
+        updated = asyncio.Event()
+        original_update = self.consumer._update_energy
 
-        async def fetch(_url: str) -> Mock:
-            nonlocal calls
-            calls += 1
-            if calls >= 2:
-                observed.set()
-            return Mock(json=Mock(return_value=vitals(calls * 10, calls)))
+        async def controlled_sleep(_duration: float) -> None:
+            sleep_started.set()
+            await release_sleep.wait()
 
-        self.consumer._client.get = AsyncMock(side_effect=fetch)
-        self.assertEqual((await self.consumer.get_status()).accumulated_energy, 10)
-        await asyncio.wait_for(observed.wait(), timeout=1)
-        self.assertGreaterEqual(self.consumer._accumulated_energy, 20)
+        def record_update(data: dict) -> None:
+            original_update(data)
+            if self.consumer._accumulated_energy >= 20:
+                updated.set()
+
+        self.readings(vitals(10, 1), vitals(20, 2))
+        with patch('solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector.asyncio.sleep',
+                   side_effect=controlled_sleep), patch.object(
+                       self.consumer, '_update_energy', side_effect=record_update):
+            self.assertEqual((await self.consumer.get_status()).accumulated_energy, 10)
+            await asyncio.wait_for(sleep_started.wait(), timeout=5)
+            self.consumer._client.get.assert_awaited_once()
+            release_sleep.set()
+            await asyncio.wait_for(updated.wait(), timeout=5)
+            self.assertEqual(self.consumer._accumulated_energy, 20)
 
     async def test_background_monitor_recovers_from_http_failure(self) -> None:
-        """A failed scheduled check does not prevent later scheduled checks."""
+        """Explicitly release each scheduled check and verify retry."""
         await self.consumer.close()
-        self.consumer = TeslaWallConnector(
-            'tesla.example', cache_duration=0, energy_check_cadence=0.005,
-        )
+        self.replace_consumer()
+        sleep_requests: asyncio.Queue[asyncio.Event] = asyncio.Queue()
         recovered = asyncio.Event()
-        calls = 0
+        original_update = self.consumer._update_energy
 
-        async def fetch(_url: str) -> Mock:
-            nonlocal calls
-            calls += 1
-            if calls == 2:
-                raise TimeoutError('offline')
-            if calls >= 3:
+        async def controlled_sleep(_duration: float) -> None:
+            release = asyncio.Event()
+            sleep_requests.put_nowait(release)
+            await release.wait()
+
+        def record_update(data: dict) -> None:
+            original_update(data)
+            if self.consumer._accumulated_energy >= 30:
                 recovered.set()
-            return Mock(json=Mock(return_value=vitals(calls * 10, calls)))
 
-        self.consumer._client.get = AsyncMock(side_effect=fetch)
-        await self.consumer.get_status()
-        await asyncio.wait_for(recovered.wait(), timeout=1)
-        self.assertGreaterEqual(self.consumer._accumulated_energy, 30)
-        self.assertFalse(self.consumer._energy_task.done())
+        self.readings(vitals(10, 1), TimeoutError('offline'), vitals(30, 3))
+        with patch('solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector.asyncio.sleep',
+                   side_effect=controlled_sleep), patch.object(
+                       self.consumer, '_update_energy', side_effect=record_update):
+            await self.consumer.get_status()
+            first = await asyncio.wait_for(sleep_requests.get(), timeout=5)
+            first.set()
+            second = await asyncio.wait_for(sleep_requests.get(), timeout=5)
+            self.assertEqual(self.consumer._client.get.await_count, 2)
+            self.assertFalse(self.consumer._energy_task.done())
+            second.set()
+            await asyncio.wait_for(recovered.wait(), timeout=5)
+            self.assertEqual(self.consumer._accumulated_energy, 30)
+            self.assertFalse(self.consumer._energy_task.done())
 
     async def test_invalid_monitor_interval_rejected(self) -> None:
         """The cadence must not allow a busy loop."""
