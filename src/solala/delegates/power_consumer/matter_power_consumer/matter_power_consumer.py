@@ -187,6 +187,55 @@ class MatterPowerConsumer(PowerConsumer):
             raise ConnectionError(f'Matter attribute {key} is unavailable')
         return attributes[key]
 
+    @staticmethod
+    def _parse_accumulated_energy(energy: Any) -> int | float:
+        """
+        Validate and convert a Matter Electrical Energy Measurement value.
+
+        The Matter attribute contains a dictionary whose '0' field holds
+        imported energy in milli-watt-hours. Convert it to Wh using safe_divide,
+        which also handles integers too large for floating-point conversion.
+
+        Args:
+            energy: Raw Matter energy attribute.
+
+        Returns:
+            Accumulated imported energy in Wh.
+
+        Raises:
+            ValueError: If the attribute is malformed or energy is invalid.
+        """
+        if not isinstance(energy, dict) or '0' not in energy:
+            raise ValueError(f'Invalid Matter accumulated energy structure: {energy!r}')
+
+        value = energy['0']
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
+
+        converted_energy = safe_divide(value, 1000)
+        if converted_energy < 0 or (
+                isinstance(converted_energy, float) and not math.isfinite(converted_energy)):
+            raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
+        return converted_energy
+
+    def _optional_accumulated_energy(self, attributes: dict[str, Any]) -> int | float | None:
+        """
+        Read optional imported energy without failing required measurements.
+
+        A missing attribute means energy is unavailable. Malformed energy is
+        logged and omitted so valid switch, power, voltage, and current readings
+        can still be returned.
+        """
+        energy_key = f'{self._endpoint_id}/145/1'
+        if energy_key not in attributes:
+            return None
+
+        try:
+            return self._parse_accumulated_energy(attributes[energy_key])
+        except (TypeError, ValueError, OverflowError) as err:
+            LOGGER.warning('Matter accumulated energy unavailable: %r', err)
+            return None
+
     async def get_status(self) -> ConsumerStatus:
         attributes = await self._node_attributes()
         on = self._attribute(attributes, 6, 0)
@@ -207,24 +256,7 @@ class MatterPowerConsumer(PowerConsumer):
         voltage = measurement(144, 11)
         current = measurement(144, 12)
 
-        accumulated_energy: float | None = None
-        energy_key = f'{self._endpoint_id}/145/1'
-        if energy_key in attributes:
-            energy = attributes[energy_key]
-            try:
-                if not isinstance(energy, dict) or '0' not in energy:
-                    raise ValueError(f'Invalid Matter accumulated energy structure: {energy!r}')
-                value = energy['0']
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
-                    raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
-                converted_energy = safe_divide(value, 1000)
-                if converted_energy < 0 or (
-                        isinstance(converted_energy, float) and not math.isfinite(converted_energy)):
-                    raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
-                accumulated_energy = converted_energy
-            except (TypeError, ValueError, OverflowError) as err:
-                LOGGER.warning('Matter accumulated energy unavailable: %r', err)
-                accumulated_energy = None
+        accumulated_energy = self._optional_accumulated_energy(attributes)
         return ConsumerStatus(
             on=on,
             power=power,
