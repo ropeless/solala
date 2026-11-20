@@ -37,6 +37,12 @@ STATUS_UNITS: Mapping[str, str] = dict_merge(
         'current': Units.AMPS,
         'capacity': Units.WATTS,
         'forecast_generation': Units.KILOWATT_HOURS,
+        'accumulated_solar_energy': Units.WATT_HOURS,
+        'accumulated_grid_energy_import': Units.WATT_HOURS,
+        'accumulated_grid_energy_export': Units.WATT_HOURS,
+        'accumulated_battery_energy_charge': Units.WATT_HOURS,
+        'accumulated_battery_energy_discharge': Units.WATT_HOURS,
+        'accumulated_energy': Units.WATT_HOURS,
     },
     PARAMETERS_UNITS,  # status JSON includes policy parameters.
 )
