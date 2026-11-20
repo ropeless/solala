@@ -50,6 +50,13 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(status.on)
                 self.assertIn('Matter accumulated energy unavailable', captured.output[0])
 
+    async def test_huge_integer_energy_uses_wh_fallback(self) -> None:
+        raw_energy = 10 ** 400 + 999
+        self.attributes['1/145/1'] = {'0': raw_energy}
+        status = await self.consumer.get_status()
+        self.assertEqual(status.accumulated_energy, raw_energy // 1000)
+        self.assertIsInstance(status.accumulated_energy, int)
+
     async def test_zero_optional_energy_is_valid(self) -> None:
         self.attributes['1/145/1'] = {'0': 0}
         self.assertEqual((await self.consumer.get_status()).accumulated_energy, 0)
