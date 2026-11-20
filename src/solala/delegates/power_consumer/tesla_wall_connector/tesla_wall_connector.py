@@ -53,10 +53,10 @@ class TeslaWallConnector(PowerConsumer):
         if mac_address != '':
             self._connection_info['mac_address'] = mac_address
 
-        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_vitals, cache_duration)
-        self._lifetime_cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(
-            self.__get_lifetime, cache_duration
-        )
+        self._vitals_cache: Callable[[], Awaitable[JSONDict]] = \
+            AsyncMicroCache(self.__get_vitals, cache_duration)
+        self._lifetime_cache: Callable[[], Awaitable[JSONDict]] = \
+            AsyncMicroCache(self.__get_lifetime, cache_duration)
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
@@ -76,12 +76,12 @@ class TeslaWallConnector(PowerConsumer):
         return reg_bank
 
     async def get_status(self) -> ConsumerStatus:
-        data: JSONDict = await self._cache()
+        data: JSONDict = await self._vitals_cache()
         voltage: float = json_num(data['grid_v'])
         apparent_power = (
-            json_num(data['currentA_a']) * json_num(data['voltageA_v'])
-            + json_num(data['currentB_a']) * json_num(data['voltageB_v'])
-            + json_num(data['currentC_a']) * json_num(data['voltageC_v'])
+                json_num(data['currentA_a']) * json_num(data['voltageA_v'])
+                + json_num(data['currentB_a']) * json_num(data['voltageB_v'])
+                + json_num(data['currentC_a']) * json_num(data['voltageC_v'])
         )
         # Equivalent single phase current, assuming  phase-to-neutral voltage measurement
         # We are assuming a power factor or 1 (purely resistive load).
@@ -126,7 +126,7 @@ class TeslaWallConnector(PowerConsumer):
             An asynchronous iterator of register keys and their corresponding
             register types. Values with unsupported types are skipped.
         """
-        device_status: JSONDict = await self._cache()
+        device_status: JSONDict = await self._vitals_cache()
         for key, value in device_status.items():
             try:
                 reg_type: RegisterType = check_type(type(value))
@@ -144,7 +144,7 @@ class TeslaWallConnector(PowerConsumer):
         Returns:
             The register value converted to a supported register type.
         """
-        json: JSONDict = await self._cache()
+        json: JSONDict = await self._vitals_cache()
         value = json[key]
         return check_value(value)
 
