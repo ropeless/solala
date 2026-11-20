@@ -269,7 +269,7 @@ class TestRenderJson(unittest.TestCase):
         self.check_render({'message=status': 'ready'}, "  message=status = 'ready'")
 
     def test_dictionary_key_with_double_quote(self) -> None:
-        self.check_render({'message"status': 'ready'}, "  'message\"status' = 'ready'")
+        self.check_render({'message"status': 'ready'}, '  message"status = \'ready\'')
 
     def test_string_with_double_quote(self) -> None:
         self.check_render('a"b', "'a\"b'")
@@ -303,6 +303,15 @@ class TestRenderJson(unittest.TestCase):
 
     def test_dictionary_key_with_slash(self) -> None:
         self.check_render({'grid/power': 123}, '  grid/power = 123')
+
+    def test_dictionary_key_with_spaces(self) -> None:
+        self.check_render({'a b': 1}, "  'a b' = 1")
+
+    def test_dictionary_key_with_existing_single_quotes(self) -> None:
+        self.check_render({"'ab'": 1}, "  'ab' = 1")
+
+    def test_dictionary_key_with_existing_quoted_spaces(self) -> None:
+        self.check_render({"'a b'": 1}, "  'a b' = 1")
 
     def test_dictionary_key_with_double_quote_int_value(self) -> None:
         self.check_render({'a"b': 1}, '  a"b = 1')
