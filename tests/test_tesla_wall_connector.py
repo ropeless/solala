@@ -86,12 +86,9 @@ class TeslaLifetimeEnergyTestCase(unittest.IsolatedAsyncioTestCase):
                 self.consumer._client.get = AsyncMock(side_effect=[
                     response(vitals()), response(lifetime),
                 ])
-                if 'energy_wh' not in lifetime or isinstance(lifetime.get('energy_wh'), str):
-                    with self.assertLogs('solala', level='WARNING') as captured:
-                        self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
-                    self.assertIn('lifetime energy unavailable', captured.output[0])
-                else:
+                with self.assertLogs('solala', level='WARNING') as captured:
                     self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
+                self.assertIn('lifetime energy unavailable', captured.output[0])
 
     async def test_lifetime_http_failure_preserves_vitals(self) -> None:
         self.consumer._client.get = AsyncMock(side_effect=[
@@ -116,6 +113,28 @@ class TeslaLifetimeEnergyTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(httpx.ConnectError):
             await self.consumer.get_status()
         self.consumer._client.get.assert_awaited_once()
+
+    async def test_vitals_http_status_failure_propagates(self) -> None:
+        self.consumer._client.get = AsyncMock(side_effect=[
+            response(vitals(), status_code=503),
+            response(vitals()), response({'energy_wh': 10}),
+        ])
+        with self.assertRaises(httpx.HTTPStatusError):
+            await self.consumer.get_status()
+        self.assertEqual((await self.consumer.get_status()).accumulated_energy, 10)
+        self.assertEqual(self.consumer._client.get.await_count, 3)
+
+    async def test_lifetime_registers_are_exposed_with_prefixes(self) -> None:
+        self.consumer._client.get = AsyncMock(side_effect=[
+            response(vitals()), response({'energy_wh': 1200, 'contactor_cycles': 7}),
+            response({'energy_wh': 1250, 'contactor_cycles': 8}),
+        ])
+        bank = await self.consumer.get_registers()
+        self.assertIn('vital/grid_v', bank)
+        self.assertIn('lifetime/energy_wh', bank)
+        self.assertIn('lifetime/contactor_cycles', bank)
+        self.assertEqual(await bank['lifetime/energy_wh'].get(), 1250)
+        self.assertEqual(self.consumer._client.get.await_count, 3)
 
     async def test_lifetime_failure_is_retried(self) -> None:
         self.consumer._client.get = AsyncMock(side_effect=[
