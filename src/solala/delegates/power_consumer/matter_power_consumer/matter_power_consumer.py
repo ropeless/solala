@@ -198,7 +198,7 @@ class MatterPowerConsumer(PowerConsumer):
             if isinstance(_value, bool) or not isinstance(_value, (int, float)):
                 raise ConnectionError(f'Invalid Matter measurement: {_value!r}')
             result = safe_divide(_value, 1000)
-            if not math.isfinite(result):
+            if isinstance(result, float) and not math.isfinite(result):
                 raise ConnectionError(f'Invalid Matter measurement: {_value!r}')
             return result
 
