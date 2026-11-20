@@ -29,7 +29,8 @@ from solala.server.icons import weather_code_to_icon_url
 from solala.server.infographic import Infographic
 from solala.server.page_session import PageSession
 from solala.server.units_lookup import STATUS_UNITS
-from solala.utils.json_extras import JSONDict, json_dict, json_str, render_json
+from solala.utils.json_extras import JSONDict, json_dict, render_json
+from solala.utils.type_extras import check_str
 from solala.utils.time_extras import now
 
 
@@ -98,8 +99,8 @@ class InverterButtonUpdater(StatusListener):
         try:
             control_json: JSONDict = json_dict(status_json['control'])
             inverter_status: JSONDict = json_dict(control_json['inverter'])
-            inverter_mode = json_str(inverter_status['mode'])
-            inverter_policy = json_str(inverter_status['policy'])
+            inverter_mode = check_str(inverter_status['mode'])
+            inverter_policy = check_str(inverter_status['policy'])
         except (KeyError, TypeError, IOError, control_loop.ControlLoopError) as err:
             LOGGER.error(f'Error getting control status: {err}')
             inverter_mode = ''
@@ -182,8 +183,8 @@ class BatteryButtonUpdater(StatusListener):
         try:
             control_json: JSONDict = json_dict(status_json['control'])
             battery_status: JSONDict = json_dict(control_json['battery'])
-            battery_mode = json_str(battery_status['mode'])
-            battery_policy = json_str(battery_status['policy'])
+            battery_mode = check_str(battery_status['mode'])
+            battery_policy = check_str(battery_status['policy'])
         except (KeyError, TypeError, IOError, control_loop.ControlLoopError) as err:
             LOGGER.error(f'Error getting control status: {err}')
             battery_mode = ''
