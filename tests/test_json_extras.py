@@ -137,6 +137,12 @@ class TestRenderJson(unittest.TestCase):
     def test_key_underscores_removed(self) -> None:
         self.check_render({'solar_power': 1}, '  solar power = 1')
 
+    def test_original_key_with_spaces_is_quoted(self) -> None:
+        self.check_render({'solar power': 1}, "  'solar power' = 1")
+
+    def test_original_key_with_underscores_and_spaces_is_quoted(self) -> None:
+        self.check_render({'so_la_la power': 1}, "  'so la la power' = 1")
+
     def test_key_underscores_preserved(self) -> None:
         self.check_render({'solar_power': 1}, '  solar_power = 1', remove_key_underscores=False)
 
