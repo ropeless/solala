@@ -244,8 +244,6 @@ def render_json(
         text = key.replace('_', ' ') if remove_key_underscores else key
         if (not text or any(char.isspace() for char in text)
                 or ': ' in text or ' = ' in text):
-            if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"":
-                return text
             return quoted(text)
         return text
 
