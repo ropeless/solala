@@ -1,5 +1,6 @@
 import asyncio
 import math
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
@@ -12,6 +13,8 @@ from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
 from solala.utils.micro_cache import AsyncMicroCache
 
 NAME: str = 'Tesla Wall Charger'
+
+_logger = logging.getLogger(__name__)
 
 
 class TeslaWallConnector(PowerConsumer):
@@ -65,6 +68,8 @@ class TeslaWallConnector(PowerConsumer):
             energy_check_cadence: how often to attempt reading the device to maintain
                 the accumulated energy record.
         """
+        if not math.isfinite(energy_check_cadence) or energy_check_cadence <= 0:
+            raise ValueError('energy_check_cadence must be positive and finite')
         super().__init__(can_switch=False)
 
         # noinspection HttpUrlsUsage
@@ -77,7 +82,14 @@ class TeslaWallConnector(PowerConsumer):
         if mac_address != '':
             self._connection_info['mac_address'] = mac_address
 
-        # Cache `__get_vitals` for 0.01s each call
+        self._energy_check_cadence = energy_check_cadence
+        self._energy_task: asyncio.Task[None] | None = None
+        self._closed = False
+        self._accumulated_energy = 0.0
+        self._last_session_energy: float | None = None
+        self._last_session_seconds: float | None = None
+
+        # Cache fresh vitals; each fetch updates energy at most once.
         self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_vitals, cache_duration)
 
         # Created on first call to `get_registers`
@@ -107,7 +119,11 @@ class TeslaWallConnector(PowerConsumer):
         Returns:
             The latest consumer status, including accumulated energy.
         """
-        data: JSONDict = await self._cache()
+        if self._closed:
+            raise RuntimeError('Tesla Wall Connector is closed')
+        if self._energy_task is None:
+            self._energy_task = asyncio.create_task(self._monitor_energy())
+        data: JSONDict = await self.check_energy()
         voltage: float = json_num(data['grid_v'])
         apparent_power = (
             json_num(data['currentA_a']) * json_num(data['voltageA_v'])
@@ -119,16 +135,64 @@ class TeslaWallConnector(PowerConsumer):
         current: float = apparent_power / voltage
         on: bool = json_bool(data['contactor_closed'])
 
-        # not provided by a Tesla Wall Connector
-        accumulated_energy = None
-
         return ConsumerStatus(
             voltage=voltage,
             current=current,
             power=voltage * current,  # assumes a pure resistive load
             on=on,
-            accumulated_energy=accumulated_energy,
+            accumulated_energy=self._accumulated_energy,
         )
+
+    async def check_energy(self) -> JSONDict:
+        """
+        Check current vitals and update accumulated energy on fresh readings.
+
+        Returns:
+            The latest cached or freshly fetched device vitals.
+        """
+        if self._closed:
+            raise RuntimeError('Tesla Wall Connector is closed')
+        return await self._cache()
+
+    def _update_energy(self, data: JSONDict) -> None:
+        """
+        Accumulate energy from a valid session observation.
+
+        Args:
+            data: The latest vitals response.
+        """
+        try:
+            energy = json_num(data['session_energy_wh'])
+            seconds = json_num(data['session_s'])
+        except (KeyError, TypeError, ValueError):
+            return
+        if not (math.isfinite(energy) and math.isfinite(seconds)
+                and energy >= 0 and seconds >= 0):
+            return
+
+        previous_energy = self._last_session_energy
+        previous_seconds = self._last_session_seconds
+        if previous_energy is None or previous_seconds is None:
+            delta = energy
+        elif energy < previous_energy or seconds < previous_seconds:
+            delta = energy
+        else:
+            delta = energy - previous_energy
+
+        self._accumulated_energy += delta
+        self._last_session_energy = energy
+        self._last_session_seconds = seconds
+
+    async def _monitor_energy(self) -> None:
+        """Check energy periodically until the monitor is cancelled."""
+        while True:
+            await asyncio.sleep(self._energy_check_cadence)
+            try:
+                await self.check_energy()
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                _logger.warning('Tesla energy monitoring failed: %r', err)
 
     def get_connection_info(self) -> JSONDict:
         return self._connection_info
@@ -140,7 +204,19 @@ class TeslaWallConnector(PowerConsumer):
         Cancels and awaits the background monitor before closing the client.
         Repeated calls are safe, and monitoring cannot restart after closing.
         """
-        await self._client.aclose()
+        if self._closed:
+            return
+        self._closed = True
+        task = self._energy_task
+        try:
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        finally:
+            await self._client.aclose()
 
     async def _get_switch(self) -> bool:
         return (await self.get_status()).on
@@ -190,4 +266,6 @@ class TeslaWallConnector(PowerConsumer):
         """
         url = self._api + 'vitals'
         response = await self._client.get(url)
-        return json_dict(response.json())
+        data = json_dict(response.json())
+        self._update_energy(data)
+        return data
