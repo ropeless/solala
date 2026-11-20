@@ -21,10 +21,18 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_tesla_http_failure_propagates_and_retries(self) -> None:
         consumer = TeslaWallConnector('example.invalid')
         failure = httpx.ConnectError('device unreachable')
-        vitals = {'voltageA_v': 240.0, 'currentA_a': 2.0, 'contactor_closed': True}
+        vitals = {
+            'grid_v': 240.0,
+            'voltageA_v': 240.0, 'currentA_a': 2.0,
+            'voltageB_v': 240.0, 'currentB_a': 0.0,
+            'voltageC_v': 240.0, 'currentC_a': 0.0,
+            'contactor_closed': True,
+        }
         response = Mock()
         response.json.return_value = vitals
-        consumer._client.get = AsyncMock(side_effect=[failure, response])
+        lifetime = Mock()
+        lifetime.json.return_value = {'energy_wh': 1200}
+        consumer._client.get = AsyncMock(side_effect=[failure, response, lifetime])
         try:
             with self.assertRaises(httpx.ConnectError):
                 await consumer.get_status()
@@ -32,7 +40,8 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status.voltage, 240.0)
             self.assertEqual(status.current, 2.0)
             self.assertTrue(status.on)
-            self.assertEqual(consumer._client.get.await_count, 2)
+            self.assertEqual(status.accumulated_energy, 1200)
+            self.assertEqual(consumer._client.get.await_count, 3)
         finally:
             await consumer.close()
 
