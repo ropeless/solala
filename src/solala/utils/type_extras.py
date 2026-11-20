@@ -1,3 +1,6 @@
+import math
+
+
 def check_str(value: object) -> str:
     """
     Validate and return a string value.
@@ -36,6 +39,30 @@ def check_num(value: object) -> int | float:
         return value
     else:
         raise TypeError(f"Expected a number, got {type(value)}")
+
+
+def check_finite(value: object) -> int | float:
+    """
+    Validate and return a numeric value that is finite.
+
+    Booleans are not accepted, even though `bool` subclasses `int`.
+
+    Args:
+        value: Value to check.
+
+    Returns:
+        The integer or float value.
+
+    Raises:
+        TypeError: If the value is not a finite numeric.
+    """
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise TypeError(f"Expected a finite number, got {value}")
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise TypeError(f"Expected a finite number, got {type(value)}")
 
 
 def check_bool(value: object) -> bool:

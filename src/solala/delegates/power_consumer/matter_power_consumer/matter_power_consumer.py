@@ -1,20 +1,19 @@
 import asyncio
 import json
-import math
 from functools import partial
-from typing import Any
+from typing import Any, Mapping
 
 import aiohttp
 
 from solala.delegates.power_consumer.consumer_status import ConsumerStatus
-from solala.logger import LOGGER
-from solala.utils.math_extra import safe_divide
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, SwitchRegister
+from solala.logger import LOGGER
 from solala.register import AsyncCallRegister, Register, RegisterValue, check_type
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict
+from solala.utils.math_extra import safe_divide
 from solala.utils.micro_cache import AsyncMicroCache
-
+from solala.utils.type_extras import check_num, check_finite
 
 # Exclude potentially sensitive Matter clusters from diagnostic registers.
 # Comment out individual entries to expose their attributes when appropriate.
@@ -26,6 +25,35 @@ _EXCLUDED_CLUSTERS = {
     # 54,  # Wi-Fi Network Diagnostics
     62,  # Operational Credentials
 }
+
+
+class _ATTRIBUTE_FUNCTION:
+    """
+    A function from cluster, attribute to the value at that name.
+    """
+
+    def __init__(self, endpoint_id: int, attributes: JSONDict) -> None:
+        self._endpoint_id = endpoint_id
+        self._attributes = attributes
+
+    def __call__(self, cluster: int, attribute: int, *sub_keys: int) -> Any:
+        """
+        Raises:
+            ConnectionError if the attribute is not available.
+        """
+        key = f'{self._endpoint_id}/{cluster}/{attribute}'
+        result = self._attributes.get(key)
+        if result is None:
+            raise ConnectionError(f'Matter attribute {key} is unavailable')
+        for sub_key in sub_keys:
+            if not isinstance(result, Mapping):
+                raise ConnectionError(f'Matter attribute {key} is not a dictionary')
+            key = f'{key}/{sub_key}'
+            result = result.get(str(sub_key))
+            if result is None:
+                raise ConnectionError(f'Matter attribute {key} is unavailable')
+
+        return result
 
 
 class MatterPowerConsumer(PowerConsumer):
@@ -128,9 +156,26 @@ class MatterPowerConsumer(PowerConsumer):
                 await self._disconnect()
                 raise
 
-    async def __fetch_node_attributes(self) -> dict[str, Any]:
+    async def __fetch_node_attributes(self) -> JSONDict:
         """
         Retrieve attributes of the configured node, requiring it to be available.
+
+        Example return value:
+        ```
+        {
+            '1/6/0': True,
+            '1/144/8': 125000,
+            '1/144/11': 240000,
+            '1/145/1': {
+                '0': 123456,
+                '1': 0,
+            },
+        }
+        ```
+
+        Returns:
+            a dictionary of Matter attributes, and some attribute values can themselves be nested dictionaries.
+            The outer dictionary is flat, with slash-separated keys identifying the endpoint, cluster, and attribute.
         """
         nodes = await self._request('get_nodes')
         if not isinstance(nodes, list):
@@ -145,14 +190,22 @@ class MatterPowerConsumer(PowerConsumer):
                 return attributes
         raise ConnectionError(f'Matter node {self._node_id} not found')
 
-    async def _node_attributes(self) -> dict[str, Any]:
+    async def _node_attributes(self) -> JSONDict:
         """
         Return a short-lived shared snapshot of Matter attributes.
         """
         return await self._attributes_cache()
 
+    async def _attribute(self) -> _ATTRIBUTE_FUNCTION:
+        """
+        Return a short-lived shared snapshot of Matter attributes as a function from
+        cluster, attribute, etc to the value at that path.
+        """
+        attributes: JSONDict = await self._node_attributes()
+        return _ATTRIBUTE_FUNCTION(self._endpoint_id, attributes)
+
     @staticmethod
-    def _flatten_attributes(attributes: dict[str, Any]) -> dict[str, RegisterValue]:
+    def _flatten_attributes(attributes: JSONDict) -> dict[str, RegisterValue]:
         """
         Flatten scalar and nested dictionary attributes for diagnostic registers.
 
@@ -181,82 +234,55 @@ class MatterPowerConsumer(PowerConsumer):
             raise ConnectionError(f'Matter diagnostic attribute {key} unavailable')
         return values[key]
 
-    def _attribute(self, attributes: dict[str, Any], cluster: int, attribute: int) -> Any:
-        key = f'{self._endpoint_id}/{cluster}/{attribute}'
-        if key not in attributes:
-            raise ConnectionError(f'Matter attribute {key} is unavailable')
-        return attributes[key]
-
     @staticmethod
-    def _parse_accumulated_energy(energy: Any) -> int | float:
-        """
-        Validate and convert a Matter Electrical Energy Measurement value.
-
-        The Matter attribute contains a dictionary whose '0' field holds
-        imported energy in milli-watt-hours. Convert it to Wh using safe_divide,
-        which also handles integers too large for floating-point conversion.
-
-        Args:
-            energy: Raw Matter energy attribute.
-
-        Returns:
-            Accumulated imported energy in Wh.
-
-        Raises:
-            ValueError: If the attribute is malformed or energy is invalid.
-        """
-        if not isinstance(energy, dict) or '0' not in energy:
-            raise ValueError(f'Invalid Matter accumulated energy structure: {energy!r}')
-
-        value = energy['0']
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
-
-        converted_energy = safe_divide(value, 1000)
-        if converted_energy < 0 or (
-                isinstance(converted_energy, float) and not math.isfinite(converted_energy)):
-            raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
-        return converted_energy
-
-    def _optional_accumulated_energy(self, attributes: dict[str, Any]) -> int | float | None:
+    def _optional_accumulated_energy(attribute: _ATTRIBUTE_FUNCTION) -> int | float | None:
         """
         Read optional imported energy without failing required measurements.
 
         A missing attribute means energy is unavailable. Malformed energy is
         logged and omitted so valid switch, power, voltage, and current readings
         can still be returned.
+
+        Args:
+            attribute: snapshot _ATTRIBUTE_FUNCTION to get attribute values.
         """
-        energy_key = f'{self._endpoint_id}/145/1'
-        if energy_key not in attributes:
+        try:
+            energy = attribute(145, 1, 0)
+        except ConnectionError:
+            # energy reading not available
             return None
 
         try:
-            return self._parse_accumulated_energy(attributes[energy_key])
+            value = check_num(energy)
+            converted_energy = safe_divide(value, 1000)
+            return check_finite(converted_energy)
+
         except (TypeError, ValueError, OverflowError) as err:
-            LOGGER.warning('Matter accumulated energy unavailable: %r', err)
+            LOGGER.warning(f'Matter accumulated energy unavailable: {err!r}')
             return None
 
     async def get_status(self) -> ConsumerStatus:
-        attributes = await self._node_attributes()
-        on = self._attribute(attributes, 6, 0)
+        attribute: _ATTRIBUTE_FUNCTION = await self._attribute()
+        on = attribute(6, 0)
         if not isinstance(on, bool):
             raise ConnectionError(f'Invalid Matter switch state: {on!r}')
 
-        def measurement(cluster: int, attribute: int) -> float:
-            _value = self._attribute(attributes, cluster, attribute)
-            if isinstance(_value, bool) or not isinstance(_value, (int, float)):
-                raise ConnectionError(f'Invalid Matter measurement: {_value!r}')
-            result = safe_divide(_value, 1000)
-            if isinstance(result, float) and not math.isfinite(result):
-                raise ConnectionError(f'Invalid Matter measurement: {_value!r}')
-            return result
+        def measurement(_cluster: int, _attribute: int) -> float:
+            _value = attribute(_cluster, _attribute)
+            try:
+                m = check_num(_value)
+                result = safe_divide(m, 1000)
+                return check_finite(result)
+            except (TypeError, ValueError, OverflowError) as err:
+                raise ConnectionError(f'Invalid Matter measurement: {_value!r}', err)
 
         # Validate required measurements before processing optional energy.
         power = measurement(144, 8)
         voltage = measurement(144, 11)
         current = measurement(144, 12)
+        # Attempt to ascertain accumulated energy reading.
+        accumulated_energy = self._optional_accumulated_energy(attribute)
 
-        accumulated_energy = self._optional_accumulated_energy(attributes)
         return ConsumerStatus(
             on=on,
             power=power,
@@ -266,7 +292,8 @@ class MatterPowerConsumer(PowerConsumer):
         )
 
     async def _get_switch(self) -> bool:
-        value = self._attribute(await self._node_attributes(), 6, 0)
+        attribute: _ATTRIBUTE_FUNCTION = await self._attribute()
+        value = attribute(6, 0)
         if not isinstance(value, bool):
             raise ConnectionError(f'Invalid Matter switch state: {value!r}')
         return value
