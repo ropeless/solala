@@ -17,9 +17,7 @@ class TypeExtrasTestCase(unittest.TestCase):
     def test_check_num(self) -> None:
         self.assertEqual(check_num(3), 3)
         self.assertEqual(check_num(1.25), 1.25)
-        # Preserve the previous json_num behavior until validation policy is decided.
-        self.assertIs(check_num(True), True)
-        for value in (None, '3', []):
+        for value in (None, '3', [], True, False):
             with self.subTest(value=value), self.assertRaises(TypeError):
                 check_num(value)
 
