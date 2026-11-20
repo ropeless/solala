@@ -6,7 +6,7 @@ def check_str(value: Any) -> str:
     Validate and return a string value.
 
     Args:
-        value: value to check.
+        value: Value to check.
 
     Returns:
         The string value.
@@ -27,7 +27,7 @@ def check_num(value: Any) -> int | float:
     Booleans are also accepted because `bool` is a subclass of `int`.
 
     Args:
-        value: value to check.
+        value: Value to check.
 
     Returns:
         The integer or float value.
@@ -46,7 +46,7 @@ def check_bool(value: Any) -> bool:
     Validate and return a boolean value.
 
     Args:
-        value: value to check.
+        value: Value to check.
 
     Returns:
         The boolean value.
@@ -57,6 +57,6 @@ def check_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     else:
-        raise TypeError(f"Expected a number, got {type(value)}")
+        raise TypeError(f"Expected a boolean, got {type(value)}")
 
 
