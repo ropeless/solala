@@ -6,7 +6,8 @@ from drawsvg import Drawing, Lines, Rectangle, Path, Group, Circle, Line, Text, 
 
 from solala.constants import Constants
 from solala.constants import Units
-from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
+from solala.utils.json_extras import JSONDict, json_dict
+from solala.utils.type_extras import check_num, check_bool
 
 CLICK_ID_SUN = 'click_sun'
 CLICK_ID_GRID = 'click_grid'
@@ -83,17 +84,17 @@ class Infographic:
         power_dict: JSONDict = json_dict(status['power'])
         price_dict: JSONDict = json_dict(status['price'])
         self.make(
-            state_of_charge=json_num(power_dict.get('state_of_charge', 0)),
-            solar_power=json_num(power_dict.get('solar_power', 0)),
-            grid_power=json_num(power_dict.get('grid_power', 0)),
-            house_power=json_num(power_dict.get('house_power', 0)),
-            battery_power=json_num(power_dict.get('battery_power', 0)),
+            state_of_charge=check_num(power_dict.get('state_of_charge', 0)),
+            solar_power=check_num(power_dict.get('solar_power', 0)),
+            grid_power=check_num(power_dict.get('grid_power', 0)),
+            house_power=check_num(power_dict.get('house_power', 0)),
+            battery_power=check_num(power_dict.get('battery_power', 0)),
             power_scale=power_scale,
-            buy_price=json_num(price_dict.get('buy_price', 0)),
-            feed_in_price=json_num(price_dict.get('feed_in_price', 0)),
-            renewables=json_num(price_dict.get('renewables', 0)),
-            is_demand_window=json_bool(price_dict.get('tariff_demand_window', False)),
-            is_estimate=json_bool(price_dict.get('is_estimate', True)),
+            buy_price=check_num(price_dict.get('buy_price', 0)),
+            feed_in_price=check_num(price_dict.get('feed_in_price', 0)),
+            renewables=check_num(price_dict.get('renewables', 0)),
+            is_demand_window=check_bool(price_dict.get('tariff_demand_window', False)),
+            is_estimate=check_bool(price_dict.get('is_estimate', True)),
         )
 
     def make(
