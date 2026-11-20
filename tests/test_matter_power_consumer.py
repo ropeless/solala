@@ -95,7 +95,11 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
         for cluster in excluded_clusters:
             self.attributes[f'0/{cluster}/0'] = 'sensitive'
         self.attributes['1/99/0'] = ['unsupported']
-        bank = await self.consumer.get_registers()
+        with patch(
+                'solala.delegates.power_consumer.matter_power_consumer.'
+                'matter_power_consumer._EXCLUDED_CLUSTERS', set(excluded_clusters),
+        ):
+            bank = await self.consumer.get_registers()
         self.assertEqual(await bank['0/40/1'].get(), 'Vendor')
         self.assertEqual(await bank['1/145/1/0'].get(), 1234000)
         self.assertFalse(bank['1/145/1/0'].writable)
