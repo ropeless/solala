@@ -1,10 +1,12 @@
 import asyncio
+import math
 from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
 from tuya_connector import TuyaOpenAPI
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus, SwitchRegister
+from solala.logger import LOGGER
 from solala.register import RegisterType, check_type, AsyncCallRegister, check_value, RegisterValue, Register
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_num, json_bool
@@ -111,8 +113,19 @@ class TuyaPowerConsumer(PowerConsumer):
         voltage: float = json_num(device_status['cur_voltage']) * self._voltage_scale_factor
         current: float = json_num(device_status['cur_current']) * self._current_scale_factor
         power: float = json_num(device_status['cur_power']) * self._power_scale_factor
-        accumulated_energy = (json_num(device_status['add_ele']) if self._include_accumulated_energy else None)
         on: bool = json_bool(device_status['switch_1'])
+        accumulated_energy: float | None = None
+        if self._include_accumulated_energy:
+            try:
+                raw_energy = device_status['add_ele']
+                if isinstance(raw_energy, bool):
+                    raise ValueError('Tuya accumulated energy must be numeric, not boolean')
+                energy = json_num(raw_energy)
+                if not math.isfinite(energy) or energy < 0:
+                    raise ValueError(f'Invalid Tuya accumulated energy: {energy!r}')
+                accumulated_energy = energy
+            except (KeyError, TypeError, ValueError) as err:
+                LOGGER.warning('Tuya accumulated energy unavailable: %r', err)
         return ConsumerStatus(
             voltage=voltage,
             current=current,
