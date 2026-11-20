@@ -50,13 +50,15 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
         failure = httpx.ConnectError('device unreachable')
         response = Mock()
         response.json.return_value = {'voltageA_v': 240.0}
-        consumer._client.get = AsyncMock(side_effect=[failure, response])
+        lifetime = Mock()
+        lifetime.json.return_value = {'energy_wh': 1200}
+        consumer._client.get = AsyncMock(side_effect=[failure, response, lifetime])
         try:
             with self.assertRaises(httpx.ConnectError):
                 await consumer.get_registers()
             self.assertIsNone(consumer._register_bank)
             bank = await consumer.get_registers()
-            self.assertIn('voltageA_v', bank)
+            self.assertIn('vital/voltageA_v', bank)
             self.assertIs(await consumer.get_registers(), bank)
         finally:
             await consumer.close()
@@ -115,12 +117,14 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
         consumer = TeslaWallConnector('example.invalid')
         response = Mock()
         response.json.return_value = {'voltageA_v': 240.0}
-        consumer._client.get = AsyncMock(return_value=response)
+        lifetime = Mock()
+        lifetime.json.return_value = {'energy_wh': 1200}
+        consumer._client.get = AsyncMock(side_effect=[response, lifetime])
         try:
             bank = await consumer.get_registers()
             consumer._vitals_cache = AsyncMock(side_effect=httpx.ConnectError('device unreachable'))
             values = await bank.get_register_values()
-            self.assertIsInstance(values['voltageA_v'], httpx.ConnectError)
+            self.assertIsInstance(values['vital/voltageA_v'], httpx.ConnectError)
         finally:
             await consumer.close()
 
