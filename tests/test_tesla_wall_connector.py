@@ -86,13 +86,20 @@ class TeslaLifetimeEnergyTestCase(unittest.IsolatedAsyncioTestCase):
                 self.consumer._client.get = AsyncMock(side_effect=[
                     response(vitals()), response(lifetime),
                 ])
-                self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
+                if 'energy_wh' not in lifetime or isinstance(lifetime.get('energy_wh'), str):
+                    with self.assertLogs('solala', level='WARNING') as captured:
+                        self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
+                    self.assertIn('lifetime energy unavailable', captured.output[0])
+                else:
+                    self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
 
     async def test_lifetime_http_failure_preserves_vitals(self) -> None:
         self.consumer._client.get = AsyncMock(side_effect=[
             response(vitals()), httpx.ConnectError('lifetime unavailable'),
         ])
-        status = await self.consumer.get_status()
+        with self.assertLogs('solala', level='WARNING') as captured:
+            status = await self.consumer.get_status()
+        self.assertIn('ConnectError', captured.output[0])
         self.assertEqual(status.power, 2400)
         self.assertIsNone(status.accumulated_energy)
 
@@ -100,7 +107,9 @@ class TeslaLifetimeEnergyTestCase(unittest.IsolatedAsyncioTestCase):
         self.consumer._client.get = AsyncMock(side_effect=[
             response(vitals()), response({}, status_code=503),
         ])
-        self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
+        with self.assertLogs('solala', level='WARNING') as captured:
+            self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
+        self.assertIn('HTTPStatusError', captured.output[0])
 
     async def test_vitals_failure_propagates(self) -> None:
         self.consumer._client.get = AsyncMock(side_effect=httpx.ConnectError('offline'))
@@ -113,7 +122,9 @@ class TeslaLifetimeEnergyTestCase(unittest.IsolatedAsyncioTestCase):
             response(vitals()), httpx.ConnectError('offline'),
             response(vitals()), response({'energy_wh': 900}),
         ])
-        self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
+        with self.assertLogs('solala', level='WARNING') as captured:
+            self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
+        self.assertIn('ConnectError', captured.output[0])
         self.assertEqual((await self.consumer.get_status()).accumulated_energy, 900)
 
     async def test_no_background_task_created(self) -> None:
