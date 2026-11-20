@@ -1,4 +1,5 @@
 import asyncio
+import math
 from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
@@ -25,13 +26,20 @@ class TeslaWallConnector(PowerConsumer):
 
     """
 
-    def __init__(self, host: str, mac_address: str = ''):
+    def __init__(
+            self,
+            host: str,
+            mac_address: str = '',
+            cache_duration: float = 0.01,
+    ):
         """
         Initialise the connection to a Tesla Wall Connector.
 
         Args:
             host: Hostname or IP address of the connector.
             mac_address: Optional MAC address included in connection information.
+            cache_duration: How long to cache the device status. Use this to reduce how often the
+                API is called. The default value is 0.01 seconds.
         """
         super().__init__(can_switch=False)
 
@@ -46,7 +54,7 @@ class TeslaWallConnector(PowerConsumer):
             self._connection_info['mac_address'] = mac_address
 
         # Cache `__get_vitals` for 0.01s each call
-        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_vitals, 0.01)
+        self._cache: Callable[[], Awaitable[JSONDict]] = AsyncMicroCache(self.__get_vitals, cache_duration)
 
         # Created on first call to `get_registers`
         self._register_bank: RegisterBank | None = None
@@ -67,8 +75,15 @@ class TeslaWallConnector(PowerConsumer):
 
     async def get_status(self) -> ConsumerStatus:
         data: JSONDict = await self._cache()
-        voltage: float = json_num(data['voltageA_v'])
-        current: float = json_num(data['currentA_a'])
+        voltage: float = json_num(data['grid_v'])
+        apparent_power = (
+            json_num(data['currentA_a']) * json_num(data['voltageA_v'])
+            + json_num(data['currentB_a']) * json_num(data['voltageB_v'])
+            + json_num(data['currentC_a']) * json_num(data['voltageC_v'])
+        )
+        # Equivalent single phase current, assuming  phase-to-neutral voltage measurement
+        # We are assuming a power factor or 1 (purely resistive load).
+        current: float = apparent_power / voltage
         on: bool = json_bool(data['contactor_closed'])
 
         # not provided by a Tesla Wall Connector
