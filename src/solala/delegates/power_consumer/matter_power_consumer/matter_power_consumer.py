@@ -1,11 +1,13 @@
 import asyncio
 import json
+import math
 from functools import partial
 from typing import Any
 
 import aiohttp
 
 from solala.delegates.power_consumer.consumer_status import ConsumerStatus
+from solala.logger import LOGGER
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, SwitchRegister
 from solala.register import AsyncCallRegister, Register, RegisterValue, check_type
 from solala.register_bank import RegisterBank
@@ -194,19 +196,37 @@ class MatterPowerConsumer(PowerConsumer):
             _value = self._attribute(attributes, cluster, attribute)
             if isinstance(_value, bool) or not isinstance(_value, (int, float)):
                 raise ConnectionError(f'Invalid Matter measurement: {_value!r}')
-            return float(_value) / 1000
+            result = float(_value) / 1000
+            if not math.isfinite(result):
+                raise ConnectionError(f'Invalid Matter measurement: {_value!r}')
+            return result
 
-        energy = attributes.get(f'{self._endpoint_id}/145/1')
+        # Validate required measurements before processing optional energy.
+        power = measurement(144, 8)
+        voltage = measurement(144, 11)
+        current = measurement(144, 12)
+
         accumulated_energy: float | None = None
-        if isinstance(energy, dict):
-            value = energy.get('0')
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
+        energy_key = f'{self._endpoint_id}/145/1'
+        if energy_key in attributes:
+            energy = attributes[energy_key]
+            try:
+                if not isinstance(energy, dict) or '0' not in energy:
+                    raise ValueError(f'Invalid Matter accumulated energy structure: {energy!r}')
+                value = energy['0']
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
                 accumulated_energy = float(value) / 1000
+                if not math.isfinite(accumulated_energy) or accumulated_energy < 0:
+                    raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
+            except (TypeError, ValueError, OverflowError) as err:
+                LOGGER.warning('Matter accumulated energy unavailable: %r', err)
+                accumulated_energy = None
         return ConsumerStatus(
             on=on,
-            power=measurement(144, 8),
-            voltage=measurement(144, 11),
-            current=measurement(144, 12),
+            power=power,
+            voltage=voltage,
+            current=current,
             accumulated_energy=accumulated_energy,
         )
 
