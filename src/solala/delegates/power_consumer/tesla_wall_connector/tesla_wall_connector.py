@@ -30,7 +30,7 @@ class TeslaWallConnector(PowerConsumer):
     entirely between observations cannot always be recovered.
 
     The first call to `get_status()` starts a background energy monitor. The
-    monitor waits 60 seconds before each check and runs independently of status
+    monitor waits `energy_check_cadence` before each check and runs independently of status
     requests. Every `get_status()` call also checks the latest energy reading.
     Concurrent and cached reads do not count the same observation twice.
     Temporary device communication failures do not stop the monitor or discard
@@ -51,6 +51,7 @@ class TeslaWallConnector(PowerConsumer):
             host: str,
             mac_address: str = '',
             cache_duration: float = 0.01,
+            energy_check_cadence: float = 60,
     ):
         """
         Initialise the connection to a Tesla Wall Connector.
@@ -61,6 +62,8 @@ class TeslaWallConnector(PowerConsumer):
             cache_duration: How long to cache device vitals, in seconds. Fresh
                 observations update the accumulated energy at most once.
                 The default value is 0.01 seconds.
+            energy_check_cadence: how often to attempt reading the device to maintain
+                the accumulated energy record.
         """
         super().__init__(can_switch=False)
 
