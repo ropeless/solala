@@ -283,6 +283,12 @@ class TestRenderJson(unittest.TestCase):
     def test_string_with_single_quote(self) -> None:
         self.check_render("a'b", '"a\'b"')
 
+    def test_string_with_both_quote_types(self) -> None:
+        self.check_render("He said \"it's ready\"", "\"He said \\\"it's ready\\\"\"")
+
+    def test_string_with_both_quote_types_ascii(self) -> None:
+        self.check_render("He said \"it's ready\"", "\"He said \\\"it's ready\\\"\"", ensure_ascii=True)
+
     def test_string_with_backslash(self) -> None:
         self.check_render('a\\b', r"'a\\b'")
 
