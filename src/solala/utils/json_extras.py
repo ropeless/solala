@@ -238,6 +238,8 @@ def render_json(
         else:
             escaped = text.replace('\\', '\\\\')
             escaped = escaped.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+        if quote == '"' and not ensure_ascii:
+            escaped = escaped.replace('"', '\\"')
         return f'{quote}{escaped}{quote}'
 
     def display_key(key: str) -> str:
