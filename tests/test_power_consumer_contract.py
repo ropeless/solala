@@ -159,14 +159,20 @@ class TuyaSwitchContractTestCase(unittest.IsolatedAsyncioTestCase):
         self.consumer._include_accumulated_energy = True
         self.assertEqual((await self.consumer.get_status()).accumulated_energy, 123)
 
-    async def test_missing_enabled_tuya_energy_propagates(self) -> None:
+    async def test_missing_enabled_tuya_energy_preserves_status(self) -> None:
         self.consumer._include_accumulated_energy = True
         self.consumer._cache = AsyncMock(return_value={
             'cur_voltage': 2400, 'cur_current': 500,
             'cur_power': 1200, 'switch_1': True,
         })
-        with self.assertRaises(KeyError):
-            await self.consumer.get_status()
+        with self.assertLogs('solala', level='WARNING') as captured:
+            status = await self.consumer.get_status()
+        self.assertIsNone(status.accumulated_energy)
+        self.assertEqual(status.voltage, 240)
+        self.assertEqual(status.current, 0.5)
+        self.assertEqual(status.power, 120)
+        self.assertTrue(status.on)
+        self.assertIn('Tuya accumulated energy unavailable', captured.output[0])
 
 
 if __name__ == '__main__':
