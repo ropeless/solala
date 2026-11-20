@@ -80,7 +80,8 @@ class TeslaLifetimeEnergyTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_or_invalid_energy_returns_none(self) -> None:
         for lifetime in ({}, {'energy_wh': -1}, {'energy_wh': float('nan')},
-                         {'energy_wh': float('inf')}, {'energy_wh': 'invalid'}):
+                         {'energy_wh': float('inf')}, {'energy_wh': True},
+                         {'energy_wh': 'invalid'}):
             with self.subTest(lifetime=lifetime):
                 self.consumer._client.get = AsyncMock(side_effect=[
                     response(vitals()), response(lifetime),
