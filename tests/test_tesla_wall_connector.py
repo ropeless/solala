@@ -4,6 +4,8 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
+
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 
 
