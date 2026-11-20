@@ -1,7 +1,4 @@
-from typing import Any
-
-
-def check_str(value: Any) -> str:
+def check_str(value: object) -> str:
     """
     Validate and return a string value.
 
@@ -20,11 +17,11 @@ def check_str(value: Any) -> str:
         raise TypeError(f"Expected a string, got {type(value)}")
 
 
-def check_num(value: Any) -> int | float:
+def check_num(value: object) -> int | float:
     """
     Validate and return a numeric value.
 
-    Booleans are also accepted because `bool` is a subclass of `int`.
+    Booleans are not accepted, even though `bool` subclasses `int`.
 
     Args:
         value: Value to check.
@@ -35,13 +32,13 @@ def check_num(value: Any) -> int | float:
     Raises:
         TypeError: If the value is not numeric.
     """
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
         return value
     else:
         raise TypeError(f"Expected a number, got {type(value)}")
 
 
-def check_bool(value: Any) -> bool:
+def check_bool(value: object) -> bool:
     """
     Validate and return a boolean value.
 
