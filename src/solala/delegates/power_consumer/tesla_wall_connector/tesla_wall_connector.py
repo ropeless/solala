@@ -6,6 +6,7 @@ from functools import partial
 import httpx
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
+from solala.logger import LOGGER
 from solala.register import check_type, RegisterType, AsyncCallRegister, RegisterValue, check_value
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
@@ -92,11 +93,13 @@ class TeslaWallConnector(PowerConsumer):
         accumulated_energy: float | None = None
         try:
             lifetime = await self._lifetime_cache()
-            energy = json_num(lifetime['energy_wh'])
-            if math.isfinite(energy) and energy >= 0:
-                accumulated_energy = energy
-        except Exception:
-            pass
+            raw_energy = lifetime['energy_wh']
+            if not isinstance(raw_energy, bool):
+                energy = json_num(raw_energy)
+                if math.isfinite(energy) and energy >= 0:
+                    accumulated_energy = energy
+        except Exception as err:
+            LOGGER.warning('Tesla Wall Connector lifetime energy unavailable: %r', err)
 
         return ConsumerStatus(
             voltage=voltage,
