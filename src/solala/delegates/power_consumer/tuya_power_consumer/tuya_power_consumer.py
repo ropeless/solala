@@ -9,8 +9,9 @@ from solala.delegates.power_consumer.power_consumer import PowerConsumer, Consum
 from solala.logger import LOGGER
 from solala.register import RegisterType, check_type, AsyncCallRegister, check_value, RegisterValue, Register
 from solala.register_bank import RegisterBank
-from solala.utils.json_extras import JSONDict, json_num, json_bool
+from solala.utils.json_extras import JSONDict
 from solala.utils.micro_cache import AsyncMicroCache
+from solala.utils.type_extras import check_num, check_bool
 
 API_ENDPOINT = "https://openapi.tuyaeu.com"
 
@@ -113,17 +114,17 @@ class TuyaPowerConsumer(PowerConsumer):
 
     async def get_status(self) -> ConsumerStatus:
         device_status: JSONDict = await self._cache()
-        voltage: float = json_num(device_status['cur_voltage']) * self._voltage_scale_factor
-        current: float = json_num(device_status['cur_current']) * self._current_scale_factor
-        power: float = json_num(device_status['cur_power']) * self._power_scale_factor
-        on: bool = json_bool(device_status['switch_1'])
+        voltage: float = check_num(device_status['cur_voltage']) * self._voltage_scale_factor
+        current: float = check_num(device_status['cur_current']) * self._current_scale_factor
+        power: float = check_num(device_status['cur_power']) * self._power_scale_factor
+        on: bool = check_bool(device_status['switch_1'])
         accumulated_energy: float | None = None
         if self._include_accumulated_energy:
             try:
                 raw_energy = device_status['add_ele']
                 if isinstance(raw_energy, bool):
                     raise ValueError('Tuya accumulated energy must be numeric, not boolean')
-                energy = json_num(raw_energy)
+                energy = check_num(raw_energy)
                 if not math.isfinite(energy) or energy < 0:
                     raise ValueError(f'Invalid Tuya accumulated energy: {energy!r}')
                 accumulated_energy = energy
@@ -142,7 +143,7 @@ class TuyaPowerConsumer(PowerConsumer):
         Return the switch state reported by Tuya.
         """
         device_status: JSONDict = await self._cache()
-        return json_bool(device_status['switch_1'])
+        return check_bool(device_status['switch_1'])
 
     async def _set_switch(self, on: bool) -> None:
         """
