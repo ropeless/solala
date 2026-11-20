@@ -206,7 +206,8 @@ def render_json(
     """
     Render JSON-compatible values as readable, indented text.
 
-    Dictionaries use key = value, with key: for nested dictionaries.\n    Key quoting is determined before underscores are replaced with spaces.
+    Dictionaries use key = value, with key: for nested dictionaries.
+    Key quoting is determined before underscores are replaced with spaces.
     Empty dictionaries are omitted recursively; empty lists are retained.
     Tuples render as lists. Lists with at most nine scalar elements use
     one line unless a string contains a comma or square bracket, or its
@@ -258,7 +259,7 @@ def render_json(
             text = item.replace('_', ' ') if remove_value_underscores else item
             return quoted(text)
         if isinstance(item, float):
-            if item.is_integer() and (item == 0 or 1e-4 <= abs(item) < 1e6):
+            if item.is_integer() and 'e' not in str(item).lower():
                 text = str(int(item))
             else:
                 text = format(item, float_format)
