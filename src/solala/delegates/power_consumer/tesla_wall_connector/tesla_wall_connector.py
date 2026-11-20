@@ -70,8 +70,8 @@ class TeslaWallConnector(PowerConsumer):
                 reg_bank = self._register_bank
                 if reg_bank is None:
                     reg_bank = RegisterBank({
-                        key: AsyncCallRegister(partial(self._get_register_value, key), reg_type)
-                        async for key, reg_type in self._get_register_keys()
+                        f'vital/{key}': AsyncCallRegister(partial(self._get_vital_register_value, key), reg_type)
+                        async for key, reg_type in self._get_vital_register_keys()
                     })
                     self._register_bank = reg_bank
         return reg_bank
@@ -121,7 +121,7 @@ class TeslaWallConnector(PowerConsumer):
     async def _set_switch(self, on: bool) -> None:
         raise NotImplementedError('Tesla Wall Connector does not support switching')
 
-    async def _get_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
+    async def _get_vital_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
         """
         Get the vitals keys supported by the register system.
 
@@ -137,7 +137,7 @@ class TeslaWallConnector(PowerConsumer):
                 continue
             yield key, reg_type
 
-    async def _get_register_value(self, key: str) -> RegisterValue:
+    async def _get_vital_register_value(self, key: str) -> RegisterValue:
         """
         Get the current value of a connector vitals register.
 
