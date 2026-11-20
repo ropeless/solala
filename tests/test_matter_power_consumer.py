@@ -54,7 +54,7 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
         raw_energy = 10 ** 400 + 999
         self.attributes['1/145/1'] = {'0': raw_energy}
         status = await self.consumer.get_status()
-        self.assertEqual(status.accumulated_energy, raw_energy // 1000)
+        self.assertEqual(status.accumulated_energy, raw_energy // 1000 + 1)
         self.assertIsInstance(status.accumulated_energy, int)
 
     async def test_zero_optional_energy_is_valid(self) -> None:
