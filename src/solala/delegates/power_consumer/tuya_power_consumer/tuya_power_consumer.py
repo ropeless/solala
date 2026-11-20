@@ -1,6 +1,6 @@
 import asyncio
 import math
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from functools import partial
 
 from tuya_connector import TuyaOpenAPI
