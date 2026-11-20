@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -125,6 +126,13 @@ class TuyaSwitchContractTestCase(unittest.IsolatedAsyncioTestCase):
             self.consumer = TuyaPowerConsumer('id', 'secret', 'device')
             self.client = api.return_value
         self.consumer._connected = True
+
+    async def test_concurrent_tuya_connection_initializes_once(self) -> None:
+        self.consumer._connected = False
+        self.client.connect.return_value = {\'success\': True}
+        await asyncio.gather(self.consumer._connect(), self.consumer._connect())
+        self.client.connect.assert_called_once_with()
+        self.assertTrue(self.consumer._connected)
 
     async def test_switch_command_payload(self) -> None:
         self.client.post.return_value = {'success': True}
