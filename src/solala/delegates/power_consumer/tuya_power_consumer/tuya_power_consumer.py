@@ -66,6 +66,7 @@ class TuyaPowerConsumer(PowerConsumer):
             access_secret,
         )
         self._connected: bool = False
+        self._connect_lock = asyncio.Lock()
         self._status_url: str = f'/v1.0/iot-03/devices/{device_id}/status'
         self._connection_info: JSONDict = {
             'connection': 'Tuya',
@@ -89,10 +90,12 @@ class TuyaPowerConsumer(PowerConsumer):
         Establish the Tuya API connection without blocking the event loop.
         """
         if not self._connected:
-            response = await asyncio.to_thread(self._tuya.connect)
-            if not response.get('success', False):
-                raise ConnectionError(response)
-            self._connected = True
+            async with self._connect_lock:
+                if not self._connected:
+                    response = await asyncio.to_thread(self._tuya.connect)
+                    if not response.get('success', False):
+                        raise ConnectionError(response)
+                    self._connected = True
 
     async def get_registers(self) -> RegisterBank:
         reg_bank = self._register_bank
