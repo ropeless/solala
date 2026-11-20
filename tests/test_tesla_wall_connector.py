@@ -143,6 +143,58 @@ class TeslaEnergyTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.consumer.get_status()).accumulated_energy, 20)
         self.assertFalse(self.consumer._energy_task.done())
 
+    async def test_background_monitor_updates_energy_without_status_calls(self) -> None:
+        """The monitor continues sampling when no caller requests status."""
+        await self.consumer.close()
+        self.consumer = TeslaWallConnector(
+            'tesla.example', cache_duration=0, energy_check_cadence=0.005,
+        )
+        observed = asyncio.Event()
+        calls = 0
+
+        async def fetch(_url: str) -> Mock:
+            nonlocal calls
+            calls += 1
+            if calls >= 2:
+                observed.set()
+            return Mock(json=Mock(return_value=vitals(calls * 10, calls)))
+
+        self.consumer._client.get = AsyncMock(side_effect=fetch)
+        self.assertEqual((await self.consumer.get_status()).accumulated_energy, 10)
+        await asyncio.wait_for(observed.wait(), timeout=1)
+        self.assertGreaterEqual(self.consumer._accumulated_energy, 20)
+
+    async def test_background_monitor_recovers_from_http_failure(self) -> None:
+        """A failed scheduled check does not prevent later scheduled checks."""
+        await self.consumer.close()
+        self.consumer = TeslaWallConnector(
+            'tesla.example', cache_duration=0, energy_check_cadence=0.005,
+        )
+        recovered = asyncio.Event()
+        calls = 0
+
+        async def fetch(_url: str) -> Mock:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise TimeoutError('offline')
+            if calls >= 3:
+                recovered.set()
+            return Mock(json=Mock(return_value=vitals(calls * 10, calls)))
+
+        self.consumer._client.get = AsyncMock(side_effect=fetch)
+        await self.consumer.get_status()
+        await asyncio.wait_for(recovered.wait(), timeout=1)
+        self.assertGreaterEqual(self.consumer._accumulated_energy, 30)
+        self.assertFalse(self.consumer._energy_task.done())
+
+    async def test_invalid_monitor_interval_rejected(self) -> None:
+        """The cadence must not allow a busy loop."""
+        for cadence in (0, -1, float('nan'), float('inf')):
+            with self.subTest(cadence=cadence):
+                with self.assertRaises(ValueError):
+                    TeslaWallConnector('tesla.example', energy_check_cadence=cadence)
+
     async def test_close_cancels_monitor_and_is_idempotent(self) -> None:
         self.readings(vitals(10, 1))
         await self.consumer.get_status()
