@@ -72,7 +72,6 @@ class TeslaWallConnector(PowerConsumer):
         on: bool = json_bool(data['contactor_closed'])
 
         # not provided by a Tesla Wall Connector
-        # TODO - accumulated_energy may be estimated by tracking "session_energy_wh"
         accumulated_energy = None
 
         return ConsumerStatus(

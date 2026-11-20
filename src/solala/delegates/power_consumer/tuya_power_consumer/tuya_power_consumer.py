@@ -111,13 +111,14 @@ class TuyaPowerConsumer(PowerConsumer):
         voltage: float = json_num(device_status['cur_voltage']) * self._voltage_scale_factor
         current: float = json_num(device_status['cur_current']) * self._current_scale_factor
         power: float = json_num(device_status['cur_power']) * self._power_scale_factor
+        accumulated_energy = (json_num(device_status['add_ele']) if self._include_accumulated_energy else None)
         on: bool = json_bool(device_status['switch_1'])
         return ConsumerStatus(
             voltage=voltage,
             current=current,
             power=power,
             on=on,
-            accumulated_energy=(json_num(device_status['add_ele']) if self._include_accumulated_energy else None),
+            accumulated_energy=accumulated_energy,
         )
 
     async def _get_switch(self) -> bool:
