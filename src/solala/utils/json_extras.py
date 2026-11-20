@@ -218,7 +218,7 @@ def render_json(
     Args:
         value: JSON-compatible value to render.
         indent: Spaces per nesting level.
-        float_format: Python format specification for nonintegral floats.
+        float_format: Python format specification for floats not rendered as integers.
         units: Optional mapping from original keys to numeric unit suffixes.
         remove_key_underscores: Replace underscores in displayed keys.
         remove_value_underscores: Replace underscores in string values.
@@ -227,10 +227,15 @@ def render_json(
     Returns:
         Human-readable text, or an empty string for an empty dictionary.
     """
+    max_simple_list_length = 9
+    max_simple_string_length = 20
     unit_map = units if units is not None else {}
     spacing = ' ' * indent
 
     def quoted(text: str) -> str:
+        """
+        Quote and escape a string using a suitable delimiter.
+        """
         quote = '"' if "'" in text else "'"
         if ensure_ascii:
             escaped = json.dumps(text, ensure_ascii=True)[1:-1]
@@ -274,18 +279,24 @@ def render_json(
         return text + unit_map.get(key, '') if key is not None else text
 
     def visible(item: JSONValue) -> bool:
+        """
+        Exclude mappings whose descendants are all empty mappings.
+        """
         if isinstance(item, Mapping):
             return any(visible(child) for child in item.values())
         return True
 
     def simple(items: Sequence[JSONValue]) -> bool:
-        if len(items) > 9:
+        """
+        Determine whether a sequence fits the compact list format.
+        """
+        if len(items) > max_simple_list_length:
             return False
         for item in items:
             if isinstance(item, (Mapping, Sequence)) and not isinstance(item, str):
                 return False
             if isinstance(item, str):
-                if any(char in item for char in ',[]') or len(scalar(item)) > 20:
+                if any(char in item for char in ',[]') or len(scalar(item)) > max_simple_string_length:
                     return False
         return True
 
