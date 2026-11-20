@@ -55,5 +55,3 @@ def check_bool(value: object) -> bool:
         return value
     else:
         raise TypeError(f"Expected a boolean, got {type(value)}")
-
-
