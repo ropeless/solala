@@ -1,7 +1,3 @@
-"""
-Tests specifying the intended `render_json` display behaviour.
-"""
-
 import unittest
 from typing import Any
 
@@ -381,6 +377,12 @@ class TestRenderJson(unittest.TestCase):
 
     def test_float_exponent_preserved(self) -> None:
         self.check_render(1.234e20, '1.2e+20')
+
+    def test_integral_float_above_one_million(self) -> None:
+        self.check_render(1000000.0, '1000000')
+
+    def test_large_integral_float_with_custom_format(self) -> None:
+        self.check_render(1000000.0, '1000000', float_format='.2f')
 
     def test_integral_float_in_list(self) -> None:
         self.check_render([123.0, -123.0], "[123, -123]")
