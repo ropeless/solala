@@ -6,7 +6,7 @@ from solala.utils.json_extras import JSONValue, render_json
 
 class TestRenderJson(unittest.TestCase):
     """
-    Specify expected rendering, including behaviour not yet implemented.
+    Verify the expected behaviour of the JSON text renderer.
     """
 
     def check_render(self, value: JSONValue, expected: str, **kwargs: Any) -> None:
