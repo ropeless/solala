@@ -1,20 +1,16 @@
 import asyncio
 import math
-import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
 import httpx
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
+from solala.logger import LOGGER
 from solala.register import check_type, RegisterType, AsyncCallRegister, RegisterValue, check_value
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
 from solala.utils.micro_cache import AsyncMicroCache
-
-NAME: str = 'Tesla Wall Charger'
-
-_logger = logging.getLogger(__name__)
 
 
 class TeslaWallConnector(PowerConsumer):
@@ -126,9 +122,9 @@ class TeslaWallConnector(PowerConsumer):
         data: JSONDict = await self.check_energy()
         voltage: float = json_num(data['grid_v'])
         apparent_power = (
-            json_num(data['currentA_a']) * json_num(data['voltageA_v'])
-            + json_num(data['currentB_a']) * json_num(data['voltageB_v'])
-            + json_num(data['currentC_a']) * json_num(data['voltageC_v'])
+                json_num(data['currentA_a']) * json_num(data['voltageA_v'])
+                + json_num(data['currentB_a']) * json_num(data['voltageB_v'])
+                + json_num(data['currentC_a']) * json_num(data['voltageC_v'])
         )
         # Equivalent single phase current, assuming  phase-to-neutral voltage measurement
         # We are assuming a power factor or 1 (purely resistive load).
@@ -192,7 +188,7 @@ class TeslaWallConnector(PowerConsumer):
             except asyncio.CancelledError:
                 raise
             except Exception as err:
-                _logger.warning('Tesla energy monitoring failed: %r', err)
+                LOGGER.warning(f'{self.__class__.__name__} energy monitoring failed: {err!r}')
 
     def get_connection_info(self) -> JSONDict:
         return self._connection_info
