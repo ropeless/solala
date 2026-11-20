@@ -311,7 +311,7 @@ class TestRenderJson(unittest.TestCase):
         self.check_render({"'ab'": 1}, "  'ab' = 1")
 
     def test_dictionary_key_with_existing_quoted_spaces(self) -> None:
-        self.check_render({"'a b'": 1}, '  "'a b'" = 1')
+        self.check_render({"'a b'": 1}, "  \"'a b'\" = 1")
 
     def test_dictionary_key_with_double_quote_int_value(self) -> None:
         self.check_render({'a"b': 1}, '  a"b = 1')
