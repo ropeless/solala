@@ -8,6 +8,7 @@ import aiohttp
 
 from solala.delegates.power_consumer.consumer_status import ConsumerStatus
 from solala.logger import LOGGER
+from solala.utils.math_extra import safe_divide
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, SwitchRegister
 from solala.register import AsyncCallRegister, Register, RegisterValue, check_type
 from solala.register_bank import RegisterBank
@@ -196,8 +197,8 @@ class MatterPowerConsumer(PowerConsumer):
             _value = self._attribute(attributes, cluster, attribute)
             if isinstance(_value, bool) or not isinstance(_value, (int, float)):
                 raise ConnectionError(f'Invalid Matter measurement: {_value!r}')
-            result = float(_value) / 1000
-            if not math.isfinite(result):
+            result = safe_divide(_value, 1000)
+            if isinstance(result, float) and not math.isfinite(result):
                 raise ConnectionError(f'Invalid Matter measurement: {_value!r}')
             return result
 
@@ -216,16 +217,7 @@ class MatterPowerConsumer(PowerConsumer):
                 value = energy['0']
                 if isinstance(value, bool) or not isinstance(value, (int, float)):
                     raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
-                if isinstance(value, int):
-                    if value < 0:
-                        raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
-                    try:
-                        accumulated_energy = float(value) / 1000
-                    except OverflowError:
-                        # Preserve whole Wh if the raw integer is too large for float.
-                        accumulated_energy = value // 1000
-                else:
-                    accumulated_energy = value / 1000
+                accumulated_energy = safe_divide(value, 1000)
                 if accumulated_energy < 0 or (
                         isinstance(accumulated_energy, float) and not math.isfinite(accumulated_energy)):
                     raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
