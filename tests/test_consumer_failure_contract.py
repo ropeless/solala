@@ -118,7 +118,7 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
         consumer._client.get = AsyncMock(return_value=response)
         try:
             bank = await consumer.get_registers()
-            consumer._cache = AsyncMock(side_effect=httpx.ConnectError('device unreachable'))
+            consumer._vitals_cache = AsyncMock(side_effect=httpx.ConnectError('device unreachable'))
             values = await bank.get_register_values()
             self.assertIsInstance(values['voltageA_v'], httpx.ConnectError)
         finally:
