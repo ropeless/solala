@@ -69,10 +69,15 @@ class TeslaWallConnector(PowerConsumer):
             async with self._register_bank_lock:
                 reg_bank = self._register_bank
                 if reg_bank is None:
-                    reg_bank = RegisterBank({
+                    registers = {
                         f'vital/{key}': AsyncCallRegister(partial(self._get_vital_register_value, key), reg_type)
                         async for key, reg_type in self._get_vital_register_keys()
+                    }
+                    registers.update({
+                        f'lifetime/{key}': AsyncCallRegister(partial(self._get_lifetime_register_value, key), reg_type)
+                        async for key, reg_type in self._get_lifetime_register_keys()
                     })
+                    reg_bank = RegisterBank(registers)
                     self._register_bank = reg_bank
         return reg_bank
 
@@ -94,10 +99,12 @@ class TeslaWallConnector(PowerConsumer):
         try:
             lifetime = await self._lifetime_cache()
             raw_energy = lifetime['energy_wh']
-            if not isinstance(raw_energy, bool):
-                energy = json_num(raw_energy)
-                if math.isfinite(energy) and energy >= 0:
-                    accumulated_energy = energy
+            if isinstance(raw_energy, bool):
+                raise ValueError('Lifetime energy must be numeric, not boolean')
+            energy = json_num(raw_energy)
+            if not math.isfinite(energy) or energy < 0:
+                raise ValueError(f'Invalid lifetime energy: {energy!r}')
+            accumulated_energy = energy
         except Exception as err:
             LOGGER.warning('Tesla Wall Connector lifetime energy unavailable: %r', err)
 
@@ -151,6 +158,34 @@ class TeslaWallConnector(PowerConsumer):
         value = json[key]
         return check_value(value)
 
+    async def _get_lifetime_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
+        """
+        Get the lifetime keys supported by the register system.
+
+        Returns:
+            An asynchronous iterator of lifetime keys and their register types.
+        """
+        data: JSONDict = await self._lifetime_cache()
+        for key, value in data.items():
+            try:
+                reg_type: RegisterType = check_type(type(value))
+            except TypeError:
+                continue
+            yield key, reg_type
+
+    async def _get_lifetime_register_value(self, key: str) -> RegisterValue:
+        """
+        Get the current value of a lifetime register.
+
+        Args:
+            key: Name of the lifetime field to retrieve.
+
+        Returns:
+            The register value converted to a supported register type.
+        """
+        data: JSONDict = await self._lifetime_cache()
+        return check_value(data[key])
+
     async def __get_vitals(self) -> JSONDict:
         """
         Retrieve the connector's vitals from its local HTTP API.
@@ -163,6 +198,7 @@ class TeslaWallConnector(PowerConsumer):
         """
         url = self._api + 'vitals'
         response = await self._client.get(url)
+        response.raise_for_status()
         return json_dict(response.json())
 
     async def __get_lifetime(self) -> JSONDict:
