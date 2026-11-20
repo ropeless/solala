@@ -23,65 +23,6 @@ type JSONList = Sequence[JSONValue]
 type JSONContainer = JSONDict | JSONList
 
 
-def json_str(value: JSONValue) -> str:
-    """
-    Validate and return a JSON string value.
-
-    Args:
-        value: JSON value to check.
-
-    Returns:
-        The string value.
-
-    Raises:
-        TypeError: If the value is not a string.
-    """
-    if isinstance(value, str):
-        return value
-    else:
-        raise TypeError(f"Expected a string, got {type(value)}")
-
-
-def json_num(value: JSONValue) -> int | float:
-    """
-    Validate and return a JSON numeric value.
-
-    Booleans are also accepted because `bool` is a subclass of `int`.
-
-    Args:
-        value: JSON value to check.
-
-    Returns:
-        The integer or float value.
-
-    Raises:
-        TypeError: If the value is not numeric.
-    """
-    if isinstance(value, (int, float)):
-        return value
-    else:
-        raise TypeError(f"Expected a number, got {type(value)}")
-
-
-def json_bool(value: JSONValue) -> bool:
-    """
-    Validate and return a JSON boolean value.
-
-    Args:
-        value: JSON value to check.
-
-    Returns:
-        The boolean value.
-
-    Raises:
-        TypeError: If the value is not a boolean.
-    """
-    if isinstance(value, bool):
-        return value
-    else:
-        raise TypeError(f"Expected a number, got {type(value)}")
-
-
 def json_dict(value: JSONValue) -> JSONDict:
     """
     Validate and return a JSON mapping.
