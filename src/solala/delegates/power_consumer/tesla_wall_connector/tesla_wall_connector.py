@@ -7,6 +7,7 @@ import httpx
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.logger import LOGGER
+from solala.utils.math_extra import safe_divide
 from solala.register import check_type, RegisterType, AsyncCallRegister, RegisterValue, check_value
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_dict, json_num, json_bool
@@ -91,7 +92,7 @@ class TeslaWallConnector(PowerConsumer):
         )
         # Equivalent single phase current, assuming  phase-to-neutral voltage measurement
         # We are assuming a power factor or 1 (purely resistive load).
-        current: float = apparent_power / voltage
+        current: float = safe_divide(apparent_power, voltage)
         on: bool = json_bool(data['contactor_closed'])
 
         # Lifetime energy is optional; a failure here must not hide valid vitals.
