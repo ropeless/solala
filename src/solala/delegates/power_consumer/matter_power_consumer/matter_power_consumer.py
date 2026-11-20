@@ -216,7 +216,16 @@ class MatterPowerConsumer(PowerConsumer):
                 value = energy['0']
                 if isinstance(value, bool) or not isinstance(value, (int, float)):
                     raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
-                accumulated_energy = float(value) / 1000
+                if isinstance(value, int):
+                    if value < 0:
+                        raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
+                    try:
+                        accumulated_energy = float(value) / 1000
+                    except OverflowError:
+                        # Preserve whole Wh if the raw integer is too large for float.
+                        accumulated_energy = value // 1000
+                else:
+                    accumulated_energy = value / 1000
                 if not math.isfinite(accumulated_energy) or accumulated_energy < 0:
                     raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
             except (TypeError, ValueError, OverflowError) as err:
