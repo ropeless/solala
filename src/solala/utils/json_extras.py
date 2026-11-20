@@ -1,4 +1,5 @@
 import inspect
+import json
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from datetime import datetime, date, timedelta
 from enum import Enum
@@ -230,18 +231,21 @@ def render_json(
 
     def quoted(text: str) -> str:
         quote = '"' if "'" in text else "'"
-        escaped = text.encode('unicode_escape').decode('ascii') if ensure_ascii else text
-        escaped = escaped.replace('\\', '\\\\') if not ensure_ascii else escaped
-        if not ensure_ascii:
+        if ensure_ascii:
+            escaped = json.dumps(text, ensure_ascii=True)[1:-1]
+            if quote == "'":
+                escaped = escaped.replace('\\"', '"')
+        else:
+            escaped = text.replace('\\', '\\\\')
             escaped = escaped.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
         return f'{quote}{escaped}{quote}'
 
     def display_key(key: str) -> str:
         text = key.replace('_', ' ') if remove_key_underscores else key
-        if (not text or text != text.strip()
-                or any(ch.isspace() and ch != ' ' for ch in text)
-                or ': ' in text or ' = ' in text or "' " in text
-                or ('"' in text and ' ' not in text)):
+        if (not text or any(char.isspace() for char in text)
+                or ': ' in text or ' = ' in text):
+            if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"":
+                return text
             return quoted(text)
         return text
 
