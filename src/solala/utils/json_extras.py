@@ -229,21 +229,19 @@ def render_json(
     spacing = ' ' * indent
 
     def quoted(text: str) -> str:
-        if ensure_ascii:
-            text = text.encode('unicode_escape').decode('ascii')
-        else:
-            text = text.replace('\\', '\\\\')
-            text = text.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
         quote = '"' if "'" in text else "'"
-        if quote == "'":
-            text = text.replace('"', '\\"')
-        return f'{quote}{text}{quote}'
+        escaped = text.encode('unicode_escape').decode('ascii') if ensure_ascii else text
+        escaped = escaped.replace('\\', '\\\\') if not ensure_ascii else escaped
+        if not ensure_ascii:
+            escaped = escaped.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+        return f'{quote}{escaped}{quote}'
 
     def display_key(key: str) -> str:
         text = key.replace('_', ' ') if remove_key_underscores else key
         if (not text or text != text.strip()
                 or any(ch.isspace() and ch != ' ' for ch in text)
-                or ': ' in text or ' = ' in text or "' " in text):
+                or ': ' in text or ' = ' in text or "' " in text
+                or ('"' in text and ' ' not in text)):
             return quoted(text)
         return text
 
@@ -256,7 +254,7 @@ def render_json(
             text = item.replace('_', ' ') if remove_value_underscores else item
             return quoted(text)
         if isinstance(item, float):
-            if item.is_integer():
+            if item.is_integer() and (item == 0 or 1e-4 <= abs(item) < 1e6):
                 text = str(int(item))
             else:
                 text = format(item, float_format)
