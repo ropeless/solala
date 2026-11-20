@@ -226,7 +226,8 @@ class MatterPowerConsumer(PowerConsumer):
                         accumulated_energy = value // 1000
                 else:
                     accumulated_energy = value / 1000
-                if not math.isfinite(accumulated_energy) or accumulated_energy < 0:
+                if accumulated_energy < 0 or (
+                        isinstance(accumulated_energy, float) and not math.isfinite(accumulated_energy)):
                     raise ValueError(f'Invalid Matter accumulated energy: {value!r}')
             except (TypeError, ValueError, OverflowError) as err:
                 LOGGER.warning('Matter accumulated energy unavailable: %r', err)
