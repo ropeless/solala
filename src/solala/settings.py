@@ -152,6 +152,8 @@ class ModbusControllerConnection(BaseModel):
     master_device_id: int = 1
     meter_device_id: int = 200
     slave_device_id: int = 1
+    default_MinRsvPct: float = 7
+    default_WMaxLimPct_RvrtTms: int = 11
 
 
 class AmberPricerConnection(BaseModel):

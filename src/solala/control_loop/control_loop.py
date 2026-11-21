@@ -26,8 +26,8 @@ from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer i
 from solala.delegates.power_consumer.matter_power_consumer.matter_power_consumer import MatterPowerConsumer
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
-from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
 from solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_consumer import TuyaLocalPowerConsumer
+from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
 from solala.delegates.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
@@ -50,11 +50,11 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, DummySolarForecasterConnection, \
     DatabaseConnection, TuyaConnection, TuyaLocalConnection, MatterConnection
 from solala.utils.json_extras import JSONDict, JSONValue
-from solala.utils.type_extras import check_num
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
 from solala.utils.ordered_async_rlock import OrderedAsyncRLock
 from solala.utils.string_extras import split_addresses
 from solala.utils.time_extras import now, local_time_zone
+from solala.utils.type_extras import check_num
 
 _MIN_DATE = datetime.min.replace(tzinfo=UTC)
 _NO_POWER = PowerStatus(
@@ -959,7 +959,8 @@ async def get_solar_forecast(day: date) -> DailySolarForecast:
 async def _get_solar_forecast(day: date) -> LifecycleReturn[DailySolarForecast]:
     forecaster = _CONTROL_STATE.connections.forecaster
     if forecaster is None:
-        return error(f'Solar forecast not available for {day.strftime("%Y-%m-%d")}. Error: solar forecaster not connected')
+        return error(
+            f'Solar forecast not available for {day.strftime("%Y-%m-%d")}. Error: solar forecaster not connected')
 
     try:
         forecast: DailySolarForecast = await forecaster.get_forecast(day)
@@ -1911,6 +1912,8 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
         meter='meter',
         slaves=slave_names,
         mac_addr_lookup=mac_addr_lookup,
+        default_MinRsvPct=controller_connection.default_MinRsvPct,
+        default_WMaxLimPct_RvrtTms=controller_connection.default_WMaxLimPct_RvrtTms,
     )
 
     return controller
