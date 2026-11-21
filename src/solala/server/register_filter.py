@@ -6,6 +6,15 @@ def compile_register_filter(pattern: str) -> re.Pattern[str]:
     Compile a register-name filter for use with Pattern.match.
 
     Matches anywhere in the name unless anchored at the beginning.
+
+    Args:
+        pattern: Filter using optional anchors, wildcards, and escaped metacharacters.
+
+    Returns:
+        Compiled regular expression for matching register names.
+
+    Raises:
+        ValueError: If an anchor or escape sequence is invalid.
     """
     parts: list[str] = []
     index = 0
