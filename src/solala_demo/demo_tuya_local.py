@@ -24,6 +24,8 @@ async def test_switch(consumer: TuyaLocalPowerConsumer) -> None:
             raise AssertionError('Switch remained ON after OFF command')
         print('Switch OFF confirmed')
 
+        await asyncio.sleep(5)  # helps with visual confirmation
+
         print('Switch test: turning ON')
         await consumer.set_switch(True)
         if not (await consumer.get_status()).on:
