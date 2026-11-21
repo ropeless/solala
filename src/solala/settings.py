@@ -210,6 +210,13 @@ class TuyaConnection(BaseModel):
     cache_duration: float = 300
     include_accumulated_energy: bool = False
 
+    @field_validator('calibration_factor')
+    @classmethod
+    def validate_calibration_factor(cls, value: float) -> float:
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError('calibration_factor must be positive and finite')
+        return value
+
 
 class TuyaLocalConnection(BaseModel):
     """
