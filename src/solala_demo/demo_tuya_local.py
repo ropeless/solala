@@ -7,6 +7,7 @@ from solala.utils.local_config_help import config
 
 
 SWITCH_TEST: bool = False
+INCLUDE_SLEEP: bool = False
 
 
 async def test_switch(consumer: TuyaLocalPowerConsumer) -> None:
@@ -26,7 +27,8 @@ async def test_switch(consumer: TuyaLocalPowerConsumer) -> None:
             raise AssertionError('Switch remained ON after OFF command')
         print('Switch OFF confirmed')
 
-        await asyncio.sleep(5)  # helps with visual confirmation
+        if INCLUDE_SLEEP:
+            await asyncio.sleep(5)  # helps with visual confirmation
 
         print('Switch test: turning ON')
         await consumer.set_switch(True)
