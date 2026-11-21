@@ -256,6 +256,7 @@ class RegistersUpdater(LoopListener):
         self._on_filter_change = on_filter_change
         self._bank = control_loop.get_register_bank()
         self._values: dict[str, RegisterValue] = {}
+        # Iteration tracks control-loop updates; generation tracks superseding filter reads.
         self._iteration = 0
         self._read_generation = 0
         self._read_task: asyncio.Task[None] | None = None
@@ -264,9 +265,15 @@ class RegistersUpdater(LoopListener):
         self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
         with ui.column().classes('w-full gap-1').style('max-width: 520px'):
             with ui.row().classes('items-center gap-2 w-full flex-nowrap'):
-                self._input = ui.input(label='Filter', value=initial_filter).props('dense outlined spellcheck=false autocorrect=off autocapitalize=off')
-                self._input.classes('min-w-0 flex-1').style('font-size: 16px').props('input-style="font-size: 16px"')
-                ui.button(icon='close', on_click=lambda: self._input.set_value('')).props('flat round dense shrink-0')
+                self._input = ui.input(label='Filter', value=initial_filter).props(
+                    'dense outlined spellcheck=false autocorrect=off autocapitalize=off'
+                )
+                self._input.classes('min-w-0 flex-1').style('font-size: 16px').props(
+                    'input-style="font-size: 16px"'
+                )
+                ui.button(
+                    icon='close', on_click=lambda: self._input.set_value('')
+                ).props('flat round dense shrink-0')
             self._error = ui.label('invalid pattern').classes('text-red-600 w-full').set_visibility(False)
         self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
         self._input.on_value_change(lambda event: self.set_filter(event.value))
@@ -313,7 +320,8 @@ class RegistersUpdater(LoopListener):
     async def _read_values(self, iteration: int, generation: int) -> None:
         bank = self._bank
         for name in bank:
-            if iteration != self._iteration or generation != self._read_generation or bank is not self._bank:
+            if (iteration != self._iteration or generation != self._read_generation
+                    or bank is not self._bank):
                 return
             if not self._filter.match(name) or name in self._values:
                 continue
@@ -328,7 +336,8 @@ class RegistersUpdater(LoopListener):
             if iteration != self._iteration or generation != self._read_generation or bank is not self._bank:
                 return
             self._values[name] = value
-        if iteration == self._iteration and generation == self._read_generation and bank is self._bank:
+        if (iteration == self._iteration and generation == self._read_generation
+                and bank is self._bank):
             self._render()
 
     def _render(self) -> None:
