@@ -6,7 +6,7 @@ from solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_
 from solala.utils.local_config_help import config
 
 
-SWITCH_TEST = False
+SWITCH_TEST: bool = False
 
 
 async def test_switch(consumer: TuyaLocalPowerConsumer) -> None:
