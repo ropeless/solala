@@ -13,7 +13,7 @@ from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict
 from solala.utils.math_extra import safe_divide
 from solala.utils.micro_cache import AsyncMicroCache
-from solala.utils.type_extras import check_num, check_finite
+from solala.utils.type_extras import check_num, check_non_negative
 
 # Exclude potentially sensitive Matter clusters from diagnostic registers.
 # Comment out individual entries to expose their attributes when appropriate.
@@ -255,7 +255,7 @@ class MatterPowerConsumer(PowerConsumer):
         try:
             value = check_num(energy)
             converted_energy = safe_divide(value, 1000)
-            return check_finite(converted_energy)
+            return check_non_negative(converted_energy)
 
         except (TypeError, ValueError, OverflowError) as err:
             LOGGER.warning(f'Matter accumulated energy unavailable: {err!r}')
@@ -272,7 +272,7 @@ class MatterPowerConsumer(PowerConsumer):
             try:
                 m = check_num(_value)
                 result = safe_divide(m, 1000)
-                return check_finite(result)
+                return check_non_negative(result)
             except (TypeError, ValueError, OverflowError) as err:
                 raise ConnectionError(f'Invalid Matter measurement: {_value!r}', err)
 
