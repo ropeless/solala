@@ -4,7 +4,9 @@ from solala.server.register_filter import compile_register_filter
 
 
 class RegisterFilterTestCase(unittest.TestCase):
-    """Verify register-name pattern syntax."""
+    """
+    Verify register-name pattern syntax.
+    """
 
     def test_substring_and_empty(self) -> None:
         self.assertIsNotNone(compile_register_filter('abc/ef').match('cbaabc/efg/xyz'))
