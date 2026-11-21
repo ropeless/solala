@@ -1,7 +1,8 @@
 from datetime import time
+import math
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from solala.constants import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, \
     DEFAULT_DB_HOST, DEFAULT_DB_PORT, DEFAULT_DB_NAME
@@ -189,6 +190,7 @@ class TuyaConnection(BaseModel):
         voltage_scale_factor: Multiplier applied to reported voltage values.
         current_scale_factor: Multiplier applied to reported current values.
         power_scale_factor: Multiplier applied to reported power values.
+        calibration_factor: Multiplier correcting measured current and power.
         cache_duration: How long to cache the device status. Use this to reduce how often the
                 API is called. The default value is 300 seconds (5 minutes).
         include_accumulated_energy: Whether to use Tuya's 'add_ele' as accumulated energy in Wh.
@@ -204,8 +206,39 @@ class TuyaConnection(BaseModel):
     voltage_scale_factor: float = 0.1
     current_scale_factor: float = 0.001
     power_scale_factor: float = 0.1
+    calibration_factor: float = 1.0
     cache_duration: float = 300
     include_accumulated_energy: bool = False
+
+
+class TuyaLocalConnection(BaseModel):
+    """
+    Configure a Tuya smart plug accessed directly over the LAN.
+
+    Attributes:
+        host: Device IP address or hostname.
+        device_id: Tuya device identifier.
+        local_key: Local encryption key.
+        version: Tuya protocol version.
+        calibration_factor: Multiplier correcting measured current and power.
+        timeout: Socket timeout in seconds.
+    """
+    TYPE: ClassVar[Literal['tuya_local']] = 'tuya_local'
+    type: Literal['tuya_local'] = 'tuya_local'
+
+    host: str
+    device_id: str
+    local_key: str
+    version: float = 3.5
+    calibration_factor: float = 1.0
+    timeout: float = 5.0
+
+    @field_validator('calibration_factor')
+    @classmethod
+    def validate_calibration_factor(cls, value: float) -> float:
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError('calibration_factor must be positive and finite')
+        return value
 
 
 class MatterConnection(BaseModel):
@@ -286,7 +319,7 @@ type PricerConnection = Annotated[
 ]
 
 type ConsumerConnection = Annotated[
-    DummyConsumerConnection | TeslaWallConnectorConnection | TuyaConnection | MatterConnection,
+    DummyConsumerConnection | TeslaWallConnectorConnection | TuyaConnection | TuyaLocalConnection | MatterConnection,
     Field(discriminator='type')
 ]
 
