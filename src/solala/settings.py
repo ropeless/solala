@@ -192,9 +192,8 @@ class TuyaConnection(BaseModel):
         power_scale_factor: Multiplier applied to reported power values.
         calibration_factor: Multiplier correcting measured current and power.
         cache_duration: How long to cache the device status. Use this to reduce how often the
-                API is called. The default value is 300 seconds (5 minutes).
+            API is called. The default value is 300 seconds (5 minutes).
         include_accumulated_energy: Whether to use Tuya's 'add_ele' as accumulated energy in Wh.
-
     """
     TYPE: ClassVar[Literal['tuya']] = 'tuya'
     type: Literal['tuya'] = 'tuya'
