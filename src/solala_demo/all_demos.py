@@ -54,7 +54,12 @@ def main() -> int:
                 script_count += 1
 
                 time = monotonic()
-                return_code = call([python_exe, script.as_posix()], env=python_env)
+                return_code = call(
+                    [python_exe, script.resolve().as_posix()],
+                    cwd=script.parent,
+                    env=python_env,
+                )
+
                 time = monotonic() - time
 
                 if return_code != 0:
