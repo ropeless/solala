@@ -98,7 +98,7 @@ class ModbusPowerController(PowerController):
         self._meter = meter
         self._hunt_history: list[float] = []
         self._default_MinRsvPct: float = default_MinRsvPct
-        self._default_WMaxLimPct_RvrTms: int = default_WMaxLimPct_RvrtTms
+        self._default_WMaxLimPct_RvrtTms: int = default_WMaxLimPct_RvrtTms
 
         # Important registers
         self._ChaState: str = f'{master}/ChaState'
@@ -334,7 +334,7 @@ class ModbusPowerController(PowerController):
 
     async def enable_inverter(self) -> None:
         with self._log_it('enable_inverter'):
-            await self._set_power_pct(100, self._default_WMaxLimPct_RvrTms)
+            await self._set_power_pct(100, self._default_WMaxLimPct_RvrtTms)
 
     async def disable_inverter(self, *, change_duration: int) -> None:
         with self._log_it('disable_inverter'):
