@@ -261,7 +261,7 @@ class RegistersUpdater(LoopListener):
         self._filter = compile_register_filter('')
         self._rendered_content: str | None = None
         self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
-        with ui.column().classes('w-full gap-1').style('max-width: 448px'):
+        with ui.column().classes('w-full gap-1').style('max-width: 520px'):
             with ui.row().classes('items-center gap-2 w-full flex-nowrap'):
                 self._input = ui.input(label='Filter', value=initial_filter).props('dense outlined spellcheck=false autocorrect=off autocapitalize=off')
                 self._input.classes('min-w-0 flex-1').style('font-size: 16px').props('input-style="font-size: 16px"')
