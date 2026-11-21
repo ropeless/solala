@@ -469,10 +469,23 @@ class TabSelector:
                     self._state.displayed_day = day
                     await self._state_storage.save(self._state)
 
-            async def save_register_filter(pattern: str) -> None:
-                if self.active_session is session:
-                    self._state.register_filter = pattern
+            filter_save_task: asyncio.Task[None] | None = None
+
+            async def persist_register_filter() -> None:
+                while True:
+                    pattern = self._state.register_filter
                     await self._state_storage.save(self._state)
+                    if pattern == self._state.register_filter:
+                        return
+
+            def save_register_filter(pattern: str) -> None:
+                nonlocal filter_save_task
+                if self.active_session is not session or session.closed:
+                    return
+                self._state.register_filter = pattern
+                if filter_save_task is None or filter_save_task.done():
+                    filter_save_task = asyncio.create_task(persist_register_filter())
+                    session.add_task(filter_save_task)
 
             async def save_legend(chart: str, selected: dict[str, bool]) -> None:
                 if self.active_session is session:
