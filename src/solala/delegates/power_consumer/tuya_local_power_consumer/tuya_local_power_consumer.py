@@ -117,9 +117,11 @@ class TuyaLocalPowerConsumer(PowerConsumer):
             )
         bank = RegisterBank(registers)
         async with self._lock:
-            if self._register_bank is None:
-                self._register_bank = bank
-            return self._register_bank
+            existing = self._register_bank
+            if existing is not None:
+                return existing
+            self._register_bank = bank
+            return bank
 
     async def _get_register_value(self, key: str) -> RegisterValue:
         return check_value((await self._status())[key])
