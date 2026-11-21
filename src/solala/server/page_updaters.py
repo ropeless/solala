@@ -260,6 +260,7 @@ class RegistersUpdater(LoopListener):
         self._read_task: asyncio.Task[None] | None = None
         self._filter = compile_register_filter('')
         self._pattern = ''
+        self._rendered_content: str | None = None
         self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
         with ui.row().classes('items-center gap-2'):
             self._input = ui.input(label='Filter', value=initial_filter).props('dense outlined spellcheck=false autocorrect=off autocapitalize=off')
@@ -335,7 +336,10 @@ class RegistersUpdater(LoopListener):
                 lines.append(rendered)
             else:
                 lines.append(name)
-        self._registers_element.set_content('\n'.join(lines))
+        content = '\n'.join(lines)
+        if content != self._rendered_content:
+            self._registers_element.set_content(content)
+            self._rendered_content = content
         self._loading_element.set_visibility(False)
         self._registers_element.set_visibility(True)
 
