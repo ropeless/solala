@@ -82,3 +82,31 @@ class SessionListenerTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, 'closed page session'):
             await registration_task
         self.assertEqual(registered, [])
+
+
+    async def test_task_added_after_close_is_cancelled(self) -> None:
+        async def select_tab(_name: str) -> None:
+            pass
+
+        session = PageSession(None, select_tab)  # type: ignore[arg-type]
+        await session.close()
+
+        task = asyncio.create_task(asyncio.sleep(60))
+        session.add_task(task)
+        await asyncio.sleep(0)
+
+        self.assertTrue(task.cancelled())
+
+    async def test_late_register_filter_event_is_ignored(self) -> None:
+        from solala.server.page_updaters import RegistersUpdater
+
+        async def select_tab(_name: str) -> None:
+            pass
+
+        session = PageSession(None, select_tab)  # type: ignore[arg-type]
+        await session.close()
+
+        updater = object.__new__(RegistersUpdater)
+        updater._session = session
+        updater.set_filter('valid*')
+        await updater.update()
