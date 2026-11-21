@@ -3,6 +3,7 @@ from pprint import pprint
 from time import monotonic
 
 from solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_consumer import TuyaLocalPowerConsumer
+from solala.utils.json_extras import JSONDict
 from solala.utils.local_config_help import config
 
 
@@ -66,7 +67,7 @@ async def main() -> None:
     request = consumer._request
     request_count = 0
 
-    def counted_request(switch: bool | None = None) -> dict:
+    def counted_request(switch: bool | None = None) -> JSONDict:
         nonlocal request_count
         request_count += 1
         return request(switch)
