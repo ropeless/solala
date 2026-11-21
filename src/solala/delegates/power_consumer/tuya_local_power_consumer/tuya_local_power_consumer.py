@@ -59,6 +59,7 @@ class TuyaLocalPowerConsumer(PowerConsumer):
         self._calibration_factor = calibration_factor
         self._timeout = timeout
         self._lock = asyncio.Lock()
+        self._switch_lock = asyncio.Lock()
         self._cache = AsyncMicroCache(self._read_status, cache_duration)
         self._register_bank: RegisterBank | None = None
         self._register_bank_lock = asyncio.Lock()
@@ -82,19 +83,27 @@ class TuyaLocalPowerConsumer(PowerConsumer):
         finally:
             device.close()
 
-    async def _read_status(self) -> JSONDict:
+    async def _request_async(self, switch: bool | None = None) -> JSONDict:
+        """
+        Keep the device lock until the blocking request finishes, even if cancelled.
+        """
         async with self._lock:
-            response = await asyncio.to_thread(self._request)
+            task = asyncio.create_task(asyncio.to_thread(self._request, switch))
+            try:
+                return await asyncio.shield(task)
+            except asyncio.CancelledError:
+                await task
+                raise
+
+    async def _read_status(self) -> JSONDict:
+        response = await self._request_async()
         dps = response.get('dps')
         if not isinstance(dps, dict):
             raise ConnectionError('Tuya LAN status response has no DPS dictionary')
         return dps
 
-    async def _status(self) -> JSONDict:
-        return await self._cache()
-
     async def get_status(self) -> ConsumerStatus:
-        dps = await self._status()
+        dps = await self._cache()
         return ConsumerStatus(
             on=check_bool(dps['1']),
             current=check_non_negative(check_num(dps['18']) * 0.001 * self._calibration_factor),
@@ -104,18 +113,21 @@ class TuyaLocalPowerConsumer(PowerConsumer):
         )
 
     async def _get_switch(self) -> bool:
-        return check_bool((await self._status())['1'])
+        return check_bool((await self._cache())['1'])
 
     async def _set_switch(self, on: bool) -> None:
-        async with self._lock:
-            await asyncio.to_thread(self._request, on)
-        await self._cache.invalidate()
+        async with self._switch_lock:
+            try:
+                await self._request_async(on)
+            finally:
+                # The command may have succeeded even if its response failed.
+                await self._cache.invalidate()
 
     async def get_registers(self) -> RegisterBank:
         async with self._register_bank_lock:
             bank = self._register_bank
             if bank is None:
-                dps = await self._status()
+                dps = await self._cache()
                 registers: dict[str, Register] = {}
                 for key, value in dps.items():
                     try:
@@ -130,7 +142,7 @@ class TuyaLocalPowerConsumer(PowerConsumer):
             return bank
 
     async def _get_register_value(self, key: str) -> RegisterValue:
-        return check_value((await self._status())[key])
+        return check_value((await self._cache())[key])
 
     def get_connection_info(self) -> JSONDict:
         return {
