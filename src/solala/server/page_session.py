@@ -73,7 +73,7 @@ class PageSession:
             graph_series: dict[str, dict[str, bool]] | None = None,
             on_legend_change: Callable[[str, dict[str, bool]], Awaitable[None]] | None = None,
             register_filter: str = '',
-            on_register_filter_change: Callable[[str], Awaitable[None]] | None = None,
+            on_register_filter_change: Callable[[str], None] | None = None,
     ) -> None:
         """
         Initialise the session with page colours and tab navigation delegation.
