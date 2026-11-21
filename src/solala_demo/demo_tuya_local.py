@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 from pprint import pprint
 from time import monotonic
@@ -6,9 +7,45 @@ from solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_
 from solala.utils.local_config_help import config
 
 
-async def main() -> None:
+async def test_switch(consumer: TuyaLocalPowerConsumer) -> None:
     """
-    Exercise the Tuya LAN consumer without changing the plug state.
+    Switch the unloaded plug off and on, restoring its initial state on failure.
+    """
+    initial = await consumer.get_status()
+    if initial.power != 0 or initial.current != 0:
+        raise RuntimeError('Switch test refused: the plug is drawing power')
+    if not initial.on:
+        raise RuntimeError('Switch test expects the plug to be initially ON')
+
+    print('Switch test: turning OFF')
+    try:
+        await consumer.set_switch(False)
+        if (await consumer.get_status()).on:
+            raise AssertionError('Switch remained ON after OFF command')
+        print('Switch OFF confirmed')
+
+        print('Switch test: turning ON')
+        await consumer.set_switch(True)
+        if not (await consumer.get_status()).on:
+            raise AssertionError('Switch remained OFF after ON command')
+        print('Switch ON confirmed; cache invalidation verified')
+    finally:
+        # A command may have succeeded even if its response was lost.
+        # Always attempt to restore the initial ON state.
+        try:
+            if not (await consumer.get_status()).on:
+                await consumer.set_switch(True)
+            if not (await consumer.get_status()).on:
+                raise RuntimeError('Plug did not return to its initial ON state')
+            print('Initial ON state confirmed')
+        except Exception as error:
+            print(f'WARNING: Could not confirm restoration of initial switch state: {error}')
+            raise
+
+
+async def main(switch_test: bool = False) -> None:
+    """
+    Exercise the Tuya LAN consumer; switch only when explicitly requested.
     """
     consumer = TuyaLocalPowerConsumer(
         config.TUYA_LOCAL_HOST,
@@ -54,9 +91,14 @@ async def main() -> None:
         print(f'Separated status reads: {request_count - before} LAN requests (expected 2)')
         print(f'Total LAN requests: {request_count}')
         print('Read-only test complete; no switch commands sent.')
+        if switch_test:
+            await test_switch(consumer)
     finally:
         await consumer.close()
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description='Test a Tuya LAN power consumer')
+    parser.add_argument('--switch-test', action='store_true', help='Perform an OFF/ON test with no load')
+    args = parser.parse_args()
+    asyncio.run(main(switch_test=args.switch_test))
