@@ -335,6 +335,7 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
                 on_filter_change=session.on_register_filter_change,
             )
             await session.add_control_listener(updater)
+            await updater.update()
 
 
 async def _build_log_page(container: Element, session: PageSession) -> None:
