@@ -257,6 +257,7 @@ class RegistersUpdater(LoopListener):
         self._bank = control_loop.get_register_bank()
         self._values: dict[str, RegisterValue] = {}
         self._iteration = 0
+        self._read_generation = 0
         self._read_task: asyncio.Task[None] | None = None
         self._filter = compile_register_filter('')
         self._rendered_content: str | None = None
@@ -302,16 +303,17 @@ class RegistersUpdater(LoopListener):
         self._schedule_read()
 
     def _schedule_read(self) -> None:
+        self._read_generation += 1
         if self._read_task is not None and not self._read_task.done():
             self._read_task.cancel()
-        task = asyncio.create_task(self._read_values(self._iteration))
+        task = asyncio.create_task(self._read_values(self._iteration, self._read_generation))
         self._read_task = task
         self._session.add_task(task)
 
-    async def _read_values(self, iteration: int) -> None:
+    async def _read_values(self, iteration: int, generation: int) -> None:
         bank = self._bank
         for name in bank:
-            if iteration != self._iteration or bank is not self._bank:
+            if iteration != self._iteration or generation != self._read_generation or bank is not self._bank:
                 return
             if not self._filter.match(name) or name in self._values:
                 continue
@@ -320,12 +322,13 @@ class RegistersUpdater(LoopListener):
             except asyncio.CancelledError:
                 raise
             except Exception:
+                # Failed reads may be retried on filter changes within the same iteration.
                 LOGGER.debug('Failed to read register %s', name, exc_info=True)
                 continue
-            if iteration != self._iteration or bank is not self._bank:
+            if iteration != self._iteration or generation != self._read_generation or bank is not self._bank:
                 return
             self._values[name] = value
-        if iteration == self._iteration and bank is self._bank:
+        if iteration == self._iteration and generation == self._read_generation and bank is self._bank:
             self._render()
 
     def _render(self) -> None:
