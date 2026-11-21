@@ -1,5 +1,4 @@
 import asyncio
-import math
 from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
@@ -12,7 +11,7 @@ from solala.register import check_type, RegisterType, AsyncCallRegister, Registe
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, json_dict
 from solala.utils.micro_cache import AsyncMicroCache
-from solala.utils.type_extras import check_num, check_bool
+from solala.utils.type_extras import check_num, check_bool, check_non_negative
 
 NAME: str = 'Tesla Wall Charger'
 
@@ -100,13 +99,7 @@ class TeslaWallConnector(PowerConsumer):
         accumulated_energy: float | None = None
         try:
             lifetime = await self._lifetime_cache()
-            raw_energy = lifetime['energy_wh']
-            if isinstance(raw_energy, bool):
-                raise ValueError('Lifetime energy must be numeric, not boolean')
-            energy = check_num(raw_energy)
-            if not math.isfinite(energy) or energy < 0:
-                raise ValueError(f'Invalid lifetime energy: {energy!r}')
-            accumulated_energy = energy
+            accumulated_energy = check_non_negative(lifetime['energy_wh'])
         except Exception as err:
             LOGGER.warning('Tesla Wall Connector lifetime energy unavailable: %r', err)
 
