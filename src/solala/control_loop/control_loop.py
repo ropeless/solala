@@ -27,6 +27,7 @@ from solala.delegates.power_consumer.matter_power_consumer.matter_power_consumer
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
+from solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_consumer import TuyaLocalPowerConsumer
 from solala.delegates.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
@@ -47,7 +48,7 @@ from solala.register_bank import RegisterBank, EMPTY_REGISTER_BANK
 from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, TeslaWallConnectorConnection, \
     ControllerConnection, PricerConnection, ConsumerConnection, DummyControllerConnection, DummyPricerConnection, \
     DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, DummySolarForecasterConnection, \
-    DatabaseConnection, TuyaConnection, MatterConnection
+    DatabaseConnection, TuyaConnection, TuyaLocalConnection, MatterConnection
 from solala.utils.json_extras import JSONDict, JSONValue
 from solala.utils.type_extras import check_num
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
@@ -1223,6 +1224,9 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
         elif consumer_connection.type == TuyaConnection.TYPE:
             assert isinstance(consumer_connection, TuyaConnection)
             consumer = _connect_tuya(consumer_connection)
+        elif consumer_connection.type == TuyaLocalConnection.TYPE:
+            assert isinstance(consumer_connection, TuyaLocalConnection)
+            consumer = _connect_tuya_local(consumer_connection)
         else:
             raise ControlLoopError(
                 'unknown consumer connection type',
@@ -1985,11 +1989,29 @@ def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
             voltage_scale_factor=consumer_connection.voltage_scale_factor,
             current_scale_factor=consumer_connection.current_scale_factor,
             power_scale_factor=consumer_connection.power_scale_factor,
+            calibration_factor=consumer_connection.calibration_factor,
             cache_duration=consumer_connection.cache_duration,
             include_accumulated_energy=consumer_connection.include_accumulated_energy,
         )
     except Exception as err:
         raise ControlLoopError('could not connect to the Tuya device', errors=[str(err)])
+
+
+def _connect_tuya_local(connection: TuyaLocalConnection) -> PowerConsumer:
+    """
+    Construct a Tuya LAN power consumer without connecting to the device.
+    """
+    try:
+        return TuyaLocalPowerConsumer(
+            host=connection.host,
+            device_id=connection.device_id,
+            local_key=connection.local_key,
+            version=connection.version,
+            calibration_factor=connection.calibration_factor,
+            timeout=connection.timeout,
+        )
+    except Exception as err:
+        raise ControlLoopError('could not configure Tuya LAN consumer', errors=[str(err)])
 
 
 def _connect_open_meteo_forecaster(forecaster_connection: OpenMeteoConnection) -> SolarForecaster:
