@@ -109,6 +109,7 @@ class TuyaLocalPowerConsumer(PowerConsumer):
             current=check_non_negative(check_num(dps['18']) * 0.001 * self._calibration_factor),
             power=check_non_negative(check_num(dps['19']) * 0.1 * self._calibration_factor),
             voltage=check_non_negative(check_num(dps['20']) * 0.1),
+            # TODO #38: Verify whether DPS 17 is accumulated energy and its Wh scaling.
             accumulated_energy=None,
         )
 
