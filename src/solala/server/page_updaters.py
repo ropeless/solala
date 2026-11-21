@@ -262,7 +262,7 @@ class RegistersUpdater(LoopListener):
         self._pattern = ''
         self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
         with ui.row().classes('items-center gap-2'):
-            self._input = ui.input(label='Filter', value=initial_filter).props('dense outlined')
+            self._input = ui.input(label='Filter', value=initial_filter).props('dense outlined spellcheck=false autocorrect=off autocapitalize=off')
             ui.button(icon='close', on_click=lambda: self._input.set_value('')).props('flat round dense')
             self._error = ui.label('invalid pattern').classes('text-red-600').set_visibility(False)
         self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
