@@ -28,6 +28,7 @@ class UIStateTestCase(unittest.TestCase):
             tab='Graphs',
             displayed_day=date(2026, 11, 18),
             graph_series={'Power': {'Solar': False, 'Battery': True}},
+            register_filter='^master/*',
         )
         restored = UIState.from_dict(original.to_dict(), TABS, DEFAULT_TAB)
         self.assertEqual(restored, original)
@@ -36,6 +37,7 @@ class UIStateTestCase(unittest.TestCase):
         state = UIState.from_dict({
             'tab': 'Removed Tab',
             'displayed_day': 'not a date',
+            'register_filter': 42,
             'graph_series': {
                 'Power': {'Solar': False, 'Battery': 1, 'Grid': 'yes'},
                 'Bad': ['not', 'a', 'mapping'],
@@ -44,6 +46,7 @@ class UIStateTestCase(unittest.TestCase):
         self.assertEqual(state.tab, DEFAULT_TAB)
         self.assertIsNone(state.displayed_day)
         self.assertEqual(state.graph_series, {'Power': {'Solar': False}})
+        self.assertEqual(state.register_filter, '')
 
     def test_non_dictionary_storage_falls_back(self) -> None:
         for value in ([], 'invalid', 42, False):
