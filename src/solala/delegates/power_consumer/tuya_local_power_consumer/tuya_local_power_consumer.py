@@ -30,6 +30,7 @@ class TuyaLocalPowerConsumer(PowerConsumer):
             version: float = 3.5,
             calibration_factor: float = 1.0,
             timeout: float = 5.0,
+            cache_duration: float = 0.1,
     ) -> None:
         """
         Configure the device without opening a connection.
@@ -43,6 +44,9 @@ class TuyaLocalPowerConsumer(PowerConsumer):
                 depending on UDP discovery.
             calibration_factor: Multiplier for current and power readings.
             timeout: Socket timeout in seconds.
+            cache_duration: How long to cache each API response, in seconds. The same duration
+                applies independently to vitals and lifetime data. Defaults to 0.1 seconds.
+
         """
         if not math.isfinite(calibration_factor) or calibration_factor <= 0:
             raise ValueError('calibration_factor must be positive and finite')
@@ -56,7 +60,7 @@ class TuyaLocalPowerConsumer(PowerConsumer):
         self._calibration_factor = calibration_factor
         self._timeout = timeout
         self._lock = asyncio.Lock()
-        self._cache = AsyncMicroCache(self._read_status, 0.1)
+        self._cache = AsyncMicroCache(self._read_status, cache_duration)
         self._register_bank: RegisterBank | None = None
         self._register_bank_lock = asyncio.Lock()
 
