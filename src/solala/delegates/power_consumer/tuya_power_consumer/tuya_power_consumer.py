@@ -1,5 +1,4 @@
 import asyncio
-import math
 from collections.abc import AsyncIterator
 from functools import partial
 
@@ -11,7 +10,7 @@ from solala.register import RegisterType, check_type, AsyncCallRegister, check_v
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict
 from solala.utils.micro_cache import AsyncMicroCache
-from solala.utils.type_extras import check_num, check_bool
+from solala.utils.type_extras import check_num, check_bool, check_non_negative
 
 API_ENDPOINT = "https://openapi.tuyaeu.com"
 
@@ -121,13 +120,7 @@ class TuyaPowerConsumer(PowerConsumer):
         accumulated_energy: float | None = None
         if self._include_accumulated_energy:
             try:
-                raw_energy = device_status['add_ele']
-                if isinstance(raw_energy, bool):
-                    raise ValueError('Tuya accumulated energy must be numeric, not boolean')
-                energy = check_num(raw_energy)
-                if not math.isfinite(energy) or energy < 0:
-                    raise ValueError(f'Invalid Tuya accumulated energy: {energy!r}')
-                accumulated_energy = energy
+                accumulated_energy = check_non_negative(device_status['add_ele'])
             except (KeyError, TypeError, ValueError) as err:
                 LOGGER.warning('Tuya accumulated energy unavailable: %r', err)
         return ConsumerStatus(
