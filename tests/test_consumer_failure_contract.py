@@ -122,6 +122,25 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(KeyError):
             await consumer.get_status()
 
+    async def test_tuya_large_accumulated_energy(self) -> None:
+        consumer = object.__new__(TuyaPowerConsumer)
+        PowerConsumer.__init__(consumer, can_switch=True)
+        consumer._include_accumulated_energy = True
+        consumer._voltage_scale_factor = 1.0
+        consumer._current_scale_factor = 1.0
+        consumer._power_scale_factor = 1.0
+        large_energy = 10 ** 400
+        consumer._cache = AsyncMock(return_value={
+            'cur_voltage': 240, 'cur_current': 2,
+            'cur_power': 400, 'switch_1': True,
+            'add_ele': large_energy,
+        })
+
+        status = await consumer.get_status()
+        self.assertEqual(status.accumulated_energy, large_energy)
+        self.assertEqual(status.power, 400)
+        self.assertTrue(status.on)
+
     async def test_tuya_failed_discovery_does_not_cache_bank(self) -> None:
         consumer = object.__new__(TuyaPowerConsumer)
         PowerConsumer.__init__(consumer, can_switch=True)
