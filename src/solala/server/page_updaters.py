@@ -293,7 +293,6 @@ class RegistersUpdater(LoopListener):
         self._iteration += 1
         self._bank = control_loop.get_register_bank()
         self._values.clear()
-        self._render()
         self._schedule_read()
 
     def _schedule_read(self) -> None:
@@ -319,6 +318,7 @@ class RegistersUpdater(LoopListener):
             if iteration != self._iteration or bank is not self._bank:
                 return
             self._values[name] = value
+        if iteration == self._iteration and bank is self._bank:
             self._render()
 
     def _render(self) -> None:
