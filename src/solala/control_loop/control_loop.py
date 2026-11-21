@@ -713,6 +713,9 @@ def get_register_bank() -> RegisterBank:
 
     Register values are obtained separately and may change or become
     unavailable after the bank is returned.
+
+    Subsequent calls to this function may return a different register
+    bank, for example, when delegates are connected or disconnected.
     """
     return _CONTROL_STATE.connections.registers
 
