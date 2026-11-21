@@ -334,7 +334,7 @@ class RegistersUpdater(LoopListener):
                 )
                 lines.append(rendered)
             else:
-                lines.append(name)
+                lines.append(f'  {name}')
         self._registers_element.set_content('\n'.join(lines))
         self._loading_element.set_visibility(False)
         self._registers_element.set_visibility(True)
