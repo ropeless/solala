@@ -7,7 +7,7 @@ from solala.utils.local_config_help import config
 from solala_demo.log import configure_logger
 
 
-def main():
+def main() -> None:
     configure_logger(level=config.APP_LOG_LEVEL)
 
     settings = Settings(
@@ -75,7 +75,7 @@ def configure_demo_consumers() -> dict[str, ConsumerConnection]:
         )
     local_outlet: str | None = config.get('TUYA_LOCAL_HOST')
 
-    # TuyaConnection via cloud (outlet_charger_local)
+    # Tuya connection via LAN (outlet_charger_local)
     if local_outlet:
         consumers['outlet_charger_local'] = TuyaLocalConnection(
             host=local_outlet,
