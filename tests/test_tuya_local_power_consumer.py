@@ -1,5 +1,6 @@
 """Tests for the TinyTuya LAN power consumer."""
 
+import asyncio
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -67,6 +68,42 @@ class TuyaLocalPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_switch_invalidates_status_cache(self) -> None:
         await self.consumer.get_status()
         await self.consumer.set_switch(False)
+        await self.consumer.get_status()
+        self.assertEqual(self.device.status.call_count, 2)
+
+    async def test_cancelled_request_waits_for_thread(self) -> None:
+        started = asyncio.Event()
+        finish = asyncio.Event()
+        calls = 0
+
+        async def delayed_request(function, switch=None):
+            nonlocal calls
+            calls += 1
+            started.set()
+            await finish.wait()
+            return {'dps': {'1': True, '18': 0, '19': 0, '20': 2400}}
+
+        with patch(
+                'solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_consumer.asyncio.to_thread',
+                side_effect=delayed_request,
+        ):
+            first = asyncio.create_task(self.consumer.get_status())
+            await started.wait()
+            first.cancel()
+            second = asyncio.create_task(self.consumer.get_status())
+            await asyncio.sleep(0)
+            self.assertEqual(calls, 1)
+            finish.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await first
+            await second
+            self.assertEqual(calls, 2)
+
+    async def test_switch_failure_invalidates_cache(self) -> None:
+        await self.consumer.get_status()
+        self.device.set_status.side_effect = ConnectionError('response lost')
+        with self.assertRaises(ConnectionError):
+            await self.consumer.set_switch(False)
         await self.consumer.get_status()
         self.assertEqual(self.device.status.call_count, 2)
 
