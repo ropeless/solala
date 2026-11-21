@@ -12,12 +12,15 @@ from solala.utils.local_config_help import config
 
 
 def main() -> None:
-    """Discover local Tuya devices and read the configured plug's status."""
-    tinytuya.deviceScan()
+    """
+    Discover local Tuya devices and read the configured plug's status.
+    """
+    # devices = tinytuya.deviceScan(verbose=True, maxretry=5)
+    # print(f'Discovered devices: {devices}')
 
     device = tinytuya.OutletDevice(
         config.TUYA_LOCAL_DEVICE_ID,
-        config.TUYA_LOCAL_IP,
+        config.TUYA_LOCAL_HOST,
         config.TUYA_LOCAL_KEY,
     )
     device.set_version(float(config.TUYA_LOCAL_VERSION))
