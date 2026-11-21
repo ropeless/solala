@@ -530,6 +530,10 @@ class TabSelector:
     async def _close_active_session(self, *, flush_filter: bool = True) -> None:
         """
         Stop tab construction and release resources owned by its session.
+
+        Args:
+            flush_filter: Persist the final filter during tab navigation; skip
+                browser storage when the client is disconnecting.
         """
         await self._cancel_active_build()
         if self.active_session is not None:
