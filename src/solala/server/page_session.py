@@ -196,6 +196,10 @@ class PageSession:
         Args:
             task: Task owned by the page session.
         """
+        if self._closed:
+            task.cancel()
+            return
+
         async def cancel_task() -> None:
             if not task.done():
                 task.cancel()
