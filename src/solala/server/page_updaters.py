@@ -3,7 +3,6 @@ Provides page updaters for NiceGUI pages.
 """
 
 import asyncio
-import re
 from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, date
