@@ -37,6 +37,7 @@ class RegistersUpdaterTestCase(unittest.IsolatedAsyncioTestCase):
         self.updater._bank = self.bank
         self.updater._values = {}
         self.updater._iteration = 0
+        self.updater._read_generation = 0
         self.updater._read_task = None
         self.updater._filter = compile_register_filter('')
         self.updater._on_filter_change = None
@@ -85,6 +86,30 @@ class RegistersUpdaterTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.bank['first'].release.set()
         await asyncio.sleep(0)
+        self.assertEqual(self.updater._values, {'second': 2})
+
+    async def test_superseded_read_cannot_publish_after_cancellation(self) -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def cancellation_resistant_get() -> int:
+            started.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                await release.wait()
+            return 99
+
+        self.bank['first'].get = cancellation_resistant_get
+        self.updater.set_filter('first')
+        old_task = self.updater._read_task
+        await started.wait()
+
+        self.updater.set_filter('second')
+        await self.updater._read_task
+        release.set()
+        await old_task
+
         self.assertEqual(self.updater._values, {'second': 2})
 
     async def test_new_iteration_cancels_in_flight_read(self) -> None:
