@@ -262,11 +262,12 @@ class RegistersUpdater(LoopListener):
         self._pattern = ''
         self._rendered_content: str | None = None
         self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
-        with ui.row().classes('items-center gap-2 w-full flex-nowrap').style('max-width: 448px'):
-            self._input = ui.input(label='Filter', value=initial_filter).props('dense outlined spellcheck=false autocorrect=off autocapitalize=off')
-            self._input.classes('min-w-0 flex-1')
-            ui.button(icon='close', on_click=lambda: self._input.set_value('')).props('flat round dense shrink-0')
-            self._error = ui.label('invalid pattern').classes('text-red-600').set_visibility(False)
+        with ui.column().classes('w-full gap-1').style('max-width: 448px'):
+            with ui.row().classes('items-center gap-2 w-full flex-nowrap'):
+                self._input = ui.input(label='Filter', value=initial_filter).props('dense outlined spellcheck=false autocorrect=off autocapitalize=off')
+                self._input.classes('min-w-0 flex-1')
+                ui.button(icon='close', on_click=lambda: self._input.set_value('')).props('flat round dense shrink-0')
+            self._error = ui.label('invalid pattern').classes('text-red-600 w-full').set_visibility(False)
         self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
         self._input.on_value_change(lambda event: self.set_filter(event.value))
         self.set_filter(initial_filter)
