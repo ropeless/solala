@@ -99,6 +99,62 @@ class TuyaLocalPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
             await second
             self.assertEqual(calls, 2)
 
+    async def test_repeated_cancellation_keeps_device_locked(self) -> None:
+        started = asyncio.Event()
+        finish = asyncio.Event()
+        calls = 0
+
+        async def delayed_request(function, switch=None):
+            nonlocal calls
+            calls += 1
+            started.set()
+            await finish.wait()
+            return {'dps': {'1': True}}
+
+        with patch(
+                'solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_consumer.asyncio.to_thread',
+                side_effect=delayed_request,
+        ):
+            first = asyncio.create_task(self.consumer._request_async())
+            await started.wait()
+            first.cancel()
+            await asyncio.sleep(0)
+            first.cancel()
+            second = asyncio.create_task(self.consumer._request_async())
+            await asyncio.sleep(0)
+            self.assertFalse(first.done())
+            self.assertEqual(calls, 1)
+            finish.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await first
+            await second
+            self.assertEqual(calls, 2)
+
+    async def test_concurrent_switches_are_ordered(self) -> None:
+        started = asyncio.Event()
+        finish = asyncio.Event()
+        calls: list[bool | None] = []
+
+        async def delayed_request(function, switch=None):
+            calls.append(switch)
+            if len(calls) == 1:
+                started.set()
+                await finish.wait()
+            return {'dps': {'1': switch}}
+
+        with patch(
+                'solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_consumer.asyncio.to_thread',
+                side_effect=delayed_request,
+        ):
+            first = asyncio.create_task(self.consumer.set_switch(False))
+            await started.wait()
+            second = asyncio.create_task(self.consumer.set_switch(True))
+            await asyncio.sleep(0)
+            self.assertEqual(calls, [False])
+            finish.set()
+            await asyncio.gather(first, second)
+            self.assertEqual(calls, [False, True])
+
     async def test_switch_failure_invalidates_cache(self) -> None:
         await self.consumer.get_status()
         self.device.set_status.side_effect = ConnectionError('response lost')
