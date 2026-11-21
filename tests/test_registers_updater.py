@@ -87,6 +87,20 @@ class RegistersUpdaterTestCase(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         self.assertEqual(self.updater._values, {'second': 2})
 
+    async def test_new_iteration_cancels_in_flight_read(self) -> None:
+        self.bank['first'].release.clear()
+        self.updater.set_filter('first')
+        await self.bank['first'].started.wait()
+
+        with patch('solala.server.page_updaters.control_loop.get_register_bank', return_value=self.bank):
+            await self.updater.update()
+
+        self.assertEqual(self.updater._values, {})
+        self.bank['first'].value = 7
+        self.bank['first'].release.set()
+        await self.updater._read_task
+        self.assertEqual(self.updater._values, {'first': 7})
+
     async def test_bank_replacement_discards_old_results(self) -> None:
         self.bank['first'].release.clear()
         self.updater.set_filter('first')
