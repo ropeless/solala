@@ -12,10 +12,7 @@ from solala.utils.micro_cache import AsyncMicroCache
 
 class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
     """
-    Specify strict consumer communication errors and retryable register discovery.
-
-    These tests describe the proposed contract and are expected to fail until
-    the consumer implementations stop returning synthetic fallback readings.
+    Verify consumer communication failures, retry behavior, and optional energy handling.
     """
 
     async def test_tesla_http_failure_propagates_and_retries(self) -> None:
