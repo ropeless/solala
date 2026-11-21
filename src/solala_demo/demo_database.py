@@ -28,8 +28,8 @@ async def insert_measurement(db: SolalaDatabase) -> None:
         battery_power=45,
         battery_charge=56,
 
-        buy_price=67,
-        feed_in_price=78,
+        buy_price=99,
+        feed_in_price=-99,
         renewables=66,
 
         accumulated_solar_energy=123,
