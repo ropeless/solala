@@ -2,7 +2,7 @@ from solala.utils.local_config_help import config
 from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
-    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, TuyaConnection, MatterConnection, ConsumerConnection
+    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, TuyaConnection, TuyaLocalConnection, MatterConnection, ConsumerConnection
 from solala_demo.log import configure_logger
 
 
@@ -19,6 +19,16 @@ def main():
             device_id=outlet_charger,
             access_id=config.POWER_POINT_ACCESS_ID,
             access_secret=config.POWER_POINT_ACCESS_SECRET,
+        )
+
+    local_outlet: str | None = config.get('TUYA_LOCAL_HOST')
+    if local_outlet:
+        consumers['outlet_charger_local'] = TuyaLocalConnection(
+            host=local_outlet,
+            device_id=config.TUYA_LOCAL_DEVICE_ID,
+            local_key=config.TUYA_LOCAL_KEY,
+            version=float(config.get('TUYA_LOCAL_VERSION', 3.5)),
+            calibration_factor=0.8,
         )
 
     matter_device_ids: dict[int, str] = config.get('MATTER_DEVICE_IDS', {})
