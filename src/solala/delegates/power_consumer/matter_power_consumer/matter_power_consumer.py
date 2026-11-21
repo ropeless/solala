@@ -255,7 +255,10 @@ class MatterPowerConsumer(PowerConsumer):
         try:
             value = check_num(energy)
             converted_energy = safe_divide(value, 1000)
-            return check_finite(converted_energy)
+            converted_energy = check_finite(converted_energy)
+            if converted_energy < 0:
+                raise ValueError(f'Negative Matter accumulated energy: {converted_energy!r}')
+            return converted_energy
 
         except (TypeError, ValueError, OverflowError) as err:
             LOGGER.warning(f'Matter accumulated energy unavailable: {err!r}')
@@ -274,7 +277,7 @@ class MatterPowerConsumer(PowerConsumer):
                 result = safe_divide(m, 1000)
                 return check_finite(result)
             except (TypeError, ValueError, OverflowError) as err:
-                raise ConnectionError(f'Invalid Matter measurement: {_value!r}', err)
+                raise ConnectionError(f'Invalid Matter measurement: {_value!r}') from err
 
         # Validate required measurements before processing optional energy.
         power = measurement(144, 8)
