@@ -70,6 +70,7 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
         consumer._voltage_scale_factor = 1.0
         consumer._current_scale_factor = 1.0
         consumer._power_scale_factor = 1.0
+        consumer._calibration_factor = 1.0
         consumer._tuya = Mock()
         consumer._tuya.get.side_effect = [
             {'success': False, 'code': 1004, 'msg': 'sign invalid'},
@@ -95,6 +96,7 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
         consumer._voltage_scale_factor = 1.0
         consumer._current_scale_factor = 1.0
         consumer._power_scale_factor = 1.0
+        consumer._calibration_factor = 1.0
         status = {
             'cur_voltage': 240, 'cur_current': 2,
             'cur_power': 400, 'switch_1': True,
@@ -129,6 +131,7 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
         consumer._voltage_scale_factor = 1.0
         consumer._current_scale_factor = 1.0
         consumer._power_scale_factor = 1.0
+        consumer._calibration_factor = 1.0
         large_energy = 10 ** 400
         consumer._cache = AsyncMock(return_value={
             'cur_voltage': 240, 'cur_current': 2,
