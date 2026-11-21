@@ -3,8 +3,9 @@ Provides page updaters for NiceGUI pages.
 """
 
 import asyncio
+import re
 from abc import abstractmethod
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, date
 from functools import partial
 from typing import final
@@ -28,6 +29,7 @@ from solala.server.graphs import ChargeChart, PriceChart, PowerChart, EnergyChar
 from solala.server.icons import weather_code_to_icon_url
 from solala.server.infographic import Infographic
 from solala.server.page_session import PageSession
+from solala.server.register_filter import compile_register_filter
 from solala.server.units_lookup import STATUS_UNITS
 from solala.utils.json_extras import JSONDict, json_dict, render_json
 from solala.utils.type_extras import check_str
@@ -245,28 +247,96 @@ class InfographicUpdater(StatusListener):
 
 class RegistersUpdater(LoopListener):
     """
-    Fetch and display register values, including display of an initial "loading" label.
+    Display filtered register names and values from the current control-loop iteration.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, session: PageSession, initial_filter: str = '',
+                 on_filter_change: Callable[[str], Awaitable[None]] | None = None) -> None:
         super().__init__()
+        self._session = session
+        self._on_filter_change = on_filter_change
+        self._bank = control_loop.get_register_bank()
+        self._values: dict[str, RegisterValue] = {}
+        self._iteration = 0
+        self._read_task: asyncio.Task[None] | None = None
+        self._filter = compile_register_filter('')
+        self._pattern = ''
         self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
+        with ui.row().classes('items-center gap-2'):
+            self._input = ui.input(label='Filter', value=initial_filter).props('dense outlined')
+            ui.button(icon='close', on_click=lambda: self._input.set_value('')).props('flat round dense')
+            self._error = ui.label('invalid pattern').classes('text-red-600').set_visibility(False)
         self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
+        self._input.on_value_change(lambda event: self.set_filter(event.value))
+        self.set_filter(initial_filter)
+
+    def set_filter(self, pattern: str) -> None:
+        """
+        Apply a valid pattern immediately; preserve the last valid pattern otherwise.
+        """
+        try:
+            matcher = compile_register_filter(pattern)
+        except ValueError:
+            self._error.set_visibility(True)
+            self._input.classes(add='text-red-600')
+            return
+        self._error.set_visibility(False)
+        self._input.classes(remove='text-red-600')
+        self._pattern = pattern
+        self._filter = matcher
+        self._render()
+        self._schedule_read()
+        if self._on_filter_change is not None:
+            self._session.add_task(asyncio.create_task(self._on_filter_change(pattern)))
 
     @final
     async def update(self) -> None:
-        register_values: dict[str, RegisterValue | Exception] = \
-            await control_loop.get_register_bank().get_register_values()
-        self._update(register_values)
+        self._iteration += 1
+        self._bank = control_loop.get_register_bank()
+        self._values.clear()
+        self._render()
+        self._schedule_read()
 
-    def _update(self, register_values: dict[str, RegisterValue | Exception]) -> None:
-        json_as_str = render_json(
-            register_values,
-            float_format='.2f',
-            remove_key_underscores=False,
-            remove_value_underscores=False,
-        )
-        self._registers_element.set_content(json_as_str)
+    def _schedule_read(self) -> None:
+        if self._read_task is not None and not self._read_task.done():
+            self._read_task.cancel()
+        task = asyncio.create_task(self._read_values(self._iteration))
+        self._read_task = task
+        self._session.add_task(task)
+
+    async def _read_values(self, iteration: int) -> None:
+        bank = self._bank
+        for name in bank:
+            if iteration != self._iteration or bank is not self._bank:
+                return
+            if not self._filter.match(name) or name in self._values:
+                continue
+            try:
+                value = await bank[name].get()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                continue
+            if iteration != self._iteration or bank is not self._bank:
+                return
+            self._values[name] = value
+            self._render()
+
+    def _render(self) -> None:
+        names = [name for name in self._bank if self._filter.match(name)]
+        lines: list[str] = []
+        for name in names:
+            if name in self._values:
+                rendered = render_json(
+                    {name: self._values[name]},
+                    float_format='.2f',
+                    remove_key_underscores=False,
+                    remove_value_underscores=False,
+                )
+                lines.append(rendered)
+            else:
+                lines.append(name)
+        self._registers_element.set_content('\n'.join(lines))
         self._loading_element.set_visibility(False)
         self._registers_element.set_visibility(True)
 
