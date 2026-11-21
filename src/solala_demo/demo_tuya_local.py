@@ -1,10 +1,12 @@
-import argparse
 import asyncio
 from pprint import pprint
 from time import monotonic
 
 from solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_consumer import TuyaLocalPowerConsumer
 from solala.utils.local_config_help import config
+
+
+SWITCH_TEST = False
 
 
 async def test_switch(consumer: TuyaLocalPowerConsumer) -> None:
@@ -45,7 +47,7 @@ async def test_switch(consumer: TuyaLocalPowerConsumer) -> None:
             raise
 
 
-async def main(switch_test: bool = False) -> None:
+async def main() -> None:
     """
     Exercise the Tuya LAN consumer; switch only when explicitly requested.
     """
@@ -93,14 +95,11 @@ async def main(switch_test: bool = False) -> None:
         print(f'Separated status reads: {request_count - before} LAN requests (expected 2)')
         print(f'Total LAN requests: {request_count}')
         print('Read-only test complete; no switch commands sent.')
-        if switch_test:
+        if SWITCH_TEST:
             await test_switch(consumer)
     finally:
         await consumer.close()
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Test a Tuya LAN power consumer')
-    parser.add_argument('--switch-test', action='store_true', help='Perform an OFF/ON test with no load')
-    args = parser.parse_args()
-    asyncio.run(main(switch_test=args.switch_test))
+    asyncio.run(main())
