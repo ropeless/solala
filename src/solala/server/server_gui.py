@@ -329,8 +329,11 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
     with container:
         with ui.card().classes('w-full'):
             ui.label('Registers').classes('dashboard-card-title')
-            updater = RegistersUpdater()
-            session.add_task(asyncio.create_task(updater.update()))
+            updater = RegistersUpdater(
+                session,
+                initial_filter=session.register_filter,
+                on_filter_change=session.on_register_filter_change,
+            )
             await session.add_control_listener(updater)
 
 
@@ -466,6 +469,11 @@ class TabSelector:
                     self._state.displayed_day = day
                     await self._state_storage.save(self._state)
 
+            async def save_register_filter(pattern: str) -> None:
+                if self.active_session is session:
+                    self._state.register_filter = pattern
+                    await self._state_storage.save(self._state)
+
             async def save_legend(chart: str, selected: dict[str, bool]) -> None:
                 if self.active_session is session:
                     self._state.graph_series[chart] = selected.copy()
@@ -477,6 +485,8 @@ class TabSelector:
                 on_day_change=save_day if tab_name in (_SOLAR_TAB, 'Graphs') else None,
                 graph_series=self._state.graph_series,
                 on_legend_change=save_legend if tab_name == 'Graphs' else None,
+                register_filter=self._state.register_filter,
+                on_register_filter_change=save_register_filter if tab_name == 'Registers' else None,
             )
             self.active_session = session
             self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
