@@ -56,6 +56,7 @@ class TuyaLocalPowerConsumer(PowerConsumer):
         self._timeout = timeout
         self._lock = asyncio.Lock()
         self._register_bank: RegisterBank | None = None
+        self._register_bank_lock = asyncio.Lock()
 
     def _request(self, switch: bool | None = None) -> JSONDict:
         """
@@ -102,25 +103,21 @@ class TuyaLocalPowerConsumer(PowerConsumer):
             await asyncio.to_thread(self._request, on)
 
     async def get_registers(self) -> RegisterBank:
-        async with self._lock:
-            if self._register_bank is not None:
-                return self._register_bank
-        dps = await self._status()
-        registers: dict[str, Register] = {}
-        for key, value in dps.items():
-            try:
-                reg_type = check_type(type(value))
-            except TypeError:
-                continue
-            registers[key] = SwitchRegister(self) if key == '1' else AsyncCallRegister(
-                partial(self._get_register_value, key), reg_type,
-            )
-        bank = RegisterBank(registers)
-        async with self._lock:
-            existing = self._register_bank
-            if existing is not None:
-                return existing
-            self._register_bank = bank
+        async with self._register_bank_lock:
+            bank = self._register_bank
+            if bank is None:
+                dps = await self._status()
+                registers: dict[str, Register] = {}
+                for key, value in dps.items():
+                    try:
+                        reg_type = check_type(type(value))
+                    except TypeError:
+                        continue
+                    registers[key] = SwitchRegister(self) if key == '1' else AsyncCallRegister(
+                        partial(self._get_register_value, key), reg_type,
+                    )
+                bank = RegisterBank(registers)
+                self._register_bank = bank
             return bank
 
     async def _get_register_value(self, key: str) -> RegisterValue:
