@@ -1,4 +1,5 @@
 import asyncio
+import math
 from collections.abc import AsyncIterator
 from functools import partial
 
@@ -34,6 +35,7 @@ class TuyaPowerConsumer(PowerConsumer):
             voltage_scale_factor: float = 0.1,
             current_scale_factor: float = 0.001,
             power_scale_factor: float = 0.1,
+            calibration_factor: float = 1.0,
             cache_duration: float = 300,
             include_accumulated_energy: bool = False,
     ) -> None:
@@ -50,11 +52,15 @@ class TuyaPowerConsumer(PowerConsumer):
                 'cur_current' value to amperes.
             power_scale_factor: Multiplier converting the device's
                 'cur_power' value to watts.
+            calibration_factor: Multiplier correcting measured current and power.
             cache_duration: How long to cache the device status. Use this to reduce how often the
                 API is called. The default value is 300 seconds (5 minutes).
             include_accumulated_energy: Whether to report Tuya's 'add_ele' value as Wh.
         """
+        if not math.isfinite(calibration_factor) or calibration_factor <= 0:
+            raise ValueError('calibration_factor must be positive and finite')
         super().__init__(can_switch=True)
+        self._calibration_factor = calibration_factor
         self._include_accumulated_energy = include_accumulated_energy
         self._command_url: str = f'/v1.0/iot-03/devices/{device_id}/commands'
         self._voltage_scale_factor: float = voltage_scale_factor
@@ -76,6 +82,7 @@ class TuyaPowerConsumer(PowerConsumer):
             'current_scale_factor': self._current_scale_factor,
             'power_scale_factor': self._power_scale_factor,
             'include_accumulated_energy': include_accumulated_energy,
+            'calibration_factor': calibration_factor,
         }
 
         # Cache Tuya device status for the requested duration to limit cloud API usage.
@@ -114,8 +121,8 @@ class TuyaPowerConsumer(PowerConsumer):
     async def get_status(self) -> ConsumerStatus:
         device_status: JSONDict = await self._cache()
         voltage: float = check_num(device_status['cur_voltage']) * self._voltage_scale_factor
-        current: float = check_num(device_status['cur_current']) * self._current_scale_factor
-        power: float = check_num(device_status['cur_power']) * self._power_scale_factor
+        current: float = check_num(device_status['cur_current']) * self._current_scale_factor * self._calibration_factor
+        power: float = check_num(device_status['cur_power']) * self._power_scale_factor * self._calibration_factor
         on: bool = check_bool(device_status['switch_1'])
         accumulated_energy: float | None = None
         if self._include_accumulated_energy:
