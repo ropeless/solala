@@ -125,6 +125,7 @@ class TuyaPowerConsumer(PowerConsumer):
         power: float = check_num(device_status['cur_power']) * self._power_scale_factor * self._calibration_factor
         on: bool = check_bool(device_status['switch_1'])
         accumulated_energy: float | None = None
+        # TODO #38: Verify the units and cumulative meaning of Tuya 'add_ele'.
         if self._include_accumulated_energy:
             try:
                 accumulated_energy = check_non_negative(device_status['add_ele'])
