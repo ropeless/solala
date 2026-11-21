@@ -130,6 +130,40 @@ class TuyaLocalPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
             await second
             self.assertEqual(calls, 2)
 
+    async def test_cancelled_request_consumes_worker_error(self) -> None:
+        started = asyncio.Event()
+        finish = asyncio.Event()
+        errors: list[dict[str, object]] = []
+        loop = asyncio.get_running_loop()
+        previous_handler = loop.get_exception_handler()
+
+        def handle_exception(_loop, context: dict[str, object]) -> None:
+            errors.append(context)
+
+        async def failed_request(function, switch=None):
+            started.set()
+            await finish.wait()
+            raise ConnectionError('Tuya LAN operation failed')
+
+        loop.set_exception_handler(handle_exception)
+        try:
+            with patch(
+                    'solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_consumer.asyncio.to_thread',
+                    side_effect=failed_request,
+            ):
+                task = asyncio.create_task(self.consumer._request_async())
+                await started.wait()
+                task.cancel()
+                await asyncio.sleep(0)
+                finish.set()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                await asyncio.sleep(0)
+        finally:
+            loop.set_exception_handler(previous_handler)
+
+        self.assertEqual(errors, [])
+
     async def test_concurrent_switches_are_ordered(self) -> None:
         started = asyncio.Event()
         finish = asyncio.Event()

@@ -49,7 +49,7 @@ async def css_colours() -> Colours:
                 demand_window: style.getPropertyValue('--solala-demand-window-color').trim(),
             };
         })()
-    """)
+    """, timeout=5.0)
     return Colours(**colour_dict)
 
 

@@ -13,6 +13,8 @@ class TestRenderJson(unittest.TestCase):
         """
         Compare the complete rendered output with an explicit expectation.
         """
+        if isinstance(value, dict):
+            expected = '\n'.join(line[2:] if line.startswith('  ') else line for line in expected.split('\n'))
         self.assertEqual(expected, render_json(value, **kwargs))
 
     def test_positive_integer(self) -> None:
@@ -104,6 +106,9 @@ class TestRenderJson(unittest.TestCase):
 
     def test_empty_dictionary(self) -> None:
         self.check_render({}, '')
+
+    def test_top_level_dictionary_has_no_indent(self) -> None:
+        self.assertEqual(render_json({'a': {'b': 1}}), 'a:\n  b = 1')
 
     def test_single_dictionary_entry(self) -> None:
         self.check_render({'power': 123}, '  power = 123')

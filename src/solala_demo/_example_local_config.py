@@ -26,20 +26,24 @@ INVERTER_EFFICIENCY = 0.976
 # ============================== Consumer Devices
 
 # Tesla Wall Connector
+TESLA_WALL_CONNECTOR_NAME = 'tesla_charger'
 TESLA_WALL_CONNECTOR_ADDR = '192.168.0.202'
 
 # Tuya device via Tuya cloud
+POWER_POINT_NAME = 'outlet_charger_cloud'
 POWER_POINT_DEVICE = 'kjhasgdfkjhgaskdjhfgkashdgf'
 POWER_POINT_ACCESS_ID = 'jfkaskdjfh87193456ka8g'
 POWER_POINT_ACCESS_SECRET = 'aflsknotarealsecretdsafjpa127859'
 
 # Tuya device via LAN
-TUYA_LOCAL_HOST = '192.168.0.50'
+TTUYA_LOCAL_NAME = 'outlet_charger_local'
+UYA_LOCAL_HOST = '192.168.0.50'
 TUYA_LOCAL_DEVICE_ID = '8943590223534598089345'
 TUYA_LOCAL_KEY = '90klm8*(OPnl)*('
 TUYA_LOCAL_VERSION = 3.5
 
 # for Tapo model P110M via LAN using kasa
+TAPO_NAME = 'plug_1_kasa'
 TAPO_HOST = '192.168.0.51'
 TAPO_USERNAME = 'a_person@devnull.com'
 TAPO_PASSWORD = 'rifo;jajfoie0rtj;as'

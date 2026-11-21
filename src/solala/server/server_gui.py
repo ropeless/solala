@@ -329,9 +329,13 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
     with container:
         with ui.card().classes('w-full'):
             ui.label('Registers').classes('dashboard-card-title')
-            updater = RegistersUpdater()
-            session.add_task(asyncio.create_task(updater.update()))
+            updater = RegistersUpdater(
+                session,
+                initial_filter=session.register_filter,
+                on_filter_change=session.on_register_filter_change,
+            )
             await session.add_control_listener(updater)
+            await updater.update()
 
 
 async def _build_log_page(container: Element, session: PageSession) -> None:
@@ -466,6 +470,24 @@ class TabSelector:
                     self._state.displayed_day = day
                     await self._state_storage.save(self._state)
 
+            filter_save_task: asyncio.Task[None] | None = None
+
+            async def persist_register_filter() -> None:
+                while True:
+                    pattern = self._state.register_filter
+                    await self._state_storage.save(self._state)
+                    if pattern == self._state.register_filter:
+                        return
+
+            def save_register_filter(pattern: str) -> None:
+                nonlocal filter_save_task
+                if self.active_session is not session or session.closed:
+                    return
+                self._state.register_filter = pattern
+                if filter_save_task is None or filter_save_task.done():
+                    filter_save_task = asyncio.create_task(persist_register_filter())
+                    session.add_task(filter_save_task)
+
             async def save_legend(chart: str, selected: dict[str, bool]) -> None:
                 if self.active_session is session:
                     self._state.graph_series[chart] = selected.copy()
@@ -477,6 +499,8 @@ class TabSelector:
                 on_day_change=save_day if tab_name in (_SOLAR_TAB, 'Graphs') else None,
                 graph_series=self._state.graph_series,
                 on_legend_change=save_legend if tab_name == 'Graphs' else None,
+                register_filter=self._state.register_filter,
+                on_register_filter_change=save_register_filter if tab_name == 'Registers' else None,
             )
             self.active_session = session
             self._build_task = asyncio.create_task(self._build_tab(tab_name, session))
@@ -486,7 +510,7 @@ class TabSelector:
         Close the active tab session, serialised with tab transitions.
         """
         async with self._transition_lock:
-            await self._close_active_session()
+            await self._close_active_session(flush_filter=False)
 
     async def _cancel_active_build(self) -> None:
         """
@@ -503,15 +527,22 @@ class TabSelector:
         except asyncio.CancelledError:
             pass
 
-    async def _close_active_session(self) -> None:
+    async def _close_active_session(self, *, flush_filter: bool = True) -> None:
         """
         Stop tab construction and release resources owned by its session.
+
+        Args:
+            flush_filter: Persist the final filter during tab navigation; skip
+                browser storage when the client is disconnecting.
         """
         await self._cancel_active_build()
         if self.active_session is not None:
             session = self.active_session
             self.active_session = None
             await session.close()
+            if flush_filter and self.active_tab == 'Registers':
+                # Flush the final filter after cancelling any pending session-owned save.
+                await self._state_storage.save(self._state)
 
     async def _build_tab(self, tab_name: str, session: PageSession) -> None:
         """

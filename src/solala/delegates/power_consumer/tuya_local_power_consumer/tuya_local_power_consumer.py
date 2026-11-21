@@ -87,10 +87,16 @@ class TuyaLocalPowerConsumer(PowerConsumer):
         """
         Keep the device lock until the blocking request finishes, even if cancelled.
         """
-        async with self._lock:
-            task = asyncio.create_task(asyncio.to_thread(self._request, switch))
+        async def request() -> JSONDict | Exception:
             try:
-                return await asyncio.shield(task)
+                return await asyncio.to_thread(self._request, switch)
+            except Exception as error:
+                return error
+
+        async with self._lock:
+            task = asyncio.create_task(request())
+            try:
+                result = await asyncio.shield(task)
             except asyncio.CancelledError:
                 # Repeated cancellation must not release the lock before the thread exits.
                 while not task.done():
@@ -98,9 +104,10 @@ class TuyaLocalPowerConsumer(PowerConsumer):
                         await asyncio.shield(task)
                     except asyncio.CancelledError:
                         continue
-                    except Exception:
-                        break
                 raise
+            if isinstance(result, Exception):
+                raise result
+            return result
 
     async def _read_status(self) -> JSONDict:
         response = await self._request_async()

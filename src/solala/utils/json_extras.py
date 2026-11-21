@@ -148,6 +148,7 @@ def render_json(
     Render JSON-compatible values as readable, indented text.
 
     Dictionaries use key = value, with key: for nested dictionaries.
+    Top-level dictionary entries are not indented.
     Key quoting is determined before underscores are replaced with spaces.
     Empty dictionaries are omitted recursively; empty lists are retained.
     Tuples render as lists. Lists with at most nine scalar elements use
@@ -274,7 +275,7 @@ def render_json(
 
         return scalar(item, key)
 
-    return render(value, 0)
+    return render(value, -1 if isinstance(value, Mapping) else 0)
 
 
 def to_json(
