@@ -63,21 +63,22 @@ def configure_demo_consumers() -> dict[str, ConsumerConnection]:
     # Tesla Wall Connector (tesla_charger)
     tesla_charger: str | None = config.get('TESLA_WALL_CONNECTOR_ADDR')
     if tesla_charger:
-        consumers['tesla_charger'] = TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR)
-    outlet_charger: str | None = config.get('POWER_POINT_DEVICE')
+        consumers[config.TESLA_WALL_CONNECTOR_NAME] = \
+            TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR)
 
     # TuyaConnection via cloud (outlet_charger_cloud)
+    outlet_charger: str | None = config.get('POWER_POINT_DEVICE')
     if outlet_charger:
-        consumers['outlet_charger_cloud'] = TuyaConnection(
+        consumers[config.POWER_POINT_NAME] = TuyaConnection(
             device_id=outlet_charger,
             access_id=config.POWER_POINT_ACCESS_ID,
             access_secret=config.POWER_POINT_ACCESS_SECRET,
         )
-    local_outlet: str | None = config.get('TUYA_LOCAL_HOST')
 
     # Tuya connection via LAN (outlet_charger_local)
+    local_outlet: str | None = config.get('TUYA_LOCAL_HOST')
     if local_outlet:
-        consumers['outlet_charger_local'] = TuyaLocalConnection(
+        consumers[config.TUYA_LOCAL_NAME] = TuyaLocalConnection(
             host=local_outlet,
             device_id=config.TUYA_LOCAL_DEVICE_ID,
             local_key=config.TUYA_LOCAL_KEY,
