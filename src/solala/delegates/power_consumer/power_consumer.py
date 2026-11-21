@@ -34,6 +34,18 @@ class PowerConsumer(ABC):
         """
         Get the current electrical status of the consumer.
 
+        Required measurements (switch state, voltage, current, and power) must be
+        read successfully. Communication failures, missing fields, and invalid
+        required measurements must raise an exception, never produce synthetic
+        default readings.
+
+        Accumulated energy is optional and measured in Wh. Return None when the
+        device does not support it, reporting is disabled, or the reading cannot
+        be obtained. A valid zero reading must be preserved as zero. Unexpected
+        failures or invalid readings for supported, enabled energy measurements
+        must be logged as warnings without discarding otherwise valid status.
+        Absence of an unsupported energy measurement is not an error.
+
         Returns:
             The consumer's switch state, voltage, current, active power in watts,
             and accumulated energy in Wh where available.

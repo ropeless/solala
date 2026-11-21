@@ -12,19 +12,24 @@ from solala.utils.micro_cache import AsyncMicroCache
 
 class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
     """
-    Specify strict consumer communication errors and retryable register discovery.
-
-    These tests describe the proposed contract and are expected to fail until
-    the consumer implementations stop returning synthetic fallback readings.
+    Verify consumer communication failures, retry behavior, and optional energy handling.
     """
 
     async def test_tesla_http_failure_propagates_and_retries(self) -> None:
         consumer = TeslaWallConnector('example.invalid')
         failure = httpx.ConnectError('device unreachable')
-        vitals = {'voltageA_v': 240.0, 'currentA_a': 2.0, 'contactor_closed': True}
+        vitals = {
+            'grid_v': 240.0,
+            'voltageA_v': 240.0, 'currentA_a': 2.0,
+            'voltageB_v': 240.0, 'currentB_a': 0.0,
+            'voltageC_v': 240.0, 'currentC_a': 0.0,
+            'contactor_closed': True,
+        }
         response = Mock()
         response.json.return_value = vitals
-        consumer._client.get = AsyncMock(side_effect=[failure, response])
+        lifetime = Mock()
+        lifetime.json.return_value = {'energy_wh': 1200}
+        consumer._client.get = AsyncMock(side_effect=[failure, response, lifetime])
         try:
             with self.assertRaises(httpx.ConnectError):
                 await consumer.get_status()
@@ -32,7 +37,8 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status.voltage, 240.0)
             self.assertEqual(status.current, 2.0)
             self.assertTrue(status.on)
-            self.assertEqual(consumer._client.get.await_count, 2)
+            self.assertEqual(status.accumulated_energy, 1200)
+            self.assertEqual(consumer._client.get.await_count, 3)
         finally:
             await consumer.close()
 
@@ -41,13 +47,15 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
         failure = httpx.ConnectError('device unreachable')
         response = Mock()
         response.json.return_value = {'voltageA_v': 240.0}
-        consumer._client.get = AsyncMock(side_effect=[failure, response])
+        lifetime = Mock()
+        lifetime.json.return_value = {'energy_wh': 1200}
+        consumer._client.get = AsyncMock(side_effect=[failure, response, lifetime])
         try:
             with self.assertRaises(httpx.ConnectError):
                 await consumer.get_registers()
             self.assertIsNone(consumer._register_bank)
             bank = await consumer.get_registers()
-            self.assertIn('voltageA_v', bank)
+            self.assertIn('vital/voltageA_v', bank)
             self.assertIs(await consumer.get_registers(), bank)
         finally:
             await consumer.close()
@@ -80,6 +88,59 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(status.on)
         self.assertEqual(consumer._tuya.get.call_count, 2)
 
+    async def test_tuya_optional_energy_failures_preserve_status(self) -> None:
+        consumer = object.__new__(TuyaPowerConsumer)
+        PowerConsumer.__init__(consumer, can_switch=True)
+        consumer._include_accumulated_energy = True
+        consumer._voltage_scale_factor = 1.0
+        consumer._current_scale_factor = 1.0
+        consumer._power_scale_factor = 1.0
+        status = {
+            'cur_voltage': 240, 'cur_current': 2,
+            'cur_power': 400, 'switch_1': True,
+        }
+        for energy in (None, -1, float('nan'), float('inf'), True, 'invalid'):
+            with self.subTest(energy=energy):
+                data = dict(status)
+                if energy is not None:
+                    data['add_ele'] = energy
+                consumer._cache = AsyncMock(return_value=data)
+                with self.assertLogs('solala', level='WARNING') as captured:
+                    result = await consumer.get_status()
+                self.assertIsNone(result.accumulated_energy)
+                self.assertEqual(result.power, 400)
+                self.assertTrue(result.on)
+                self.assertIn('Tuya accumulated energy unavailable', captured.output[0])
+
+        consumer._cache = AsyncMock(return_value={**status, 'add_ele': 0})
+        self.assertEqual((await consumer.get_status()).accumulated_energy, 0)
+
+        consumer._cache = AsyncMock(return_value={**status, 'add_ele': 25})
+        self.assertEqual((await consumer.get_status()).accumulated_energy, 25)
+
+        consumer._cache = AsyncMock(return_value={'add_ele': 25, 'switch_1': True})
+        with self.assertRaises(KeyError):
+            await consumer.get_status()
+
+    async def test_tuya_large_accumulated_energy(self) -> None:
+        consumer = object.__new__(TuyaPowerConsumer)
+        PowerConsumer.__init__(consumer, can_switch=True)
+        consumer._include_accumulated_energy = True
+        consumer._voltage_scale_factor = 1.0
+        consumer._current_scale_factor = 1.0
+        consumer._power_scale_factor = 1.0
+        large_energy = 10 ** 400
+        consumer._cache = AsyncMock(return_value={
+            'cur_voltage': 240, 'cur_current': 2,
+            'cur_power': 400, 'switch_1': True,
+            'add_ele': large_energy,
+        })
+
+        status = await consumer.get_status()
+        self.assertEqual(status.accumulated_energy, large_energy)
+        self.assertEqual(status.power, 400)
+        self.assertTrue(status.on)
+
     async def test_tuya_failed_discovery_does_not_cache_bank(self) -> None:
         consumer = object.__new__(TuyaPowerConsumer)
         PowerConsumer.__init__(consumer, can_switch=True)
@@ -106,12 +167,14 @@ class ConsumerFailureContractTestCase(unittest.IsolatedAsyncioTestCase):
         consumer = TeslaWallConnector('example.invalid')
         response = Mock()
         response.json.return_value = {'voltageA_v': 240.0}
-        consumer._client.get = AsyncMock(return_value=response)
+        lifetime = Mock()
+        lifetime.json.return_value = {'energy_wh': 1200}
+        consumer._client.get = AsyncMock(side_effect=[response, lifetime])
         try:
             bank = await consumer.get_registers()
-            consumer._cache = AsyncMock(side_effect=httpx.ConnectError('device unreachable'))
+            consumer._vitals_cache = AsyncMock(side_effect=httpx.ConnectError('device unreachable'))
             values = await bank.get_register_values()
-            self.assertIsInstance(values['voltageA_v'], httpx.ConnectError)
+            self.assertIsInstance(values['vital/voltageA_v'], httpx.ConnectError)
         finally:
             await consumer.close()
 

@@ -1,8 +1,8 @@
 import asyncio
 
+from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 from solala.register_bank import RegisterBank
 from solala.utils.local_config_help import config
-from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
 
 
 async def main() -> None:

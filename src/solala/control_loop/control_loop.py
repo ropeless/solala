@@ -48,7 +48,8 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     ControllerConnection, PricerConnection, ConsumerConnection, DummyControllerConnection, DummyPricerConnection, \
     DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, DummySolarForecasterConnection, \
     DatabaseConnection, TuyaConnection, MatterConnection
-from solala.utils.json_extras import JSONDict, json_num, JSONValue
+from solala.utils.json_extras import JSONDict, JSONValue
+from solala.utils.type_extras import check_num
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
 from solala.utils.ordered_async_rlock import OrderedAsyncRLock
 from solala.utils.string_extras import split_addresses
@@ -928,7 +929,7 @@ async def get_status() -> JSONDict:
             consumer: status.to_json()
             for consumer, status in consumers_status.items()
         }
-        total = sum(json_num(consumer.power) for consumer in consumers_status.values())
+        total = sum(check_num(consumer.power) for consumer in consumers_status.values())
         house_power = power_status.house_power
         power_json['consumers_total'] = total
         power_json['consumers_remaining'] = house_power - total

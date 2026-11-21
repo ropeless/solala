@@ -7,7 +7,8 @@ import httpx
 import requests
 
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
-from solala.utils.json_extras import JSONDict, json_str, json_num, json_bool, json_dict
+from solala.utils.json_extras import JSONDict, json_dict
+from solala.utils.type_extras import check_str, check_num, check_bool
 
 API = 'https://api.amber.com.au/v1'
 
@@ -38,7 +39,7 @@ class AmberPowerPricer(PowerPricer):
         self._api_token: str = api_token
         self._nmi: str = nmi
         self._site: JSONDict = self._get_site()
-        self._site_id: str = json_str(self._site['id'])
+        self._site_id: str = check_str(self._site['id'])
 
     @property
     def nmi(self) -> str:
@@ -179,13 +180,13 @@ def _parse_response(response_json: Sequence[JSONDict], price_f: _PriceExtract) -
     # Parse the response
     parsed: dict[datetime, _ChannelPair] = {}
     for channel in response_json:
-        start_time = _get_datetime(json_str(channel['startTime']))
+        start_time = _get_datetime(check_str(channel['startTime']))
         pair = parsed.get(start_time)
         if pair is None:
             pair = _ChannelPair({}, {})
             parsed[start_time] = pair
 
-        channel_type: str = json_str(channel['channelType'])
+        channel_type: str = check_str(channel['channelType'])
         if channel_type == 'general':
             if len(pair.general) == 0:
                 pair.general = channel
@@ -227,21 +228,21 @@ def _make_price(start_time: datetime, channel_pair: _ChannelPair, price_f: _Pric
         raise IOError(f'no feed-in channel found: {start_time}')
     tariff_info: JSONDict = json_dict(general['tariffInformation'])
 
-    estimate: bool = True if 'estimate' not in general else json_bool(general['estimate'])
+    estimate: bool = True if 'estimate' not in general else check_bool(general['estimate'])
 
-    renewables: float = json_num(general['renewables'])
+    renewables: float = check_num(general['renewables'])
     renewables = max(0.0, min(renewables, 100.0))  # clamp renewables to 0-100 due to API limitations
 
     return Price(
         start_time=start_time,
-        end_time=_get_datetime(json_str(general['endTime'])),
+        end_time=_get_datetime(check_str(general['endTime'])),
         renewables=renewables,
         buy_price=price_f(general),
         feed_in_price=-price_f(feed_in),
         is_estimate=estimate,
-        tariff_period=json_str(tariff_info['period']),
-        tariff_season=json_str(tariff_info['season']),
-        tariff_demand_window=json_bool(tariff_info['demandWindow']),
+        tariff_period=check_str(tariff_info['period']),
+        tariff_season=check_str(tariff_info['season']),
+        tariff_demand_window=check_bool(tariff_info['demandWindow']),
     )
 
 
@@ -262,7 +263,7 @@ def _get_perKwh(data: JSONDict) -> float:
     Returns:
         The per-kWh price.
     """
-    return json_num(data['perKwh'])
+    return check_num(data['perKwh'])
 
 
 def _get_predicted(data: JSONDict) -> float:
@@ -278,7 +279,7 @@ def _get_predicted(data: JSONDict) -> float:
         The predicted or fallback per-kWh price.
     """
     try:
-        return json_num(json_dict(data['advancedPrice'])['predicted'])
+        return check_num(json_dict(data['advancedPrice'])['predicted'])
     except (KeyError, ValueError, TypeError):
         return _get_perKwh(data)
 

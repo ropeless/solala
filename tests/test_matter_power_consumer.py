@@ -35,6 +35,49 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
         self.attributes.pop('1/145/1')
         self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
 
+    async def test_invalid_optional_energy_warns_without_hiding_status(self) -> None:
+        invalid_values = ({'0': -1}, {'0': float('nan')},
+                          {'0': float('inf')}, {'0': True},
+                          {'0': 'invalid'})
+        for energy in invalid_values:
+            with self.subTest(energy=energy):
+                self.attributes['1/145/1'] = energy
+                await self.consumer._attributes_cache.invalidate()
+                with self.assertLogs('solala', level='WARNING') as captured:
+                    status = await self.consumer.get_status()
+                self.assertIsNone(status.accumulated_energy)
+                self.assertEqual(status.power, 125)
+                self.assertTrue(status.on)
+                self.assertIn('Matter accumulated energy unavailable', captured.output[0])
+
+    async def test_unavailable_optional_energy_is_silent(self) -> None:
+        for energy in ({}, None):
+            with self.subTest(energy=energy):
+                self.attributes['1/145/1'] = energy
+                await self.consumer._attributes_cache.invalidate()
+                status = await self.consumer.get_status()
+                self.assertIsNone(status.accumulated_energy)
+                self.assertEqual(status.power, 125)
+
+    async def test_huge_integer_energy_uses_wh_fallback(self) -> None:
+        raw_energy = 10 ** 400 + 999
+        self.attributes['1/145/1'] = {'0': raw_energy}
+        status = await self.consumer.get_status()
+        self.assertEqual(status.accumulated_energy, raw_energy // 1000 + 1)
+        self.assertIsInstance(status.accumulated_energy, int)
+
+    async def test_zero_optional_energy_is_valid(self) -> None:
+        self.attributes['1/145/1'] = {'0': 0}
+        self.assertEqual((await self.consumer.get_status()).accumulated_energy, 0)
+
+    async def test_nonfinite_required_measurements_raise(self) -> None:
+        for value in (float('nan'), float('inf'), -float('inf')):
+            with self.subTest(value=value):
+                self.attributes['1/144/8'] = value
+                await self.consumer._attributes_cache.invalidate()
+                with self.assertRaises(ConnectionError):
+                    await self.consumer.get_status()
+
     async def test_switch_command(self) -> None:
         await self.consumer.set_switch(False)
         self.consumer._request.assert_awaited_once_with(

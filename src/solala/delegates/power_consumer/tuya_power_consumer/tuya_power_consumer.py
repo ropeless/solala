@@ -1,14 +1,16 @@
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from functools import partial
 
 from tuya_connector import TuyaOpenAPI
 
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus, SwitchRegister
+from solala.logger import LOGGER
 from solala.register import RegisterType, check_type, AsyncCallRegister, check_value, RegisterValue, Register
 from solala.register_bank import RegisterBank
-from solala.utils.json_extras import JSONDict, json_num, json_bool
+from solala.utils.json_extras import JSONDict
 from solala.utils.micro_cache import AsyncMicroCache
+from solala.utils.type_extras import check_num, check_bool, check_non_negative
 
 API_ENDPOINT = "https://openapi.tuyaeu.com"
 
@@ -64,6 +66,7 @@ class TuyaPowerConsumer(PowerConsumer):
             access_secret,
         )
         self._connected: bool = False
+        self._connect_lock = asyncio.Lock()
         self._status_url: str = f'/v1.0/iot-03/devices/{device_id}/status'
         self._connection_info: JSONDict = {
             'connection': 'Tuya',
@@ -87,10 +90,12 @@ class TuyaPowerConsumer(PowerConsumer):
         Establish the Tuya API connection without blocking the event loop.
         """
         if not self._connected:
-            response = await asyncio.to_thread(self._tuya.connect)
-            if not response.get('success', False):
-                raise ConnectionError(response)
-            self._connected = True
+            async with self._connect_lock:
+                if not self._connected:
+                    response = await asyncio.to_thread(self._tuya.connect)
+                    if not response.get('success', False):
+                        raise ConnectionError(response)
+                    self._connected = True
 
     async def get_registers(self) -> RegisterBank:
         reg_bank = self._register_bank
@@ -108,16 +113,22 @@ class TuyaPowerConsumer(PowerConsumer):
 
     async def get_status(self) -> ConsumerStatus:
         device_status: JSONDict = await self._cache()
-        voltage: float = json_num(device_status['cur_voltage']) * self._voltage_scale_factor
-        current: float = json_num(device_status['cur_current']) * self._current_scale_factor
-        power: float = json_num(device_status['cur_power']) * self._power_scale_factor
-        on: bool = json_bool(device_status['switch_1'])
+        voltage: float = check_num(device_status['cur_voltage']) * self._voltage_scale_factor
+        current: float = check_num(device_status['cur_current']) * self._current_scale_factor
+        power: float = check_num(device_status['cur_power']) * self._power_scale_factor
+        on: bool = check_bool(device_status['switch_1'])
+        accumulated_energy: float | None = None
+        if self._include_accumulated_energy:
+            try:
+                accumulated_energy = check_non_negative(device_status['add_ele'])
+            except (KeyError, TypeError, ValueError) as err:
+                LOGGER.warning('Tuya accumulated energy unavailable: %r', err)
         return ConsumerStatus(
             voltage=voltage,
             current=current,
             power=power,
             on=on,
-            accumulated_energy=(json_num(device_status['add_ele']) if self._include_accumulated_energy else None),
+            accumulated_energy=accumulated_energy,
         )
 
     async def _get_switch(self) -> bool:
@@ -125,7 +136,7 @@ class TuyaPowerConsumer(PowerConsumer):
         Return the switch state reported by Tuya.
         """
         device_status: JSONDict = await self._cache()
-        return json_bool(device_status['switch_1'])
+        return check_bool(device_status['switch_1'])
 
     async def _set_switch(self, on: bool) -> None:
         """
