@@ -274,7 +274,7 @@ class MatterPowerConsumer(PowerConsumer):
                 result = safe_divide(m, 1000)
                 return check_non_negative(result)
             except (TypeError, ValueError, OverflowError) as err:
-                raise ConnectionError(f'Invalid Matter measurement: {_value!r}', err)
+                raise ConnectionError(f'Invalid Matter measurement: {_value!r}') from err
 
         # Validate required measurements before processing optional energy.
         power = measurement(144, 8)
