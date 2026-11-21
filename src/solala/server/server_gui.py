@@ -536,6 +536,9 @@ class TabSelector:
             session = self.active_session
             self.active_session = None
             await session.close()
+            if self.active_tab == 'Registers':
+                # Flush the final filter after cancelling any pending session-owned save.
+                await self._state_storage.save(self._state)
 
     async def _build_tab(self, tab_name: str, session: PageSession) -> None:
         """
