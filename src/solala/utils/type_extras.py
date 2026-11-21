@@ -58,7 +58,7 @@ def check_finite(value: object) -> int | float:
     """
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise TypeError(f'_Expected a finite number, got {value}')
+            raise TypeError(f'Expected a finite number, got {value}')
         return value
     if isinstance(value, int) and not isinstance(value, bool):
         return value
@@ -102,4 +102,4 @@ def check_bool(value: object) -> bool:
     if isinstance(value, bool):
         return value
     else:
-        raise TypeError(f'_Expected a boolean, got {type(value)}')
+        raise TypeError(f'Expected a boolean, got {type(value)}')
