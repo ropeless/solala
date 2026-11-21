@@ -23,6 +23,7 @@ class UIState:
     tab: str
     displayed_day: date | None = None
     graph_series: dict[str, dict[str, bool]] = field(default_factory=dict)
+    register_filter: str = ''
 
     def to_dict(self) -> JSONDict:
         """
@@ -31,6 +32,7 @@ class UIState:
         return {
             'tab': self.tab,
             'displayed_day': self.displayed_day.isoformat() if self.displayed_day else None,
+            'register_filter': self.register_filter,
             'graph_series': {
                 chart: selections.copy()
                 for chart, selections in self.graph_series.items()
@@ -59,6 +61,7 @@ class UIState:
         tab = value.get('tab')
         raw_day = value.get('displayed_day')
         raw_series = value.get('graph_series')
+        raw_filter = value.get('register_filter')
 
         if not isinstance(tab, str) or tab not in valid_tabs:
             tab = default_tab
@@ -80,7 +83,12 @@ class UIState:
                 }
                 graph_series[chart] = valid_selections
 
-        return cls(tab=tab, displayed_day=displayed_day, graph_series=graph_series)
+        return cls(
+            tab=tab,
+            displayed_day=displayed_day,
+            graph_series=graph_series,
+            register_filter=raw_filter if isinstance(raw_filter, str) else '',
+        )
 
 
 class UIStateStorage:
