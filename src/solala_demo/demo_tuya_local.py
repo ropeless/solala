@@ -5,6 +5,7 @@ TUYA_LOCAL_VERSION in your untracked local_config.py.
 
 The local key is never printed. The demo does not change device state.
 """
+from pprint import pprint
 
 import tinytuya
 
@@ -28,7 +29,7 @@ def main() -> None:
     device.set_socketPersistent(False)
     try:
         status = device.status()
-        print(status)
+        pprint(status)
         if isinstance(status, dict) and "Error" in status:
             raise RuntimeError("Local Tuya status request failed")
     finally:
