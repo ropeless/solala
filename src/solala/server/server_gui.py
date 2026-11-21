@@ -510,7 +510,7 @@ class TabSelector:
         Close the active tab session, serialised with tab transitions.
         """
         async with self._transition_lock:
-            await self._close_active_session()
+            await self._close_active_session(flush_filter=False)
 
     async def _cancel_active_build(self) -> None:
         """
@@ -527,7 +527,7 @@ class TabSelector:
         except asyncio.CancelledError:
             pass
 
-    async def _close_active_session(self) -> None:
+    async def _close_active_session(self, *, flush_filter: bool = True) -> None:
         """
         Stop tab construction and release resources owned by its session.
         """
@@ -536,7 +536,7 @@ class TabSelector:
             session = self.active_session
             self.active_session = None
             await session.close()
-            if self.active_tab == 'Registers':
+            if flush_filter and self.active_tab == 'Registers':
                 # Flush the final filter after cancelling any pending session-owned save.
                 await self._state_storage.save(self._state)
 
