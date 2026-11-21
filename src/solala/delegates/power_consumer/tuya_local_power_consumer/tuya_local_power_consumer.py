@@ -9,6 +9,7 @@ from solala.delegates.power_consumer.power_consumer import PowerConsumer, Switch
 from solala.register import AsyncCallRegister, Register, RegisterValue, check_type, check_value
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict
+from solala.utils.micro_cache import AsyncMicroCache
 from solala.utils.type_extras import check_bool, check_non_negative, check_num
 
 
@@ -55,6 +56,7 @@ class TuyaLocalPowerConsumer(PowerConsumer):
         self._calibration_factor = calibration_factor
         self._timeout = timeout
         self._lock = asyncio.Lock()
+        self._cache = AsyncMicroCache(self._read_status, 0.1)
         self._register_bank: RegisterBank | None = None
         self._register_bank_lock = asyncio.Lock()
 
@@ -77,13 +79,16 @@ class TuyaLocalPowerConsumer(PowerConsumer):
         finally:
             device.close()
 
-    async def _status(self) -> JSONDict:
+    async def _read_status(self) -> JSONDict:
         async with self._lock:
             response = await asyncio.to_thread(self._request)
         dps = response.get('dps')
         if not isinstance(dps, dict):
             raise ConnectionError('Tuya LAN status response has no DPS dictionary')
         return dps
+
+    async def _status(self) -> JSONDict:
+        return await self._cache()
 
     async def get_status(self) -> ConsumerStatus:
         dps = await self._status()
@@ -101,6 +106,7 @@ class TuyaLocalPowerConsumer(PowerConsumer):
     async def _set_switch(self, on: bool) -> None:
         async with self._lock:
             await asyncio.to_thread(self._request, on)
+            await self._cache.invalidate()
 
     async def get_registers(self) -> RegisterBank:
         async with self._register_bank_lock:
