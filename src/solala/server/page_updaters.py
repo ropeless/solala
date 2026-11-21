@@ -264,7 +264,7 @@ class RegistersUpdater(LoopListener):
         self._loading_element = ui.label('loading registers...').classes('w-full text-center italic')
         with ui.row().classes('items-center gap-2'):
             self._input = ui.input(label='Filter', value=initial_filter).props('dense outlined spellcheck=false autocorrect=off autocapitalize=off')
-            self._input.style(f'width: {max((len(name) for name in self._bank), default=0) + 4}ch; max-width: 100%')
+            self._input.style('width: 40ch; max-width: 100%')
             ui.button(icon='close', on_click=lambda: self._input.set_value('')).props('flat round dense')
             self._error = ui.label('invalid pattern').classes('text-red-600').set_visibility(False)
         self._registers_element = ui.code(language='nothing').classes('text-sm w-full grow').set_visibility(False)
@@ -294,7 +294,6 @@ class RegistersUpdater(LoopListener):
     async def update(self) -> None:
         self._iteration += 1
         self._bank = control_loop.get_register_bank()
-        self._input.style(f'width: {max((len(name) for name in self._bank), default=0) + 4}ch; max-width: 100%')
         self._values.clear()
         self._schedule_read()
 
