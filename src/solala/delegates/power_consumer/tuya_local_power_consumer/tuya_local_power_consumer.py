@@ -100,6 +100,10 @@ class TuyaLocalPowerConsumer(PowerConsumer):
                         continue
                     except Exception:
                         break
+                # Retrieve any failure from the completed thread task.
+                # The caller still receives its original cancellation.
+                if not task.cancelled():
+                    task.exception()
                 raise
 
     async def _read_status(self) -> JSONDict:
