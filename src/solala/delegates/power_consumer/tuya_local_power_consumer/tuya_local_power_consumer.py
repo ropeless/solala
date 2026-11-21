@@ -92,7 +92,14 @@ class TuyaLocalPowerConsumer(PowerConsumer):
             try:
                 return await asyncio.shield(task)
             except asyncio.CancelledError:
-                await task
+                # Repeated cancellation must not release the lock before the thread exits.
+                while not task.done():
+                    try:
+                        await asyncio.shield(task)
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception:
+                        break
                 raise
 
     async def _read_status(self) -> JSONDict:
