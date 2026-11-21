@@ -58,6 +58,18 @@ class TuyaLocalPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIs(bank, await self.consumer.get_registers())
         self.assertIsNotNone(bank)
 
+    async def test_status_cache(self) -> None:
+        await self.consumer.get_status()
+        await self.consumer.get_status()
+        await self.consumer.get_switch()
+        self.device.status.assert_called_once()
+
+    async def test_switch_invalidates_status_cache(self) -> None:
+        await self.consumer.get_status()
+        await self.consumer.set_switch(False)
+        await self.consumer.get_status()
+        self.assertEqual(self.device.status.call_count, 2)
+
     def test_validation_and_secret(self) -> None:
         with self.assertRaises(ValueError):
             TuyaLocalPowerConsumer('host', 'id', 'key', calibration_factor=0)
