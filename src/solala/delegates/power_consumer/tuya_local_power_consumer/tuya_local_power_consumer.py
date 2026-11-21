@@ -1,5 +1,3 @@
-"""Read and switch a Tuya smart plug over its local network connection."""
-
 import asyncio
 import math
 from functools import partial
@@ -39,7 +37,9 @@ class TuyaLocalPowerConsumer(PowerConsumer):
             host: Device IP address or hostname.
             device_id: Tuya device identifier.
             local_key: Device's local encryption key.
-            version: Tuya LAN protocol version.
+            version: Tuya LAN protocol version. This can be inferred using
+                tinytuya.deviceScan(), but is configured explicitly to avoid
+                depending on UDP discovery.
             calibration_factor: Multiplier for current and power readings.
             timeout: Socket timeout in seconds.
         """
