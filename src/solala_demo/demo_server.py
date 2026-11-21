@@ -1,48 +1,19 @@
-from solala.utils.local_config_help import config
 from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
-    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, TuyaConnection, TuyaLocalConnection, MatterConnection, ConsumerConnection
+    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, TuyaConnection, TuyaLocalConnection, \
+    MatterConnection, ConsumerConnection
+from solala.utils.local_config_help import config
 from solala_demo.log import configure_logger
 
 
 def main():
     configure_logger(level=config.APP_LOG_LEVEL)
 
-    consumers: dict[str, ConsumerConnection] = {}
-    tesla_charger: str | None = config.get('TESLA_WALL_CONNECTOR_ADDR')
-    if tesla_charger:
-        consumers['tesla_charger'] = TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR)
-    outlet_charger: str | None = config.get('POWER_POINT_DEVICE')
-    if outlet_charger:
-        consumers['outlet_charger'] = TuyaConnection(
-            device_id=outlet_charger,
-            access_id=config.POWER_POINT_ACCESS_ID,
-            access_secret=config.POWER_POINT_ACCESS_SECRET,
-        )
-
-    local_outlet: str | None = config.get('TUYA_LOCAL_HOST')
-    if local_outlet:
-        consumers['outlet_charger_local'] = TuyaLocalConnection(
-            host=local_outlet,
-            device_id=config.TUYA_LOCAL_DEVICE_ID,
-            local_key=config.TUYA_LOCAL_KEY,
-            version=float(config.get('TUYA_LOCAL_VERSION', 3.5)),
-            calibration_factor=0.8,
-        )
-
-    matter_device_ids: dict[int, str] = config.get('MATTER_DEVICE_IDS', {})
-    for node_id, name in matter_device_ids.items():
-        consumers[name] = MatterConnection(
-            host=config.MATTER_SERVER_HOST,
-            port=config.MATTER_SERVER_PORT,
-            node_id=node_id,
-        )
-
     settings = Settings(
         controller=ModbusControllerConnection(address=f'{config.MASTER_INVERTER_ADDR};{config.SLAVE_INVERTER_ADDR}'),
         pricer=AmberPricerConnection(api_token=config.AMBER_API_TOKEN, nmi=config.NMI),
-        consumers=consumers,
+        consumers=configure_demo_consumers(),
         forecaster=OpenMeteoConnection(
             latitude=config.LATITUDE,
             longitude=config.LONGITUDE,
@@ -84,6 +55,46 @@ def main():
         database_write=config.DATABASE_WRITE,
         solala_storage_secret=config.SOLALA_STORAGE_SECRET,
     )
+
+
+def configure_demo_consumers() -> dict[str, ConsumerConnection]:
+    consumers: dict[str, ConsumerConnection] = {}
+
+    # Tesla Wall Connector (tesla_charger)
+    tesla_charger: str | None = config.get('TESLA_WALL_CONNECTOR_ADDR')
+    if tesla_charger:
+        consumers['tesla_charger'] = TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR)
+    outlet_charger: str | None = config.get('POWER_POINT_DEVICE')
+
+    # TuyaConnection via cloud (outlet_charger_cloud)
+    if outlet_charger:
+        consumers['outlet_charger_cloud'] = TuyaConnection(
+            device_id=outlet_charger,
+            access_id=config.POWER_POINT_ACCESS_ID,
+            access_secret=config.POWER_POINT_ACCESS_SECRET,
+        )
+    local_outlet: str | None = config.get('TUYA_LOCAL_HOST')
+
+    # TuyaConnection via cloud (outlet_charger_local)
+    if local_outlet:
+        consumers['outlet_charger_local'] = TuyaLocalConnection(
+            host=local_outlet,
+            device_id=config.TUYA_LOCAL_DEVICE_ID,
+            local_key=config.TUYA_LOCAL_KEY,
+            version=float(config.get('TUYA_LOCAL_VERSION', 3.5)),
+            calibration_factor=0.8,
+        )
+
+    # Devices known to the Matter server.
+    matter_device_ids: dict[int, str] = config.get('MATTER_DEVICE_IDS', {})
+    for node_id, name in matter_device_ids.items():
+        consumers[name] = MatterConnection(
+            host=config.MATTER_SERVER_HOST,
+            port=config.MATTER_SERVER_PORT,
+            node_id=node_id,
+        )
+
+    return consumers
 
 
 if __name__ == '__main__':
