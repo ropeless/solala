@@ -4,38 +4,58 @@
 # See `solala.utils.local_config_help` for more details.
 
 APP_NAME_POSTFIX = ' ***DEMO***'
-APP_LOG_LEVEL = 'INFO'
 
-SOLALA_STORAGE_SECRET = 'some-large-random-string'  # e.g. use `openssl rand -hex 32` to generate one
+# ============================== Delegates
 
 MASTER_INVERTER_ADDR = '192.168.0.200'
 SLAVE_INVERTER_ADDR = '192.168.0.201'
-TESLA_WALL_CONNECTOR_ADDR = '192.168.0.202'
-
-POWER_POINT_DEVICE = 'kjhasgdfkjhgaskdjhfgkashdgf'
-POWER_POINT_ACCESS_ID = 'jfkaskdjfh87193456ka8g'
-POWER_POINT_ACCESS_SECRET = 'aflsknotarealsecretdsafjpa127859'
-
-MATTER_SERVER_HOST = '192.168.0.203'
-MATTER_SERVER_PORT = 5580
-MATTER_PAIRING_CODE = '298735082340582304587023485'
-MATTER_DEVICE_IDS: dict[int, str] = {1: 'plug_1'}
 
 AMBER_API_TOKEN = 'psk_k56thisisnotarealapitokenlm5t0adf0f'
 NMI = '4109999999'
 
-SERVER_HOST = 'localhost'
-SERVER_PORT = 8080
-
-# Solar Forecaster parameters
+# Open-Metio config
 LATITUDE = -33.72
 LONGITUDE = 151.08
-PANEL_ORIENTATION = 10
+PANEL_ORIENTATION = 0
 PANEL_TILT = 30
-PANEL_CAPACITY = 9000
-PANEL_TEMPERATURE_COEFFICIENT = -0.004
+PANEL_CAPACITY = 9360
+PANEL_TEMPERATURE_COEFFICIENT = -0.0038
 INVERTER_LIMIT = 8000
-INVERTER_EFFICIENCY = 0.96
+INVERTER_EFFICIENCY = 0.976
+
+# ============================== Consumer Devices
+
+# Tesla Wall Connector
+TESLA_WALL_CONNECTOR_ADDR = '192.168.0.202'
+
+# Tuya device via Tuya cloud
+POWER_POINT_DEVICE = 'kjhasgdfkjhgaskdjhfgkashdgf'
+POWER_POINT_ACCESS_ID = 'jfkaskdjfh87193456ka8g'
+POWER_POINT_ACCESS_SECRET = 'aflsknotarealsecretdsafjpa127859'
+
+# Tuya device via LAN
+TUYA_LOCAL_HOST = '192.168.0.50'
+TUYA_LOCAL_DEVICE_ID = '8943590223534598089345'
+TUYA_LOCAL_KEY = '90klm8*(OPnl)*('
+TUYA_LOCAL_VERSION = 3.5
+
+# for Tapo model P110M via LAN using kasa
+TAPO_HOST = '192.168.0.51'
+TAPO_USERNAME = 'a_person@devnull.com'
+TAPO_PASSWORD = 'rifo;jajfoie0rtj;as'
+
+# for Tapo model P110M via a local Mater server
+MATTER_SERVER_HOST = '192.168.0.203'
+MATTER_SERVER_PORT = 5580
+MATTER_PAIRING_CODE = '098123401-2893470128-93740981'
+MATTER_DEVICE_IDS: dict[int, str] = {1: 'plug_1'}
+
+# ============================== End of Delegates
+
+
+SERVER_HOST = 'localhost'
+SERVER_PORT = 8080
+SOLALA_STORAGE_SECRET = 'some-large-random-string'  # e.g. use `openssl rand -hex 32` to generate one
 
 OUT = '/users/demo_user/output'
 HISTORY_FILE = OUT + '/history.csv'
@@ -53,3 +73,4 @@ DATABASE_WRITE = False
 
 FORCE_SETTINGS: bool = False
 DEMO_LOG_FORMAT: str = '%(asctime)s %(levelname)s: %(name)s %(message)s'
+APP_LOG_LEVEL = 'INFO'
