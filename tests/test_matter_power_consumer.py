@@ -36,7 +36,7 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone((await self.consumer.get_status()).accumulated_energy)
 
     async def test_invalid_optional_energy_warns_without_hiding_status(self) -> None:
-        invalid_values = ({'0': -1}, {'0': float('nan')},
+        invalid_values = ({}, {'0': -1}, {'0': float('nan')},
                           {'0': float('inf')}, {'0': True},
                           {'0': 'invalid'}, None)
         for energy in invalid_values:
@@ -49,12 +49,6 @@ class MatterPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(status.power, 125)
                 self.assertTrue(status.on)
                 self.assertIn('Matter accumulated energy unavailable', captured.output[0])
-
-    async def test_missing_optional_energy_subkey_is_unavailable(self) -> None:
-        self.attributes['1/145/1'] = {}
-        status = await self.consumer.get_status()
-        self.assertIsNone(status.accumulated_energy)
-        self.assertEqual(status.power, 125)
 
     async def test_huge_integer_energy_uses_wh_fallback(self) -> None:
         raw_energy = 10 ** 400 + 999
