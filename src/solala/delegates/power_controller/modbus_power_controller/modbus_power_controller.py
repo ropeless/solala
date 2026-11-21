@@ -12,15 +12,6 @@ from solala.register import Register, AsyncCallRegister
 from solala.register_bank import RegisterBank
 from solala.utils.json_extras import JSONDict, JSONValue
 
-
-class _DEFAULT:
-    """
-    Critical registers and their default values.
-    """
-    MinRsvPct = 7  # Minimum reserve battery percentage
-    WMaxLimPct_RvrtTms = 11  # Control reversion time in seconds
-
-
 # Prefixes used for logging
 _START = '>>>'
 _STOP = '<<<'
@@ -81,6 +72,8 @@ class ModbusPowerController(PowerController):
             slaves: Iterable[str] = (),
             mac_addr_lookup: dict[str, str] | None = None,
             power_control_slaves: bool = False,
+            default_MinRsvPct: float = 7,
+            default_WMaxLimPct_RvrtTms: int = 11,
     ) -> None:
         """
         Initialise a Modbus power controller.
@@ -95,6 +88,8 @@ class ModbusPowerController(PowerController):
             power_control_slaves: Whether inverter power curtailment should also be
                 applied to slave inverters. If False, curtailment is applied only
                 to the master inverter.
+            default_MinRsvPct: Minimum reserve battery percentage
+            default_WMaxLimPct_RvrtTms: Control reversion time in seconds
         """
         self._modbus: Modbus = modbus
         self._master = master
@@ -102,6 +97,8 @@ class ModbusPowerController(PowerController):
         self._inverters = [self._master] + self._slaves
         self._meter = meter
         self._hunt_history: list[float] = []
+        self._default_MinRsvPct: float = default_MinRsvPct
+        self._default_WMaxLimPct_RvrtTms: int = default_WMaxLimPct_RvrtTms
 
         # Important registers
         self._ChaState: str = f'{master}/ChaState'
@@ -262,7 +259,7 @@ class ModbusPowerController(PowerController):
             await self._set(self._InWRte, 100)
             await self._set(self._OutWRte, 100)
             await self._set(self._ChaGriSet, 0)
-            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._MinRsvPct, self._default_MinRsvPct)
 
     async def disable_battery(self) -> None:
         with self._log_it('disable_battery'):
@@ -271,7 +268,7 @@ class ModbusPowerController(PowerController):
             await self._set(self._OutWRte, 0)
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
-            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._MinRsvPct, self._default_MinRsvPct)
 
     async def force_charge(self) -> None:
         with self._log_it('force_charge'):
@@ -280,7 +277,7 @@ class ModbusPowerController(PowerController):
             await self._set(self._OutWRte, -100)  # force charging at the maximum permitted rate
             await self._set(self._StorCtl_Mod, 2)
             await self._set(self._ChaGriSet, 1)
-            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._MinRsvPct, self._default_MinRsvPct)
 
     async def force_discharge(self) -> None:
         with self._log_it('force_discharge'):
@@ -289,7 +286,7 @@ class ModbusPowerController(PowerController):
             await self._set(self._OutWRte, 100)  # ignored
             await self._set(self._StorCtl_Mod, 1)
             await self._set(self._ChaGriSet, 0)
-            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._MinRsvPct, self._default_MinRsvPct)
 
     async def charge_only(self) -> None:
         with self._log_it('charge_only'):
@@ -298,7 +295,7 @@ class ModbusPowerController(PowerController):
             await self._set(self._OutWRte, 0)
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
-            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._MinRsvPct, self._default_MinRsvPct)
 
     async def discharge_only(self) -> None:
         with self._log_it('discharge_only'):
@@ -307,7 +304,7 @@ class ModbusPowerController(PowerController):
             await self._set(self._OutWRte, 100)
             await self._set(self._StorCtl_Mod, 3)
             await self._set(self._ChaGriSet, 0)
-            await self._set(self._MinRsvPct, _DEFAULT.MinRsvPct)
+            await self._set(self._MinRsvPct, self._default_MinRsvPct)
 
     # =================================================
     #  Grid Export Control
@@ -337,7 +334,7 @@ class ModbusPowerController(PowerController):
 
     async def enable_inverter(self) -> None:
         with self._log_it('enable_inverter'):
-            await self._set_power_pct(100)
+            await self._set_power_pct(100, self._default_WMaxLimPct_RvrtTms)
 
     async def disable_inverter(self, *, change_duration: int) -> None:
         with self._log_it('disable_inverter'):
@@ -488,7 +485,7 @@ class ModbusPowerController(PowerController):
         finally:
             LOGGER.info(f'{_STOP} {name}')
 
-    async def _set_power_pct(self, pct: float, change_duration: int = _DEFAULT.WMaxLimPct_RvrtTms) -> None:
+    async def _set_power_pct(self, pct: float, change_duration: int) -> None:
         """
         Set the inverter output limit and its automatic reversion duration.
 

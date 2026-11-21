@@ -374,6 +374,7 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
         controller._ChaGriSet = 'master/ChaGriSet'
         controller._MinRsvPct = 'master/MinRsvPct'
         controller._set = AsyncMock()
+        controller._default_MinRsvPct = 13.0
         return controller
 
     async def test_battery_mode_register_sequences(self) -> None:
@@ -411,8 +412,15 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
                 actual = [(call.args[0].split('/')[-1], call.args[1])
                           for call in controller._set.await_args_list]
                 self.assertEqual(actual[:-1], sequence)
-                self.assertEqual(actual[-1][0], 'MinRsvPct')
+                self.assertEqual(actual[-1], ('MinRsvPct', 13.0))
                 self.assertEqual(len(actual), len(sequence) + 1)
+
+    async def test_enable_inverter_uses_configured_reversion_time(self) -> None:
+        controller = self.make_controller({})
+        controller._default_WMaxLimPct_RvrtTms = 23
+        controller._set_power_pct = AsyncMock()
+        await controller.enable_inverter()
+        controller._set_power_pct.assert_awaited_once_with(100, 23)
 
     async def test_battery_mode_stops_after_failed_intermediate_write(self) -> None:
         controller = self.make_battery_controller()

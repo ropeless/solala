@@ -144,6 +144,8 @@ class ModbusControllerConnection(BaseModel):
         master_device_id: Modbus device identifier for the master inverter.
         meter_device_id: Modbus device identifier for the meter.
         slave_device_id: Modbus device identifier for the slave inverter.
+        default_MinRsvPct: Default minimum battery reserve percentage.
+        default_WMaxLimPct_RvrtTms: Default inverter control reversion time in seconds.
     """
     TYPE: ClassVar[Literal['modbus']] = 'modbus'
     type: Literal['modbus'] = 'modbus'
@@ -152,6 +154,8 @@ class ModbusControllerConnection(BaseModel):
     master_device_id: int = 1
     meter_device_id: int = 200
     slave_device_id: int = 1
+    default_MinRsvPct: float = 7
+    default_WMaxLimPct_RvrtTms: int = 11
 
 
 class AmberPricerConnection(BaseModel):
