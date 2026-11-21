@@ -1,44 +1,33 @@
-"""Discover Tuya devices and read a plug's status over the LAN.
+"""Discover Tuya devices and read a smart plug's status over the LAN.
 
-Install: python -m pip install tinytuya
-Discover: python demo/tuya_local.py --scan
-Read: python demo/tuya_local.py --ip 192.168.0.X --device-id ID --version 3.3
+Set TUYA_LOCAL_IP, TUYA_LOCAL_DEVICE_ID, TUYA_LOCAL_KEY, and
+TUYA_LOCAL_VERSION in your untracked local_config.py.
 
-The local key is requested interactively and is never printed or stored.
+The local key is never printed. The demo does not change device state.
 """
-
-import argparse
-from getpass import getpass
 
 import tinytuya
 
+from solala.utils.local_config_help import config
+
 
 def main() -> None:
-    """Discover devices or retrieve a single device's status."""
-    parser = argparse.ArgumentParser(description="Read Tuya smart plug status over LAN")
-    parser.add_argument("--scan", action="store_true", help="Discover Tuya devices")
-    parser.add_argument("--ip", help="Plug's LAN IP address")
-    parser.add_argument("--device-id", help="Tuya device ID")
-    parser.add_argument("--version", type=float, help="Protocol version from scan (e.g. 3.3)")
-    args = parser.parse_args()
+    """Discover local Tuya devices and read the configured plug's status."""
+    tinytuya.deviceScan()
 
-    if args.scan:
-        tinytuya.deviceScan()
-        return
-
-    if not all((args.ip, args.device_id, args.version)):
-        parser.error("Provide --scan or all of --ip, --device-id and --version")
-
-    local_key = getpass("Tuya local key: ")
-    device = tinytuya.OutletDevice(args.device_id, args.ip, local_key)
-    device.set_version(args.version)
+    device = tinytuya.OutletDevice(
+        config.TUYA_LOCAL_DEVICE_ID,
+        config.TUYA_LOCAL_IP,
+        config.TUYA_LOCAL_KEY,
+    )
+    device.set_version(float(config.TUYA_LOCAL_VERSION))
     device.set_socketTimeout(5)
     device.set_socketPersistent(False)
     try:
         status = device.status()
         print(status)
         if isinstance(status, dict) and "Error" in status:
-            raise SystemExit("Local status request failed")
+            raise RuntimeError("Local Tuya status request failed")
     finally:
         device.close()
 
