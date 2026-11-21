@@ -276,6 +276,8 @@ class RegistersUpdater(LoopListener):
         """
         Apply a valid pattern immediately; preserve the last valid pattern otherwise.
         """
+        if self._session.closed:
+            return
         try:
             matcher = compile_register_filter(pattern)
         except ValueError:
@@ -293,6 +295,8 @@ class RegistersUpdater(LoopListener):
 
     @final
     async def update(self) -> None:
+        if self._session.closed:
+            return
         self._iteration += 1
         self._bank = control_loop.get_register_bank()
         self._values.clear()
