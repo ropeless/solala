@@ -44,9 +44,8 @@ class TuyaLocalPowerConsumer(PowerConsumer):
                 depending on UDP discovery.
             calibration_factor: Multiplier for current and power readings.
             timeout: Socket timeout in seconds.
-            cache_duration: How long to cache each API response, in seconds. The same duration
-                applies independently to vitals and lifetime data. Defaults to 0.1 seconds.
-
+            cache_duration: How long to cache LAN status responses, in seconds.
+                Defaults to 0.1 seconds.
         """
         if not math.isfinite(calibration_factor) or calibration_factor <= 0:
             raise ValueError('calibration_factor must be positive and finite')
@@ -110,7 +109,7 @@ class TuyaLocalPowerConsumer(PowerConsumer):
     async def _set_switch(self, on: bool) -> None:
         async with self._lock:
             await asyncio.to_thread(self._request, on)
-            await self._cache.invalidate()
+        await self._cache.invalidate()
 
     async def get_registers(self) -> RegisterBank:
         async with self._register_bank_lock:
