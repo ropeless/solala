@@ -189,7 +189,7 @@ class PageSession:
             control_loop.remove_database_loop_listener,
         )
 
-    def add_task(self, task: asyncio.Task[Any]) -> None:
+    def add_task(self, task: asyncio.Task[None]) -> None:
         """
         Arrange for an unfinished task to be cancelled and awaited on close.
 

@@ -19,7 +19,7 @@
     --solala-danger: var(--solala-red);
 
     /* master alarm colours */
-    --solala-normal: var(--solala-green);
+    --solala-live: var(--solala-green);
     --solala-caution: var(--solala-amber);
     --solala-warning: var(--solala-red);
     --solala-stalled: var(--solala-red);
@@ -210,9 +210,18 @@ html {
 .solala-master-alarm {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 7px;
     padding: 2px 4px;
+    border: 0;
+    background: transparent;
+    font: inherit;
     cursor: pointer;
+}
+
+.solala-master-alarm:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
 }
 
 .solala-alarm-light {
@@ -229,11 +238,15 @@ html {
     white-space: nowrap;
 }
 
-.solala-alarm-light.solala-alarm-normal {
-    background-color: var(--solala-normal);
+.solala-master-alarm .solala-alarm-label {
+    text-align: right;
 }
-.solala-alarm-label.solala-alarm-normal {
-    color: var(--solala-normal);
+
+.solala-alarm-light.solala-alarm-live {
+    background-color: var(--solala-live);
+}
+.solala-alarm-label.solala-alarm-live {
+    color: var(--solala-live);
 }
 
 .solala-alarm-light.solala-alarm-caution {

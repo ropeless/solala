@@ -9,9 +9,9 @@ from solala.control_loop.control_health import ControlHealth, Severity
 
 class ControlHealthTestCase(unittest.TestCase):
 
-    def test_initial_state_is_normal(self):
+    def test_initial_state_is_live(self):
         health = ControlHealth()
-        self.assertEqual(health.severity, Severity.NORMAL)
+        self.assertEqual(health.severity, Severity.LIVE)
         self.assertEqual(health.get_issues(), ())
 
     def test_highest_severity_wins(self):
@@ -42,7 +42,7 @@ class ControlHealthTestCase(unittest.TestCase):
         health.report_failure('device', Severity.WARNING, 'Control failed')
         self.assertTrue(health.report_success('device'))
         self.assertFalse(health.report_success('device'))
-        self.assertEqual(health.severity, Severity.NORMAL)
+        self.assertEqual(health.severity, Severity.LIVE)
         self.assertEqual(health.get_issues(), ())
 
     def test_equal_severity_issues_are_ordered_by_time_then_key(self):
@@ -83,7 +83,7 @@ class ControlHealthTestCase(unittest.TestCase):
         health = ControlHealth()
         for key, severity, message in [
             ('', Severity.CAUTION, 'Error'),
-            ('device', Severity.NORMAL, 'Error'),
+            ('device', Severity.LIVE, 'Error'),
             ('device', Severity.CAUTION, ''),
         ]:
             with self.subTest(key=key, severity=severity, message=message):
@@ -162,7 +162,7 @@ class OneShotCommandTestCase(unittest.IsolatedAsyncioTestCase):
             await control_loop._control_step(state)
             controller.enable_battery.assert_awaited_once()
             self.assertEqual((await control_loop.get_control_mode()).battery_mode, BatteryMode.ENABLE)
-            self.assertEqual(state.health.severity, Severity.NORMAL)
+            self.assertEqual(state.health.severity, Severity.LIVE)
 
     async def test_inverter_enable_failure_reports_unknown_then_recovers(self):
         from unittest.mock import AsyncMock
@@ -189,7 +189,7 @@ class OneShotCommandTestCase(unittest.IsolatedAsyncioTestCase):
             state.control.control_mode.inverter_mode = InverterMode.DISABLE
             await control_loop._control_step(state)
             self.assertEqual((await control_loop.get_control_mode()).inverter_mode, InverterMode.DISABLE)
-            self.assertEqual(state.health.severity, Severity.NORMAL)
+            self.assertEqual(state.health.severity, Severity.LIVE)
             controller.disable_inverter.assert_awaited_once()
 
 

@@ -3,31 +3,25 @@ Provide the persistent master alarm and browser-side freshness monitoring.
 """
 import json
 from collections.abc import Awaitable, Callable
+from typing import Mapping
 
 from nicegui import ui
+from nicegui.elements.mixins.text_element import TextElement
 
 from solala.constants import Constants
 from solala.control_loop import control_loop
-from solala.control_loop.control_health import HealthIssue
+from solala.control_loop.control_health import HealthIssue, Severity
 
+DISCONNECTED = 'DISCONNECTED'
+STALLED = 'STALLED'
 
-def _alarm_state(previous: str) -> tuple[str, tuple[HealthIssue, ...]]:
-    """
-    Select the server-confirmed alarm state, preserving overdue hysteresis.
-
-    Args:
-        previous: Previous server-confirmed state.
-
-    Returns:
-        Alarm label and the current health-issue snapshot.
-    """
-    severity, issues = control_loop.get_control_health()
-    overdue = control_loop.loop_check_overdue()
-    if overdue > Constants.OVERDUE_THRESHOLD.total_seconds():
-        return 'STALLED', issues
-    if overdue > 0 and previous == 'STALLED':
-        return 'STALLED', issues
-    return severity.name, issues
+HEALTH_STATES: Mapping[str, str] = {
+    DISCONNECTED: 'Cannot contact the Solala server',
+    STALLED: 'Suspected total loss of hardware control. Check the Solala log.',
+    Severity.LIVE.name: 'Hardware control and reporting appear to be working correctly.',
+    Severity.WARNING.name: 'Hardware control failure or uncertainty detected.',
+    Severity.CAUTION.name: 'Noncritical functionality is impaired.'
+}
 
 
 class MasterAlarm:
@@ -40,12 +34,16 @@ class MasterAlarm:
 
     def __init__(self, select_tab: Callable[[str], Awaitable[None]]) -> None:
         self._select_tab = select_tab
-        self._state = 'DISCONNECTED'
+        self._state = DISCONNECTED
         self._issues: tuple[HealthIssue, ...] = ()
         self._details_snapshot: tuple[str, tuple[HealthIssue, ...]] | None = None
-        with ui.element('div').classes('solala-master-alarm') as indicator:
-            self._light = ui.element('div').classes('solala-alarm-light solala-alarm-disconnected')
-            self._label = ui.label('disconnected').classes('solala-alarm-label solala-alarm-disconnected')
+        with ui.element('button').classes('solala-master-alarm').props(
+            'type=button aria-label="System Health" aria-haspopup=dialog'
+        ) as indicator:
+            self._label = TextElement(tag='span', text=_state_to_status_label(self._state)).classes(
+                'solala-alarm-label solala-alarm-disconnected')
+            self._light = ui.element('span').classes('solala-alarm-light solala-alarm-disconnected')
+        indicator.props(f'aria-describedby={self._label.html_id}')
         self._light_id = self._light.id
         self._label_id = self._label.id
         indicator.on('click', self._open_details)
@@ -92,7 +90,7 @@ class MasterAlarm:
                     awaitingReset = false;
                 }};
                 let lastResponse = 0;
-                const states = ['normal', 'caution', 'warning', 'stalled', 'disconnected'];
+                const states = ['live', 'caution', 'warning', 'stalled', 'disconnected'];
                 const setState = (state) => {{
                     const name = state.toLowerCase();
                     for (const element of [light, label]) {{
@@ -149,7 +147,7 @@ class MasterAlarm:
         Send a fresh server-confirmed state to the browser.
         """
         self._state, self._issues = _alarm_state(self._state)
-        status = self._state.lower()
+        status = _state_to_status_label(self._state)
         self._light.classes(replace=f'solala-alarm-light solala-alarm-{status}')
         self._label.classes(replace=f'solala-alarm-label solala-alarm-{status}')
         self._label.set_text(status)
@@ -177,19 +175,17 @@ class MasterAlarm:
         self._details_snapshot = snapshot
         self._details.clear()
         with self._details:
-            ui.label(f'Status: {self._state.lower()}').classes(
-                f'text-subtitle1 solala-alarm-label solala-alarm-{self._state.lower()}'
+            status = _state_to_status_label(self._state)
+            ui.label(f'Status: {status}').classes(
+                f'text-subtitle1 solala-alarm-label solala-alarm-{status}'
             )
-            if self._state == 'STALLED':
-                ui.label('Suspected total loss of hardware control. Check the Solala log.')
-            elif self._state == 'WARNING':
-                ui.label('Hardware control failure or uncertainty detected.')
-            elif self._state == 'CAUTION':
-                ui.label('Noncritical functionality is impaired.')
-            elif self._state == 'NORMAL':
-                ui.label('Hardware control and reporting appear to be working correctly.')
+            message = HEALTH_STATES.get(self._state)
+            if message is not None:
+                ui.label(message)
+
             if not self._issues:
                 ui.label('No active operational issues reported.').classes('text-grey-7')
+
             for issue in self._issues:
                 with ui.card().classes('w-full'):
                     ui.label(f'{issue.severity.name}: {issue.message}').classes('text-weight-medium')
@@ -211,3 +207,29 @@ class MasterAlarm:
         Cancel the client-owned timer.
         """
         self._timer.cancel()
+
+
+def _state_to_status_label(state: str) -> str:
+    """
+    Convert the state name into a displayed status name.
+    """
+    return state.lower()
+
+
+def _alarm_state(previous: str) -> tuple[str, tuple[HealthIssue, ...]]:
+    """
+    Select the server-confirmed alarm state, preserving overdue hysteresis.
+
+    Args:
+        previous: Previous server-confirmed state.
+
+    Returns:
+        Alarm label and the current health-issue snapshot.
+    """
+    severity, issues = control_loop.get_control_health()
+    overdue = control_loop.loop_check_overdue()
+    if overdue > Constants.OVERDUE_THRESHOLD.total_seconds():
+        return STALLED, issues
+    if overdue > 0 and previous == STALLED:
+        return STALLED, issues
+    return severity.name, issues

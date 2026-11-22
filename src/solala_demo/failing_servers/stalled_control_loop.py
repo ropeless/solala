@@ -9,7 +9,7 @@ def main() -> None:
     """
     Demonstrate a temporary control-loop stall during a battery command.
 
-    Start with normal operation, then select Disable Battery in the UI to
+    Wait for System Health to show LIVE, then select Disable Battery in the UI to
     trigger an 18-second asynchronous delay. The command succeeds afterward,
     allowing the control loop and master alarm to recover automatically.
     """

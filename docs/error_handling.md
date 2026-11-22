@@ -142,7 +142,7 @@ suspected hardware condition has been confirmed.
 
 | Display | User understanding | System understanding | Diagnostic guidance |
 | --- | --- | --- | --- |
-| **NORMAL** | Hardware control and reporting appear to be working correctly. | Server reachable, control-loop heartbeat current, no active health issues. | No action required. |
+| **LIVE** | Hardware control and reporting appear to be working correctly. | Server reachable, control-loop heartbeat current, no active health issues. | No action required. |
 | **CAUTION** | Hardware control is believed to be working, but some reporting or other noncritical functionality is impaired. | Server reachable, heartbeat current, highest active ControlHealth severity is CAUTION. | Inspect the alarm details. |
 | **WARNING** | Suspected partial loss of hardware control, or uncertainty about safe control. | Server reachable, heartbeat current, highest active ControlHealth severity is WARNING. | Inspect the alarm details and log. |
 | **STALLED** | Suspected total loss of hardware control. | Server reachable, but the control loop does not appear to be running correctly: its completion heartbeat is overdue, possibly because the crucial control-step method is not getting processor time or is waiting indefinitely. | Check the Solala log; the server remains reachable. |
@@ -162,7 +162,7 @@ The master alarm selects its state using these precedence rules:
    response watchdog expires (6.5 seconds since the last received update).
 2. The server reports STALLED when the control-loop heartbeat exceeds
    `Constants.OVERDUE_THRESHOLD`, regardless of active health issues.
-3. Otherwise, the server reports NORMAL, CAUTION or WARNING according to the
+3. Otherwise, the server reports LIVE, CAUTION or WARNING according to the
    highest active severity in `ControlHealth`.
 
 A restored socket connection first displays DISCONNECTED. The browser accepts
@@ -247,7 +247,7 @@ logged separately. The master alarm is not an exhaustive inventory of every
 transient service error.
 
 **Hardware safety boundary:** Severity assignments, retry schedules and
-command reconciliation depend on each operation and delegate. NORMAL means
+command reconciliation depend on each operation and delegate. LIVE means
 no active issues are currently reported; it is not independent verification
 that every physical device is in its requested state. The safety requirements
 above continue to apply to hardware integrations.

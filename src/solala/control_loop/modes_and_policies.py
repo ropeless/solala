@@ -83,7 +83,7 @@ class ControlMode:
         Returns:
             A dictionary containing separate battery and inverter settings,
             with modes and policies represented by their enum names and mode
-            and policy parameters grouped under 'parameters'.
+            and policy parameters grouped under 'parameter'.
         """
         battery: JSONDict = {
             'mode': self.battery_mode.name,
@@ -93,7 +93,7 @@ class ControlMode:
             'mode': self.inverter_mode.name,
             'policy': self.inverter_policy.name,
         }
-        parameters: JSONDict = {
+        parameter: JSONDict = {
             'fixed_limit_pct': self.fixed_limit_pct,
             'start_charge_price_threshold': self.start_charge_price_threshold,
             'stop_charge_price_threshold': self.stop_charge_price_threshold,
@@ -103,7 +103,7 @@ class ControlMode:
         return {
             'battery': battery,
             'inverter': inverter,
-            'parameters': parameters,
+            'parameter': parameter,
         }
 
     def copy(self) -> Self:

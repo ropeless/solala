@@ -138,7 +138,7 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         ] * 3)
         await self.step(100, 0)
         self.assertEqual((await control_loop.get_prev_control_mode()).inverter_mode, InverterMode.ZERO_EXPORT)
-        self.assertEqual(self.state.health.severity, control_loop.Severity.NORMAL)
+        self.assertEqual(self.state.health.severity, control_loop.Severity.LIVE)
         self.controller.zero_export.assert_awaited_once_with(change_duration=Constants.CONTROL_DURATION)
 
     async def test_manual_modes_ignore_prices(self) -> None:
@@ -240,7 +240,7 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.controller.zero_export.await_count, 2)
         self.controller.zero_export.assert_awaited_with(change_duration=Constants.CONTROL_DURATION)
         log_exception.assert_called_once()
-        self.assertEqual(self.state.health.severity, control_loop.Severity.NORMAL)
+        self.assertEqual(self.state.health.severity, control_loop.Severity.LIVE)
         self.assertEqual(self.state.control.prev_state.inverter_commanded_mode, InverterMode.ZERO_EXPORT)
 
     async def test_fixed_limit_retries_on_failure_and_stops_after_enable(self) -> None:
@@ -257,7 +257,7 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertIn('37.125%', log_exception.call_args.args[0])
             await self.step(100, 100)
 
-        self.assertEqual(self.state.health.severity, control_loop.Severity.NORMAL)
+        self.assertEqual(self.state.health.severity, control_loop.Severity.LIVE)
         self.assertEqual(self.state.control.prev_state.inverter_commanded_mode, InverterMode.FIXED_LIMIT)
         await control_loop.set_control(fixed_limit_pct=20.5)
         await self.step(100, 100)
@@ -302,7 +302,7 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
                 await self.step(100, 100)
                 self.assertEqual(command.await_args_list, [call(*args, change_duration=duration)] * 2)
                 self.assertEqual(self.state.control.prev_state.inverter_commanded_mode, mode)
-                self.assertEqual(self.state.health.severity, control_loop.Severity.NORMAL)
+                self.assertEqual(self.state.health.severity, control_loop.Severity.LIVE)
 
     async def test_failed_disable_inverter_is_logged_and_retried(self) -> None:
         self.state.control.control_mode.inverter_mode = InverterMode.DISABLE
@@ -318,7 +318,7 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.controller.disable_inverter.await_count, 2)
         self.controller.disable_inverter.assert_awaited_with(change_duration=Constants.CONTROL_DURATION)
         log_exception.assert_called_once()
-        self.assertEqual(self.state.health.severity, control_loop.Severity.NORMAL)
+        self.assertEqual(self.state.health.severity, control_loop.Severity.LIVE)
         self.assertEqual(self.state.control.prev_state.inverter_commanded_mode, InverterMode.DISABLE)
 
 

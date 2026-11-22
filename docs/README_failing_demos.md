@@ -29,7 +29,7 @@ The intermittent scenario is probabilistic; a successful request is not
 guaranteed immediately after a failure. The master alarm's behaviour depends
 on the control loop's error handling and recovery policy.
 
-For `stalled_control_loop`, start the server, wait for NORMAL, then select
+For `stalled_control_loop`, start the server, wait for LIVE, then select
 **Disable** for the battery in the Power tab. The dummy controller delays
 that command asynchronously for 18 seconds, after which the control loop
 resumes. The web server should remain responsive during the delay.
@@ -37,7 +37,7 @@ resumes. The web server should remain responsive during the delay.
 For `recovering_controller`, open the Power tab to request controller status.
 The first ten reads fail and produce CAUTION. Keep the System Health dialogue
 open and continue observing; after a successful read, the issue clears and
-the alarm returns to NORMAL without restarting the server. Status requests
+the alarm returns to LIVE without restarting the server. Status requests
 are driven by the UI and control-loop listeners, so recovery timing varies.
 
 For `intermittent_solar_failure`, the forecast cache is deliberately shortened
@@ -45,7 +45,7 @@ For `intermittent_solar_failure`, the forecast cache is deliberately shortened
 waiting an hour. Open the Solar tab and watch the forecast and server log for
 several refresh cycles. Failed refreshes may continue serving a cached forecast;
 a forecast failure does **not** itself create a master-alarm CAUTION issue.
-The alarm should remain NORMAL unless another health problem occurs. This
+The alarm should remain LIVE unless another health problem occurs. This
 scenario uses random 50% failures, so individual outcomes are not guaranteed.
 These cache durations apply only to this demo process.
 

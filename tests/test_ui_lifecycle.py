@@ -35,11 +35,16 @@ class InverterButtonTestCase(unittest.IsolatedAsyncioTestCase):
     """
 
     async def test_fixed_limit_button_selects_manual_mode(self) -> None:
-        buttons = [MagicMock() for _ in range(5)]
-        for button in buttons:
-            button.on_click.return_value = button
-        updater = InverterButtonUpdater(*buttons)
-        fixed_limit = buttons[2]
+        fixed_limit = MagicMock()
+        fixed_limit.text = 'FIXED LIMIT'
+        zero_export = MagicMock()
+        zero_export.text = 'ZERO EXPORT'
+        policy = MagicMock()
+        policy.text = 'NEG FEED-IN ⇒ ZERO EXPORT'
+        updater = InverterButtonUpdater(
+            {InverterMode.FIXED_LIMIT: fixed_limit, InverterMode.ZERO_EXPORT: zero_export},
+            {InverterPolicy.NEG_FEED_IN_ZERO_EXPORT: policy},
+        )
         click = fixed_limit.on_click.call_args.args[0]
 
         with patch('solala.server.page_updaters.control_loop.set_control', new_callable=AsyncMock) as set_control:
@@ -48,13 +53,34 @@ class InverterButtonTestCase(unittest.IsolatedAsyncioTestCase):
         set_control.assert_awaited_once_with(
             inverter_mode=InverterMode.FIXED_LIMIT, inverter_policy=InverterPolicy.MANUAL,
         )
-        fixed_limit.props.assert_called_with('color=blue dense')
+        fixed_limit.props.assert_called_with('color=blue')
 
-        control = ControlMode(inverter_mode=InverterMode.ENABLE, fixed_limit_pct=37.125)
+        control = ControlMode(inverter_mode=InverterMode.FIXED_LIMIT, fixed_limit_pct=37.125)
         status = control.to_json()
-        self.assertEqual(status['parameters']['fixed_limit_pct'], 37.125)
-        updater._update({'control': status})
-        fixed_limit.props.assert_called_with('color=grey dense')
+        self.assertEqual(status['parameter']['fixed_limit_pct'], 37.125)
+        with patch('solala.server.page_updaters.control_loop.get_control_mode', return_value=control):
+            await updater.update()
+            fixed_limit.props.assert_called_with('color=blue')
+            fixed_limit.props.set_optional.assert_called_with('aria-label', 'FIXED LIMIT, selected')
+            policy.props.assert_called_with('color=grey-6')
+
+            control.inverter_mode = InverterMode.ZERO_EXPORT
+            control.inverter_policy = InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
+            await updater.update()
+            fixed_limit.props.assert_called_with('color=grey-6')
+            zero_export.props.assert_called_with('color=grey-7')
+            zero_export.props.set_optional.assert_called_with('aria-label', 'ZERO EXPORT, selected by policy')
+            policy.props.assert_called_with('color=blue')
+            policy.props.set_optional.assert_called_with('aria-label', 'NEG FEED-IN ⇒ ZERO EXPORT, selected')
+
+            control.inverter_policy = InverterPolicy.MANUAL
+            await updater.update()
+            zero_export.props.set_optional.assert_called_with('aria-label', 'ZERO EXPORT, selected')
+            policy.props.set_optional.assert_called_with('aria-label', None)
+
+            control.inverter_mode = InverterMode.FIXED_LIMIT
+            await updater.update()
+            zero_export.props.set_optional.assert_called_with('aria-label', None)
 
 
 class GraphLegendTestCase(unittest.IsolatedAsyncioTestCase):

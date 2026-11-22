@@ -7,7 +7,8 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from functools import partial
-from typing import Coroutine, Any
+from itertools import chain
+from typing import Coroutine, Any, Mapping
 
 from nicegui import ui, app, events
 from nicegui.element import Element
@@ -15,6 +16,7 @@ from nicegui.elements.button import Button
 
 from solala.constants import Constants
 from solala.control_loop import control_loop
+from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import infographic
@@ -85,31 +87,17 @@ async def _ui_control_buttons(session: PageSession) -> None:
     with ui.element('div').classes('dashboard-card control-card'):
         _control_header('Battery')
         with ui.element('div').classes('control-buttons'):
-            battery_enable = ui.button('ENABLE').classes('solala-button')
-            battery_disable = ui.button('DISABLE').classes('solala-button')
-            battery_force_charge = ui.button('FORCE CHARGE').classes('solala-button')
-            battery_force_discharge = ui.button('FORCE DISCHARGE').classes('solala-button')
-            battery_charge_only = ui.button('CHARGE ONLY').classes('solala-button')
-            battery_discharge_only = ui.button('DISCHARGE ONLY').classes('solala-button')
-            battery_cheap_force_charge = ui.button('CHEAP ⇒ FORCE CHARGE').classes('solala-button')
-
-            battery_force_charge.classes('wide')
-            battery_force_discharge.classes('wide')
-            battery_charge_only.classes('wide')
-            battery_discharge_only.classes('wide')
-            battery_cheap_force_charge.classes('wide')
-
-        updater = BatteryButtonUpdater(
-            battery_enable=battery_enable,
-            battery_disable=battery_disable,
-            battery_force_charge=battery_force_charge,
-            battery_force_discharge=battery_force_discharge,
-            battery_charge_only=battery_charge_only,
-            battery_discharge_only=battery_discharge_only,
-            battery_cheap_force_charge=battery_cheap_force_charge,
-        )
-        await updater.update()  # call synchronously to avoid flicker
-        await session.add_control_listener(updater)
+            battery_mode_buttons: Mapping[BatteryMode, Button] = {
+                BatteryMode.ENABLE: ui.button('ENABLE'),
+                BatteryMode.DISABLE: ui.button('DISABLE'),
+                BatteryMode.FORCE_CHARGE: ui.button('FORCE CHARGE'),
+                BatteryMode.FORCE_DISCHARGE: ui.button('FORCE DISCHARGE'),
+                BatteryMode.CHARGE_ONLY: ui.button('CHARGE ONLY'),
+                BatteryMode.DISCHARGE_ONLY: ui.button('DISCHARGE ONLY'),
+            }
+            battery_policy_buttons: Mapping[BatteryPolicy, Button] = {
+                BatteryPolicy.CHEAP_CHARGE: ui.button('CHEAP ⇒ FORCE CHARGE'),
+            }
 
     # ======================================================
     # INVERTER
@@ -118,24 +106,32 @@ async def _ui_control_buttons(session: PageSession) -> None:
     with ui.element('div').classes('dashboard-card control-card'):
         _control_header('Inverter')
         with ui.element('div').classes('control-buttons'):
-            inverter_enable = ui.button('ENABLE').classes('solala-button')
-            inverter_disable = ui.button('DISABLE').classes('solala-button')
-            inverter_fixed_limit = ui.button('FIXED LIMIT').classes('solala-button')
-            inverter_zero_export = ui.button('ZERO EXPORT').classes('solala-button')
-            inverter_neg_feed_in_zero_export = ui.button('NEG FEED-IN ⇒ ZERO EXPORT').classes(
-                'solala-button')
+            inverter_mode_buttons: Mapping[InverterMode, Button] = {
+                InverterMode.ENABLE: ui.button('ENABLE'),
+                InverterMode.DISABLE: ui.button('DISABLE'),
+                InverterMode.FIXED_LIMIT: ui.button('FIXED LIMIT'),
+                InverterMode.ZERO_EXPORT: ui.button('ZERO EXPORT'),
+            }
+            inverter_policy_buttons: Mapping[InverterPolicy, Button] = {
+                InverterPolicy.NEG_FEED_IN_ZERO_EXPORT: ui.button('NEG FEED-IN ⇒ ZERO EXPORT'),
+            }
 
-            inverter_zero_export.classes('wide')
-            inverter_fixed_limit.classes('wide')
-            inverter_neg_feed_in_zero_export.classes('wide')
+        mode_buttons = chain(battery_mode_buttons.values(), inverter_mode_buttons.values())
+        policy_buttons = (*battery_policy_buttons.values(), *inverter_policy_buttons.values())
 
-        updater = InverterButtonUpdater(
-            inverter_enable=inverter_enable,
-            inverter_disable=inverter_disable,
-            inverter_fixed_limit=inverter_fixed_limit,
-            inverter_zero_export=inverter_zero_export,
-            inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
-        )
+        for button in chain(mode_buttons, policy_buttons):
+            button.classes('solala-button')
+            button.style('padding-top: 1px; padding-bottom: 1px;')
+            button.classes('py-0 px-2 text-xs')
+
+        for button in policy_buttons:
+            button.classes('wide')
+
+        updater = BatteryButtonUpdater(battery_mode_buttons, battery_policy_buttons)
+        await updater.update()  # call synchronously to avoid flicker
+        await session.add_control_listener(updater)
+
+        updater = InverterButtonUpdater(inverter_mode_buttons, inverter_policy_buttons)
         await updater.update()  # call synchronously to avoid flicker
         await session.add_control_listener(updater)
 
@@ -462,10 +458,10 @@ class TabSelector:
             for name, button in self.buttons.items():
                 if name == tab_name:
                     background = rgba(self.colours.tab, alpha=0.15)
-                    button.props(f'color="{background}" text-color=black')
+                    button.props(f'color="{background}" text-color=black aria-current=page')
                     button.classes(add='solala-tab-button-active')
                 else:
-                    button.props('color=white text-color=black')
+                    button.props('color=white text-color=black', remove='aria-current')
                     button.classes(remove='solala-tab-button-active')
 
             async def save_day(day: date) -> None:
@@ -488,8 +484,9 @@ class TabSelector:
                     return
                 self._state.register_filter = pattern
                 if filter_save_task is None or filter_save_task.done():
-                    filter_save_task = asyncio.create_task(persist_register_filter())
-                    session.add_task(filter_save_task)
+                    task = asyncio.create_task(persist_register_filter())
+                    filter_save_task = task
+                    session.add_task(task)
 
             async def save_legend(chart: str, selected: dict[str, bool]) -> None:
                 if self.active_session is session:

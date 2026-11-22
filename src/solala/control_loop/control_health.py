@@ -1,16 +1,16 @@
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from enum import IntEnum
+from enum import IntEnum, auto
 
 
 class Severity(IntEnum):
     """
-    Operational health severity, ordered from normal to critical.
+    Operational health severity, ordered from LIVE to WARNING.
     """
 
-    NORMAL = 0
-    CAUTION = 1
-    WARNING = 2
+    LIVE = auto()
+    CAUTION = auto()
+    WARNING = auto()
 
 
 @dataclass(frozen=True)
@@ -54,7 +54,7 @@ class ControlHealth:
         """
         return max(
             (issue.severity for issue in self._issues.values()),
-            default=Severity.NORMAL
+            default=Severity.LIVE
         )
 
     def get_issues(self) -> tuple[HealthIssue, ...]:
@@ -81,10 +81,10 @@ class ControlHealth:
             True for a new issue or a changed severity/message; otherwise False.
 
         Raises:
-            ValueError: If the key or message is blank, or severity is NORMAL.
+            ValueError: If the key or message is blank, or severity is LIVE.
         """
         if not key.strip() or not message.strip() or severity not in (Severity.CAUTION, Severity.WARNING):
-            raise ValueError('a failure requires a key, a message, and a non-normal severity')
+            raise ValueError('a failure requires a key, a message, and a severity of CAUTION or WARNING')
 
         now = datetime.now(timezone.utc)
         previous = self._issues.get(key)

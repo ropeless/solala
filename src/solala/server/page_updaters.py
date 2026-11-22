@@ -4,10 +4,11 @@ Provides page updaters for NiceGUI pages.
 
 import asyncio
 from abc import abstractmethod
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, date
+from enum import Enum
 from functools import partial
-from typing import final
+from typing import final, Mapping
 
 from nicegui import ui
 from nicegui.elements.button import Button
@@ -16,7 +17,7 @@ from nicegui.elements.mixins.content_element import ContentElement
 from solala.constants import GUI_DATE_FORMAT, GUI_TIME_FORMAT, Units, Constants
 from solala.control_loop import control_loop
 from solala.control_loop.loop_listener import LoopListener
-from solala.control_loop.modes_and_policies import InverterMode, InverterPolicy, BatteryMode, BatteryPolicy
+from solala.control_loop.modes_and_policies import InverterMode, InverterPolicy, BatteryMode, BatteryPolicy, ControlMode
 from solala.database.measurement import Measurement
 from solala.delegates.power_pricer.price import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
@@ -30,8 +31,7 @@ from solala.server.infographic import Infographic
 from solala.server.page_session import PageSession
 from solala.server.register_filter import compile_register_filter
 from solala.server.units_lookup import STATUS_UNITS
-from solala.utils.json_extras import JSONDict, json_dict, render_json
-from solala.utils.type_extras import check_str
+from solala.utils.json_extras import JSONDict, render_json
 from solala.utils.time_extras import now
 
 
@@ -53,7 +53,7 @@ class StatusListener(LoopListener):
         ...
 
 
-class InverterButtonUpdater(StatusListener):
+class InverterButtonUpdater(LoopListener):
     """
     Updater for inverter control buttons so that buttons reflect the
     selected mode and policy.
@@ -61,76 +61,51 @@ class InverterButtonUpdater(StatusListener):
 
     def __init__(
             self,
-            inverter_enable: Button,
-            inverter_disable: Button,
-            inverter_fixed_limit: Button,
-            inverter_zero_export: Button,
-            inverter_neg_feed_in_zero_export: Button,
+            mode_buttons: Mapping[InverterMode, Button],
+            policy_buttons: Mapping[InverterPolicy, Button],
     ) -> None:
         super().__init__()
-        self.inverter_enable = inverter_enable.on_click(partial(
-            self._click, InverterMode.ENABLE, InverterPolicy.MANUAL
-        ))
-        self.inverter_disable = inverter_disable.on_click(partial(
-            self._click, InverterMode.DISABLE, InverterPolicy.MANUAL
-        ))
-        self.inverter_fixed_limit = inverter_fixed_limit.on_click(partial(
-            self._click, InverterMode.FIXED_LIMIT, InverterPolicy.MANUAL
-        ))
-        self.inverter_zero_export = inverter_zero_export.on_click(partial(
-            self._click, InverterMode.ZERO_EXPORT, InverterPolicy.MANUAL
-        ))
-        self.inverter_neg_feed_in_zero_export = inverter_neg_feed_in_zero_export.on_click(partial(
-            self._click, None, InverterPolicy.NEG_FEED_IN_ZERO_EXPORT
-        ))
+        self._mode_buttons = mode_buttons
+        self._policy_buttons = policy_buttons
 
-        for button in [
-            inverter_enable, inverter_disable, inverter_fixed_limit, inverter_zero_export,
-            inverter_neg_feed_in_zero_export
-        ]:
-            button.style('padding-top: 1px; padding-bottom: 1px;')
-            button.classes('py-0 px-2 text-xs')
-            button.props('color=grey dense')
+        for mode, button in mode_buttons.items():
+            button.on_click(partial(
+                self._click, mode, InverterPolicy.MANUAL
+            ))
+        for policy, button in policy_buttons.items():
+            button.on_click(partial(
+                self._click, None, policy
+            ))
+        _button_visual_update(
+            self._mode_buttons,
+            self._policy_buttons,
+            None,
+            InverterPolicy.MANUAL,
+        )
 
     async def _click(self, mode: InverterMode | None, policy: InverterPolicy) -> None:
         await control_loop.set_control(
             inverter_mode=mode,
             inverter_policy=policy,
         )
-        self._visual_update('' if mode is None else mode.name, policy.name)
-
-    def _update(self, status_json: JSONDict) -> None:
-        # Infer button states from status_json
-        try:
-            control_json: JSONDict = json_dict(status_json['control'])
-            inverter_status: JSONDict = json_dict(control_json['inverter'])
-            inverter_mode = check_str(inverter_status['mode'])
-            inverter_policy = check_str(inverter_status['policy'])
-        except (KeyError, TypeError, IOError, control_loop.ControlLoopError) as err:
-            LOGGER.error(f'Error getting control status: {err}')
-            inverter_mode = ''
-            inverter_policy = ''
-        self._visual_update(inverter_mode, inverter_policy)
-
-    def _visual_update(self, inverter_mode: str, inverter_policy: str) -> None:
-        inverter_button = (
-            inverter_policy
-            if inverter_policy != InverterPolicy.MANUAL.name
-            else inverter_mode
+        _button_visual_update(
+            self._mode_buttons,
+            self._policy_buttons,
+            mode,
+            policy,
         )
 
-        # Set the button states
-        def on_props(_on: str) -> str:
-            return 'color=blue dense' if inverter_button == _on else 'color=grey dense'
+    async def update(self) -> None:
+        status: ControlMode = await control_loop.get_control_mode()
+        _button_visual_update(
+            self._mode_buttons,
+            self._policy_buttons,
+            status.inverter_mode,
+            status.inverter_policy,
+        )
 
-        self.inverter_enable.props(on_props(InverterMode.ENABLE.name))
-        self.inverter_disable.props(on_props(InverterMode.DISABLE.name))
-        self.inverter_fixed_limit.props(on_props(InverterMode.FIXED_LIMIT.name))
-        self.inverter_zero_export.props(on_props(InverterMode.ZERO_EXPORT.name))
-        self.inverter_neg_feed_in_zero_export.props(on_props(InverterPolicy.NEG_FEED_IN_ZERO_EXPORT.name))
 
-
-class BatteryButtonUpdater(StatusListener):
+class BatteryButtonUpdater(LoopListener):
     """
     Updater for battery control buttons so that buttons reflect the
     selected mode and policy.
@@ -138,82 +113,82 @@ class BatteryButtonUpdater(StatusListener):
 
     def __init__(
             self,
-            battery_enable: Button,
-            battery_disable: Button,
-            battery_force_charge: Button,
-            battery_force_discharge: Button,
-            battery_charge_only: Button,
-            battery_discharge_only: Button,
-            battery_cheap_force_charge: Button,
+            mode_buttons: Mapping[BatteryMode, Button],
+            policy_buttons: Mapping[BatteryPolicy, Button],
     ) -> None:
         super().__init__()
-        self.battery_enable = battery_enable.on_click(partial(
-            self._click, BatteryMode.ENABLE, BatteryPolicy.MANUAL
-        ))
-        self.battery_disable = battery_disable.on_click(partial(
-            self._click, BatteryMode.DISABLE, BatteryPolicy.MANUAL
-        ))
-        self.battery_force_charge = battery_force_charge.on_click(partial(
-            self._click, BatteryMode.FORCE_CHARGE, BatteryPolicy.MANUAL
-        ))
-        self.battery_force_discharge = battery_force_discharge.on_click(partial(
-            self._click, BatteryMode.FORCE_DISCHARGE, BatteryPolicy.MANUAL
-        ))
-        self.battery_charge_only = battery_charge_only.on_click(partial(
-            self._click, BatteryMode.CHARGE_ONLY, BatteryPolicy.MANUAL
-        ))
-        self.battery_discharge_only = battery_discharge_only.on_click(partial(
-            self._click, BatteryMode.DISCHARGE_ONLY, BatteryPolicy.MANUAL
-        ))
-        self.battery_cheap_force_charge = battery_cheap_force_charge.on_click(partial(
-            self._click, None, BatteryPolicy.CHEAP_CHARGE
-        ))
+        self._mode_buttons = mode_buttons
+        self._policy_buttons = policy_buttons
 
-        for button in [
-            battery_enable, battery_disable, battery_force_charge, battery_force_discharge,
-            battery_charge_only, battery_discharge_only, battery_cheap_force_charge
-        ]:
-            button.style('padding-top: 1px; padding-bottom: 1px;')
-            button.classes('py-0 px-2 text-xs')
-            button.props('color=grey dense')
+        for mode, button in mode_buttons.items():
+            button.on_click(partial(
+                self._click, mode, BatteryPolicy.MANUAL
+            ))
+        for policy, button in policy_buttons.items():
+            button.on_click(partial(
+                self._click, None, policy
+            ))
+        _button_visual_update(
+            self._mode_buttons,
+            self._policy_buttons,
+            None,
+            BatteryPolicy.MANUAL,
+        )
 
     async def _click(self, mode: BatteryMode | None, policy: BatteryPolicy) -> None:
         await control_loop.set_control(
             battery_mode=mode,
             battery_policy=policy,
         )
-        self._visual_update('' if mode is None else mode.name, policy.name)
-
-    def _update(self, status_json: JSONDict) -> None:
-        # Infer button states from status_json
-        try:
-            control_json: JSONDict = json_dict(status_json['control'])
-            battery_status: JSONDict = json_dict(control_json['battery'])
-            battery_mode = check_str(battery_status['mode'])
-            battery_policy = check_str(battery_status['policy'])
-        except (KeyError, TypeError, IOError, control_loop.ControlLoopError) as err:
-            LOGGER.error(f'Error getting control status: {err}')
-            battery_mode = ''
-            battery_policy = ''
-        self._visual_update(battery_mode, battery_policy)
-
-    def _visual_update(self, battery_mode: str, battery_policy: str) -> None:
-        battery_button = (
-            battery_policy
-            if battery_policy != BatteryPolicy.MANUAL.name
-            else battery_mode
+        _button_visual_update(
+            self._mode_buttons,
+            self._policy_buttons,
+            mode,
+            policy,
         )
 
-        def on_props(_on: str) -> str:
-            return 'color=blue dense' if battery_button == _on else 'color=grey dense'
+    async def update(self) -> None:
+        status: ControlMode = await control_loop.get_control_mode()
+        _button_visual_update(
+            self._mode_buttons,
+            self._policy_buttons,
+            status.battery_mode,
+            status.battery_policy,
+        )
 
-        self.battery_enable.props(on_props(BatteryMode.ENABLE.name))
-        self.battery_disable.props(on_props(BatteryMode.DISABLE.name))
-        self.battery_force_charge.props(on_props(BatteryMode.FORCE_CHARGE.name))
-        self.battery_force_discharge.props(on_props(BatteryMode.FORCE_DISCHARGE.name))
-        self.battery_charge_only.props(on_props(BatteryMode.CHARGE_ONLY.name))
-        self.battery_discharge_only.props(on_props(BatteryMode.DISCHARGE_ONLY.name))
-        self.battery_cheap_force_charge.props(on_props(BatteryPolicy.CHEAP_CHARGE.name))
+
+def _button_visual_update[Mode: Enum, Policy: Enum](
+        mode_buttons: Mapping[Mode, Button],
+        policy_buttons: Mapping[Policy, Button],
+        current_mode: Mode | None,
+        current_policy: Policy,
+) -> None:
+    props_on = 'color=blue'  # The button is user selected
+    props_on_auto = 'color=grey-7'  # Mode button selected by auto policy
+    props_off = 'color=grey-6'  # The button is off
+
+    for mode, button in mode_buttons.items():
+        accessible_label = None
+        if current_mode != mode:
+            props = props_off
+        elif current_policy.name == 'MANUAL':
+            props = props_on
+            accessible_label = f'{button.text}, selected'
+        else:
+            props = props_on_auto
+            accessible_label = f'{button.text}, selected by policy'
+        button.props.set_optional('aria-label', accessible_label)
+        button.props(props)
+
+    for policy, button in policy_buttons.items():
+        accessible_label = None
+        if current_policy == policy:
+            props = props_on
+            accessible_label = f'{button.text}, selected'
+        else:
+            props = props_off
+        button.props.set_optional('aria-label', accessible_label)
+        button.props(props)
 
 
 class StatusUpdater(StatusListener):

@@ -930,14 +930,14 @@ async def get_status() -> JSONDict:
     power_json: JSONDict = power_status.to_json()
     if len(consumers_status) > 0:
         power_json: dict[str, JSONValue] = dict(power_json)
-        power_json['consumers'] = {
+        power_json['consumer'] = {
             consumer: status.to_json()
             for consumer, status in consumers_status.items()
         }
         total = sum(check_num(consumer.power) for consumer in consumers_status.values())
         house_power = power_status.house_power
-        power_json['consumers_total'] = total
-        power_json['consumers_remaining'] = house_power - total
+        power_json['consumer_total'] = total
+        power_json['consumer_remaining'] = house_power - total
 
     return {
         'control': control_mode.to_json(),
@@ -2149,24 +2149,8 @@ async def _reconfigure_registers(state: _ControlState) -> None:
     Assumes the connections lock is held.
     """
 
-    # Add status/battery and status/inverter registers
-    registers: dict[str, Register] = {
-        'status/battery/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.battery_mode.name),
-        'status/battery/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.battery_policy.name),
-        'status/battery/start_charge_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control.control_mode.start_charge_price_threshold),
-        'status/battery/stop_charge_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control.control_mode.stop_charge_price_threshold),
-
-        'status/inverter/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_mode.name),
-        'status/inverter/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_policy.name),
-        'status/inverter/fixed_limit_pct': CallRegister(
-            lambda: _CONTROL_STATE.control.control_mode.fixed_limit_pct),
-        'status/inverter/enable_export_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control.control_mode.enable_export_price_threshold),
-        'status/inverter/disable_export_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control.control_mode.disable_export_price_threshold),
-    }
+    # Get status/battery and status/inverter status/parameter registers
+    registers: dict[str, Register] = _get_status_registers()
 
     # Add status/power registers
     f: Field
@@ -2179,14 +2163,14 @@ async def _reconfigure_registers(state: _ControlState) -> None:
                 reg_type: RegisterType = check_type(f.type)
             except TypeError:
                 continue
-            registers[f'status/power/consumers/{consumer_name}/{f.name}'] = \
+            registers[f'status/power/consumer/{consumer_name}/{f.name}'] = \
                 ConsumerRegister(consumer, f.name, reg_type)
         for prop_name, prop_type in _get_dataclass_properties(ConsumerStatus):
             try:
                 reg_type: RegisterType = check_type(prop_type)
             except TypeError:
                 continue
-            registers[f'status/power/consumers/{consumer_name}/{prop_name}'] = \
+            registers[f'status/power/consumer/{consumer_name}/{prop_name}'] = \
                 ConsumerRegister(consumer, prop_name, reg_type)
     for f in fields(Price):
         if f.name in ('start_time', 'end_time'):
@@ -2209,6 +2193,29 @@ async def _reconfigure_registers(state: _ControlState) -> None:
         state.connections.registers = RegisterBank(registers)
         if state.health.report_success('register_configuration'):
             log_info('Register bank reconfiguration recovered')
+
+
+def _get_status_registers() -> dict[str, Register]:
+    """
+    Get the initial, always-available registers.
+    """
+    return {
+        'status/battery/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.battery_mode.name),
+        'status/battery/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.battery_policy.name),
+        'status/inverter/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_mode.name),
+        'status/inverter/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_policy.name),
+
+        'status/parameter/fixed_limit_pct': CallRegister(
+            lambda: _CONTROL_STATE.control.control_mode.fixed_limit_pct),
+        'status/parameter/start_charge_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control.control_mode.start_charge_price_threshold),
+        'status/parameter/stop_charge_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control.control_mode.stop_charge_price_threshold),
+        'status/parameter/enable_export_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control.control_mode.enable_export_price_threshold),
+        'status/parameter/disable_export_price_threshold': CallRegister(
+            lambda: _CONTROL_STATE.control.control_mode.disable_export_price_threshold),
+    }
 
 
 async def _add_delegate_registers(state: _ControlState, registers: dict[str, Register]) -> None:
