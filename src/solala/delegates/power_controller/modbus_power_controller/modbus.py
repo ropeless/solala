@@ -1,4 +1,4 @@
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Self
@@ -6,8 +6,7 @@ from typing import Self
 from pymodbus.client import ModbusTcpClient
 
 from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import RegisterContext, \
-    RegisterAccess, \
-    MODBUS_MODEL
+    RegisterAccess, MODBUS_MODEL
 from solala.delegates.power_controller.modbus_power_controller.modbus_registers import MODELS, mppt_modules, MPPT_MODEL
 from solala.logger import LOGGER
 from solala.register import Register, RegisterValue
@@ -50,13 +49,32 @@ class ModbusRegister(Register):
         return self._access.get(self._context)
 
     async def _set(self, value: RegisterValue) -> None:
-        return self._access.set(self._context, value)
+        self._access.set(self._context, value)
+
+    def set_verified(self, value: int | float, force: bool) -> Iterator[tuple[str, bool]]:
+        """
+        Return an iterator for a verified write to the Modbus device.
+
+        Consume the iterator to completion to finish the write and readback
+        verification and to propagate any errors.
+
+        The verification protocol:
+        (1) read the register as old_value
+        (2) if not forced and old_value == value, return
+        (3) write value to the register
+        (4) read the register as new_value
+        (5) verify that new_value == value, within expected precision.
+
+        Yields:
+            (message, error) for logging the protocol
+        """
+        return self._access.set_verified(self._context, value, force)
 
 
 type ModbusDevices = (
-    Mapping[str, ModbusDevice]
-    | Mapping[None, ModbusDevice]
-    | Mapping[str | None, ModbusDevice]
+        Mapping[str, ModbusDevice]
+        | Mapping[None, ModbusDevice]
+        | Mapping[str | None, ModbusDevice]
 )
 
 

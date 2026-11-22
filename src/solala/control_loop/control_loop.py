@@ -575,6 +575,7 @@ async def configure_from_settings(settings: Settings) -> None:
         inverter_mode=settings.inverter_mode,
         battery_policy=settings.battery_policy,
         inverter_policy=settings.inverter_policy,
+        fixed_limit_pct=settings.fixed_limit_pct,
         disable_export_price_threshold=settings.disable_export_price_threshold,
         enable_export_price_threshold=settings.enable_export_price_threshold,
         start_charge_price_threshold=settings.start_charge_price_threshold,
@@ -664,7 +665,7 @@ async def get_prev_control_mode() -> ControlMode:
     """
     Get the control mode last requested by the control loop.
 
-    This is not a verified hardware state. Inverter DISABLE and ZERO_EXPORT
+    This is not a verified hardware state. Inverter DISABLE, FIXED_LIMIT and ZERO_EXPORT
     commands are retried every iteration, even when a command fails.
     """
     async with _control_settings_state() as state:
@@ -1029,10 +1030,10 @@ async def set_control(
         inverter_mode: InverterMode | None = None,
         battery_policy: BatteryPolicy | None = None,
         inverter_policy: InverterPolicy | None = None,
-        # NEG_FEED_IN_ZERO_EXPORT parameters
+        # mode and policy parameters
+        fixed_limit_pct: float | None = None,
         disable_export_price_threshold: float | None = None,
         enable_export_price_threshold: float | None = None,
-        # CHEAP_CHARGE parameters
         start_charge_price_threshold: float | None = None,
         stop_charge_price_threshold: float | None = None,
 ) -> None:
@@ -1047,14 +1048,29 @@ async def set_control(
         inverter_mode: Requested inverter operating mode.
         battery_policy: Policy controlling automatic battery mode selection.
         inverter_policy: Policy controlling automatic inverter mode selection.
+        fixed_limit_pct: Fixed inverter output limit as a percentage of rated power, from 0 to 100.
         disable_export_price_threshold: Feed-in price below which export is disabled.
         enable_export_price_threshold: Feed-in price above which export is enabled.
         start_charge_price_threshold: Buy price below which forced charging starts.
         stop_charge_price_threshold: Buy price above which forced charging stops.
 
     Raises:
-        ControlLoopError: If either pair of price thresholds is not strictly ordered.
+        ControlLoopError: If the fixed limit is invalid or price thresholds are non-finite or not strictly ordered.
     """
+    if fixed_limit_pct is not None and (
+            not math.isfinite(fixed_limit_pct) or not 0 <= fixed_limit_pct <= 100
+    ):
+        raise ControlLoopError('fixed inverter limit must be a finite percentage from 0 to 100')
+
+    for name, threshold in (
+            ('disable_export_price_threshold', disable_export_price_threshold),
+            ('enable_export_price_threshold', enable_export_price_threshold),
+            ('start_charge_price_threshold', start_charge_price_threshold),
+            ('stop_charge_price_threshold', stop_charge_price_threshold),
+    ):
+        if threshold is not None and not math.isfinite(threshold):
+            raise ControlLoopError(f'{name} must be finite')
+
     async with _connections_state():
         async with _control_settings_state() as state:
             control_mode = state.control_mode
@@ -1081,6 +1097,8 @@ async def set_control(
                 control_mode.battery_policy = battery_policy
             if inverter_policy is not None:
                 control_mode.inverter_policy = inverter_policy
+            if fixed_limit_pct is not None:
+                control_mode.fixed_limit_pct = fixed_limit_pct
 
             control_mode.disable_export_price_threshold = disable_export_price_threshold
             control_mode.enable_export_price_threshold = enable_export_price_threshold
@@ -1302,29 +1320,6 @@ async def disconnect_forecaster() -> None:
         await _reconfigure_registers(_CONTROL_STATE)
 
 
-async def _close_database_pool(pool: SolalaDatabaseConnections) -> None:
-    """
-    Complete pool shutdown even if the calling task is cancelled.
-
-    Cancellation is propagated after the pool has finished closing, so the
-    database lifecycle lock remains held throughout the transition.
-    """
-    closing = asyncio.create_task(pool.close())
-    cancelled = False
-    # Keep awaiting the shielded close after cancellation. This deliberately
-    # delays cancellation propagation until shutdown has completed, so the
-    # lifecycle lock cannot be released while the old pool is still closing.
-    while not closing.done():
-        try:
-            await asyncio.shield(closing)
-        except asyncio.CancelledError:
-            cancelled = True
-    # Propagate any failure from the close operation rather than hiding it.
-    await closing
-    if cancelled:
-        raise asyncio.CancelledError
-
-
 async def connect_database(database_connection: DatabaseConnection) -> None:
     """
     Replace the database pool without holding the connections lock while draining.
@@ -1379,6 +1374,29 @@ async def disconnect_database() -> None:
 # =============================================================================
 #  Support functions
 # =============================================================================
+
+
+async def _close_database_pool(pool: SolalaDatabaseConnections) -> None:
+    """
+    Complete pool shutdown even if the calling task is cancelled.
+
+    Cancellation is propagated after the pool has finished closing, so the
+    database lifecycle lock remains held throughout the transition.
+    """
+    closing = asyncio.create_task(pool.close())
+    cancelled = False
+    # Keep awaiting the shielded close after cancellation. This deliberately
+    # delays cancellation propagation until shutdown has completed, so the
+    # lifecycle lock cannot be released while the old pool is still closing.
+    while not closing.done():
+        try:
+            await asyncio.shield(closing)
+        except asyncio.CancelledError:
+            cancelled = True
+    # Propagate any failure from the close operation rather than hiding it.
+    await closing
+    if cancelled:
+        raise asyncio.CancelledError
 
 
 async def _database_loop() -> None:
@@ -1631,8 +1649,9 @@ async def _control_step(state: _ControlState) -> None:
         # Preserve the last effective battery mode rather than falling back
         # to the originally requested mode after a failed price lookup.
         requested_mode.battery_mode = prev_state.control_mode.battery_mode
-        if state.health.report_failure('battery_policy', Severity.CAUTION,
-                                       'Battery price policy could not be evaluated'):
+        if state.health.report_failure(
+                'battery_policy', Severity.CAUTION, 'Battery price policy could not be evaluated'
+        ):
             log_exception('Battery price policy failed')
     else:
         if state.health.report_success('battery_policy'):
@@ -1651,7 +1670,8 @@ async def _control_step(state: _ControlState) -> None:
     except Exception:
         # Preserve the last effective mode so that an active inverter safety
         # command still receives its keep-alive when price retrieval fails.
-        requested_mode.inverter_mode = prev_state.control_mode.inverter_mode
+        if requested_mode.inverter_mode != InverterMode.FIXED_LIMIT:
+            requested_mode.inverter_mode = prev_state.control_mode.inverter_mode
         if state.health.report_failure('inverter_policy', Severity.CAUTION,
                                        'Inverter price policy could not be evaluated'):
             log_exception('Inverter price policy failed')
@@ -1662,7 +1682,8 @@ async def _control_step(state: _ControlState) -> None:
                                  and original_mode.inverter_mode == InverterMode.UNKNOWN)
     if not inverter_retry_suppressed:
         await _execute_inverter_mode(state, prev_state, controller, requested_mode)
-    if prev_state.failed_inverter_mode is not None and requested_mode.inverter_mode == prev_state.failed_inverter_mode:
+    inverter_one_shot_failed = requested_mode.inverter_mode == prev_state.failed_inverter_mode
+    if inverter_one_shot_failed:
         requested_mode.inverter_mode = InverterMode.UNKNOWN
 
     async with _control_settings_state() as control_state:
@@ -1671,7 +1692,7 @@ async def _control_step(state: _ControlState) -> None:
                 and control_state.control_mode.battery_mode == original_mode.battery_mode
                 and control_state.control_mode.battery_policy == original_mode.battery_policy):
             control_state.control_mode.battery_mode = BatteryMode.UNKNOWN
-        if (prev_state.failed_inverter_mode is not None
+        if (inverter_one_shot_failed
                 and control_state.control_mode.inverter_mode == original_mode.inverter_mode
                 and control_state.control_mode.inverter_policy == original_mode.inverter_policy):
             control_state.control_mode.inverter_mode = InverterMode.UNKNOWN
@@ -1712,7 +1733,15 @@ async def _apply_inverter_policy(control_mode: ControlMode, pricer_available: bo
         return
 
     price = await get_price_now()
-    if price.feed_in_price < control_mode.disable_export_price_threshold:
+    if control_mode.inverter_mode == InverterMode.FIXED_LIMIT:
+        if price.is_estimate or not math.isfinite(price.feed_in_price):
+            raise ControlLoopError('A valid feed-in price is required to leave Fixed Limit')
+        # Fixed Limit has no automatic mode to carry through the hysteresis band.
+        if price.feed_in_price <= control_mode.enable_export_price_threshold:
+            control_mode.inverter_mode = InverterMode.ZERO_EXPORT
+        else:
+            control_mode.inverter_mode = InverterMode.ENABLE
+    elif price.feed_in_price < control_mode.disable_export_price_threshold:
         control_mode.inverter_mode = InverterMode.ZERO_EXPORT
     elif price.feed_in_price > control_mode.enable_export_price_threshold:
         control_mode.inverter_mode = InverterMode.ENABLE
@@ -1790,21 +1819,33 @@ async def _execute_inverter_mode(
         match requested_mode.inverter_mode:
             case InverterMode.DISABLE:
                 await power_controller.disable_inverter(change_duration=Constants.CONTROL_DURATION)
+            case InverterMode.FIXED_LIMIT:
+                await power_controller.fixed_limit(
+                    requested_mode.fixed_limit_pct,
+                    change_duration=Constants.CONTROL_DURATION,
+                )
             case InverterMode.ZERO_EXPORT:
                 await power_controller.zero_export(change_duration=Constants.CONTROL_DURATION)
+            case _:
+                return
     except Exception:
         prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
+        message = 'Inverter command outcome is uncertain'
+        command = requested_mode.inverter_mode.name
+        if requested_mode.inverter_mode == InverterMode.FIXED_LIMIT:
+            command = f'{command} ({requested_mode.fixed_limit_pct:g}%)'
+            message = f'{message}: {command}'
         if state.health.report_failure('inverter_command', Severity.WARNING,
-                                       'Inverter command outcome is uncertain'):
-            log_exception(f'Inverter command failed: {requested_mode.inverter_mode}')
+                                       message):
+            log_exception(f'Inverter command failed: {command}')
     else:
-        if requested_mode.inverter_mode in (InverterMode.DISABLE, InverterMode.ZERO_EXPORT):
-            prev_state.inverter_commanded_mode = requested_mode.inverter_mode
-            # A successful keep-alive resolves any earlier inverter command
-            # uncertainty, including a failed one-shot ENABLE request.
-            prev_state.failed_inverter_mode = None
-            if state.health.report_success('inverter_command'):
-                log_info('Inverter command completed after previous failure')
+        prev_state.inverter_commanded_mode = requested_mode.inverter_mode
+        if state.health.report_success('inverter_command'):
+            log_info('Inverter command completed after previous failure')
+
+    # A keep-alive request supersedes any earlier one-shot request, even if
+    # this attempt fails. The command warning still tracks its outcome.
+    prev_state.failed_inverter_mode = None
 
 
 def _connect_dummy_controller(controller_connection: DummyControllerConnection) -> PowerController:
@@ -2119,6 +2160,8 @@ async def _reconfigure_registers(state: _ControlState) -> None:
 
         'status/inverter/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_mode.name),
         'status/inverter/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_policy.name),
+        'status/inverter/fixed_limit_pct': CallRegister(
+            lambda: _CONTROL_STATE.control.control_mode.fixed_limit_pct),
         'status/inverter/enable_export_price_threshold': CallRegister(
             lambda: _CONTROL_STATE.control.control_mode.enable_export_price_threshold),
         'status/inverter/disable_export_price_threshold': CallRegister(
@@ -2235,6 +2278,7 @@ def _get_settings(state: _ControlState) -> Settings:
         start_charge_price_threshold=control_mode.start_charge_price_threshold,
         stop_charge_price_threshold=control_mode.stop_charge_price_threshold,
 
+        fixed_limit_pct=control_mode.fixed_limit_pct,
         registers_to_log=state.registers_to_log_str,
     )
 

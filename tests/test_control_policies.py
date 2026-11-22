@@ -1,7 +1,7 @@
 import importlib
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 from solala.constants import Constants
 from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
@@ -37,7 +37,7 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         self.price_patch.start()
         self.addCleanup(self.price_patch.stop)
 
-    async def step(self, buy: float, feed_in: float) -> None:
+    async def step(self, buy: float, feed_in: float, *, is_estimate: bool = False) -> None:
         start = datetime(2026, 1, 1, tzinfo=UTC)
         self.price_mock.return_value = Price(
             start_time=start,
@@ -45,7 +45,7 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
             renewables=50,
             buy_price=buy,
             feed_in_price=feed_in,
-            is_estimate=False,
+            is_estimate=is_estimate,
         )
         async with control_loop._connections_state():
             await control_loop._control_step(self.state)
@@ -98,6 +98,48 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.controller.zero_export.await_count, 4)
         self.assertEqual(self.controller.enable_inverter.await_count, 1)
         self.controller.zero_export.assert_any_await(change_duration=Constants.CONTROL_DURATION)
+
+    async def test_automatic_policy_initializes_from_fixed_limit(self) -> None:
+        for feed_in, expected in (
+                (0, InverterMode.ZERO_EXPORT),
+                (5, InverterMode.ZERO_EXPORT),
+                (6, InverterMode.ENABLE),
+        ):
+            with self.subTest(feed_in=feed_in):
+                await control_loop.set_control(
+                    inverter_mode=InverterMode.FIXED_LIMIT, inverter_policy=InverterPolicy.MANUAL,
+                )
+                await self.step(100, feed_in)
+                await control_loop.set_control(inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT)
+                self.controller.fixed_limit.reset_mock()
+                await self.step(100, feed_in)
+                self.assertEqual((await control_loop.get_prev_control_mode()).inverter_mode, expected)
+                await self.step(100, 0)
+                self.assertEqual((await control_loop.get_prev_control_mode()).inverter_mode, expected)
+                self.controller.fixed_limit.assert_not_awaited()
+
+    async def test_automatic_policy_preserves_fixed_limit_until_valid_price(self) -> None:
+        await control_loop.set_control(inverter_mode=InverterMode.FIXED_LIMIT, fixed_limit_pct=35)
+        await self.step(100, 0)
+        await control_loop.set_control(inverter_policy=InverterPolicy.NEG_FEED_IN_ZERO_EXPORT)
+        self.controller.fixed_limit.reset_mock()
+
+        with patch.object(control_loop.LOGGER, 'exception'):
+            self.price_mock.side_effect = RuntimeError('price lookup failed')
+            await self.step(100, 0)
+            self.price_mock.side_effect = None
+            await self.step(100, 100, is_estimate=True)
+            await self.step(100, float('nan'))
+
+        self.assertEqual((await control_loop.get_prev_control_mode()).inverter_mode, InverterMode.FIXED_LIMIT)
+        self.assertEqual(self.state.health.severity, control_loop.Severity.CAUTION)
+        self.assertEqual(self.controller.fixed_limit.await_args_list, [
+            call(35, change_duration=Constants.CONTROL_DURATION),
+        ] * 3)
+        await self.step(100, 0)
+        self.assertEqual((await control_loop.get_prev_control_mode()).inverter_mode, InverterMode.ZERO_EXPORT)
+        self.assertEqual(self.state.health.severity, control_loop.Severity.NORMAL)
+        self.controller.zero_export.assert_awaited_once_with(change_duration=Constants.CONTROL_DURATION)
 
     async def test_manual_modes_ignore_prices(self) -> None:
         self.state.control.control_mode.battery_mode = BatteryMode.DISABLE
@@ -200,6 +242,67 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
         log_exception.assert_called_once()
         self.assertEqual(self.state.health.severity, control_loop.Severity.NORMAL)
         self.assertEqual(self.state.control.prev_state.inverter_commanded_mode, InverterMode.ZERO_EXPORT)
+
+    async def test_fixed_limit_retries_on_failure_and_stops_after_enable(self) -> None:
+        await control_loop.set_control(inverter_mode=InverterMode.FIXED_LIMIT, fixed_limit_pct=37.125)
+        self.controller.fixed_limit.side_effect = [RuntimeError('command failed'), None, None]
+
+        with patch.object(control_loop.LOGGER, 'exception') as log_exception:
+            await self.step(100, 100)
+            effective = await control_loop.get_prev_control_mode()
+            self.assertEqual(effective.inverter_mode, InverterMode.FIXED_LIMIT)
+            self.assertEqual(effective.fixed_limit_pct, 37.125)
+            self.assertEqual(self.state.control.prev_state.inverter_commanded_mode, InverterMode.UNKNOWN)
+            self.assertEqual(self.state.health.severity, control_loop.Severity.WARNING)
+            self.assertIn('37.125%', log_exception.call_args.args[0])
+            await self.step(100, 100)
+
+        self.assertEqual(self.state.health.severity, control_loop.Severity.NORMAL)
+        self.assertEqual(self.state.control.prev_state.inverter_commanded_mode, InverterMode.FIXED_LIMIT)
+        await control_loop.set_control(fixed_limit_pct=20.5)
+        await self.step(100, 100)
+        await control_loop.set_control(inverter_mode=InverterMode.ENABLE)
+        await self.step(100, 100)
+        self.controller.enable_inverter.assert_awaited_once()
+        duration = Constants.CONTROL_DURATION
+        self.assertEqual(self.controller.fixed_limit.await_args_list, [
+            call(37.125, change_duration=duration),
+            call(37.125, change_duration=duration),
+            call(20.5, change_duration=duration),
+        ])
+
+    async def test_failed_keep_alive_supersedes_failed_manual_enable(self) -> None:
+        await control_loop.set_control(inverter_mode=InverterMode.DISABLE)
+        await self.step(100, 100)
+        duration = Constants.CONTROL_DURATION
+        self.controller.enable_inverter.side_effect = RuntimeError('enable failed')
+
+        for mode, command, args in (
+                (InverterMode.DISABLE, self.controller.disable_inverter, ()),
+                (InverterMode.ZERO_EXPORT, self.controller.zero_export, ()),
+                (InverterMode.FIXED_LIMIT, self.controller.fixed_limit, (37.125,)),
+        ):
+            with self.subTest(mode=mode):
+                await control_loop.set_control(inverter_mode=InverterMode.ENABLE)
+                await self.step(100, 100)
+                current = await control_loop.get_control_mode()
+                self.assertEqual(current.inverter_mode, InverterMode.UNKNOWN)
+                self.assertEqual(current.inverter_policy, InverterPolicy.MANUAL)
+
+                command.reset_mock()
+                command.side_effect = [RuntimeError('keep-alive failed'), None]
+                await control_loop.set_control(inverter_mode=mode, fixed_limit_pct=37.125)
+                await self.step(100, 100)
+                current = await control_loop.get_control_mode()
+                self.assertEqual(current.inverter_mode, mode)
+                self.assertEqual(current.fixed_limit_pct, 37.125)
+                self.assertEqual(self.state.control.prev_state.inverter_commanded_mode, InverterMode.UNKNOWN)
+                self.assertEqual(self.state.health.severity, control_loop.Severity.WARNING)
+
+                await self.step(100, 100)
+                self.assertEqual(command.await_args_list, [call(*args, change_duration=duration)] * 2)
+                self.assertEqual(self.state.control.prev_state.inverter_commanded_mode, mode)
+                self.assertEqual(self.state.health.severity, control_loop.Severity.NORMAL)
 
     async def test_failed_disable_inverter_is_logged_and_retried(self) -> None:
         self.state.control.control_mode.inverter_mode = InverterMode.DISABLE

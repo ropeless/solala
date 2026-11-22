@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from solala.utils.json_extras import JSONDict, to_json
 
+DEFAULT_FIXED_LIMIT_PCT: float = 10.0  # cap inverter output at 10% of rated power
 DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD: float = -0.1  # disable export below this price
 DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD: float = 0.0  # re-enable export above this price
 DEFAULT_START_CHARGE_PRICE_THRESHOLD: float = 10  # start force charging below this price

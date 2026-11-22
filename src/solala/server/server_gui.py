@@ -120,16 +120,19 @@ async def _ui_control_buttons(session: PageSession) -> None:
         with ui.element('div').classes('control-buttons'):
             inverter_enable = ui.button('ENABLE').classes('solala-button')
             inverter_disable = ui.button('DISABLE').classes('solala-button')
+            inverter_fixed_limit = ui.button('FIXED LIMIT').classes('solala-button')
             inverter_zero_export = ui.button('ZERO EXPORT').classes('solala-button')
             inverter_neg_feed_in_zero_export = ui.button('NEG FEED-IN ⇒ ZERO EXPORT').classes(
                 'solala-button')
 
             inverter_zero_export.classes('wide')
+            inverter_fixed_limit.classes('wide')
             inverter_neg_feed_in_zero_export.classes('wide')
 
         updater = InverterButtonUpdater(
             inverter_enable=inverter_enable,
             inverter_disable=inverter_disable,
+            inverter_fixed_limit=inverter_fixed_limit,
             inverter_zero_export=inverter_zero_export,
             inverter_neg_feed_in_zero_export=inverter_neg_feed_in_zero_export,
         )

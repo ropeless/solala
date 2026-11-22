@@ -4,7 +4,7 @@ from enum import Enum, auto
 from typing import Self
 
 from solala.constants import DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD, DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD, \
-    DEFAULT_START_CHARGE_PRICE_THRESHOLD, DEFAULT_STOP_CHARGE_PRICE_THRESHOLD
+    DEFAULT_START_CHARGE_PRICE_THRESHOLD, DEFAULT_STOP_CHARGE_PRICE_THRESHOLD, DEFAULT_FIXED_LIMIT_PCT
 from solala.utils.json_extras import JSONDict
 
 
@@ -28,6 +28,7 @@ class InverterMode(Enum):
     UNKNOWN = auto()  # The inverter has not been configured by the control loop yet
     ENABLE = auto()  # The inverter is configured for normal operation for grid import and export
     DISABLE = auto()  # The inverter is configured to not produce power
+    FIXED_LIMIT = auto()  # Cap inverter output at a fixed percentage of rated power
     ZERO_EXPORT = auto()  # The inverter is controlled to minimise export to the grid
 
 
@@ -57,6 +58,7 @@ class ControlMode:
         inverter_mode: Requested inverter operating mode.
         battery_policy: Policy governing automatic battery mode selection.
         inverter_policy: Policy governing automatic inverter mode selection.
+        fixed_limit_pct: Fixed inverter output limit as a percentage of rated power.
         disable_export_price_threshold: Feed-in price below which export is disabled.
         enable_export_price_threshold: Feed-in price above which export is re-enabled.
         start_charge_price_threshold: Buy price below which forced charging starts.
@@ -67,7 +69,8 @@ class ControlMode:
     battery_policy: BatteryPolicy = BatteryPolicy.MANUAL
     inverter_policy: InverterPolicy = InverterPolicy.MANUAL
 
-    # Control mode policy parameters
+    # Mode and policy parameters
+    fixed_limit_pct: float = DEFAULT_FIXED_LIMIT_PCT
     disable_export_price_threshold: float = DEFAULT_DISABLE_FEED_IN_PRICE_THRESHOLD
     enable_export_price_threshold: float = DEFAULT_ENABLE_FEED_IN_PRICE_THRESHOLD
     start_charge_price_threshold: float = DEFAULT_START_CHARGE_PRICE_THRESHOLD
@@ -79,23 +82,28 @@ class ControlMode:
 
         Returns:
             A dictionary containing separate battery and inverter settings,
-            with modes and policies represented by their enum names.
+            with modes and policies represented by their enum names and mode
+            and policy parameters grouped under 'parameters'.
         """
         battery: JSONDict = {
             'mode': self.battery_mode.name,
             'policy': self.battery_policy.name,
-            'start_charge_price_threshold': self.start_charge_price_threshold,
-            'stop_charge_price_threshold': self.stop_charge_price_threshold,
         }
         inverter: JSONDict = {
             'mode': self.inverter_mode.name,
             'policy': self.inverter_policy.name,
+        }
+        parameters: JSONDict = {
+            'fixed_limit_pct': self.fixed_limit_pct,
+            'start_charge_price_threshold': self.start_charge_price_threshold,
+            'stop_charge_price_threshold': self.stop_charge_price_threshold,
             'disable_export_price_threshold': self.disable_export_price_threshold,
             'enable_export_price_threshold': self.enable_export_price_threshold,
         }
         return {
             'battery': battery,
             'inverter': inverter,
+            'parameters': parameters,
         }
 
     def copy(self) -> Self:

@@ -26,6 +26,7 @@ STATUS_UNITS: Mapping[str, str] = dict_merge(
         'renewables': Units.PERCENT,
         'state_of_charge': Units.PERCENT,
         'power_limit': Units.PERCENT,
+        'fixed_limit_pct': Units.PERCENT,
         'grid_power': Units.WATTS,
         'solar_power': Units.WATTS,
         'battery_power': Units.WATTS,

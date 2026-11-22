@@ -2,31 +2,30 @@ import logging
 import math
 import unittest
 
-from collections.abc import Awaitable, Callable
-from unittest.mock import AsyncMock, patch
+from collections.abc import Callable
+from unittest.mock import AsyncMock, Mock, call, patch
 
+from solala.delegates.power_controller.modbus_power_controller.modbus import ModbusRegister
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
+from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import (
+    RegisterContext, scaled_uint16, uint16,
+)
 
 from solala.register import AsyncCallRegister, Register, RegisterValue
 from solala.register_bank import RegisterBank
 from solala.logger import LOGGER
 
 
-class _WritableRegister(Register):
+class _WritableRegister(ModbusRegister):
     def __init__(
             self,
-            read: Callable[[], Awaitable[RegisterValue]],
-            write: Callable[[RegisterValue], Awaitable[None]],
+            read: Callable[[], RegisterValue],
+            write: Callable[[RegisterValue], None],
     ) -> None:
-        super().__init__(float, writable=True)
-        self._read = read
-        self._write = write
-
-    async def _get(self) -> RegisterValue:
-        return await self._read()
-
-    async def _set(self, value: RegisterValue) -> None:
-        await self._write(value)
+        access = uint16(addr=10, writable=True)
+        access.get = Mock(side_effect=lambda context: read())
+        access.set = Mock(side_effect=lambda context, value: write(value))
+        super().__init__(access, Mock(spec=RegisterContext))
 
 
 class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
@@ -56,11 +55,11 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_set_rejects_nonfinite_requests_before_read_or_write(self) -> None:
         calls: list[str] = []
 
-        async def read() -> float:
+        def read() -> float:
             calls.append('read')
-            return 5.0
+            return 5
 
-        async def write(value: float) -> None:
+        def write(value: RegisterValue) -> None:
             calls.append('write')
 
         controller = self.make_controller({'r': _WritableRegister(read, write)})
@@ -71,69 +70,69 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, [])
 
     async def test_set_skips_unchanged_value_unless_forced(self) -> None:
-        calls: list[float] = []
+        calls: list[RegisterValue] = []
 
-        async def read() -> float:
-            return 12.0
+        def read() -> float:
+            return 12
 
-        async def write(value: float) -> None:
+        def write(value: RegisterValue) -> None:
             calls.append(value)
 
         controller = self.make_controller({'r': _WritableRegister(read, write)})
-        await controller._set('r', 12.0)
+        await controller._set('r', 12)
         self.assertEqual(calls, [])
-        await controller._set('r', 12.0, force=True)
-        self.assertEqual(calls, [12.0])
+        await controller._set('r', 12, force=True)
+        self.assertEqual(calls, [12])
 
     async def test_set_propagates_write_failure(self) -> None:
         failure = OSError('write failed')
 
-        async def read() -> float:
-            return 1.0
+        def read() -> float:
+            return 1
 
-        async def write(value: float) -> None:
+        def write(value: RegisterValue) -> None:
             raise failure
 
         controller = self.make_controller({'r': _WritableRegister(read, write)})
         with self.assertRaises(OSError) as caught:
-            await controller._set('r', 2.0)
+            await controller._set('r', 2)
         self.assertIs(caught.exception, failure)
 
     async def test_set_rejects_bad_readback(self) -> None:
-        for returned in (3.0, math.nan, math.inf, -math.inf):
+        for returned in (3, math.nan, math.inf, -math.inf):
             with self.subTest(returned=returned):
                 reads = 0
 
-                async def read() -> float:
+                def read() -> float:
                     nonlocal reads
                     reads += 1
-                    return 1.0 if reads == 1 else returned
+                    return 1 if reads == 1 else returned
 
-                async def write(value: float) -> None:
+                def write(value: RegisterValue) -> None:
                     pass
 
                 controller = self.make_controller({'r': _WritableRegister(read, write)})
                 with self.assertRaises(ValueError):
-                    await controller._set('r', 2.0)
+                    await controller._set('r', 2)
                 self.assertEqual(reads, 2)
 
     async def test_set_propagates_readback_exception(self) -> None:
         failure = OSError('readback failed')
         reads = 0
 
-        async def read() -> float:
+        def read() -> float:
             nonlocal reads
             reads += 1
             if reads == 2:
                 raise failure
-            return 1.0
+            return 1
 
-        async def write(value: float) -> None:
+        def write(value: RegisterValue) -> None:
             pass
 
         controller = self.make_controller({'r': _WritableRegister(read, write)})
         with self.assertRaises(OSError) as caught:
-            await controller._set('r', 2.0)
+            await controller._set('r', 2)
         self.assertIs(caught.exception, failure)
 
     async def test_status_read_failure_returns_nan(self) -> None:
@@ -336,6 +335,47 @@ class ModbusPowerControllerTestCase(unittest.IsolatedAsyncioTestCase):
             ('master/revert', 11, False), ('slave/revert', 11, False),
             ('master/enabled', 0, False), ('slave/enabled', 0, False),
         ])
+
+    async def test_fixed_limit_verifies_device_rounded_percentage(self) -> None:
+        client = Mock()
+        registers = {10: 1000, 11: 0xFFFE}
+
+        def read(address: int, *, count: int, device_id: int) -> Mock:
+            return Mock(isError=Mock(return_value=False), registers=[
+                registers[index] for index in range(address, address + count)
+            ])
+
+        def write(address: int, *, values: list[int], device_id: int) -> Mock:
+            registers[address] = values[0]
+            return Mock(isError=Mock(return_value=False))
+
+        client.read_holding_registers.side_effect = read
+        client.write_registers.side_effect = write
+        context = RegisterContext(client=client, device_id=1, modbus_model=123, address_offset=0)
+        register = ModbusRegister(scaled_uint16(10, 11, writable=True), context)
+        controller = self.make_controller({'pct': register})
+        controller._WMaxLimPct = ['pct']
+        controller._WMaxLimPct_RvrtTms = ['revert']
+        controller._WMaxLim_Ena = ['enabled']
+        set_register = controller._set
+
+        async def set_percentage_only(name: str, value: int | float, *, force: bool = False) -> None:
+            if name == 'pct':
+                await set_register(name, value, force=force)
+
+        controller._set = AsyncMock(side_effect=set_percentage_only)
+
+        for _ in range(2):
+            await controller.fixed_limit(37.126, change_duration=11)
+
+        client.write_registers.assert_called_once_with(10, values=[3713], device_id=1)
+        self.assertEqual(client.read_holding_registers.call_args_list, [
+            call(10, count=2, device_id=1),  # Initial value and scale
+            call(10, count=2, device_id=1),  # Verification after the write
+            call(10, count=2, device_id=1),  # Unchanged on the next keep-alive
+        ])
+        self.assertEqual(controller._set.await_count, 6)
+        controller._set.assert_awaited_with('enabled', 1, force=True)
 
     async def test_set_power_pct_stops_after_partial_failure(self) -> None:
         controller = self.make_controller({})

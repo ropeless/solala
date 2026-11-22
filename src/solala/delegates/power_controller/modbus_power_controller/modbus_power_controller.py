@@ -4,8 +4,7 @@ from collections.abc import Iterable
 from contextlib import contextmanager
 from typing import Iterator
 
-from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
-from solala.delegates.power_controller.modbus_power_controller.modbus_register_access import ModbusError
+from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice, ModbusRegister
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
 from solala.logger import LOGGER
 from solala.register import Register, AsyncCallRegister
@@ -310,28 +309,6 @@ class ModbusPowerController(PowerController):
     #  Grid Export Control
     # =================================================
 
-    async def _get_inverter_limit_array(self) -> list[float]:
-        """
-        Get the effective output power limit for each inverter.
-
-        The limit is the lower of the inverter's maximum power rating and
-        its rated power.
-
-        Successful register reads are not logged; failed reads produce warnings
-        and return NaN.
-
-        Returns:
-            The output power limits in watts, in inverter order,
-            coindexed with `self._inverters`.
-        """
-        return [
-            min(
-                await self._get_for_status(f'{inverter}/WMax'),
-                await self._get_for_status(f'{inverter}/WRtg'),
-            )
-            for inverter in self._inverters
-        ]
-
     async def enable_inverter(self) -> None:
         with self._log_it('enable_inverter'):
             await self._set_power_pct(100, self._default_WMaxLimPct_RvrtTms)
@@ -340,14 +317,19 @@ class ModbusPowerController(PowerController):
         with self._log_it('disable_inverter'):
             await self._set_power_pct(0, change_duration)
 
-    async def _is_force_discharge_enabled(self) -> bool:
+    async def fixed_limit(self, pct: float, *, change_duration: int) -> None:
         """
-        Infer if forced discharge is enabled based on the inverter's current settings.
+        Apply an output cap as a percentage of rated power.
+
+        Below 100%, each inverter rounds to the nearest value representable by
+        its SunSpec WMaxLimPct scale factor. Readback is verified against that
+        value. Values outside the register's integer range will fail.
         """
-        mode = await self._get(self._StorCtl_Mod)
-        assert isinstance(mode, int)
-        charge_rate: float = await self._get(self._InWRte)
-        return bool(mode & 1) and charge_rate < 0
+        if not 0 <= pct <= 100:
+            raise ValueError('Fixed inverter limit must be a finite percentage from 0 to 100')
+
+        with self._log_it(f'fixed_limit {pct}%'):
+            await self._set_power_pct(pct, change_duration)
 
     async def zero_export(self, *, change_duration: int) -> None:
         """
@@ -434,6 +416,37 @@ class ModbusPowerController(PowerController):
     #  Support
     # =================================================
 
+    async def _get_inverter_limit_array(self) -> list[float]:
+        """
+        Get the effective output power limit for each inverter.
+
+        The limit is the lower of the inverter's maximum power rating and
+        its rated power.
+
+        Successful register reads are not logged; failed reads produce warnings
+        and return NaN.
+
+        Returns:
+            The output power limits in watts, in inverter order,
+            coindexed with `self._inverters`.
+        """
+        return [
+            min(
+                await self._get_for_status(f'{inverter}/WMax'),
+                await self._get_for_status(f'{inverter}/WRtg'),
+            )
+            for inverter in self._inverters
+        ]
+
+    async def _is_force_discharge_enabled(self) -> bool:
+        """
+        Infer if forced discharge is enabled based on the inverter's current settings.
+        """
+        mode = await self._get(self._StorCtl_Mod)
+        assert isinstance(mode, int)
+        charge_rate: float = await self._get(self._InWRte)
+        return bool(mode & 1) and charge_rate < 0
+
     async def _get_power_limit(self) -> float:
         """
         Calculate the effective inverter output limit for reporting.
@@ -485,7 +498,11 @@ class ModbusPowerController(PowerController):
         finally:
             LOGGER.info(f'{_STOP} {name}')
 
-    async def _set_power_pct(self, pct: float, change_duration: int) -> None:
+    async def _set_power_pct(
+            self,
+            pct: float,
+            change_duration: int,
+    ) -> None:
         """
         Set the inverter output limit and its automatic reversion duration.
 
@@ -523,32 +540,16 @@ class ModbusPowerController(PowerController):
         if not math.isfinite(value):
             raise ValueError(f'SET {name}: non-finite requested value {value!r}')
 
-        old = await self._modbus[name].get()
-        if not force and old == value:
-            # No change needed
-            LOGGER.info(f'SET {name}: {old!r} -> {value!r} UNCHANGED')
-        else:
-            # Make the change
-            try:
-                await self._modbus[name].set(value)
-            except ModbusError as err:
-                LOGGER.error(f'SET {name}: {old!r} -> {value!r} ERROR: {err}')
-                LOGGER.error(f'Modbus message: {err.modbus_message!r}')
-                raise
+        register = self._modbus[name]
+        assert isinstance(register, ModbusRegister)
 
-            new = await self._modbus[name].get()
-            if (
-                    not isinstance(new, (int, float))
-                    or not math.isfinite(new)
-                    or abs(new - value) > 10e-6
-            ):
-                message = f'SET {name}: {old!r} -> {value!r} checked {new!r} FAILED'
-                LOGGER.error(message)
-                raise ValueError(message)
-            if force:
-                LOGGER.info(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK FORCED')
+        message: str
+        error: bool
+        for message, error in register.set_verified(value, force):
+            if error:
+                LOGGER.error(f'SET {name}: {message}')
             else:
-                LOGGER.info(f'SET {name}: {old!r} -> {value!r} checked {new!r} OK')
+                LOGGER.info(f'SET {name}: {message}')
 
     async def _get(self, name: str) -> int | float:
         """

@@ -28,6 +28,7 @@ class InverterMode(Enum):
 
     ENABLE = auto()
     DISABLE = auto()
+    FIXED_LIMIT = auto()
     ZERO_EXPORT = auto()
 
 
@@ -48,6 +49,7 @@ class FailureLocation(BaseFailureLocation):
     force_discharge = auto()
     enable_inverter = auto()
     disable_inverter = auto()
+    fixed_limit = auto()
     zero_export = auto()
 
     def is_async(self) -> bool:
@@ -101,9 +103,9 @@ class DummyPowerController(PowerController):
         self.battery_mode: BatteryMode = BatteryMode.ENABLE
         self.inverter_mode: InverterMode = InverterMode.ENABLE
 
-        self.inverter_limit = inverter_limit
-        self.max_charge_param = max_charge_param
-        self.max_discharge_param = max_discharge_param
+        self.inverter_limit: float = inverter_limit
+        self.max_charge_param: float = max_charge_param
+        self.max_discharge_param: float = max_discharge_param
 
         self.last_accumulation: float = now().timestamp()
         self.accumulated_solar_energy: float = 0
@@ -210,6 +212,15 @@ class DummyPowerController(PowerController):
         self.inverter_mode = InverterMode.ZERO_EXPORT
         self.update_status()
 
+    async def fixed_limit(self, pct: float, *, change_duration: int) -> None:
+        """
+        Apply the requested percentage directly in the simulation.
+        """
+        await async_maybe_inject_failure(FailureLocation.fixed_limit, self.failure)
+        self.power_limit = pct
+        self.inverter_mode = InverterMode.FIXED_LIMIT
+        self.update_status()
+
     def update_status(self) -> None:
         """
         Update simulated power flows and accumulated energy.
@@ -245,6 +256,10 @@ class DummyPowerController(PowerController):
             case InverterMode.DISABLE:
                 self.power_limit = 0
                 self.solar_power = 0
+
+            case InverterMode.FIXED_LIMIT:
+                # self.power_limit is set externally
+                self.solar_power = max_generation * (self.power_limit / 100)
 
             case InverterMode.ZERO_EXPORT:
                 # adjusted later

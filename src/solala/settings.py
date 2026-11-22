@@ -358,12 +358,11 @@ class Settings(BaseModel):
     battery_policy: BatteryPolicy | None = None
     inverter_policy: InverterPolicy | None = None
 
-    # NEG_FEED_IN_ZERO_EXPORT parameters
-    disable_export_price_threshold: float | None = None
-    enable_export_price_threshold: float | None = None
-
-    # CHEAP_CHARGE parameters
-    start_charge_price_threshold: float | None = None
-    stop_charge_price_threshold: float | None = None
+    # Mode and policy parameters
+    fixed_limit_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    disable_export_price_threshold: float | None = Field(default=None, allow_inf_nan=False)
+    enable_export_price_threshold: float | None = Field(default=None, allow_inf_nan=False)
+    start_charge_price_threshold: float | None = Field(default=None, allow_inf_nan=False)
+    stop_charge_price_threshold: float | None = Field(default=None, allow_inf_nan=False)
 
     registers_to_log: str | None = None

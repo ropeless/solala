@@ -3,11 +3,12 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from solala.control_loop.modes_and_policies import ControlMode, InverterMode, InverterPolicy
 from solala.server.css_colours import Colours
 from solala.server.day_navigator import DayNavigator
 from solala.server.graphs import PowerChart, EnergyChart
 from solala.server.page_session import PageSession, _SessionListener
-from solala.server.page_updaters import ChartUpdater
+from solala.server.page_updaters import ChartUpdater, InverterButtonUpdater
 from solala.utils.json_extras import JSONValue
 
 
@@ -26,6 +27,34 @@ def _fake_echart(options: dict[str, JSONValue]) -> MagicMock:
     chart.options = options
     chart.classes.return_value = chart
     return chart
+
+
+class InverterButtonTestCase(unittest.IsolatedAsyncioTestCase):
+    """
+    Verify selection and status updates for the fixed-limit mode button.
+    """
+
+    async def test_fixed_limit_button_selects_manual_mode(self) -> None:
+        buttons = [MagicMock() for _ in range(5)]
+        for button in buttons:
+            button.on_click.return_value = button
+        updater = InverterButtonUpdater(*buttons)
+        fixed_limit = buttons[2]
+        click = fixed_limit.on_click.call_args.args[0]
+
+        with patch('solala.server.page_updaters.control_loop.set_control', new_callable=AsyncMock) as set_control:
+            await click()
+
+        set_control.assert_awaited_once_with(
+            inverter_mode=InverterMode.FIXED_LIMIT, inverter_policy=InverterPolicy.MANUAL,
+        )
+        fixed_limit.props.assert_called_with('color=blue dense')
+
+        control = ControlMode(inverter_mode=InverterMode.ENABLE, fixed_limit_pct=37.125)
+        status = control.to_json()
+        self.assertEqual(status['parameters']['fixed_limit_pct'], 37.125)
+        updater._update({'control': status})
+        fixed_limit.props.assert_called_with('color=grey dense')
 
 
 class GraphLegendTestCase(unittest.IsolatedAsyncioTestCase):

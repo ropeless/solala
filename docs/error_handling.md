@@ -99,14 +99,22 @@ through a failure; its next genuinely changed mode request may likewise
 trigger a new command, but an unchanged failed request is not retried merely
 because another loop iteration runs.
 
-Inverter DISABLE and ZERO_EXPORT differ: they require **keep-alive commands**
+Inverter DISABLE, FIXED_LIMIT and ZERO_EXPORT require **keep-alive commands**
 reissued on each control-loop iteration. The reported mode remains the
-requested DISABLE or ZERO_EXPORT even when a keep-alive fails, so the loop
-continues attempting the restriction. The command health issue remains at
+requested mode even when a keep-alive fails, so the loop continues attempting
+the restriction. FIXED_LIMIT also retains the requested percentage and includes
+it in the failure diagnostic. The command health issue remains at
 WARNING while those attempts fail, and its occurrence count increases with
 each failure. A successful keep-alive clears that issue. The displayed mode
 in this case represents the **requested restriction**, not proof that the
 inverter is obeying it; the WARNING communicates the uncertainty.
+
+This also applies when the previous selection is **MANUAL + UNKNOWN** after a
+failed ENABLE command. An explicit manual keep-alive selection supersedes the
+earlier one-shot request. If the first keep-alive attempt fails, Solala retains
+the new mode and its parameters, reports the uncertain outcome, and attempts
+the command again on the next iteration. A later mode selection supersedes
+that request. One-shot failure tracking applies only to the request that failed.
 
 Recovery and logging
 --------------------

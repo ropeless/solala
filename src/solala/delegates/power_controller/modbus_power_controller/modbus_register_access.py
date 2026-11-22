@@ -1,5 +1,5 @@
 from abc import abstractmethod, ABC
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 from pymodbus.client import ModbusTcpClient
@@ -92,6 +92,31 @@ class RegisterAccess(ABC):
 
     @abstractmethod
     def set(self, context: RegisterContext, value: RegisterValue) -> None:
+        ...
+
+    @abstractmethod
+    def set_verified(
+            self,
+            context: RegisterContext,
+            value: RegisterValue,
+            force: bool,
+    ) -> Iterator[tuple[str, bool]]:
+        """
+        Return an iterator for a verified write to the Modbus device.
+
+        Consume the iterator to completion to finish the write and readback
+        verification and to propagate any errors.
+
+        The verification protocol:
+        (1) read the register as old_value
+        (2) if not forced and old_value == value, return
+        (3) write value to the register
+        (4) read the register as new_value
+        (5) verify that new_value == value, within expected precision.
+
+        Yields:
+            (message, error) for logging the protocol
+        """
         ...
 
 
@@ -345,6 +370,14 @@ class RegisterAccessStr(RegisterAccess):
     def set(self, context: RegisterContext, value: RegisterValue) -> None:
         raise ReadOnlyError()
 
+    def set_verified(
+            self,
+            context: RegisterContext,
+            value: RegisterValue,
+            force: bool,
+    ) -> Iterator[tuple[str, bool]]:
+        raise ReadOnlyError()
+
 
 class RegisterAccessInt(RegisterAccess):
     """
@@ -370,14 +403,70 @@ class RegisterAccessInt(RegisterAccess):
         byte_array = _read_byte_array(context, self.addr, count=self.count)
         return int.from_bytes(byte_array, byteorder='big', signed=self.signed)
 
-    def set(self, context: RegisterContext, value: RegisterValue) -> None:
+    def _check_valid_value(self, value: RegisterValue) -> int:
         if not self.writable:
             raise ReadOnlyError()
         if not isinstance(value, int):
             raise TypeError(type(value))
         if value < 0 and not self.signed:
             raise ValueError('Value is negative but register is unsigned')
+        return value
+
+    def set(self, context: RegisterContext, value: RegisterValue) -> None:
+        value: int = self._check_valid_value(value)
         _write_int(context, self.addr, value=value, count=self.count, signed=self.signed)
+
+    def set_verified(
+            self,
+            context: RegisterContext,
+            value: RegisterValue,
+            force: bool,
+    ) -> Iterator[tuple[str, bool]]:
+        """
+        Write a value to the Modbus device using the 'verified' protocol.
+
+        (1) read the register as old_value
+        (2) if not forced and old_value == value, return
+        (3) write value to the register
+        (4) read the register as new_value
+        (5) verify that new_value == value, within expected precision.
+
+        Yields:
+            (message, error) for logging the protocol
+        """
+        value: int = self._check_valid_value(value)
+
+        old = self.get(context)
+        if not force and old == value:
+            # No change needed
+            yield f'{old!r} -> {value!r} UNCHANGED', False
+        else:
+            # Make the change
+            try:
+                self.set(context, value)
+            except ModbusError as err:
+                yield f'{old!r} -> {value!r} ERROR: {err}', True
+                yield f'Modbus message: {err.modbus_message!r}', True
+                raise
+
+            new = self.get(context)
+            if new != value:
+                message = f'{old!r} -> {value!r} checked {new!r} FAILED'
+                yield message, True
+                raise ValueError(f'set_verified: {message}')
+            if force:
+                yield f'{old!r} -> {value!r} checked {new!r} OK FORCED', False
+            else:
+                yield f'{old!r} -> {value!r} checked {new!r} OK', False
+
+
+@dataclass
+class ScaledValue:
+    raw_value: int
+    scale_factor: int
+
+    def as_float(self) -> float:
+        return self.raw_value * (10 ** self.scale_factor)
 
 
 class RegisterAccessScaled(RegisterAccess):
@@ -409,6 +498,9 @@ class RegisterAccessScaled(RegisterAccess):
         self.run_length = self.end - self.start + 1
 
     def get(self, context: RegisterContext) -> float:
+        return self.get_structured(context).as_float()
+
+    def get_structured(self, context: RegisterContext) -> ScaledValue:
         physical_addr = self.start + context.address_offset
         result: ModbusPDU = context.client.read_holding_registers(
             physical_addr,
@@ -431,42 +523,82 @@ class RegisterAccessScaled(RegisterAccess):
         _log(f'read scaled int: physical_addr={self.addr + context.address_offset} value={value}')
         _log(f'read scaled int: physical_addr={self.scale_addr + context.address_offset} scale={scale}')
 
-        return value * (10 ** scale)
+        return ScaledValue(value, scale)
 
-    def set(self, context: RegisterContext, value: RegisterValue) -> None:
+    def _check_valid_value(self, value: RegisterValue) -> int | float:
         if not self.writable:
             raise ReadOnlyError()
         if not isinstance(value, int | float):
             raise TypeError(type(value))
         if value < 0 and not self.signed:
             raise ValueError('Value is negative but register is unsigned')
+        return value
 
+    def set(self, context: RegisterContext, value: RegisterValue) -> None:
+        value: int | float = self._check_valid_value(value)
         _log(f'write scale int: value={value}')
 
         # We keep the same scaling factor
-        byte_array = _read_byte_array(context, self.scale_addr, count=1)
-        scale: int = int.from_bytes(byte_array, byteorder='big', signed=True)
+        scale = self._read_scale(context)
 
-        _log(f'write scale int: read scale={scale}')
+        self._write_raw(context, _encode_scaled(value, scale))
 
-        if isinstance(value, float):
-            scaled_value = round(value * (10 ** -scale))
-            _write_int(
-                context, self.addr, value=scaled_value, count=self.count, signed=self.signed
-            )
-        elif isinstance(value, int):
-            if scale > 0:
-                factor = 10 ** scale
-                scaled_value = value // factor
-                if scaled_value * factor != value:
-                    raise ValueError('Value is not an integer multiple of the scaling factor')
-            else:
-                scaled_value = value * (10 ** -scale)
-            _write_int(
-                context, self.addr, value=scaled_value, count=self.count, signed=self.signed
-            )
+    def set_verified(
+            self,
+            context: RegisterContext,
+            value: RegisterValue,
+            force: bool,
+    ) -> Iterator[tuple[str, bool]]:
+        """
+        Write a rounded value using the scale from the initial read and verify it.
+        """
+        value: int | float = self._check_valid_value(value)
+
+        old_structure: ScaledValue = self.get_structured(context)
+        old: float = old_structure.as_float()
+        scale_factor: int = old_structure.scale_factor
+        expected_structure = ScaledValue(_encode_scaled(value, scale_factor), scale_factor)
+
+        if not force and old_structure == expected_structure:
+            # No change needed
+            yield f'{old!r} -> {old!r} UNCHANGED', False
         else:
-            assert False, 'unexpected type'
+            # Make the change
+            try:
+                self._write_raw(context, expected_structure.raw_value)
+            except ModbusError as err:
+                yield f'{old!r} -> {value!r} ERROR: {err}', True
+                yield f'Modbus message: {err.modbus_message!r}', True
+                raise
+
+            actual_structure: ScaledValue = self.get_structured(context)
+            new = actual_structure.as_float()
+            if actual_structure != expected_structure:
+                message = f'{old!r} -> {value!r} expected {expected_structure!r}, read {actual_structure!r} FAILED'
+                yield message, True
+                raise ValueError(f'set_verified: {message}')
+            if force:
+                yield f'{old!r} -> {value!r} checked {new!r} OK FORCED', False
+            else:
+                yield f'{old!r} -> {value!r} checked {new!r} OK', False
+
+    def _write_raw(self, context: RegisterContext, value: int) -> None:
+        _write_int(context, self.addr, value=value, count=self.count, signed=self.signed)
+
+    def _read_scale(self, context: RegisterContext) -> int:
+        byte_array = _read_byte_array(context, self.scale_addr, count=1)
+        return int.from_bytes(byte_array, byteorder='big', signed=True)
+
+
+def _encode_scaled(value: int | float, scale: int) -> int:
+    if isinstance(value, float):
+        return round(value * (10 ** -scale))
+    if scale <= 0:
+        return value * (10 ** -scale)
+    raw, remainder = divmod(value, 10 ** scale)
+    if remainder:
+        raise ValueError('Value is not an integer multiple of the scaling factor')
+    return raw
 
 
 def _log(msg: str) -> None:

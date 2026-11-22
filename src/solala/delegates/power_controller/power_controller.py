@@ -154,6 +154,24 @@ class PowerController(ABC):
         ...
 
     @abstractmethod
+    async def fixed_limit(self, pct: float, *, change_duration: int) -> None:
+        """
+        Cap inverter output at a fixed percentage of rated power.
+
+        The inverter setting may revert automatically, and may need to be updated
+        repeatedly to maintain the cap beyond the requested duration.
+
+        A request of 100% is functionally equivalent to enable_inverter.
+        A request of 0% is functionally equivalent to disable_inverter.
+
+        Args:
+            pct: Output limit as a percentage of rated power, from 0 to 100 inclusive.
+            change_duration: Minimum requested duration, in seconds, before the
+                inverter setting automatically reverts.
+        """
+        ...
+
+    @abstractmethod
     async def zero_export(self, *, change_duration: int) -> None:
         """
         Limit inverter output power to match consumption, preventing power export

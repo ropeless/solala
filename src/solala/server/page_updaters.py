@@ -63,6 +63,7 @@ class InverterButtonUpdater(StatusListener):
             self,
             inverter_enable: Button,
             inverter_disable: Button,
+            inverter_fixed_limit: Button,
             inverter_zero_export: Button,
             inverter_neg_feed_in_zero_export: Button,
     ) -> None:
@@ -73,6 +74,9 @@ class InverterButtonUpdater(StatusListener):
         self.inverter_disable = inverter_disable.on_click(partial(
             self._click, InverterMode.DISABLE, InverterPolicy.MANUAL
         ))
+        self.inverter_fixed_limit = inverter_fixed_limit.on_click(partial(
+            self._click, InverterMode.FIXED_LIMIT, InverterPolicy.MANUAL
+        ))
         self.inverter_zero_export = inverter_zero_export.on_click(partial(
             self._click, InverterMode.ZERO_EXPORT, InverterPolicy.MANUAL
         ))
@@ -81,7 +85,7 @@ class InverterButtonUpdater(StatusListener):
         ))
 
         for button in [
-            inverter_enable, inverter_disable, inverter_zero_export,
+            inverter_enable, inverter_disable, inverter_fixed_limit, inverter_zero_export,
             inverter_neg_feed_in_zero_export
         ]:
             button.style('padding-top: 1px; padding-bottom: 1px;')
@@ -121,6 +125,7 @@ class InverterButtonUpdater(StatusListener):
 
         self.inverter_enable.props(on_props(InverterMode.ENABLE.name))
         self.inverter_disable.props(on_props(InverterMode.DISABLE.name))
+        self.inverter_fixed_limit.props(on_props(InverterMode.FIXED_LIMIT.name))
         self.inverter_zero_export.props(on_props(InverterMode.ZERO_EXPORT.name))
         self.inverter_neg_feed_in_zero_export.props(on_props(InverterPolicy.NEG_FEED_IN_ZERO_EXPORT.name))
 
