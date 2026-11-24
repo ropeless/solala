@@ -1,18 +1,23 @@
+"""
+Provide suite assembly and additional assertions for unittest tests.
+"""
+
 import math
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sized
 from importlib import import_module as _import
 from itertools import zip_longest
-from collections.abc import Iterable, Iterator, Mapping
-from typing import Any
+from typing import Any, SupportsFloat, SupportsIndex
 from unittest import \
     TestCase, \
     main as _unittest_main, \
     defaultTestLoader as _testLoader, \
     TestSuite as _TestSuite
+from unittest.main import TestProgram
 
 import numpy as np
 
 
-def test_main():
+def test_main() -> TestProgram:
     """
     Execute unittest.main().
     """
@@ -44,21 +49,42 @@ def make_suit(test_modules: Iterable[str], package: str | None = None) -> _TestS
 
 
 class Fixture(TestCase):
+    """
+    Extend unittest with assertions for collections, NumPy arrays, and iterators.
+    """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Register NumPy array equality alongside the standard assertions.
+        """
         super().__init__(*args, **kwargs)
         self.addTypeEqualityFunc(np.ndarray, self.assertNDArrayEqual)
 
-    def assertEmpty(self, got, *, msg=None):
+    def assertEmpty(self, got: Sized, *, msg: str | None = None) -> None:
+        """
+        Assert that the value has length zero.
+        """
         self.assertEqual(len(got), 0, msg=msg)
 
-    def assertNotEmpty(self, got, *, msg=None):
+    def assertNotEmpty(self, got: Sized, *, msg: str | None = None) -> None:
+        """
+        Assert that the value has a nonzero length.
+        """
         self.assertNotEqual(len(got), 0, msg=msg)
 
-    def assertNan(self, got, *, msg=None):
+    def assertNan(self, got: SupportsFloat | SupportsIndex, *, msg: str | None = None) -> None:
+        """
+        Assert that the numeric value is NaN.
+        """
         self.assertTrue(math.isnan(got), msg=msg)
 
-    def assertArrayEqual(self, got, expect, *, msg=None, nan_equality: bool = False):
+    def assertArrayEqual(
+        self, got: Collection[Any], expect: Collection[Any], *,
+        msg: str | None = None, nan_equality: bool = False,
+    ) -> None:
+        """
+        Compare the positions and values of elements in nested collections.
+        """
         self.assertEqual(len(got), len(expect), msg=msg)
         for got_pair, expect_pair in zip_longest(_iter_index_value(got), _iter_index_value(expect)):
             if got_pair is None or expect_pair is None:
@@ -79,7 +105,14 @@ class Fixture(TestCase):
                 msg=_make_msg(msg, "at index ", idx_str, ": expected ", expect_item, ", got: ", got_item)
             )
 
-    def assertArrayAlmostEqual(self, got, expect, *, places=None, delta=None, msg=None, nan_equality: bool = False):
+    def assertArrayAlmostEqual(
+        self, got: Collection[Any], expect: Collection[Any], *,
+        places: int | None = None, delta: Any = None,
+        msg: str | None = None, nan_equality: bool = False,
+    ) -> None:
+        """
+        Compare nested collections using unittest's numeric tolerance.
+        """
         self.assertEqual(len(got), len(expect), msg=msg)
         for got_pair, expect_pair in zip_longest(_iter_index_value(got), _iter_index_value(expect)):
             if got_pair is None or expect_pair is None:
@@ -102,7 +135,13 @@ class Fixture(TestCase):
                 msg=_make_msg(msg, "at index ", idx_str, ": expected ", expect_item, ", got: ", got_item)
             )
 
-    def assertNDArrayEqual(self, got: np.ndarray, expect: np.ndarray, *, msg=None, nan_equality: bool = False):
+    def assertNDArrayEqual(
+        self, got: np.ndarray, expect: np.ndarray, *,
+        msg: str | None = None, nan_equality: bool = False,
+    ) -> None:
+        """
+        Compare NumPy array shapes and corresponding values exactly.
+        """
         self.assertEqual(got.shape, expect.shape, msg=_make_msg(msg, "shape: expected ", expect, ", got: ", got))
         for idx in np.ndindex(expect.shape):
             got_i = got.item(idx)
@@ -121,11 +160,14 @@ class Fixture(TestCase):
             got: np.ndarray,
             expect: np.ndarray,
             *,
-            places=None,
-            delta=None,
-            msg=None,
+            places: int | None = None,
+            delta: Any = None,
+            msg: str | None = None,
             nan_equality: bool = False,
-    ):
+    ) -> None:
+        """
+        Compare NumPy array shapes and values using unittest's numeric tolerance.
+        """
         self.assertEqual(got.shape, expect.shape, msg=_make_msg(msg, "shape: expected ", expect, ", got: ", got))
         for idx in np.ndindex(expect.shape):
             got_i = got.item(idx)
@@ -141,7 +183,12 @@ class Fixture(TestCase):
                 msg=_make_msg(msg, "at index ", idx_str, ": expected ", expect_i, ", got: ", got_i)
             )
 
-    def assertArraySetEqual(self, got, expect, *, msg=None):
+    def assertArraySetEqual(
+        self, got: Collection[Any], expect: Collection[Any], *, msg: str | None = None,
+    ) -> None:
+        """
+        Compare collection lengths and unique elements, ignoring order.
+        """
         len_expect = len(expect)
         self.assertEqual(len(got), len(expect), msg=msg)
         expect = set(expect)
@@ -160,16 +207,21 @@ class Fixture(TestCase):
             a: Mapping[Any, float],
             b: Mapping[Any, float],
             *,
-            places=None,
-            delta=None,
-            msg=None,
-    ):
+            places: int | None = None,
+            delta: Any = None,
+            msg: str | None = None,
+    ) -> None:
+        """
+        Compare mapping keys and values using unittest's numeric tolerance.
+        """
         self.assertEqual(set(a), set(b), msg=msg)
         for key, value in a.items():
             self.assertAlmostEqual(value, b[key], places=places, delta=delta, msg=msg)
 
-    def assertIterFinished(self, it, *, msg=None):
+    def assertIterFinished(self, it: Iterator[Any], *, msg: str | None = None) -> None:
         """
+        Assert that the next call to the iterator raises StopIteration.
+
         Args:
             it: an iterator which is expected to throw StopIteration
                 when next(it) is called.
@@ -179,7 +231,7 @@ class Fixture(TestCase):
             next(it)
 
 
-def _make_msg(orig_msg, *parts):
+def _make_msg(orig_msg: str | None, *parts: object) -> str:
     """
     Construct an error message.
     """
