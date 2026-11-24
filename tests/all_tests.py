@@ -29,13 +29,13 @@ def _test_modules_r(prefix: str, folder: Path) -> Iterator[str]:
             next_prefix = f'{prefix}.{file.name}'
             for module in _test_modules_r(next_prefix, file):
                 yield module
-        elif file.is_file() and file.name.startswith('test_'):
+        elif file.is_file() and file.suffix == '.py' and file.name.startswith('test_'):
             yield f'{prefix}.{file.stem}'
 
 
-def main():
+def main() -> int:
     """
-    Execute all unit tests found in this folder and sub-folders, recursively.
+    Run the discovered tests and return the process exit code.
     """
 
     if NUMBER_OF_RUNS < 0:
@@ -56,6 +56,8 @@ def main():
         for result in results:
             print(f'Ran {result.testsRun} tests, errors: {len(result.errors)}, failures: {len(result.failures)}')
 
+    return int(any(not result.wasSuccessful() for result in results))
+
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

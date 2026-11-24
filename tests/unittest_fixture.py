@@ -1,5 +1,6 @@
 import math
 from importlib import import_module as _import
+from itertools import zip_longest
 from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
 from unittest import \
@@ -18,28 +19,27 @@ def test_main():
     return _unittest_main()
 
 
-def make_suit(test_modules: Iterable[str], package: str | None = None):
+def make_suit(test_modules: Iterable[str], package: str | None = None) -> _TestSuite:
     """
-        Construct a `unittest.TestSuite` object containing all the unit test in the named test modules.
+    Build a test suite from the named modules.
 
-        Args:
-            test_modules: a collection of strings, each naming a test module.
-            package: optional argument for prefixing each test module.
+    Args:
+        test_modules: Module names to load.
+        package: Optional package prefix for the module names.
 
-        Returns:
-            a `unittest.TestSuite` object.
-        """
+    Returns:
+        The combined suite of custom or discovered tests.
+    """
     suite = _TestSuite()
-    for t in test_modules:
-        test_module = t if package is None else f'{package}.{t}'
+    for name in test_modules:
+        module_name = name if package is None else f'{package}.{name}'
+        module = _import(module_name)
         try:
-            # if the module defines a suite() function, call it to get the suite.
-            module_t = _import(test_module)
-            suite_t = getattr(module_t, 'suite')
-            suite.addTest(suite_t())
-        except (ImportError, AttributeError):
-            # load all the test cases from the module
-            suite.addTest(_testLoader.loadTestsFromName(t))
+            custom_suite = getattr(module, 'suite')
+        except AttributeError:
+            suite.addTest(_testLoader.loadTestsFromModule(module))
+        else:
+            suite.addTest(custom_suite())
     return suite
 
 
@@ -60,11 +60,15 @@ class Fixture(TestCase):
 
     def assertArrayEqual(self, got, expect, *, msg=None, nan_equality: bool = False):
         self.assertEqual(len(got), len(expect), msg=msg)
-        for (got_idx, got_item), (expect_idx, expect_item) in zip(_iter_index_value(got), _iter_index_value(expect)):
+        for got_pair, expect_pair in zip_longest(_iter_index_value(got), _iter_index_value(expect)):
+            if got_pair is None or expect_pair is None:
+                self.fail(_make_msg(msg, 'unmatched array element: got ', got_pair, ', expected ', expect_pair))
+            got_idx, got_item = got_pair
+            expect_idx, expect_item = expect_pair
             self.assertEqual(
                 got_idx,
                 expect_idx,
-                msg=_make_msg(msg, "shapes diverge: expected index", expect_idx, ", got index: ", expect_idx)
+                msg=_make_msg(msg, 'shapes diverge: expected index ', expect_idx, ', got index: ', got_idx)
             )
             if nan_equality and math.isnan(got_item) and math.isnan(expect_item):
                 continue
@@ -77,7 +81,11 @@ class Fixture(TestCase):
 
     def assertArrayAlmostEqual(self, got, expect, *, places=None, delta=None, msg=None, nan_equality: bool = False):
         self.assertEqual(len(got), len(expect), msg=msg)
-        for (got_idx, got_item), (expect_idx, expect_item) in zip(_iter_index_value(got), _iter_index_value(expect)):
+        for got_pair, expect_pair in zip_longest(_iter_index_value(got), _iter_index_value(expect)):
+            if got_pair is None or expect_pair is None:
+                self.fail(_make_msg(msg, 'unmatched array element: got ', got_pair, ', expected ', expect_pair))
+            got_idx, got_item = got_pair
+            expect_idx, expect_item = expect_pair
             self.assertEqual(
                 got_idx,
                 expect_idx,
@@ -156,7 +164,7 @@ class Fixture(TestCase):
             delta=None,
             msg=None,
     ):
-        self.assertEqual(len(a), len(b), msg=msg)
+        self.assertEqual(set(a), set(b), msg=msg)
         for key, value in a.items():
             self.assertAlmostEqual(value, b[key], places=places, delta=delta, msg=msg)
 
