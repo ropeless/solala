@@ -4,17 +4,32 @@ Start the Solala web server and control loop on a configured event loop.
 
 import asyncio
 import selectors
+import socket
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
 
 from solala.constants import Constants
-from solala.control_loop import control_loop
+from solala.control import control_loop
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES
 from solala.server.server_gui import ui
 from solala.settings import Settings
+
+
+class _Server(uvicorn.Server):
+    """
+    Share the HTTP shutdown deadline with the application lifespan.
+    """
+
+    shutdown_deadline: float | None = None
+
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        self.shutdown_deadline = asyncio.get_running_loop().time() + Constants.MAX_SHUTDOWN_TIMEOUT.total_seconds()
+        await super().shutdown(sockets)
 
 
 def run_server(
@@ -81,7 +96,27 @@ async def _async_run_server(
         database_write: Whether to persist measurements to the database.
         solala_storage_secret: a long random string specific to the server.
     """
-    app = FastAPI()
+    cancelled_for_shutdown = False
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        nonlocal cancelled_for_shutdown
+        try:
+            yield
+        finally:
+            if not control_task.done():
+                # Uvicorn waits for lifespan shutdown before replaying signals.
+                loop = asyncio.get_running_loop()
+                deadline = server.shutdown_deadline
+                if deadline is None:
+                    deadline = loop.time() + Constants.MAX_SHUTDOWN_TIMEOUT.total_seconds()
+                control_loop.exit_control_loop(deadline=deadline)
+                _, pending = await asyncio.wait((control_task,), timeout=max(0, deadline - loop.time()))
+                if pending:
+                    cancelled_for_shutdown = control_task.cancel()
+                await asyncio.gather(control_task, return_exceptions=True)
+
+    app = FastAPI(lifespan=lifespan)
     favicon: str = Path(str(IMAGE_FILES / 'solala-32x32.png')).absolute().as_posix()
     ui.run_with(
         app,
@@ -96,13 +131,28 @@ async def _async_run_server(
         port=port,
         workers=1,
         log_level='info',
+        timeout_graceful_shutdown=int(Constants.MAX_SHUTDOWN_TIMEOUT.total_seconds()),
     )
-    server = uvicorn.Server(server_config)
+    server = _Server(server_config)
 
-    await asyncio.gather(
-        control_loop.control_loop(settings_path, settings, force_settings, database_write),
-        server.serve(),
+    control_task = asyncio.create_task(
+        control_loop.control_loop(settings_path, settings, force_settings, database_write)
     )
+
+    def request_server_exit(_: asyncio.Task[None]) -> None:
+        server.should_exit = True
+
+    control_task.add_done_callback(request_server_exit)
+    try:
+        await server.serve()
+    finally:
+        # Startup failure and forced exit can bypass the lifespan shutdown.
+        if not control_task.done() and server.shutdown_deadline is not None:
+            control_loop.exit_control_loop(deadline=server.shutdown_deadline)
+        cancelled_for_shutdown = control_task.cancel() or cancelled_for_shutdown
+        await asyncio.gather(control_task, return_exceptions=True)
+    if not cancelled_for_shutdown or not control_task.cancelled():
+        control_task.result()
 
 
 def _loop_factory() -> asyncio.AbstractEventLoop:

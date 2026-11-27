@@ -15,15 +15,15 @@ from nicegui.elements.button import Button
 from nicegui.elements.mixins.content_element import ContentElement
 
 from solala.constants import GUI_DATE_FORMAT, GUI_TIME_FORMAT, Units, Constants
-from solala.control_loop import control_loop
-from solala.control_loop.loop_listener import LoopListener
-from solala.control_loop.modes_and_policies import InverterMode, InverterPolicy, BatteryMode, BatteryPolicy, ControlMode
+from solala.control import control_loop
+from solala.control.loop_listener import LoopListener
+from solala.control.modes_and_policies import InverterMode, InverterPolicy, BatteryMode, BatteryPolicy, ControlMode
 from solala.database.measurement import Measurement
 from solala.delegates.power_pricer.price import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
-from solala.register import RegisterValue
+from solala.register import RegisterValue, RegisterValueUnavailable
 from solala.server.graph_interpolator import GraphingInterpolator
 from solala.server.graphs import ChargeChart, PriceChart, PowerChart, EnergyChart
 from solala.server.icons import weather_code_to_icon_url
@@ -234,6 +234,7 @@ class RegistersUpdater(LoopListener):
         super().__init__()
         self._session = session
         self._on_filter_change = on_filter_change
+        control_loop.request_consumer_register_discovery()
         self._bank = control_loop.get_register_bank()
         self._values: dict[str, RegisterValue] = {}
         # Iteration tracks control-loop updates; generation tracks superseding filter reads.
@@ -285,6 +286,7 @@ class RegistersUpdater(LoopListener):
         if self._session.closed:
             return
         self._iteration += 1
+        control_loop.request_consumer_register_discovery()
         self._bank = control_loop.get_register_bank()
         self._values.clear()
         self._schedule_read()
@@ -307,6 +309,8 @@ class RegistersUpdater(LoopListener):
                 continue
             try:
                 value = await bank[name].get()
+            except RegisterValueUnavailable:
+                continue
             except asyncio.CancelledError:
                 raise
             except Exception:

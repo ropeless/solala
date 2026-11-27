@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
+from solala.control.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 
 

@@ -1,12 +1,16 @@
 import asyncio
-import importlib
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from threading import Event
+from unittest.mock import AsyncMock, patch
 
+from solala.control import control_loop
 from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
-from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
+from solala.delegates.power_consumer.tuya_cloud_power_consumer.tuya_cloud_power_consumer import TuyaCloudPowerConsumer
 from solala.register import ReadOnlyError
-from solala.settings import DummyConsumerConnection, TuyaConnection
+from solala.register_bank import EMPTY_REGISTER_BANK
+from solala.settings import (
+    DummyConsumerConnection, MatterConnection, TeslaWallConnectorConnection, TuyaCloudConnection, TuyaLocalConnection,
+)
 
 
 class PowerConsumerContractTestCase(unittest.IsolatedAsyncioTestCase):
@@ -88,42 +92,122 @@ class PowerConsumerContractTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_settings_round_trip(self) -> None:
         dummy = DummyConsumerConnection(can_switch=False, include_accumulated_energy=False)
         self.assertEqual(DummyConsumerConnection.model_validate_json(dummy.model_dump_json()), dummy)
-        tuya = TuyaConnection(
+        tuya = TuyaCloudConnection(
             access_id='test', access_secret='secret', device_id='device',
-            include_accumulated_energy=True, cache_duration=42,
+            include_accumulated_energy=True, cache_duration=42, connect_timeout=2.5, read_timeout=8.0,
         )
-        self.assertEqual(TuyaConnection.model_validate_json(tuya.model_dump_json()), tuya)
-
-
+        self.assertEqual(TuyaCloudConnection.model_validate_json(tuya.model_dump_json()), tuya)
+        defaults = TuyaCloudConnection.model_validate(tuya.model_dump(exclude={'connect_timeout', 'read_timeout'}))
+        self.assertEqual((defaults.connect_timeout, defaults.read_timeout), (5.0, 10.0))
 
     async def test_factory_forwards_dummy_options(self) -> None:
-        control_loop = importlib.import_module('solala.control_loop.control_loop')
         config = DummyConsumerConnection(can_switch=False, include_accumulated_energy=False)
         consumer = control_loop._connect_dummy_consumer(config)
         self.assertFalse(consumer.can_switch)
         self.assertIsNone((await consumer.get_status()).accumulated_energy)
 
     async def test_factory_forwards_tuya_options(self) -> None:
-        control_loop = importlib.import_module('solala.control_loop.control_loop')
-        config = TuyaConnection(
+        config = TuyaCloudConnection(
             access_id='test', access_secret='secret', device_id='device',
-            include_accumulated_energy=True, cache_duration=42,
+            include_accumulated_energy=True, cache_duration=42, connect_timeout=2.5, read_timeout=8.0,
         )
-        with patch.object(control_loop, 'TuyaPowerConsumer') as factory:
-            control_loop._connect_tuya(config)
+        state = control_loop._ControlState()
+        with (
+            patch.object(control_loop, '_CONTROL_STATE', state),
+            patch.object(control_loop, 'log_info'),
+            patch('solala.control.control_loop.TuyaCloudPowerConsumer', autospec=True) as factory,
+        ):
+            factory.return_value.get_connection_info.return_value = {}
+            factory.return_value.get_registers.return_value = EMPTY_REGISTER_BANK
+            try:
+                await control_loop.connect_consumer('plug', config)
+            finally:
+                await control_loop.disconnect_consumer('plug')
         self.assertEqual(factory.call_args.kwargs['include_accumulated_energy'], True)
         self.assertEqual(factory.call_args.kwargs['cache_duration'], 42)
+        self.assertEqual(factory.call_args.kwargs['connect_timeout'], 2.5)
+        self.assertEqual(factory.call_args.kwargs['read_timeout'], 8.0)
+
+    async def test_matter_factory_reports_configured_timing(self) -> None:
+        config = MatterConnection(
+            host='localhost', port=5580, node_id=1, timeout=12.0, cache_duration=0.4, token='secret',
+        )
+        default_config = MatterConnection.model_validate(config.model_dump(exclude={'cache_duration'}))
+        self.assertEqual(default_config.cache_duration, 0.1)
+        restored = MatterConnection.model_validate_json(config.model_dump_json())
+        consumer = control_loop._connect_matter(restored)
+        async with consumer:
+            info = consumer.get_connection_info()
+            self.assertEqual(info['timeout'], 12.0)
+            self.assertEqual(info['cache_duration'], 0.4)
+            self.assertNotIn('token', info)
+
+    async def test_tuya_local_factory_reports_configured_timing(self) -> None:
+        config = TuyaLocalConnection(
+            host='localhost', device_id='device', local_key='secret', timeout=2.5, cache_duration=0.4,
+        )
+        consumer = control_loop._connect_tuya_local(config)
+        async with consumer:
+            info = consumer.get_connection_info()
+            self.assertEqual(info['timeout'], 2.5)
+            self.assertEqual(info['cache_duration'], 0.4)
+            self.assertNotIn('local_key', info)
+
+    async def test_tesla_factory_reports_configured_timing(self) -> None:
+        config = TeslaWallConnectorConnection(address='127.0.0.1', timeout=2.5, cache_duration=0.4)
+        with patch('httpx.AsyncClient', autospec=True) as client:
+            consumer = control_loop._connect_tesla_wall_connector(config)
+        client.assert_called_once_with(timeout=2.5)
+        async with consumer:
+            info = consumer.get_connection_info()
+            self.assertEqual(info['timeout'], 2.5)
+            self.assertEqual(info['cache_duration'], 0.4)
+            self.assertNotIn('mac_address', info)
+
 
 class TuyaSwitchContractTestCase(unittest.IsolatedAsyncioTestCase):
     """
     Verify Tuya commands without making cloud API requests.
     """
 
+    async def test_close_waits_for_cancelled_request_to_leave_sdk_session(self) -> None:
+        started = asyncio.Event()
+        release = Event()
+        loop = asyncio.get_running_loop()
+
+        def get_status(_: str) -> dict:
+            loop.call_soon_threadsafe(started.set)
+            if not release.wait(2):
+                raise TimeoutError('test did not release request')
+            return {'success': True, 'result': []}
+
+        self.client.get.side_effect = get_status
+        request = asyncio.create_task(self.consumer.get_status())
+        closing = None
+        try:
+            await asyncio.wait_for(started.wait(), 1)
+            request.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await request
+            closing = asyncio.create_task(self.consumer.close())
+            await asyncio.sleep(0)
+            self.client.session.close.assert_not_called()
+            self.assertFalse(closing.done())
+        finally:
+            release.set()
+            if closing is not None:
+                await closing
+        await self.consumer.close()
+        self.client.session.close.assert_called_once_with()
+        with self.assertRaises(ConnectionError):
+            await self.consumer.get_status()
+        self.client.get.assert_called_once()
+
     def setUp(self) -> None:
         with patch(
-                'solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer.TuyaOpenAPI',
+                'solala.delegates.power_consumer.tuya_cloud_power_consumer.tuya_cloud_power_consumer.TuyaOpenAPI',
         ) as api:
-            self.consumer = TuyaPowerConsumer('id', 'secret', 'device')
+            self.consumer = TuyaCloudPowerConsumer('id', 'secret', 'device')
             self.client = api.return_value
         self.consumer._connected = True
 
@@ -133,6 +217,26 @@ class TuyaSwitchContractTestCase(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(self.consumer._connect(), self.consumer._connect())
         self.client.connect.assert_called_once_with()
         self.assertTrue(self.consumer._connected)
+
+    def test_cloud_requests_have_connect_and_read_timeouts(self) -> None:
+        for options, expected in (
+            ({}, (5.0, 10.0)),
+            ({'connect_timeout': 2.5, 'read_timeout': 8.0}, (2.5, 8.0)),
+        ):
+            with (
+                self.subTest(options=options),
+                patch(
+                    'solala.delegates.power_consumer.tuya_cloud_power_consumer.tuya_cloud_power_consumer.TuyaOpenAPI',
+                ) as api,
+            ):
+                request = api.return_value.session.request
+                consumer = TuyaCloudPowerConsumer('id', 'secret', 'device', **options)
+                api.return_value.session.request('GET', 'https://example.invalid')
+                request.assert_called_once_with('GET', 'https://example.invalid', timeout=expected)
+                info = consumer.get_connection_info()
+                self.assertEqual((info['connect_timeout'], info['read_timeout']), expected)
+                self.assertEqual(info['cache_duration'], 300)
+                self.assertNotIn('access_secret', info)
 
     async def test_switch_command_payload(self) -> None:
         self.client.post.return_value = {'success': True}

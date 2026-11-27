@@ -4,9 +4,9 @@ import unittest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
-from solala.control_loop.control_health import Severity
+from solala.control.control_health import Severity
 
-control_loop = importlib.import_module('solala.control_loop.control_loop')
+control_loop = importlib.import_module('solala.control.control_loop')
 
 
 class DatabaseHealthTestCase(unittest.IsolatedAsyncioTestCase):

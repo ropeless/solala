@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from solala.constants import Constants
-from solala.control_loop.control_health import Severity
+from solala.control.control_health import Severity
 from solala.server.master_alarm import _alarm_state
 
 

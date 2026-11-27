@@ -2,9 +2,9 @@ import importlib
 import unittest
 from unittest.mock import patch
 
-from solala.control_loop.control_health import Severity
+from solala.control.control_health import Severity
 
-control_loop = importlib.import_module('solala.control_loop.control_loop')
+control_loop = importlib.import_module('solala.control.control_loop')
 
 
 class ControlHealthLifecycleTestCase(unittest.IsolatedAsyncioTestCase):

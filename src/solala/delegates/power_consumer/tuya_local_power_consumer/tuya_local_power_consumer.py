@@ -71,6 +71,10 @@ class TuyaLocalPowerConsumer(PowerConsumer):
         device = tinytuya.OutletDevice(self._device_id, self._host, self._local_key)
         device.set_version(self._version)
         device.set_socketTimeout(self._timeout)
+        # Let later client demand retry a failed request. SDK retries can keep
+        # the blocking worker alive well past the app's shutdown deadline.
+        device.set_socketRetryLimit(1)
+        device.set_sendRetryLimit(0)
         device.set_socketPersistent(False)
         try:
             if switch is None:
@@ -166,6 +170,8 @@ class TuyaLocalPowerConsumer(PowerConsumer):
             'device_id': self._device_id,
             'version': self._version,
             'calibration_factor': self._calibration_factor,
+            'timeout': self._timeout,
+            'cache_duration': self._cache.cache_duration,
         }
 
     async def close(self) -> None:

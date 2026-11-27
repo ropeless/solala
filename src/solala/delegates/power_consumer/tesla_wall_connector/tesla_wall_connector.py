@@ -1,4 +1,5 @@
 import asyncio
+import math
 from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
@@ -31,9 +32,11 @@ class TeslaWallConnector(PowerConsumer):
     def __init__(
             self,
             host: str,
+            *,
             mac_address: str = '',
             cache_duration: float = 0.1,
-    ):
+            timeout: float = 5.0,
+    ) -> None:
         """
         Initialise the connection to a Tesla Wall Connector.
 
@@ -42,15 +45,23 @@ class TeslaWallConnector(PowerConsumer):
             mac_address: Optional MAC address included in connection information.
             cache_duration: How long to cache each API response, in seconds. The same duration
                 applies independently to vitals and lifetime data. Defaults to 0.1 seconds.
+            timeout: HTTP timeout in seconds.
+
+        Raises:
+            ValueError: If the timeout is not positive and finite.
         """
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError('timeout must be positive and finite')
         super().__init__(can_switch=False)
 
         # noinspection HttpUrlsUsage
         self._api = f'http://{host}/api/1/'
-        self._client = httpx.AsyncClient()
-        self._connection_info = {
+        self._client = httpx.AsyncClient(timeout=timeout)
+        self._connection_info: dict[str, str | float] = {
             'connection': 'Tesla Wall Connector',
             'host': host,
+            'cache_duration': cache_duration,
+            'timeout': timeout,
         }
         if mac_address != '':
             self._connection_info['mac_address'] = mac_address

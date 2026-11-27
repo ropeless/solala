@@ -2,14 +2,14 @@ import importlib
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from solala.control_loop.modes_and_policies import (
+from solala.control.modes_and_policies import (
     BatteryMode,
     BatteryPolicy,
     InverterMode,
     InverterPolicy,
 )
 
-control_loop = importlib.import_module('solala.control_loop.control_loop')
+control_loop = importlib.import_module('solala.control.control_loop')
 
 
 class ControllerReplacementTestCase(unittest.IsolatedAsyncioTestCase):

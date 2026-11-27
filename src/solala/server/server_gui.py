@@ -15,8 +15,8 @@ from nicegui.element import Element
 from nicegui.elements.button import Button
 
 from solala.constants import Constants
-from solala.control_loop import control_loop
-from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
+from solala.control import control_loop
+from solala.control.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.logger import LOGGER
 from solala.resources import IMAGE_FILES, RESOURCES, CSS_FILES
 from solala.server import infographic

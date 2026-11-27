@@ -4,10 +4,10 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, call, patch
 
 from solala.constants import Constants
-from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
+from solala.control.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.delegates.power_pricer.price import Price
 
-control_loop = importlib.import_module('solala.control_loop.control_loop')
+control_loop = importlib.import_module('solala.control.control_loop')
 
 
 class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
@@ -282,7 +282,7 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
                 (InverterMode.ZERO_EXPORT, self.controller.zero_export, ()),
                 (InverterMode.FIXED_LIMIT, self.controller.fixed_limit, (37.125,)),
         ):
-            with self.subTest(mode=mode):
+            with self.subTest(mode=mode), self.assertLogs('solala', level='ERROR') as logs:
                 await control_loop.set_control(inverter_mode=InverterMode.ENABLE)
                 await self.step(100, 100)
                 current = await control_loop.get_control_mode()
@@ -303,6 +303,7 @@ class ControlPolicyTestCase(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(command.await_args_list, [call(*args, change_duration=duration)] * 2)
                 self.assertEqual(self.state.control.prev_state.inverter_commanded_mode, mode)
                 self.assertEqual(self.state.health.severity, control_loop.Severity.LIVE)
+                self.assertTrue(any('Inverter command failed' in record.getMessage() for record in logs.records))
 
     async def test_failed_disable_inverter_is_logged_and_retried(self) -> None:
         self.state.control.control_mode.inverter_mode = InverterMode.DISABLE

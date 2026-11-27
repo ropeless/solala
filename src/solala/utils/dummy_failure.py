@@ -7,6 +7,8 @@ from typing import Annotated, Any, Self
 from pydantic import BaseModel, Field, PrivateAttr, model_validator
 from pydantic import PlainSerializer, PlainValidator
 
+from solala.utils.json_extras import JSONDict
+
 _ALLOWED_EXCEPTIONS: dict[str, type[Exception]] = {
     'RuntimeError': RuntimeError,
     'TimeoutError': TimeoutError,
@@ -125,6 +127,22 @@ class DummyFailure(BaseModel):
         if self.sleep > 0 and not self.location.is_async():
             raise ValueError('Cannot inject a delay into a synchronous operation')
         return self
+
+
+def get_dummy_failure_info(failure: DummyFailure | None) -> JSONDict | None:
+    """
+    Report simulated failure settings with only the exception type.
+    """
+    if failure is None:
+        return None
+    exception_info = None if failure.exception is None else {'type': type(failure.exception).__name__}
+    return {
+        'location': failure.location.value,
+        'probability': failure.probability,
+        'exception': exception_info,
+        'sleep': failure.sleep,
+        'max_injections': failure.max_injections,
+    }
 
 
 async def async_maybe_inject_failure(location: FailureLocation, failure: DummyFailure | None) -> None:

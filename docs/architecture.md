@@ -4,7 +4,7 @@ Software Architecture and Design
 Solala separates the control policies from the hardware and external services
 used to implement them. The main components are:
 
-- **Control loop** (`src/solala/control_loop/`): Coordinates device connections,
+- **Control loop** (`../src/solala/control`): Coordinates device connections,
   reads system status and electricity prices, evaluates the configured battery
   and inverter policies, and applies the resulting controls. It also provides
   asynchronous APIs used by the web interface.
@@ -24,7 +24,7 @@ used to implement them. The main components are:
   without hard-coding register addresses throughout the application.
 
 - **Persistence** (`src/solala/database/`): Uses PostgreSQL via asynchronous
-  Psycopg connections to store power measurements and register history.
+  Psycopg connections to store power measurements.
   Database access is kept separate from the UI and device implementations.
 
 - **Web interface** (`src/solala/server/`): Uses NiceGUI to display live power
@@ -36,6 +36,26 @@ used to implement them. The main components are:
 - **Configuration** (`src/solala/settings.py`): Defines typed connection and
   application settings, including the selected delegate implementations.
 
+### Connection settings and reporting
+
+Delegate factories and the database pool factory must pass every constructor
+argument explicitly. Define user-configurable options and their defaults in
+the connection settings model. The factory derives any remaining arguments,
+such as device roles and resolved addresses, from those settings. Constructor
+defaults may still serve callers that instantiate a delegate directly.
+
+`get_connection_info()` must report the effective values passed to the
+constructor, including defaults and derived values. Represent connection
+objects through their JSON-compatible connection details, such as the Modbus
+device map. Omit empty MAC addresses and all secrets, including passwords,
+tokens, keys, and secrets nested inside other arguments. Simulated failure
+reports include the exception type and omit the exception message.
+
+For example, Modbus settings default `power_control_slaves` to `False`.
+PostgreSQL settings default `min_pool_size` to `2` and `max_pool_size` to
+`8`. The factories pass these values explicitly, and the connection reports
+show the values in use.
+
 ### Runtime and data flow
 
 The server runs Uvicorn/NiceGUI and the control loop concurrently on a single
@@ -44,6 +64,48 @@ applies the selected control policies, and notifies subscribed UI listeners.
 A separate database loop records measurements and notifies listeners that
 display historical data. The browser communicates with NiceGUI; it does not
 connect directly to the inverter or the database.
+
+The GUI reads register values on demand for display. The control loop
+does not collect register history.
+The Registers page explicitly requests consumer register discovery.
+Register bank lookups use published definitions and reuse the combined bank
+until a delegate changes or publishes its definitions.
+When a consumer has no status reading available, its status registers raise
+`RegisterValueUnavailable`. The Registers page displays those names without
+values or tracebacks. Consumer health reporting logs completed device
+failures and recoveries.
+
+Each power consumer manager runs one worker for status reads and register
+discovery. The worker waits for client demand and coalesces requests for
+the same operation while a read is pending. Callers receive available
+results immediately while the worker handles delegate I/O.
+Consumer health is updated when a current worker completes a status or
+discovery attempt. Pending reads do not raise a health issue. Operational
+failures and recovery are logged per consumer and operation.
+Disconnecting a consumer removes it from the active connections before
+waiting for its worker to close. The wait happens outside the shared
+connections lock. Connecting with an active or closing name fails. The
+client must wait for disconnect to complete before reusing a name.
+Control-loop shutdown stops the database logging task, closes consumer workers
+concurrently, and waits for any disconnects already in progress. It also closes
+the controller, pricer, forecaster, and database pool. The pool stops accepting
+new borrows and drains existing ones. Shutdown logs each close outcome and
+keeps the saved configuration for the next run.
+The server owns the control-loop task. During graceful shutdown, the FastAPI
+lifespan stops and awaits it before Uvicorn replays the termination signal.
+If Uvicorn exits before lifespan shutdown, the server cancels and awaits the
+control-loop task before the event loop closes.
+Normal shutdown shares a ten-second grace period across the HTTP server,
+the current control-loop iteration, and delegate cleanup. Close outcomes
+are logged as they occur. If the budget expires, Solala requests cancellation
+and logs any closes it is still waiting for. Blocking I/O in a worker thread
+can outlive this deadline. Tuya LAN limits each request to one connection
+attempt, uses its configured socket timeout, and avoids resending the payload
+to reduce shutdown drain time.
+
+Startup defers settings writes until a complete configuration succeeds. If
+applying saved settings fails and fallback settings are available, startup
+closes the open connections before applying the fallback.
 
 ```text
   Fronius / Modbus ── PowerController ──┐
@@ -75,6 +137,10 @@ connect directly to the inverter or the database.
   Pydantic models describe register values, measurements and settings.
 
 ### Error handling and recovery
+
+Tuya Cloud HTTP requests use explicit connect and read timeouts. Matter
+applies one deadline to connection setup and the full command exchange,
+including time spent processing unrelated events.
 
 The intended policy for failure isolation, safe control retries, operational
 health and master alarms is documented in [Error Handling and Recovery](error_handling.md).

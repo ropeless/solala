@@ -159,14 +159,16 @@ class SolalaDatabaseConnections:
             'host': host,
             'port': port,
             'database_name': database_name,
+            'min_pool_size': min_pool_size,
+            'max_pool_size': max_pool_size,
         }
 
     def get_connection_info(self) -> JSONDict:
         """
-        Return connection settings (without the password).
+        Report the database connection and pool configuration.
 
         Returns:
-            Connection role, host, port, and database name.
+            Connection role, host, port, database name, and pool size limits.
         """
         return self._connection_info
 

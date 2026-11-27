@@ -6,8 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from solala.database.solala_database_connections import SolalaDatabaseConnections
+from solala.settings import DatabaseConnection
 
-control = importlib.import_module('solala.control_loop.control_loop')
+control = importlib.import_module('solala.control.control_loop')
 
 
 class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
@@ -22,7 +23,7 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
         state_patch = patch.object(control, '_CONTROL_STATE', control._ControlState())
         state_patch.start()
         self.addCleanup(state_patch.stop)
-        self.settings = SimpleNamespace(
+        self.settings = DatabaseConnection(
             role='test', password='test', host='localhost',
             port=5432, database_name='solala',
         )

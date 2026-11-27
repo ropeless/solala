@@ -54,6 +54,10 @@ async def main() -> None:
     """
     Exercise the Tuya LAN consumer; switch only when explicitly requested.
     """
+    if 'TUYA_LOCAL_HOST' not in config:
+        print('TUYA_LOCAL_HOST not set')
+        return
+
     consumer = TuyaLocalPowerConsumer(
         config.TUYA_LOCAL_HOST,
         config.TUYA_LOCAL_DEVICE_ID,

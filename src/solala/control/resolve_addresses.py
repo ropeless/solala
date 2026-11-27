@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from solala.control_loop.errors import ControlLoopError
+from solala.control.control_loop_error import ControlLoopError
 from solala.utils.network import find_ip_by_mac
 
 

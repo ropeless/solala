@@ -4,17 +4,15 @@ For reviews with Barry, rank recommendations by bang-for-buck. Put small changes
 
 For each batch of issues from a review, first list the issues by number and headline.
 
-Subsequently, present one recommendation at a time.
+Subsequently, present one issue at a time.
 Number each issue in its headline as X of Y, where X is its position in the batch and Y
 is the total number of issues in that batch. Include a headline, the issue, and the recommended solution.
 Keep each issue report to one page of text or less.
-End each issue if there is a single recommendation, report with **Approve · Reject · Discuss**.
-If there are multiple recommendations, number (i), (ii), (iii) etc, and report with
-**Approve (i) · Approve (ii) · Approve (iii) · Reject · Discuss**.
 
-- Approve: Apply and verify the agreed edit, then present the next issue.
-- Reject: Present the next issue without editing.
-- Discuss: Work through Barry's feedback and revise the recommendation. Wait for approval before editing.
+At the bottom of each issue provide a prompt.
+If there is only one recommendation, prompt with **Approve**, **Reject**, and **Discuss**.
+For multiple recommendations, number the recommendation (i), (ii), etc. and
+provide a separate approval choice for each, such as **Approve (i) · Approve (ii) · Reject · Discuss**.
 
 ## Python style
 
@@ -23,6 +21,12 @@ Follow the conventions in [doc/python-style.md](doc/python-style.md) when  editi
 ## Testing
 
 Follow the [testing protocol](doc/testing-protocol.md) when writing or  updating unit tests.
+
+## Project design decisions
+
+Consult the [project design log](doc/project-design.md) when making changes
+that may affect existing design decisions. Update the log when you make a new
+design decision or revise an existing one.
 
 ## PyCharm inspections
 

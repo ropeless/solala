@@ -31,7 +31,9 @@ APIs. To introduce another implementation:
    or concrete implementation as a reference.
 3. Add the corresponding connection configuration and delegate construction
    to the settings and connection-handling code, so the control loop can
-   select the implementation.
+   select the implementation. Follow the [connection settings and reporting
+   policies](architecture.md#connection-settings-and-reporting) when adding
+   constructor arguments, defaults, or connection report fields.
 4. Add tests for normal operation, failures and cleanup. Test with dummy
    dependencies before connecting real equipment.
 

@@ -5,7 +5,7 @@ from tuya_connector import TuyaOpenAPI
 
 from solala.register_bank import RegisterBank
 from solala.utils.local_config_help import config
-from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
+from solala.delegates.power_consumer.tuya_cloud_power_consumer.tuya_cloud_power_consumer import TuyaCloudPowerConsumer
 
 
 API_ENDPOINT = "https://openapi.tuyaeu.com"
@@ -43,9 +43,14 @@ def check_cloud_api() -> None:
 
 
 async def main() -> None:
+
+    if 'POWER_POINT_ACCESS_ID' not in config:
+        print('POWER_POINT_ACCESS_ID not set')
+        return
+
     # check_cloud_api()
 
-    async with TuyaPowerConsumer(
+    async with TuyaCloudPowerConsumer(
             access_id=config.POWER_POINT_ACCESS_ID,
             access_secret=config.POWER_POINT_ACCESS_SECRET,
             device_id=config.POWER_POINT_DEVICE,

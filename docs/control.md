@@ -36,7 +36,7 @@ It then starts in Enable if the price is above the enable threshold, or Zero
 Export otherwise. Subsequent prices use the normal hysteresis rules.
 
 The mode, policy and thresholds are represented together by `ControlMode`
-in `src/solala/control_loop/modes_and_policies.py`. The control loop
+in `../src/solala/control`. The control loop
 evaluates these settings and sends commands through the `PowerController`
 interface. Actual device behaviour depends on the inverter and battery
 capabilities and configuration.

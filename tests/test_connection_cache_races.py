@@ -10,7 +10,7 @@ from solala.logger import LOGGER
 from solala.delegates.power_pricer.price import Price
 from solala.delegates.solar_forecaster.solar_forecaster import DailySolarForecast
 
-control_loop = importlib.import_module('solala.control_loop.control_loop')
+control_loop = importlib.import_module('solala.control.control_loop')
 
 
 class ConnectionCacheRaceTestCase(unittest.IsolatedAsyncioTestCase):

@@ -33,12 +33,19 @@ class TuyaLocalPowerConsumerTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(status.power, 2374.3 * 0.8)
         self.assertAlmostEqual(status.voltage, 239.1)
         self.assertIsNone(status.accumulated_energy)
+        self.device.set_socketRetryLimit.assert_called_once_with(1)
+        self.device.set_sendRetryLimit.assert_called_once_with(0)
         self.device.close.assert_called_once()
 
     async def test_switch(self) -> None:
         await self.consumer.set_switch(False)
         self.device.set_status.assert_called_once_with(False, 1)
         self.device.close.assert_called_once()
+
+    async def test_request_uses_configured_socket_timeout_above_shutdown_budget(self) -> None:
+        consumer = TuyaLocalPowerConsumer('192.0.2.1', 'device-id', 'test-key', timeout=30)
+        await consumer.get_status()
+        self.device.set_socketTimeout.assert_called_once_with(30)
 
     async def test_switch_read(self) -> None:
         self.assertTrue(await self.consumer.get_switch())

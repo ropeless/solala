@@ -9,8 +9,8 @@ from nicegui import ui
 from nicegui.elements.mixins.text_element import TextElement
 
 from solala.constants import Constants
-from solala.control_loop import control_loop
-from solala.control_loop.control_health import HealthIssue, Severity
+from solala.control import control_loop
+from solala.control.control_health import HealthIssue, Severity
 
 DISCONNECTED = 'DISCONNECTED'
 STALLED = 'STALLED'
@@ -219,6 +219,10 @@ def _state_to_status_label(state: str) -> str:
 def _alarm_state(previous: str) -> tuple[str, tuple[HealthIssue, ...]]:
     """
     Select the server-confirmed alarm state, preserving overdue hysteresis.
+
+    Read the operational health snapshot and the control-loop heartbeat.
+    Use the heartbeat to decide whether to display STALLED. Otherwise use
+    the reported severity. The browser tracks server contact separately.
 
     Args:
         previous: Previous server-confirmed state.

@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from solala.control_loop.modes_and_policies import ControlMode, InverterMode, InverterPolicy
+from solala.control.modes_and_policies import ControlMode, InverterMode, InverterPolicy
 from solala.server.css_colours import Colours
 from solala.server.day_navigator import DayNavigator
 from solala.server.graphs import PowerChart, EnergyChart

@@ -6,7 +6,10 @@ from solala.constants import GUI_TIME_FORMAT
 from solala.delegates.power_pricer.power_pricer import PowerPricer, Price
 from solala.utils.time_extras import ensure_date, local_time_zone
 from solala.utils.json_extras import JSONDict
-from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, async_maybe_inject_failure
+from solala.utils.dummy_failure import (
+    DummyFailure, FailureLocation as BaseFailureLocation, async_maybe_inject_failure, get_dummy_failure_info,
+    maybe_inject_failure,
+)
 
 _FIVE_MINUTES: timedelta = timedelta(minutes=5)
 
@@ -99,6 +102,7 @@ class DummyPowerPricer(PowerPricer):
             'feed_in_price_discount_max': self.feed_in_price_discount_min + self.feed_in_price_discount_range,
             'cur_price_is_estimate': self.cur_price_is_estate,
             'demand_window': demand_window,
+            'failure': get_dummy_failure_info(self.failure),
         }
 
     async def get_price(self) -> Price:

@@ -154,6 +154,12 @@ class ModbusPowerController(PowerController):
         self._connection_info: dict[str, JSONValue] = {
             'connection': 'Modbus',
             'devices': devices_record,
+            'master': self._master,
+            'meter': self._meter,
+            'slaves': self._slaves.copy(),
+            'power_control_slaves': power_control_slaves,
+            'default_MinRsvPct': default_MinRsvPct,
+            'default_WMaxLimPct_RvrtTms': default_WMaxLimPct_RvrtTms,
         }
         if unnamed_device is not None:
             self._connection_info['unnamed_device'] = unnamed_device

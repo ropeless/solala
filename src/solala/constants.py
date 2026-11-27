@@ -78,6 +78,7 @@ class Constants:
     LOOP_TIME: timedelta = _seconds(5)  # target duration for each loop iteration - should be a factor of 1 minute
     OVERDUE_THRESHOLD: timedelta = _seconds(5)  # additional grace period for the control-loop heartbeat
     LOOP_MIN_SLEEP_TIME: timedelta = _seconds(1)  # minimum sleep time for each loop iteration
+    MAX_SHUTDOWN_TIMEOUT: timedelta = _seconds(10)  # total budget for graceful shutdown
     CONTROL_DURATION: int = 11  # number of seconds a control remains active
     DATABASE_LOG_LOOP_TIME: timedelta = _minutes(5)  # target duration for each loop iteration - should be a factor of 1 hour
 
@@ -96,6 +97,8 @@ class Constants:
     SOLAR_FORECAST_RETRY: timedelta = _seconds(30)  # time duration a solar forecast error retry
     SOLAR_FORECAST_YOUNG: timedelta = _hours(1)  # time duration a solar forecast is valid
     SOLAR_FORECAST_OLD: timedelta = _hours(3)  # time duration a solar forecast is valid
+
+    CONSUMER_STATUS_CACHE_TIME: timedelta = _seconds(2)  # how long we will keep a consumer status
 
     MAX_LOG_HISTORY: int = 1000  # Maximum number of log lines in the GUI log
     BUY_PRICE_AMBER: float = 20  # Buy price threshold for amber colour

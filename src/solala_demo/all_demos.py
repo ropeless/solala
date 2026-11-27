@@ -17,7 +17,7 @@ EXCEPTIONS = [
     'failing_servers',  # starts a server
     'demo_database',  # inserts into the database
     'demo_tapo_kasa',  # not working - reconsider later
-    'demo_tuya',  # exhausted quota - reconsider later
+    'demo_tuya_cloud',  # exhausted quota - reconsider later
 ]
 
 # These are what are printed as a separator lines

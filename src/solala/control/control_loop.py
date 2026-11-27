@@ -1,33 +1,33 @@
 import asyncio
 import json
 import math
-import re
-from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
-from contextlib import asynccontextmanager
-from dataclasses import dataclass, field, fields, Field
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, UTC, date
 from functools import partial
-from inspect import getmembers
+from logging import INFO
 from pathlib import Path
-from typing import get_type_hints, Any
 
 from psycopg import DatabaseError
 from pymodbus.client import ModbusTcpClient
 
 from solala.constants import Constants, GUI_TIMESTAMP_FORMAT
-from solala.control_loop.control_health import ControlHealth, HealthIssue, Severity
-from solala.control_loop.errors import ControlLoopError
-from solala.control_loop.loop_listener import LoopListener
-from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
-from solala.control_loop.resolve_addresses import ResolvedAddress, resolve_addresses
+from solala.control.control_health import ControlHealth, HealthIssue, Severity
+from solala.control.control_loop_error import ControlLoopError
+from solala.control.loop_listener import LoopListener
+from solala.control.modes_and_policies import BatteryMode, InverterMode, BatteryPolicy, InverterPolicy, ControlMode
+from solala.control.power_consumer_manager import ConsumerReadOperation, PowerConsumerManager
+from solala.control.register_manager import RegisterManager
+from solala.control.resolve_addresses import ResolvedAddress, resolve_addresses
 from solala.database.solala_database import SolalaDatabase, Measurement
 from solala.database.solala_database_connections import SolalaDatabaseConnections
 from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
 from solala.delegates.power_consumer.matter_power_consumer.matter_power_consumer import MatterPowerConsumer
 from solala.delegates.power_consumer.power_consumer import PowerConsumer, ConsumerStatus
 from solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector import TeslaWallConnector
+from solala.delegates.power_consumer.tuya_cloud_power_consumer.tuya_cloud_power_consumer import TuyaCloudPowerConsumer
 from solala.delegates.power_consumer.tuya_local_power_consumer.tuya_local_power_consumer import TuyaLocalPowerConsumer
-from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
 from solala.delegates.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
 from solala.delegates.power_controller.modbus_power_controller.modbus import Modbus, ModbusDevice
 from solala.delegates.power_controller.modbus_power_controller.modbus_power_controller import ModbusPowerController
@@ -43,12 +43,11 @@ from solala.delegates.solar_forecaster.solar_forecast import SolarForecast
 from solala.delegates.solar_forecaster.solar_forecaster import SolarForecaster, DailySolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.logger import LOGGER
-from solala.register import Register, RegisterType, RegisterValue, CallRegister, ReadOnlyRegister, check_type
 from solala.register_bank import RegisterBank, EMPTY_REGISTER_BANK
 from solala.settings import Settings, AmberPricerConnection, ModbusControllerConnection, TeslaWallConnectorConnection, \
     ControllerConnection, PricerConnection, ConsumerConnection, DummyControllerConnection, DummyPricerConnection, \
     DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, DummySolarForecasterConnection, \
-    DatabaseConnection, TuyaConnection, TuyaLocalConnection, MatterConnection
+    DatabaseConnection, TuyaCloudConnection, TuyaLocalConnection, MatterConnection
 from solala.utils.json_extras import JSONDict, JSONValue
 from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
 from solala.utils.ordered_async_rlock import OrderedAsyncRLock
@@ -217,7 +216,9 @@ class _ConnectionsState:
     controller: PowerController | None = None
     pricer: PowerPricer | None = None
     forecaster: SolarForecaster | None = None
-    consumers: dict[str, PowerConsumer] = field(default_factory=dict)
+    consumers: dict[str, PowerConsumerManager] = field(default_factory=dict)
+    closing_consumers: dict[str, asyncio.Task[None]] = field(default_factory=dict)
+    shutting_down: bool = False
     database_connections: SolalaDatabaseConnections | None = None
 
     # Keep track of the settings used to connect to the solar power system.
@@ -226,8 +227,6 @@ class _ConnectionsState:
     forecaster_settings: ForecasterConnection | None = None
     consumers_settings: dict[str, ConsumerConnection] = field(default_factory=dict)
     database_settings: DatabaseConnection | None = None
-
-    registers: RegisterBank = field(default_factory=lambda: RegisterBank(()))
 
     @property
     def controller_connection_info(self) -> JSONDict:
@@ -319,19 +318,19 @@ class _ControlState:
     control: _ControlSettingsState = field(default_factory=_ControlSettingsState)
     cache: _CacheState = field(default_factory=_CacheState)
     settings_persistence: _SettingsPersistenceState = field(default_factory=_SettingsPersistenceState)
-    health: ControlHealth = field(default_factory=ControlHealth)
+    health: ControlHealth = field(default_factory=lambda: ControlHealth(log_event=_log_health_event))
 
     # Listener lists are used on the same asyncio event loop; synchronous updates and snapshots need no lock.
-    # Internal control loop tracking variables.
-    control_loop_running: bool = True
-    control_changed: asyncio.Event = field(default_factory=asyncio.Event)
     control_loop_listeners: list[LoopListener] = field(default_factory=list)
     database_loop_listeners: list[LoopListener] = field(default_factory=list)
+
+    # Internal control loop tracking variables.
+    control_loop_running: bool = True
+    shutdown_deadline: float | None = None
+    control_changed: asyncio.Event = field(default_factory=asyncio.Event)
     database_write: bool = True
     iteration_start: datetime = field(default_factory=now)  # used for control-loop scheduling
     last_control_step: datetime = field(default_factory=now)  # last completed control-step attempt
-    registers_to_log: re.Pattern[str] | None = None
-    registers_to_log_str: str | None = None
 
     async def reset_controller(self, controller: PowerController | None, settings: ControllerConnection | None) -> None:
         assert (controller is None) == (settings is None)
@@ -370,17 +369,45 @@ class _ControlState:
         async with _cache_state():
             self.cache.solar_forecast_cache.clear()
 
-    def reset_consumer(self, consumer_name: str, consumer: PowerConsumer | None,
-                       settings: ConsumerConnection | None) -> None:
+    def reset_consumer(self, consumer_name: str, consumer: PowerConsumerManager | None,
+                       settings: ConsumerConnection | None, *, keep_settings: bool = False) -> None:
         if consumer is None:
             assert settings is None
             self.connections.consumers.pop(consumer_name, None)
-            self.connections.consumers_settings.pop(consumer_name, None)
+            if not keep_settings:
+                self.connections.consumers_settings.pop(consumer_name, None)
             self.health.report_success(f'consumer_status:{consumer_name}')
+            self.health.report_success(f'consumer_registers:{consumer_name}')
         else:
             assert settings is not None
             self.connections.consumers[consumer_name] = consumer
             self.connections.consumers_settings[consumer_name] = settings
+
+    def report_consumer_read(
+            self, name: str, manager: PowerConsumerManager, operation: ConsumerReadOperation,
+            read_error: Exception | None,
+    ) -> None:
+        """
+        Translate a consumer worker's completed attempt into a health report.
+
+        The worker supplies the read outcome. This callback checks that the
+        manager is still registered under the name before forwarding it to
+        ControlHealth.
+
+        Args:
+            name: Registered consumer name.
+            manager: Manager that completed the read.
+            operation: Status read or register discovery.
+            read_error: Exception from the attempt, or None on success.
+        """
+        if self.connections.consumers.get(name) is not manager:
+            return
+        key = f'consumer_{operation}:{name}'
+        if read_error is None:
+            self.health.report_success(key, log_message=f'Consumer {name!r} {operation} recovered')
+        else:
+            message = f'Consumer {name!r} {operation} unavailable'
+            self.health.report_failure(key, Severity.CAUTION, message, log_message=f'{message}: {read_error!r}')
 
     def reset_database(self, database: SolalaDatabaseConnections | None,
                        settings: DatabaseConnection | None) -> None:
@@ -394,13 +421,15 @@ _LOG_SRC = '[control loop] '  # prefix for log messages
 
 def get_control_health() -> tuple[Severity, tuple[HealthIssue, ...]]:
     """
-    Return a snapshot of overall control health and active issues.
+    Read the control loop's operational health for the master alarm.
+
+    This synchronous accessor returns reports already collected on the control
+    event loop. The alarm reads heartbeat freshness separately.
 
     Returns:
         Current highest severity and immutable issue snapshots.
     """
-    health = _CONTROL_STATE.health
-    return health.severity, health.get_issues()
+    return _CONTROL_STATE.health.snapshot()
 
 
 def log_debug(message: str) -> None:
@@ -424,6 +453,18 @@ def log_exception(message: str) -> None:
     Should only be used when handling an exception.
     """
     LOGGER.exception(f'{_LOG_SRC}{message}')
+
+
+def _log_health_event(level: int, message: str, traceback: bool) -> None:
+    """
+    Forward a health diagnostic to the application's log.
+    """
+    if level == INFO:
+        log_info(message)
+    elif traceback:
+        log_exception(message)
+    else:
+        log_error(message)
 
 
 @asynccontextmanager
@@ -471,43 +512,38 @@ async def control_loop(
     They must be called from the control loop's asyncio event loop.
 
     Call `exit_control_loop()` to gracefully terminate the control loop.
+    Shutdown stops the database task and closes the open connections.
+    If `settings_path` is provided, the settings file retains the configuration
+    for the next run.
 
     Args:
-        settings_path: Path to the settings file, if settings are to be persisted. If provided, the control
-            loop will attempt to load settings from the file.
+        settings_path: Path to the settings file. Startup saves only after
+            a complete configuration succeeds.
 
-        settings: Settings object to use if the settings file cannot be loaded.
+        settings: Configuration to use when no settings file is provided or
+            when saved settings cannot be read or applied.
 
-        force_settings: If True, the given settings object will always override any settings loaded from the file.
-            Note that if settings are provided, they will override any settings loaded from the file. This includes
-            modes and policies if the power controller is reloaded.
+        force_settings: If True and `settings` is provided, use it directly
+            without reading the settings file. Otherwise, try saved settings first.
 
-        database_write: If False, the control loop will not write to the database. This is useful for testing.
+        database_write: If False, the writing to the database is disabled. This is useful for testing.
     """
 
     # Prepare to run the control loop.
     _CONTROL_STATE.control_loop_running = True
+    _CONTROL_STATE.shutdown_deadline = None
     _CONTROL_STATE.database_write = database_write
+    _CONTROL_STATE.settings_persistence.path = None
+    path = Path(settings_path) if settings_path is not None else None
 
-    # Configure from user settings
-    loaded: bool = False
-    if settings_path is not None:
-        _CONTROL_STATE.settings_persistence.path = Path(settings_path)
-        if not force_settings or settings is None:
-            loaded = await _load_settings()
-    if (not loaded or force_settings) and settings is not None:
-        await configure_from_settings(settings)
-
-    database_task = asyncio.create_task(_database_loop())
+    database_task: asyncio.Task[None] | None = None
     try:
+        # Include startup in the clean-up scope in case configuration fails partway through.
+        await _configure_startup(path, settings, force_settings)
+        database_task = asyncio.create_task(_database_loop())
         await _control_loop()
     finally:
-        database_task.cancel()
-        try:
-            await database_task
-        except asyncio.CancelledError:
-            # Expected when shutting down the database loop.
-            pass
+        await _await_connection_close(asyncio.create_task(_shutdown_control_loop(database_task)))
 
 
 # =============================================================================
@@ -531,11 +567,18 @@ def loop_check_overdue() -> float:
     )
 
 
-def exit_control_loop() -> None:
+def exit_control_loop(*, deadline: float | None = None) -> None:
     """
-    Flag to exit the control loop on the next iteration.
+    Request control-loop shutdown within the shared shutdown budget.
+
+    Args:
+        deadline: Optional deadline on the current event loop's clock.
+            Defaults to the application shutdown budget starting now.
     """
-    # We are not concerned with race conditions, so we do not need to get a lock.
+    if deadline is None:
+        deadline = asyncio.get_running_loop().time() + Constants.MAX_SHUTDOWN_TIMEOUT.total_seconds()
+    existing_deadline = _CONTROL_STATE.shutdown_deadline
+    _CONTROL_STATE.shutdown_deadline = deadline if existing_deadline is None else min(existing_deadline, deadline)
     _CONTROL_STATE.control_loop_running = False
     _CONTROL_STATE.control_changed.set()
 
@@ -565,9 +608,6 @@ async def configure_from_settings(settings: Settings) -> None:
 
     if settings.database is not None:
         await connect_database(settings.database)
-
-    if settings.registers_to_log is not None:
-        await log_registers(settings.registers_to_log)
 
     # Initialise control modes
     await set_control(
@@ -689,36 +729,47 @@ async def get_power_status() -> PowerStatus:
             controller: PowerController | None = connections.controller
             if controller is None:
                 cache.last_power = _NO_POWER
-                if _CONTROL_STATE.health.report_failure(
-                        'power_status', Severity.CAUTION, 'Power status unavailable: controller disconnected'):
-                    log_error('Power update not available. Error: power controller not connected')
+                _CONTROL_STATE.health.report_failure(
+                    'power_status', Severity.CAUTION, 'Power status unavailable: controller disconnected',
+                    log_message='Power update not available. Error: power controller not connected',
+                )
             else:
                 try:
                     status = await controller.get_status()
                 except Exception:
                     cache.last_power = _NO_POWER
-                    if _CONTROL_STATE.health.report_failure(
-                            'power_status', Severity.CAUTION, 'Power status could not be read'):
-                        log_exception('Power status update failed')
+                    _CONTROL_STATE.health.report_failure(
+                        'power_status', Severity.CAUTION, 'Power status could not be read',
+                        log_message='Power status update failed', traceback=True,
+                    )
                 else:
                     cache.last_power = status
                     cache.last_power_valid = True
-                    if _CONTROL_STATE.health.report_success('power_status'):
-                        log_info('Power status recovered after previous failure')
+                    _CONTROL_STATE.health.report_success(
+                        'power_status', log_message='Power status recovered after previous failure',
+                    )
             return cache.last_power
 
 
 def get_register_bank() -> RegisterBank:
     """
-    Return the current immutable mapping of named registers.
+    Return the current immutable mapping of known registers.
 
     Register values are obtained separately and may change or become
     unavailable after the bank is returned.
 
     Subsequent calls to this function may return a different register
-    bank, for example, when delegates are connected or disconnected.
+    bank when delegates change or publish newly discovered registers.
     """
-    return _CONTROL_STATE.connections.registers
+    return _REGISTERS.get_register_bank()
+
+
+def request_consumer_register_discovery() -> None:
+    """
+    Request missing register definitions from active consumer managers.
+    """
+    for consumer in _CONTROL_STATE.connections.consumers.values():
+        consumer.request_register_discovery()
 
 
 async def get_price_now() -> Price:
@@ -863,33 +914,17 @@ async def _get_price_forecast() -> LifecycleReturn[Sequence[Price]]:
 
 async def get_consumers_status() -> dict[str, ConsumerStatus]:
     """
-    Get the status of each registered power consumer.
+    Request consumer status and return the readings available immediately.
 
     Returns:
-        A mapping from each consumer name to its status.
+        A mapping from consumer names to their available status readings.
     """
     async with _connections_state() as connections:
-        # Keep consumers connected until all status requests complete.
-        consumers = tuple(connections.consumers.items())
-        statuses = await asyncio.gather(
-            *(consumer.get_status() for _, consumer in consumers),
-            return_exceptions=True,
-        )
-
-    result: dict[str, ConsumerStatus] = {}
-    for (name, _), status in zip(consumers, statuses):
-        if isinstance(status, BaseException):
-            if isinstance(status, asyncio.CancelledError):
-                raise status
-            if _CONTROL_STATE.health.report_failure(
-                    f'consumer_status:{name}', Severity.CAUTION,
-                    f'Consumer {name!r} status unavailable'):
-                log_error(f'Consumer {name!r} status unavailable: {status!r}')
-        else:
-            if _CONTROL_STATE.health.report_success(f'consumer_status:{name}'):
-                log_info(f'Consumer {name!r} status recovered')
-            result[name] = status
-    return result
+        return {
+            name: status
+            for name, consumer in connections.consumers.items()
+            if (status := consumer.try_get_status()) is not None
+        }
 
 
 async def get_connection_info() -> JSONDict:
@@ -1116,124 +1151,195 @@ async def set_control(
         log_info(f'Control: {json.dumps(control_json)}')
 
 
-async def log_registers(match: str | re.Pattern[str] | None) -> None:
-    """
-    Select registers to log to the database.
-
-    Args:
-        match: Regular expression matching register names, or None to disable logging.
-            Use `MATCH_ALL` to match all registers.
-    """
-    if match is None:
-        _CONTROL_STATE.registers_to_log = None
-        _CONTROL_STATE.registers_to_log_str = None
-    elif isinstance(match, re.Pattern):
-        _CONTROL_STATE.registers_to_log = match
-        _CONTROL_STATE.registers_to_log_str = match.pattern
-    else:
-        _CONTROL_STATE.registers_to_log = re.compile(match)
-        _CONTROL_STATE.registers_to_log_str = match
-
-
 # =============================================================================
 #  Connection management for power control and price
 # =============================================================================
+
+def _log_connection_outcome(message: str, *, failed: bool = False) -> None:
+    """
+    Log a connection outcome without letting logger failures affect the caller.
+    """
+    logger = log_error if failed else log_info
+    try:
+        logger(message)
+    except Exception:
+        pass
+
+
+@contextmanager
+def _report_connection_errors(operation: str, delegate: str) -> Iterator[None]:
+    """
+    Log failures and expose them through the connection API.
+    """
+    try:
+        yield
+    except asyncio.CancelledError:
+        _log_connection_outcome(f'{operation.capitalize()} cancelled for {delegate}')
+        raise
+    except Exception as err:
+        detail = f'could not {operation} {delegate}'
+        _log_connection_outcome(f'{detail}: {err!r}', failed=True)
+        if isinstance(err, ControlLoopError):
+            raise
+        raise ControlLoopError(detail, errors={'error': repr(err)}) from err
+
+
+@asynccontextmanager
+async def _prepare_delegate(close: Callable[[], Awaitable[None]]) -> AsyncIterator[None]:
+    """
+    Close a prepared delegate if work fails before it is installed.
+    """
+    try:
+        yield
+    except (Exception, asyncio.CancelledError) as err:
+        try:
+            await close()
+        except Exception as close_error:
+            err.add_note(f'Failed to close prepared delegate: {close_error!r}')
+        raise
+
 
 async def connect_controller(controller_connection: ControllerConnection) -> None:
     """
     Connect or replace the power controller using the given settings.
 
+    Log the outcome. Task cancellation propagates after being logged.
+
     Args:
         controller_connection: Power controller connection configuration.
+
+    Raises:
+        ControlLoopError: If the power controller cannot be connected.
     """
-    async with _connections_state():
-        controller: PowerController
+    with _report_connection_errors('connect', 'power controller'):
+        async with _connections_state() as connections:
+            _require_connection_setup(connections)
+            controller: PowerController
 
-        if controller_connection.type == DummyControllerConnection.TYPE:
-            assert isinstance(controller_connection, DummyControllerConnection)
-            controller = _connect_dummy_controller(controller_connection)
-        elif controller_connection.type == ModbusControllerConnection.TYPE:
-            assert isinstance(controller_connection, ModbusControllerConnection)
-            controller = _connect_modbus(controller_connection)
-        else:
-            raise ControlLoopError(
-                'unknown controller connection type',
-                errors={'type': controller_connection.type}
-            )
+            if controller_connection.type == DummyControllerConnection.TYPE:
+                assert isinstance(controller_connection, DummyControllerConnection)
+                controller = _connect_dummy_controller(controller_connection)
+            elif controller_connection.type == ModbusControllerConnection.TYPE:
+                assert isinstance(controller_connection, ModbusControllerConnection)
+                controller = _connect_modbus(controller_connection)
+            else:
+                raise ControlLoopError(
+                    'unknown controller connection type',
+                    errors={'type': controller_connection.type}
+                )
 
-        await disconnect_controller()
-        await _CONTROL_STATE.reset_controller(controller, controller_connection)
-        connection_info = controller.get_connection_info()
-        log_info(f'Power controller connection: {json.dumps(connection_info)}')
-        await _save_settings()
-        await _reconfigure_registers(_CONTROL_STATE)
+            async with _prepare_delegate(controller.close):
+                connection_info = json.dumps(controller.get_connection_info())
+                if connections.controller is not None:
+                    await disconnect_controller()
+                await _REGISTERS.update_controller(controller)
+            await _CONTROL_STATE.reset_controller(controller, controller_connection)
+            await _save_settings()
+        _log_connection_outcome(f'Power controller connection: {connection_info}')
 
 
 async def disconnect_controller() -> None:
     """
     Close the power controller connection.
+
+    Log the outcome, including when no controller is connected. Task
+    cancellation propagates after being logged.
+
+    Raises:
+        ControlLoopError: If the power controller cannot be disconnected.
     """
-    async with _connections_state():
-        if _CONTROL_STATE.connections.controller is not None:
-            await _CONTROL_STATE.connections.controller.close()
-            await _CONTROL_STATE.reset_controller(None, None)
-            log_info('Power controller disconnected')
-        await _save_settings()
-        await _reconfigure_registers(_CONTROL_STATE)
+    with _report_connection_errors('disconnect', 'power controller'):
+        async with _connections_state() as connections:
+            controller = connections.controller
+            if controller is not None:
+                await controller.close()
+                await _CONTROL_STATE.reset_controller(None, None)
+            await _save_settings()
+            await _REGISTERS.update_controller(None)
+        _log_connection_outcome(
+            'Power controller disconnected' if controller is not None else 'Power controller already disconnected',
+        )
 
 
 async def connect_pricer(pricer_connection: PricerConnection) -> None:
     """
     Connect or replace the power pricer using the given settings.
 
+    Log the outcome. Task cancellation propagates after being logged.
+
     Args:
         pricer_connection: Power pricer connection configuration.
+
+    Raises:
+        ControlLoopError: If the power pricer cannot be connected.
     """
-    async with _connections_state():
-        pricer: PowerPricer
+    with _report_connection_errors('connect', 'power pricer'):
+        async with _connections_state() as connections:
+            _require_connection_setup(connections)
+            pricer: PowerPricer
 
-        if pricer_connection.type == DummyPricerConnection.TYPE:
-            assert isinstance(pricer_connection, DummyPricerConnection)
-            pricer = _connect_dummy_pricer(pricer_connection)
-        elif pricer_connection.type == AmberPricerConnection.TYPE:
-            assert isinstance(pricer_connection, AmberPricerConnection)
-            pricer = _connect_amber(pricer_connection)
+            if pricer_connection.type == DummyPricerConnection.TYPE:
+                assert isinstance(pricer_connection, DummyPricerConnection)
+                pricer = _connect_dummy_pricer(pricer_connection)
+            elif pricer_connection.type == AmberPricerConnection.TYPE:
+                assert isinstance(pricer_connection, AmberPricerConnection)
+                pricer = _connect_amber(pricer_connection)
+            else:
+                raise ControlLoopError('unknown pricer connection type', errors={'type': pricer_connection.type})
 
-        else:
-            raise ControlLoopError('unknown pricer connection type', errors={'type': pricer_connection.type})
-
-        await disconnect_pricer()
-        await _CONTROL_STATE.reset_pricer(pricer, pricer_connection)
-        connection_info = pricer.get_connection_info()
-        log_info(f'Power pricer connection: {json.dumps(connection_info)}')
-        await _save_settings()
-        await _reconfigure_registers(_CONTROL_STATE)
+            async with _prepare_delegate(pricer.close):
+                connection_info = json.dumps(pricer.get_connection_info())
+                if connections.pricer is not None:
+                    await disconnect_pricer()
+            await _CONTROL_STATE.reset_pricer(pricer, pricer_connection)
+            await _save_settings()
+        _log_connection_outcome(f'Power pricer connection: {connection_info}')
 
 
 async def disconnect_pricer() -> None:
     """
     Close the power pricer connection.
+
+    Log the outcome, including when no pricer is connected. Task
+    cancellation propagates after being logged.
+
+    Raises:
+        ControlLoopError: If the power pricer cannot be disconnected.
     """
-    async with _connections_state():
-        if _CONTROL_STATE.connections.pricer is not None:
-            await _CONTROL_STATE.connections.pricer.close()
-            await _CONTROL_STATE.reset_pricer(None, None)
-            log_info('Pricer disconnected')
-        await _save_settings()
-        await _reconfigure_registers(_CONTROL_STATE)
+    with _report_connection_errors('disconnect', 'power pricer'):
+        async with _connections_state() as connections:
+            pricer = connections.pricer
+            if pricer is not None:
+                await pricer.close()
+                await _CONTROL_STATE.reset_pricer(None, None)
+            await _save_settings()
+        _log_connection_outcome('Power pricer disconnected' if pricer is not None else 'Power pricer already disconnected')
 
 
 async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -> None:
     """
-    Connect or replace a named power consumer.
+    Connect a power consumer using a vacant consumer name.
+
+    Successful return means the consumer is registered and its manager is
+    available to the register manager. If registration fails, the consumer
+    is left unregistered and any prepared delegate is closed.
+    Cancellation propagates after cleanup. Settings persistence and logging
+    are best-effort once the consumer is registered.
 
     Args:
         name: Name identifying the consumer.
         consumer_connection: Power consumer connection configuration.
-    """
-    async with _connections_state():
-        consumer: PowerConsumer
 
+    Raises:
+        ControlLoopError: If the consumer cannot be registered, including
+            when its name is active or closing or shutdown is in progress.
+    """
+    state = _CONTROL_STATE
+    with _report_connection_errors('connect', f'power consumer {name!r}'):
+        async with _connections_state() as connections:
+            _require_vacant_consumer_name(connections, name)
+
+        # Prepare the delegate outside the connections lock.
         if consumer_connection.type == DummyConsumerConnection.TYPE:
             assert isinstance(consumer_connection, DummyConsumerConnection)
             consumer = _connect_dummy_consumer(consumer_connection)
@@ -1243,81 +1349,174 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
         elif consumer_connection.type == MatterConnection.TYPE:
             assert isinstance(consumer_connection, MatterConnection)
             consumer = _connect_matter(consumer_connection)
-        elif consumer_connection.type == TuyaConnection.TYPE:
-            assert isinstance(consumer_connection, TuyaConnection)
-            consumer = _connect_tuya(consumer_connection)
+        elif consumer_connection.type == TuyaCloudConnection.TYPE:
+            assert isinstance(consumer_connection, TuyaCloudConnection)
+            consumer = _connect_tuya_cloud(consumer_connection)
         elif consumer_connection.type == TuyaLocalConnection.TYPE:
             assert isinstance(consumer_connection, TuyaLocalConnection)
             consumer = _connect_tuya_local(consumer_connection)
         else:
             raise ControlLoopError(
-                'unknown consumer connection type',
+                f'unknown consumer connection type for consumer: {name!r}',
                 errors={'name': name, 'type': consumer_connection.type}
             )
 
-        await disconnect_consumer(name)
-        _CONTROL_STATE.reset_consumer(name, consumer, consumer_connection)
-        connection_info = consumer.get_connection_info()
-        log_info(f'Power consumer {name!r} connection: {json.dumps(connection_info)}')
-        await _save_settings()
-        await _reconfigure_registers(_CONTROL_STATE)
+        close_prepared = consumer.close
+        async with _prepare_delegate(lambda: close_prepared()):
+            connection_info = json.dumps(consumer.get_connection_info())
+            async with _connections_state() as connections:
+                _require_vacant_consumer_name(connections, name)
+                async with state.settings_persistence.lock:
+                    settings_path = state.settings_persistence.path
+                    settings: Settings | None = None
+                    if settings_path is not None:
+                        async with _control_settings_state():
+                            consumer_settings = connections.consumers_settings | {name: consumer_connection}
+                            settings = _get_settings(state).model_copy(update={'consumers': consumer_settings})
+
+                    # Once started, the manager owns the worker and delegate.
+                    new_manager = PowerConsumerManager(consumer, on_read_complete=partial(state.report_consumer_read, name))
+                    close_prepared = new_manager.close
+                    _REGISTERS.update_consumers(connections.consumers | {name: new_manager})
+                    state.reset_consumer(name, new_manager, consumer_connection)
+
+                    # A persistence failure does not undo registration.
+                    try:
+                        if settings_path is not None and settings is not None:
+                            _write_settings(settings_path, settings)
+                    except Exception:
+                        pass
+        _log_connection_outcome(f'Power consumer {name!r} connection: {connection_info}')
+
+
+def _require_vacant_consumer_name(connections: _ConnectionsState, name: str) -> None:
+    """
+    Check that consumer registration is allowed and the name is available.
+
+    The caller must hold the connections lock. This check does not reserve
+    the name.
+
+    Args:
+        connections: Active and closing consumer connections.
+        name: Consumer name to check.
+
+    Raises:
+        ControlLoopError: If the name is active or closing or shutdown is in progress.
+    """
+    _require_connection_setup(connections)
+    if name in connections.consumers or name in connections.closing_consumers:
+        raise ControlLoopError(f'consumer name {name!r} is already in use', errors={'name': name})
 
 
 async def disconnect_consumer(name: str) -> None:
     """
-    Close a power consumer connection.
+    Detach and close the consumer before making its name available again.
+
+    On successful return, the delegate has finished closing and its name has
+    been released. Concurrent disconnect calls share the same close operation.
+
+    Raises:
+        ControlLoopError: If the consumer cannot be disconnected.
     """
-    async with _connections_state():
-        consumer: PowerConsumer | None = _CONTROL_STATE.connections.consumers.get(name)
-        if consumer is not None:
+    with _report_connection_errors('disconnect', f'power consumer {name!r}'):
+        async with _connections_state() as connections:
+            closing = connections.closing_consumers.get(name)
+            if closing is None and name in connections.consumers:
+                closing = _start_consumer_disconnect(connections, name, save_settings=True)
+                _REGISTERS.update_consumers(connections.consumers)
+        if closing is None:
+            _log_connection_outcome(f'Power consumer {name!r} is already disconnected')
+            return
+        await _await_connection_close(closing)
+        _log_connection_outcome(f'Power consumer {name!r} disconnected')
+
+
+def _start_consumer_disconnect(
+        connections: _ConnectionsState, name: str, *, save_settings: bool,
+) -> asyncio.Task[None]:
+    """
+    Detach an active consumer and reserve its name until the close finishes.
+
+    The caller must hold the connections lock.
+    """
+    consumer = connections.consumers[name]
+    consumer.begin_close()
+    _CONTROL_STATE.reset_consumer(name, None, None, keep_settings=not save_settings)
+    closing = asyncio.create_task(_finish_consumer_disconnect(name, consumer, save_settings=save_settings))
+    connections.closing_consumers[name] = closing
+    return closing
+
+
+async def _finish_consumer_disconnect(name: str, consumer: PowerConsumerManager, *, save_settings: bool) -> None:
+    try:
+        try:
+            if save_settings:
+                await _save_settings()
+        finally:
             await consumer.close()
-            _CONTROL_STATE.reset_consumer(name, None, None)
-            log_info('Power consumer {name!r} disconnected')
-        await _save_settings()
-        await _reconfigure_registers(_CONTROL_STATE)
+    finally:
+        async with _connections_state() as connections:
+            del connections.closing_consumers[name]
 
 
 async def connect_forecaster(forecaster_connection: ForecasterConnection) -> None:
     """
     Connect or replace the solar forecaster using the given settings.
 
+    Log the outcome. Task cancellation propagates after being logged.
+
     Args:
         forecaster_connection: Solar forecaster connection configuration.
+
+    Raises:
+        ControlLoopError: If the solar forecaster cannot be connected.
     """
-    async with _connections_state():
-        forecaster: SolarForecaster
+    with _report_connection_errors('connect', 'solar forecaster'):
+        async with _connections_state() as connections:
+            _require_connection_setup(connections)
+            forecaster: SolarForecaster
 
-        if forecaster_connection.type == DummySolarForecasterConnection.TYPE:
-            assert isinstance(forecaster_connection, DummySolarForecasterConnection)
-            forecaster = _connect_dummy_solar_forecaster(forecaster_connection)
-        elif forecaster_connection.type == OpenMeteoConnection.TYPE:
-            assert isinstance(forecaster_connection, OpenMeteoConnection)
-            forecaster = _connect_open_meteo_forecaster(forecaster_connection)
-        else:
-            raise ControlLoopError(
-                'unknown forecaster connection type',
-                errors={'type': forecaster_connection.type}
-            )
+            if forecaster_connection.type == DummySolarForecasterConnection.TYPE:
+                assert isinstance(forecaster_connection, DummySolarForecasterConnection)
+                forecaster = _connect_dummy_solar_forecaster(forecaster_connection)
+            elif forecaster_connection.type == OpenMeteoConnection.TYPE:
+                assert isinstance(forecaster_connection, OpenMeteoConnection)
+                forecaster = _connect_open_meteo_forecaster(forecaster_connection)
+            else:
+                raise ControlLoopError(
+                    'unknown forecaster connection type',
+                    errors={'type': forecaster_connection.type}
+                )
 
-        await disconnect_forecaster()
-        await _CONTROL_STATE.reset_forecaster(forecaster, forecaster_connection)
-        connection_info = forecaster.get_connection_info()
-        log_info(f'Solar forecaster connection: {json.dumps(connection_info)}')
-        await _save_settings()
-        await _reconfigure_registers(_CONTROL_STATE)
+            async with _prepare_delegate(forecaster.close):
+                connection_info = json.dumps(forecaster.get_connection_info())
+                if connections.forecaster is not None:
+                    await disconnect_forecaster()
+            await _CONTROL_STATE.reset_forecaster(forecaster, forecaster_connection)
+            await _save_settings()
+        _log_connection_outcome(f'Solar forecaster connection: {connection_info}')
 
 
 async def disconnect_forecaster() -> None:
     """
     Close the solar forecaster connection.
+
+    Log the outcome, including when no forecaster is connected. Task
+    cancellation propagates after being logged.
+
+    Raises:
+        ControlLoopError: If the solar forecaster cannot be disconnected.
     """
-    async with _connections_state():
-        if _CONTROL_STATE.connections.forecaster is not None:
-            await _CONTROL_STATE.connections.forecaster.close()
-            await _CONTROL_STATE.reset_forecaster(None, None)
-            log_info('Solar forecaster disconnected')
-        await _save_settings()
-        await _reconfigure_registers(_CONTROL_STATE)
+    with _report_connection_errors('disconnect', 'solar forecaster'):
+        async with _connections_state() as connections:
+            forecaster = connections.forecaster
+            if forecaster is not None:
+                await forecaster.close()
+                await _CONTROL_STATE.reset_forecaster(None, None)
+            await _save_settings()
+        _log_connection_outcome(
+            'Solar forecaster disconnected' if forecaster is not None else 'Solar forecaster already disconnected',
+        )
 
 
 async def connect_database(database_connection: DatabaseConnection) -> None:
@@ -1328,12 +1527,16 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
         database_connection: Database connection configuration.
     """
     async with _CONTROL_STATE.database_lifecycle_lock:
+        async with _connections_state() as connections:
+            _require_connection_setup(connections)
         database_connections = SolalaDatabaseConnections(
             role=database_connection.role,
             password=database_connection.password,
             host=database_connection.host,
             port=database_connection.port,
             database_name=database_connection.database_name,
+            min_pool_size=database_connection.min_pool_size,
+            max_pool_size=database_connection.max_pool_size,
         )
         async with _connections_state() as connections:
             old_pool = connections.database_connections
@@ -1347,7 +1550,7 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
         async with _connections_state():
             _CONTROL_STATE.reset_database(database_connections, database_connection)
             connection_info = database_connections.get_connection_info()
-            log_info(f'Database connection: {json.dumps(connection_info)}')
+            _log_connection_outcome(f'Database connection: {json.dumps(connection_info)}')
             await _save_settings()
             # no need to _reconfigure_registers(state)
 
@@ -1365,7 +1568,7 @@ async def disconnect_database() -> None:
 
         if old_pool is not None:
             await _close_database_pool(old_pool)
-            log_info('Database disconnected')
+            _log_connection_outcome('Database disconnected')
 
         await _save_settings()
         # no need to _reconfigure_registers(state)
@@ -1376,6 +1579,147 @@ async def disconnect_database() -> None:
 # =============================================================================
 
 
+def _require_connection_setup(connections: _ConnectionsState) -> None:
+    """
+    Reject new registrations while shutdown owns the connection state.
+    """
+    if connections.shutting_down:
+        raise ControlLoopError('cannot connect during control-loop shutdown')
+
+
+async def _shutdown_control_loop(database_task: asyncio.Task[None] | None) -> None:
+    """
+    Stop background work, close open connections, and preserve the settings file.
+    """
+    _CONTROL_STATE.control_loop_running = False
+    _log_connection_outcome('Starting control-loop shutdown')
+    budget = Constants.MAX_SHUTDOWN_TIMEOUT.total_seconds()
+    deadline = _CONTROL_STATE.shutdown_deadline
+    if deadline is None:
+        deadline = asyncio.get_running_loop().time() + budget
+    timeout = asyncio.timeout_at(deadline)
+    try:
+        async with timeout:
+            await _close_control_loop_resources('control-loop shutdown', database_task)
+    except TimeoutError:
+        if not timeout.expired():
+            raise
+        _log_connection_outcome(f'Control-loop shutdown exceeded the {budget:g}-second budget', failed=True)
+    else:
+        _log_connection_outcome('Finished control-loop shutdown')
+
+
+async def _close_control_loop_resources(reason: str, database_task: asyncio.Task[None] | None = None) -> None:
+    """
+    Drain runtime resources during shutdown or before retrying startup.
+    """
+    state = _CONTROL_STATE
+    async with _connections_state() as connections:
+        connections.shutting_down = True
+
+    try:
+        closes: dict[str, Awaitable[None]] = {}
+        if database_task is not None:
+            database_task.cancel()
+        async with _connections_state() as connections:
+            # Persist any explicit consumer removals that are already in progress
+            # before clearing runtime state. Shutdown removals stay off disk.
+            if connections.closing_consumers:
+                await _save_settings()
+            if connections.consumers:
+                for name in tuple(connections.consumers):
+                    _start_consumer_disconnect(connections, name, save_settings=False)
+                _REGISTERS.update_consumers(connections.consumers)
+            closes.update({
+                f'power consumer {name!r}': task for name, task in connections.closing_consumers.items()
+            })
+
+        async with _connections_state() as connections:
+            # Stop settings writes before detaching the remaining connections.
+            state.settings_persistence.path = None
+            connections.consumers_settings.clear()
+            controller, pricer, forecaster = connections.controller, connections.pricer, connections.forecaster
+            # A replacement may have temporarily detached the pool.
+            close_database = connections.database_connections is not None or state.database_lifecycle_lock.locked()
+            if controller is not None:
+                await state.reset_controller(None, None)
+                await _REGISTERS.update_controller(None)
+            if pricer is not None:
+                await state.reset_pricer(None, None)
+            if forecaster is not None:
+                await state.reset_forecaster(None, None)
+
+        resources = {
+            'power controller': controller, 'power pricer': pricer, 'solar forecaster': forecaster,
+        }
+        closes.update({
+            name: resource.close() for name, resource in resources.items() if resource is not None
+        })
+        if close_database:
+            closes['database pool'] = _shutdown_database_pool(state)
+        if database_task is not None:
+            closes['database logging'] = _stop_database_logging(database_task)
+        await _report_connection_closes(closes, reason)
+    finally:
+        async with _connections_state() as connections:
+            connections.shutting_down = False
+
+
+async def _shutdown_database_pool(state: _ControlState) -> None:
+    """
+    Close the pool after any database lifecycle operation finishes.
+    """
+    async with state.database_lifecycle_lock:
+        async with _connections_state() as connections:
+            pool = connections.database_connections
+            if pool is None:
+                return
+            pool.begin_close()
+            state.reset_database(None, None)
+        await pool.close()
+
+
+async def _stop_database_logging(database_task: asyncio.Task[None]) -> None:
+    try:
+        await database_task
+    except asyncio.CancelledError:
+        pass
+    except Exception as err:
+        _log_connection_outcome(f'Database logging failed during control-loop shutdown: {err!r}', failed=True)
+    _log_connection_outcome('Stopped database logging during control-loop shutdown')
+
+
+async def _report_connection_closes(closes: Mapping[str, Awaitable[None]], reason: str) -> None:
+    """
+    Await all supplied closes concurrently and log each outcome.
+    """
+    interrupted: set[asyncio.Future[None]] = set()
+
+    def report(name: str, closing: asyncio.Future[None]) -> None:
+        if closing.cancelled():
+            if closing not in interrupted:
+                _log_connection_outcome(f'Close cancelled for {name} during {reason}', failed=True)
+        elif (err := closing.exception()) is not None:
+            _log_connection_outcome(f'Failed to close {name} during {reason}: {err!r}', failed=True)
+        elif name != 'database logging':
+            _log_connection_outcome(f'Closed {name} during {reason}')
+
+    tasks = {asyncio.ensure_future(close): name for name, close in closes.items()}
+    if not tasks:
+        return
+    for task, name in tasks.items():
+        task.add_done_callback(partial(report, name))
+    try:
+        await asyncio.wait(tasks)
+    except asyncio.CancelledError:
+        for task, name in tasks.items():
+            if not task.done():
+                interrupted.add(task)
+                _log_connection_outcome(f'Still waiting for {name} when {reason} was interrupted', failed=True)
+                task.cancel()
+        raise
+
+
 async def _close_database_pool(pool: SolalaDatabaseConnections) -> None:
     """
     Complete pool shutdown even if the calling task is cancelled.
@@ -1383,17 +1727,26 @@ async def _close_database_pool(pool: SolalaDatabaseConnections) -> None:
     Cancellation is propagated after the pool has finished closing, so the
     database lifecycle lock remains held throughout the transition.
     """
-    closing = asyncio.create_task(pool.close())
+    await _await_connection_close(asyncio.create_task(pool.close()))
+
+
+async def _await_connection_close(closing: asyncio.Task[None]) -> None:
+    """
+    Wait for a connection cleanup task to finish.
+
+    Shield the cleanup task from cancellation of the caller. If cleanup
+    succeeds, propagate any deferred caller cancellation. If cleanup fails,
+    propagate its exception.
+
+    Args:
+        closing: The task responsible for closing the connection.
+    """
     cancelled = False
-    # Keep awaiting the shielded close after cancellation. This deliberately
-    # delays cancellation propagation until shutdown has completed, so the
-    # lifecycle lock cannot be released while the old pool is still closing.
     while not closing.done():
         try:
             await asyncio.shield(closing)
         except asyncio.CancelledError:
             cancelled = True
-    # Propagate any failure from the close operation rather than hiding it.
     await closing
     if cancelled:
         raise asyncio.CancelledError
@@ -1416,13 +1769,14 @@ async def _database_loop() -> None:
             except Exception:
                 # A failed measurement must not stop subsequent logging cycles.
                 # Cancellation still propagates to the caller.
-                if _CONTROL_STATE.health.report_failure(
-                        'database_measurement', Severity.CAUTION,
-                        'Database measurement could not be saved'):
-                    log_exception('Database measurement failed')
+                _CONTROL_STATE.health.report_failure(
+                    'database_measurement', Severity.CAUTION, 'Database measurement could not be saved',
+                    log_message='Database measurement failed', traceback=True,
+                )
             else:
-                if _CONTROL_STATE.health.report_success('database_measurement'):
-                    log_info('Database measurements recovered after previous failure')
+                _CONTROL_STATE.health.report_success(
+                    'database_measurement', log_message='Database measurements recovered after previous failure',
+                )
 
         listeners = _CONTROL_STATE.database_loop_listeners.copy()
         # Notify listeners without holding a state lock.
@@ -1513,12 +1867,12 @@ async def _control_loop() -> None:
         except Exception:
             # Do not automatically retry an uncertain hardware command here.
             # Continue on the next scheduled iteration instead.
-            if state.health.report_failure('control_step', Severity.WARNING,
-                                           'Control step failed'):
-                log_exception('Control step failed')
+            state.health.report_failure(
+                'control_step', Severity.WARNING, 'Control step failed',
+                log_message='Control step failed', traceback=True,
+            )
         else:
-            if state.health.report_success('control_step'):
-                log_info('Control step recovered after previous failure')
+            state.health.report_success('control_step', log_message='Control step recovered after previous failure')
         # A completed attempt is a heartbeat even when its failure was handled.
         # Cancellation propagates before this point and must not refresh it.
         state.last_control_step = now()
@@ -1529,17 +1883,6 @@ async def _control_loop() -> None:
                 cache.last_power_valid = False
         except Exception:
             log_exception('Power cache invalidation failed')
-
-        if state.registers_to_log is not None:
-            try:
-                await _cur_log_registers(state.registers_to_log)
-            except Exception:
-                if state.health.report_failure('register_logging', Severity.CAUTION,
-                                               'Diagnostic register logging failed'):
-                    log_exception('Register logging failed')
-            else:
-                if state.health.report_success('register_logging'):
-                    log_info('Diagnostic register logging recovered after previous failure')
 
         # Listener callbacks are dispatched without holding state locks.
         _update_listeners(state.control_loop_listeners.copy())
@@ -1585,33 +1928,6 @@ def _get_sleep_time() -> float:
     return sleep_time
 
 
-async def _cur_log_registers(cur_log_registers: re.Pattern[str] | None) -> None:
-    """
-    Log numeric and text values of registers matching the configured pattern.
-
-    Boolean values are stored as 1 or 0 alongside numeric values. String
-    values are stored separately as text.
-
-    Args:
-        cur_log_registers: Compiled name pattern, or None to skip logging.
-    """
-    if cur_log_registers is not None:
-        timestamp = now()
-        registers = await get_register_bank().get_register_values(cur_log_registers)
-        to_log_numeric: dict[str, int | float] = {}
-        to_log_text: dict[str, str] = {}
-        for name, value in registers.items():
-            if isinstance(value, bool):
-                to_log_numeric[name] = 1 if value else 0
-            elif isinstance(value, (int, float)):
-                to_log_numeric[name] = value
-            elif isinstance(value, str):
-                to_log_text[name] = value
-        async with _database() as db:
-            await db.insert_registers_numeric(timestamp, to_log_numeric)
-            await db.insert_registers_text(timestamp, to_log_text)
-
-
 async def _control_step(state: _ControlState) -> None:
     """
     Perform one functional step while the caller holds the connections lock.
@@ -1649,13 +1965,12 @@ async def _control_step(state: _ControlState) -> None:
         # Preserve the last effective battery mode rather than falling back
         # to the originally requested mode after a failed price lookup.
         requested_mode.battery_mode = prev_state.control_mode.battery_mode
-        if state.health.report_failure(
-                'battery_policy', Severity.CAUTION, 'Battery price policy could not be evaluated'
-        ):
-            log_exception('Battery price policy failed')
+        state.health.report_failure(
+            'battery_policy', Severity.CAUTION, 'Battery price policy could not be evaluated',
+            log_message='Battery price policy failed', traceback=True,
+        )
     else:
-        if state.health.report_success('battery_policy'):
-            log_info('Battery price policy issue resolved')
+        state.health.report_success('battery_policy', log_message='Battery price policy issue resolved')
     # A policy must not repeat an uncertain one-shot command on every tick.
     # A manual request from UNKNOWN, however, is an explicit new attempt.
     battery_retry_suppressed = (prev_state.failed_battery_mode == requested_mode.battery_mode
@@ -1672,12 +1987,12 @@ async def _control_step(state: _ControlState) -> None:
         # command still receives its keep-alive when price retrieval fails.
         if requested_mode.inverter_mode != InverterMode.FIXED_LIMIT:
             requested_mode.inverter_mode = prev_state.control_mode.inverter_mode
-        if state.health.report_failure('inverter_policy', Severity.CAUTION,
-                                       'Inverter price policy could not be evaluated'):
-            log_exception('Inverter price policy failed')
+        state.health.report_failure(
+            'inverter_policy', Severity.CAUTION, 'Inverter price policy could not be evaluated',
+            log_message='Inverter price policy failed', traceback=True,
+        )
     else:
-        if state.health.report_success('inverter_policy'):
-            log_info('Inverter price policy issue resolved')
+        state.health.report_success('inverter_policy', log_message='Inverter price policy issue resolved')
     inverter_retry_suppressed = (prev_state.failed_inverter_mode == requested_mode.inverter_mode
                                  and original_mode.inverter_mode == InverterMode.UNKNOWN)
     if not inverter_retry_suppressed:
@@ -1777,14 +2092,14 @@ async def _execute_battery_mode(
             # is required before attempting an automatic retry.
             prev_state.battery_commanded_mode = BatteryMode.UNKNOWN
             prev_state.failed_battery_mode = requested_mode.battery_mode
-            if state.health.report_failure('battery_command', Severity.WARNING,
-                                           'Battery command outcome is uncertain'):
-                log_exception(f'Battery command failed: {requested_mode.battery_mode}')
+            state.health.report_failure(
+                'battery_command', Severity.WARNING, 'Battery command outcome is uncertain',
+                log_message=f'Battery command failed: {requested_mode.battery_mode}', traceback=True,
+            )
         else:
             prev_state.battery_commanded_mode = requested_mode.battery_mode
             prev_state.failed_battery_mode = None
-            if state.health.report_success('battery_command'):
-                log_info('Battery command completed after previous failure')
+            state.health.report_success('battery_command', log_message='Battery command completed after previous failure')
 
 
 async def _execute_inverter_mode(
@@ -1803,14 +2118,16 @@ async def _execute_inverter_mode(
         except Exception:
             prev_state.inverter_commanded_mode = InverterMode.UNKNOWN
             prev_state.failed_inverter_mode = requested_mode.inverter_mode
-            if state.health.report_failure('inverter_command', Severity.WARNING,
-                                           'Inverter command outcome is uncertain'):
-                log_exception(f'Inverter command failed: {requested_mode.inverter_mode}')
+            state.health.report_failure(
+                'inverter_command', Severity.WARNING, 'Inverter command outcome is uncertain',
+                log_message=f'Inverter command failed: {requested_mode.inverter_mode}', traceback=True,
+            )
         else:
             prev_state.inverter_commanded_mode = requested_mode.inverter_mode
             prev_state.failed_inverter_mode = None
-            if state.health.report_success('inverter_command'):
-                log_info('Inverter command completed after previous failure')
+            state.health.report_success(
+                'inverter_command', log_message='Inverter command completed after previous failure',
+            )
 
     # These inverter modes require a keep-alive command on every iteration.
     # A failed command is logged and retried next iteration; the previous mode
@@ -1835,13 +2152,13 @@ async def _execute_inverter_mode(
         if requested_mode.inverter_mode == InverterMode.FIXED_LIMIT:
             command = f'{command} ({requested_mode.fixed_limit_pct:g}%)'
             message = f'{message}: {command}'
-        if state.health.report_failure('inverter_command', Severity.WARNING,
-                                       message):
-            log_exception(f'Inverter command failed: {command}')
+        state.health.report_failure(
+            'inverter_command', Severity.WARNING, message,
+            log_message=f'Inverter command failed: {command}', traceback=True,
+        )
     else:
         prev_state.inverter_commanded_mode = requested_mode.inverter_mode
-        if state.health.report_success('inverter_command'):
-            log_info('Inverter command completed after previous failure')
+        state.health.report_success('inverter_command', log_message='Inverter command completed after previous failure')
 
     # A keep-alive request supersedes any earlier one-shot request, even if
     # this attempt fails. The command warning still tracks its outcome.
@@ -1956,6 +2273,7 @@ def _connect_modbus(controller_connection: ModbusControllerConnection) -> PowerC
         meter='meter',
         slaves=slave_names,
         mac_addr_lookup=mac_addr_lookup,
+        power_control_slaves=controller_connection.power_control_slaves,
         default_MinRsvPct=controller_connection.default_MinRsvPct,
         default_WMaxLimPct_RvrtTms=controller_connection.default_WMaxLimPct_RvrtTms,
     )
@@ -1996,7 +2314,12 @@ def _connect_tesla_wall_connector(consumer_connection: TeslaWallConnectorConnect
     """
     address: ResolvedAddress = resolve_addresses([consumer_connection.address])[0]
     try:
-        return TeslaWallConnector(address.ip_address, address.mac_address)
+        return TeslaWallConnector(
+            address.ip_address,
+            mac_address=address.mac_address,
+            cache_duration=consumer_connection.cache_duration,
+            timeout=consumer_connection.timeout,
+        )
     except Exception as err:
         raise ControlLoopError('could not connect Tesla Wall Connector', errors=[str(err)])
 
@@ -2014,12 +2337,13 @@ def _connect_matter(consumer_connection: MatterConnection) -> PowerConsumer:
             token=consumer_connection.token,
             secure=consumer_connection.secure,
             timeout=consumer_connection.timeout,
+            cache_duration=consumer_connection.cache_duration,
         )
     except Exception as err:
         raise ControlLoopError('could not configure Matter consumer', errors=[str(err)])
 
 
-def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
+def _connect_tuya_cloud(consumer_connection: TuyaCloudConnection) -> PowerConsumer:
     """
     Establish a power consumer connection using Tuya.
 
@@ -2029,7 +2353,7 @@ def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
         ControlLoopError: a connection cannot be established.
     """
     try:
-        return TuyaPowerConsumer(
+        return TuyaCloudPowerConsumer(
             access_id=consumer_connection.access_id,
             access_secret=consumer_connection.access_secret,
             device_id=consumer_connection.device_id,
@@ -2039,6 +2363,8 @@ def _connect_tuya(consumer_connection: TuyaConnection) -> PowerConsumer:
             calibration_factor=consumer_connection.calibration_factor,
             cache_duration=consumer_connection.cache_duration,
             include_accumulated_energy=consumer_connection.include_accumulated_energy,
+            connect_timeout=consumer_connection.connect_timeout,
+            read_timeout=consumer_connection.read_timeout,
         )
     except Exception as err:
         raise ControlLoopError('could not connect to the Tuya device', errors=[str(err)])
@@ -2056,6 +2382,7 @@ def _connect_tuya_local(connection: TuyaLocalConnection) -> PowerConsumer:
             version=connection.version,
             calibration_factor=connection.calibration_factor,
             timeout=connection.timeout,
+            cache_duration=connection.cache_duration,
         )
     except Exception as err:
         raise ControlLoopError('could not configure Tuya LAN consumer', errors=[str(err)])
@@ -2103,157 +2430,6 @@ def _update_listeners(listeners: Iterable[LoopListener]) -> None:
         asyncio.create_task(listener.update())
 
 
-class PowerRegister(ReadOnlyRegister):
-    """
-    Expose a power status field as a read-only register.
-    """
-
-    def __init__(self, field_name: str, register_type: RegisterType) -> None:
-        self._field_name = field_name
-        super().__init__(register_type)
-
-    async def _get(self) -> RegisterValue:
-        return getattr(await get_power_status(), self._field_name)
-
-
-class PriceRegister(ReadOnlyRegister):
-    """
-    Expose a current electricity price field as a read-only register.
-    """
-
-    def __init__(self, field_name: str, register_type: RegisterType) -> None:
-        self._field_name = field_name
-        super().__init__(register_type)
-
-    async def _get(self) -> RegisterValue:
-        return getattr(await get_price_now(), self._field_name)
-
-
-class ConsumerRegister(ReadOnlyRegister):
-    """
-    Expose a consumer status field as a read-only register.
-    """
-
-    def __init__(self, consumer: PowerConsumer, field_name: str, register_type: RegisterType) -> None:
-        self._field_name = field_name
-        self._consumer = consumer
-        super().__init__(register_type)
-
-    async def _get(self) -> RegisterValue:
-        return getattr(await self._consumer.get_status(), self._field_name)
-
-
-async def _reconfigure_registers(state: _ControlState) -> None:
-    """
-    Updates the control loop register bank as per currently available delegates.
-    Assumes the connections lock is held.
-    """
-
-    # Get status/battery and status/inverter status/parameter registers
-    registers: dict[str, Register] = _get_status_registers()
-
-    # Add status/power registers
-    f: Field
-    for f in fields(PowerStatus):
-        f_type: RegisterType = check_type(f.type)
-        registers[f'status/power/{f.name}'] = PowerRegister(f.name, f_type)
-    for consumer_name, consumer in state.connections.consumers.items():
-        for f in fields(ConsumerStatus):
-            try:
-                reg_type: RegisterType = check_type(f.type)
-            except TypeError:
-                continue
-            registers[f'status/power/consumer/{consumer_name}/{f.name}'] = \
-                ConsumerRegister(consumer, f.name, reg_type)
-        for prop_name, prop_type in _get_dataclass_properties(ConsumerStatus):
-            try:
-                reg_type: RegisterType = check_type(prop_type)
-            except TypeError:
-                continue
-            registers[f'status/power/consumer/{consumer_name}/{prop_name}'] = \
-                ConsumerRegister(consumer, prop_name, reg_type)
-    for f in fields(Price):
-        if f.name in ('start_time', 'end_time'):
-            continue
-        f_type: RegisterType = check_type(f.type)
-        registers[f'status/power/{f.name}'] = PriceRegister(f.name, f_type)
-
-    # Add controller registers
-    try:
-        await _add_delegate_registers(state, registers)
-    except Exception:
-        # Do not expose any delegate registers after a partial reconfiguration.
-        registers = {name: register for name, register in registers.items()
-                     if not name.startswith(('controller/', 'consumer/'))}
-        state.connections.registers = RegisterBank(registers)
-        if state.health.report_failure('register_configuration', Severity.CAUTION,
-                                       'Register bank reconfiguration failed'):
-            log_exception('Register bank reconfiguration failed')
-    else:
-        state.connections.registers = RegisterBank(registers)
-        if state.health.report_success('register_configuration'):
-            log_info('Register bank reconfiguration recovered')
-
-
-def _get_status_registers() -> dict[str, Register]:
-    """
-    Get the initial, always-available registers.
-    """
-    return {
-        'status/battery/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.battery_mode.name),
-        'status/battery/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.battery_policy.name),
-        'status/inverter/mode': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_mode.name),
-        'status/inverter/policy': CallRegister(lambda: _CONTROL_STATE.control.control_mode.inverter_policy.name),
-
-        'status/parameter/fixed_limit_pct': CallRegister(
-            lambda: _CONTROL_STATE.control.control_mode.fixed_limit_pct),
-        'status/parameter/start_charge_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control.control_mode.start_charge_price_threshold),
-        'status/parameter/stop_charge_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control.control_mode.stop_charge_price_threshold),
-        'status/parameter/enable_export_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control.control_mode.enable_export_price_threshold),
-        'status/parameter/disable_export_price_threshold': CallRegister(
-            lambda: _CONTROL_STATE.control.control_mode.disable_export_price_threshold),
-    }
-
-
-async def _add_delegate_registers(state: _ControlState, registers: dict[str, Register]) -> None:
-    """
-    Add controller and consumer registers to the new register bank.
-
-    Args:
-        state: Current connection state.
-        registers: Register mapping to extend.
-    """
-    if state.connections.controller is not None:
-        controller_registers: RegisterBank = await state.connections.controller.get_registers()
-        for name, register in controller_registers.items():
-            registers[f'controller/{name}'] = register
-
-    # Add power consumer registers
-    for consumer_name, consumer in state.connections.consumers.items():
-        consumer_registers: RegisterBank = await consumer.get_registers()
-        for name, register in consumer_registers.items():
-            registers[f'consumer/{consumer_name}/{name}'] = register
-
-
-def _get_dataclass_properties(cls: type) -> Iterator[tuple[str, Any]]:
-    """
-    Iterate over properties defined on a class and their return types.
-
-    Args:
-        cls: Class whose properties are to be inspected.
-
-    Yields:
-        Property name and annotated getter return type.
-    """
-    for name, member in getmembers(cls):
-        if isinstance(member, property) and member.fget is not None:
-            prop_type = get_type_hints(member.fget)['return']
-            yield name, prop_type
-
-
 def _get_settings(state: _ControlState) -> Settings:
     """
     Build settings from the current control state.
@@ -2286,7 +2462,6 @@ def _get_settings(state: _ControlState) -> Settings:
         stop_charge_price_threshold=control_mode.stop_charge_price_threshold,
 
         fixed_limit_pct=control_mode.fixed_limit_pct,
-        registers_to_log=state.registers_to_log_str,
     )
 
 
@@ -2307,32 +2482,55 @@ async def _save_settings() -> None:
             async with _control_settings_state():
                 settings = _get_settings(_CONTROL_STATE)
 
+            _write_settings(settings_path, settings)
+
+
+def _write_settings(settings_path: Path, settings: Settings) -> None:
+    try:
+        with open(settings_path, 'w') as file:
+            print(settings.model_dump_json(), file=file)
+    except Exception as err:
+        log_error(f'Error saving settings: {err!r}')
+
+
+async def _configure_startup(settings_path: Path | None, settings: Settings | None, force_settings: bool) -> None:
+    """
+    Apply saved or supplied settings with persistence disabled until startup succeeds.
+    """
+    loaded = False
+    if settings_path is not None and (not force_settings or settings is None):
+        saved = _load_settings(settings_path)
+        if saved is not None:
             try:
-                with open(settings_path, 'w') as file:
-                    print(settings.model_dump_json(), file=file)
+                await configure_from_settings(saved)
             except Exception as err:
-                log_error(f'Error saving settings: {err!r}')
+                _log_connection_outcome(f'Error applying saved settings: {err!r}', failed=True)
+                if settings is None:
+                    raise
+                _log_connection_outcome('Closing partial startup connections before applying fallback settings')
+                await _await_connection_close(asyncio.create_task(_close_control_loop_resources('startup rollback')))
+            else:
+                loaded = True
+
+    if not loaded and settings is not None:
+        await configure_from_settings(settings)
+
+    _CONTROL_STATE.settings_persistence.path = settings_path
+    if settings_path is not None and (loaded or settings is not None):
+        await _save_settings()
 
 
-async def _load_settings() -> bool:
+def _load_settings(settings_path: Path) -> Settings | None:
     """
-    Load the persisted settings.
-
-    Returns:
-        True if settings were loaded successfully, False otherwise.
+    Read and validate persisted settings before opening any connections.
     """
-    settings_path = _CONTROL_STATE.settings_persistence.path
-    if settings_path is not None:
-        try:
-            with open(settings_path, 'r') as file:
-                json_string = file.read()
-            settings = Settings.model_validate_json(json_string)
-            await configure_from_settings(settings)
-            return True
-        except Exception as err:
-            log_error(f'Error loading settings: {err!r}')
-    return False
+    try:
+        return Settings.model_validate_json(settings_path.read_bytes())
+    except (OSError, ValueError) as err:
+        _log_connection_outcome(f'Error loading settings: {err!r}', failed=True)
+        return None
 
 
 # Initialise global state after the cache delegates have been defined.
 _CONTROL_STATE: _ControlState = _ControlState()
+_REGISTERS = RegisterManager(_CONTROL_STATE.control.control_mode, get_power_status, get_price_now)

@@ -1,11 +1,9 @@
-import importlib
 import unittest
 from dataclasses import replace
 from unittest.mock import AsyncMock, patch
 
-from solala.control_loop.control_health import Severity
-
-control_loop = importlib.import_module('solala.control_loop.control_loop')
+from solala.control import control_loop
+from solala.control.control_health import Severity
 
 
 class PowerStatusHealthTestCase(unittest.IsolatedAsyncioTestCase):

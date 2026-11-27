@@ -74,6 +74,7 @@ class MatterPowerConsumer(PowerConsumer):
             token: str | None = None,
             secure: bool = False,
             timeout: float = 30,
+            cache_duration: float = 0.1,
     ) -> None:
         """
         Configure a Matter Server connection without opening it.
@@ -85,7 +86,9 @@ class MatterPowerConsumer(PowerConsumer):
             endpoint_id: Endpoint containing the device's electrical clusters.
             token: Optional bearer token for an authenticated server.
             secure: Whether to use TLS (wss rather than ws).
-            timeout: Timeout in seconds for server operations.
+            timeout: Seconds allowed for WebSocket setup, sending the command,
+                and receiving its matching reply after acquiring the request lock.
+            cache_duration: How long to reuse node attributes, in seconds.
         """
         super().__init__(can_switch=True)
         self._url = f'{"wss" if secure else "ws"}://{host}:{port}/ws'
@@ -97,7 +100,7 @@ class MatterPowerConsumer(PowerConsumer):
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._lock = asyncio.Lock()
         self._request_id = 0
-        self._attributes_cache = AsyncMicroCache(self.__fetch_node_attributes, 0.1)
+        self._attributes_cache = AsyncMicroCache(self.__fetch_node_attributes, cache_duration)
         self._register_bank_lock = asyncio.Lock()
         self._register_bank: RegisterBank | None = None
         self._connection_info: JSONDict = {
@@ -107,6 +110,8 @@ class MatterPowerConsumer(PowerConsumer):
             'node_id': node_id,
             'endpoint_id': endpoint_id,
             'secure': secure,
+            'timeout': timeout,
+            'cache_duration': cache_duration,
         }
 
     async def _ensure_connected(self) -> aiohttp.ClientWebSocketResponse:
@@ -135,23 +140,24 @@ class MatterPowerConsumer(PowerConsumer):
         """
         async with self._lock:
             try:
-                ws = await self._ensure_connected()
-                self._request_id += 1
-                message_id = f'solala-{self._request_id}'
-                message: dict[str, Any] = {'message_id': message_id, 'command': command}
-                if kwargs:
-                    message['args'] = kwargs
-                await ws.send_json(message)
-                while True:
-                    response = await ws.receive(timeout=self._timeout)
-                    if response.type != aiohttp.WSMsgType.TEXT:
-                        raise ConnectionError(f'Matter WebSocket closed: {response.type!r}')
-                    data = json.loads(response.data)
-                    if data.get('message_id') != message_id:
-                        continue
-                    if data.get('message_type') == 'error' or 'error_code' in data:
-                        raise ConnectionError(f'Matter Server error: {data!r}')
-                    return data.get('result')
+                async with asyncio.timeout(self._timeout):
+                    ws = await self._ensure_connected()
+                    self._request_id += 1
+                    message_id = f'solala-{self._request_id}'
+                    message: dict[str, Any] = {'message_id': message_id, 'command': command}
+                    if kwargs:
+                        message['args'] = kwargs
+                    await ws.send_json(message)
+                    while True:
+                        response = await ws.receive()
+                        if response.type != aiohttp.WSMsgType.TEXT:
+                            raise ConnectionError(f'Matter WebSocket closed: {response.type!r}')
+                        data = json.loads(response.data)
+                        if data.get('message_id') != message_id:
+                            continue
+                        if data.get('message_type') == 'error' or 'error_code' in data:
+                            raise ConnectionError(f'Matter Server error: {data!r}')
+                        return data.get('result')
             except BaseException:
                 await self._disconnect()
                 raise

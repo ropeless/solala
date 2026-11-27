@@ -36,8 +36,13 @@ class TeslaLifetimeEnergyTestCase(unittest.IsolatedAsyncioTestCase):
     """Verify device-owned accumulated energy and independent response caches."""
 
     async def asyncSetUp(self) -> None:
-        self.consumer = TeslaWallConnector('tesla.example', cache_duration=0)
-        self.addAsyncCleanup(self.consumer.close)
+        self.consumer = self._make_consumer(cache_duration=0)
+
+    def _make_consumer(self, **options: float) -> TeslaWallConnector:
+        with patch('httpx.AsyncClient', autospec=True):
+            consumer = TeslaWallConnector('tesla.example', **options)
+        self.addAsyncCleanup(consumer.close)
+        return consumer
 
     async def test_lifetime_energy_is_reported_in_wh(self) -> None:
         self.consumer._client.get = AsyncMock(side_effect=[
@@ -54,9 +59,7 @@ class TeslaLifetimeEnergyTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_both_endpoints_share_cache_duration_but_not_cache(self) -> None:
-        await self.consumer.close()
-        self.consumer = TeslaWallConnector('tesla.example', cache_duration=60)
-        self.addAsyncCleanup(self.consumer.close)
+        self.consumer = self._make_consumer(cache_duration=60)
         self.consumer._client.get = AsyncMock(side_effect=[
             response(vitals()), response({'energy_wh': 100}),
         ])
@@ -155,8 +158,7 @@ class TeslaLifetimeEnergyTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_default_cache_duration_is_tenth_second(self) -> None:
         with patch('solala.delegates.power_consumer.tesla_wall_connector.tesla_wall_connector.AsyncMicroCache') as cache:
-            other = TeslaWallConnector('tesla.example')
-            self.addAsyncCleanup(other.close)
+            self._make_consumer()
             self.assertEqual(cache.call_count, 2)
             self.assertEqual([call.args[1] for call in cache.call_args_list], [0.1, 0.1])
 

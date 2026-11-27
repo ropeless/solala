@@ -5,7 +5,8 @@ from solala.delegates.power_consumer.power_consumer import PowerConsumer, Consum
 from solala.register import CallRegister
 from solala.register_bank import RegisterBank
 from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, \
-    async_maybe_inject_failure
+    async_maybe_inject_failure, get_dummy_failure_info
+from solala.utils.json_extras import JSONDict
 
 
 class FailureLocation(BaseFailureLocation):
@@ -164,7 +165,7 @@ class DummyPowerConsumer(PowerConsumer):
             accumulated_energy=self._energy if self._include_accumulated_energy else None,
         )
 
-    def get_connection_info(self) -> dict[str, int | float | str]:
+    def get_connection_info(self) -> JSONDict:
         maybe_inject_failure(FailureLocation.get_connection_info, self.failure)
         return {
             'connection': self.__class__.__name__,
@@ -174,6 +175,7 @@ class DummyPowerConsumer(PowerConsumer):
             'current': self._current,
             'can_switch': self.can_switch,
             'include_accumulated_energy': self._include_accumulated_energy,
+            'failure': get_dummy_failure_info(self.failure),
             'create_time': self._create_time,
         }
 

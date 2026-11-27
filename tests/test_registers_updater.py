@@ -2,6 +2,10 @@ import asyncio
 import unittest
 from unittest.mock import MagicMock, patch
 
+from solala.control.power_consumer_manager import PowerConsumerManager
+from solala.control.register_manager import ConsumerRegister
+from solala.delegates.power_consumer.dummy_power_consumer.dummy_power_consumer import DummyPowerConsumer
+from solala.register_bank import RegisterBank
 from solala.server.page_updaters import RegistersUpdater
 from solala.server.register_filter import compile_register_filter
 
@@ -152,9 +156,33 @@ class RegistersUpdaterTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_read_remains_unknown(self) -> None:
         self.bank['first'].get = MagicMock(side_effect=RuntimeError('unavailable'))
-        self.updater.set_filter('first')
-        await self.updater._read_task
+        with self.assertLogs('solala', level='DEBUG') as logs:
+            self.updater.set_filter('first')
+            task = self.updater._read_task
+            assert task is not None
+            await task
         self.assertEqual(self.updater._values, {})
+        self.assertEqual(logs.records[0].getMessage(), 'Failed to read register first')
+        self.assertIsNotNone(logs.records[0].exc_info)
+
+    async def test_pending_consumer_register_is_quiet_and_reads_after_refresh(self) -> None:
+        published = asyncio.Event()
+        consumer = PowerConsumerManager(
+            DummyPowerConsumer(power=120, current=1),
+            on_read_complete=lambda *_: published.set(),
+        )
+        self.addAsyncCleanup(consumer.close)
+        name = 'status/power/consumer/plug/power'
+        bank = RegisterBank({name: ConsumerRegister(consumer, 'power', float)})
+        self.updater._bank = bank
+
+        with self.assertNoLogs('solala', level='DEBUG'):
+            await self.updater._read_values(0, 0)
+            self.assertEqual(self.updater._values, {})
+            await asyncio.wait_for(published.wait(), 1)
+            await self.updater._read_values(0, 0)
+
+        self.assertEqual(self.updater._values, {name: 120})
 
 
 if __name__ == '__main__':

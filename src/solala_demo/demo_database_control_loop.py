@@ -3,7 +3,7 @@ import selectors
 from datetime import date
 
 from solala.utils.local_config_help import config
-from solala.control_loop import control_loop
+from solala.control import control_loop
 from solala.settings import Settings, DatabaseConnection, DummyControllerConnection, DummyPricerConnection, \
     DummySolarForecasterConnection
 

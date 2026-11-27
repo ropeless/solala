@@ -1,7 +1,8 @@
 import asyncio
 import math
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from functools import partial
+from threading import Event, Lock
 
 from tuya_connector import TuyaOpenAPI
 
@@ -16,9 +17,9 @@ from solala.utils.type_extras import check_num, check_bool, check_non_negative
 API_ENDPOINT = "https://openapi.tuyaeu.com"
 
 
-class TuyaPowerConsumer(PowerConsumer):
+class TuyaCloudPowerConsumer(PowerConsumer):
     """
-    Power consumer implementation for a device connected through the Tuya IoT API.
+    Power consumer implementation for a device connected through the Tuya Cloud IoT API.
 
     Retrieves device status and exposes supported status fields as registers.
 
@@ -38,6 +39,8 @@ class TuyaPowerConsumer(PowerConsumer):
             calibration_factor: float = 1.0,
             cache_duration: float = 300,
             include_accumulated_energy: bool = False,
+            connect_timeout: float = 5.0,
+            read_timeout: float = 10.0,
     ) -> None:
         """
         Configure the Tuya API client and device measurements.
@@ -56,9 +59,18 @@ class TuyaPowerConsumer(PowerConsumer):
             cache_duration: How long to cache the device status. Use this to reduce how often the
                 API is called. The default value is 300 seconds (5 minutes).
             include_accumulated_energy: Whether to report Tuya's 'add_ele' value as Wh.
+            connect_timeout: Seconds to allow for establishing an HTTP connection.
+            read_timeout: Seconds to wait for incoming data before timing out.
+
+        Raises:
+            ValueError: If the calibration factor or either timeout is invalid.
         """
         if not math.isfinite(calibration_factor) or calibration_factor <= 0:
             raise ValueError('calibration_factor must be positive and finite')
+        if not math.isfinite(connect_timeout) or connect_timeout <= 0:
+            raise ValueError('connect_timeout must be positive and finite')
+        if not math.isfinite(read_timeout) or read_timeout <= 0:
+            raise ValueError('read_timeout must be positive and finite')
         super().__init__(can_switch=True)
         self._calibration_factor = calibration_factor
         self._include_accumulated_energy = include_accumulated_energy
@@ -71,8 +83,14 @@ class TuyaPowerConsumer(PowerConsumer):
             access_id,
             access_secret,
         )
+        # The SDK's shared HTTP path supplies no timeout, including for authentication.
+        session = self._tuya.session
+        session.request = partial(session.request, timeout=(connect_timeout, read_timeout))
         self._connected: bool = False
         self._connect_lock = asyncio.Lock()
+        self._session_lock = Lock()
+        self._closing = Event()
+        self._close_task: asyncio.Task[None] | None = None
         self._status_url: str = f'/v1.0/iot-03/devices/{device_id}/status'
         self._connection_info: JSONDict = {
             'connection': 'Tuya',
@@ -83,6 +101,9 @@ class TuyaPowerConsumer(PowerConsumer):
             'power_scale_factor': self._power_scale_factor,
             'include_accumulated_energy': include_accumulated_energy,
             'calibration_factor': calibration_factor,
+            'cache_duration': cache_duration,
+            'connect_timeout': connect_timeout,
+            'read_timeout': read_timeout,
         }
 
         # Cache Tuya device status for the requested duration to limit cloud API usage.
@@ -99,7 +120,7 @@ class TuyaPowerConsumer(PowerConsumer):
         if not self._connected:
             async with self._connect_lock:
                 if not self._connected:
-                    response = await asyncio.to_thread(self._tuya.connect)
+                    response = await self._request(self._tuya.connect)
                     if not response.get('success', False):
                         raise ConnectionError(response)
                     self._connected = True
@@ -155,7 +176,7 @@ class TuyaPowerConsumer(PowerConsumer):
         """
         await self._connect()
         payload = {'commands': [{'code': 'switch_1', 'value': on}]}
-        response = await asyncio.to_thread(self._tuya.post, self._command_url, payload)
+        response = await self._request(self._tuya.post, self._command_url, payload)
         if not response.get('success', False):
             raise ConnectionError(response)
         await self._cache.invalidate()
@@ -164,7 +185,29 @@ class TuyaPowerConsumer(PowerConsumer):
         return self._connection_info
 
     async def close(self) -> None:
-        pass
+        """
+        Reject new SDK requests and close the session after the current request.
+        """
+        close_task = self._close_task
+        if close_task is None:
+            self._closing.set()
+            close_task = asyncio.create_task(asyncio.to_thread(self._close_session))
+            self._close_task = close_task
+        await asyncio.shield(close_task)
+
+    def _close_session(self) -> None:
+        with self._session_lock:
+            self._tuya.session.close()
+
+    async def _request[R, **P](self, call: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        def request() -> R:
+            # The thread owns the lock even if the awaiting coroutine is cancelled.
+            with self._session_lock:
+                if self._closing.is_set():
+                    raise ConnectionError('Tuya Cloud session is closing or closed')
+                return call(*args, **kwargs)
+
+        return await asyncio.to_thread(request)
 
     async def _get_register_keys(self) -> AsyncIterator[tuple[str, RegisterType]]:
         """
@@ -209,7 +252,7 @@ class TuyaPowerConsumer(PowerConsumer):
             Exception: If connecting or requesting device status fails.
         """
         await self._connect()
-        response = await asyncio.to_thread(self._tuya.get, self._status_url)
+        response = await self._request(self._tuya.get, self._status_url)
         if not response.get('success', False):
             raise ConnectionError(response)
         return {

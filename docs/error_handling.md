@@ -40,7 +40,7 @@ example, a failed battery command should not prevent an independent inverter
 command from being attempted when that command is safe.
 
 Errors in individual consumers, forecasts, price services, measurement
-persistence, register logging and UI listeners are handled at their respective
+persistence and UI listeners are handled at their respective
 operation boundaries. Recoverable database failures are handled without
 terminating the database loop. A reporting failure is not evidence of a
 valid zero measurement or a successful hardware operation.
@@ -133,6 +133,12 @@ record, including traceback context for unexpected exceptions.
 
 System health and master alarm
 ------------------------------
+
+Operation code reports outcomes with a stable issue key, severity, and
+user-facing message. `ControlHealth` tracks active issues, logs new or changed
+failures and recovery, and provides immutable snapshots. Diagnostic log
+messages and tracebacks are supplied separately from the displayed message.
+Health updates and snapshot reads are synchronous on the control event loop.
 
 The persistent master alarm implements **five displayed conditions**. Each has two distinct
 interpretations: **user understanding** describes the potential operational

@@ -15,6 +15,12 @@ class ReadOnlyError(AttributeError):
         super().__init__('Register not writable')
 
 
+class RegisterValueUnavailable(RuntimeError):
+    """
+    Indicate that a register has no value available for this read.
+    """
+
+
 def check_type(t: object) -> RegisterType:
     """
     Validate that a type is an allowed RegisterType.
@@ -122,6 +128,9 @@ class Register(ABC):
 
         Returns:
             The current register value.
+
+        Raises:
+            RegisterValueUnavailable: If the register currently has no value to return.
         """
         return await self._get()
 

@@ -1,7 +1,7 @@
 from solala.constants import Constants
 from solala.server import server
 from solala.settings import Settings, ModbusControllerConnection, AmberPricerConnection, \
-    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, TuyaConnection, TuyaLocalConnection, \
+    TeslaWallConnectorConnection, OpenMeteoConnection, DatabaseConnection, TuyaCloudConnection, TuyaLocalConnection, \
     MatterConnection, ConsumerConnection
 from solala.utils.local_config_help import config
 from solala_demo.log import configure_logger
@@ -66,10 +66,10 @@ def configure_demo_consumers() -> dict[str, ConsumerConnection]:
         consumers[config.TESLA_WALL_CONNECTOR_NAME] = \
             TeslaWallConnectorConnection(address=config.TESLA_WALL_CONNECTOR_ADDR)
 
-    # TuyaConnection via cloud (outlet_charger_cloud)
+    # TuyaCloudConnection via cloud (outlet_charger_cloud)
     outlet_charger: str | None = config.get('POWER_POINT_DEVICE')
     if outlet_charger:
-        consumers[config.POWER_POINT_NAME] = TuyaConnection(
+        consumers[config.POWER_POINT_NAME] = TuyaCloudConnection(
             device_id=outlet_charger,
             access_id=config.POWER_POINT_ACCESS_ID,
             access_secret=config.POWER_POINT_ACCESS_SECRET,

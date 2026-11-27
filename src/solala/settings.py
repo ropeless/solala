@@ -1,12 +1,12 @@
 from datetime import time
 import math
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, ClassVar, Literal, Self
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from solala.constants import DEFAULT_INVERTER_LIMIT, DEFAULT_INVERTER_EFFICIENCY, DEFAULT_PANEL_TEMPERATURE_COEFFICIENT, \
     DEFAULT_DB_HOST, DEFAULT_DB_PORT, DEFAULT_DB_NAME
-from solala.control_loop.modes_and_policies import BatteryMode, InverterMode, InverterPolicy, BatteryPolicy
+from solala.control.modes_and_policies import BatteryMode, InverterMode, InverterPolicy, BatteryPolicy
 from solala.delegates.solar_forecaster.dummy_solar_forecaster import dummy_solar_forecaster
 from solala.delegates.power_consumer.dummy_power_consumer import dummy_power_consumer
 from solala.delegates.power_pricer.dummy_power_pricer import dummy_power_pricer
@@ -144,6 +144,8 @@ class ModbusControllerConnection(BaseModel):
         master_device_id: Modbus device identifier for the master inverter.
         meter_device_id: Modbus device identifier for the meter.
         slave_device_id: Modbus device identifier for the slave inverter.
+        power_control_slaves: Whether to apply inverter power curtailment to
+            slave inverters as well as the master.
         default_MinRsvPct: Default minimum battery reserve percentage.
         default_WMaxLimPct_RvrtTms: Default inverter control reversion time in seconds.
     """
@@ -154,6 +156,7 @@ class ModbusControllerConnection(BaseModel):
     master_device_id: int = 1
     meter_device_id: int = 200
     slave_device_id: int = 1
+    power_control_slaves: bool = False
     default_MinRsvPct: float = 7
     default_WMaxLimPct_RvrtTms: int = 11
 
@@ -176,14 +179,21 @@ class AmberPricerConnection(BaseModel):
 class TeslaWallConnectorConnection(BaseModel):
     """
     Configure a Tesla Wall Connector using its MAC or IP address.
+
+    Attributes:
+        address: MAC or IP address of the connector.
+        cache_duration: Lifetime of each cached API response in seconds.
+        timeout: HTTP timeout in seconds.
     """
     TYPE: ClassVar[Literal['tesla']] = 'tesla'
     type: Literal['tesla'] = 'tesla'
 
     address: str  # MAC or IP address
+    cache_duration: float = Field(default=0.1, ge=0, allow_inf_nan=False)
+    timeout: float = Field(default=5.0, gt=0, allow_inf_nan=False)
 
 
-class TuyaConnection(BaseModel):
+class TuyaCloudConnection(BaseModel):
     """
     Configure Tuya API access and electrical measurement scaling.
 
@@ -198,9 +208,11 @@ class TuyaConnection(BaseModel):
         cache_duration: How long to cache the device status. Use this to reduce how often the
             API is called. The default value is 300 seconds (5 minutes).
         include_accumulated_energy: Whether to use Tuya's 'add_ele' as accumulated energy in Wh.
+        connect_timeout: Seconds to allow for establishing an HTTP connection.
+        read_timeout: Seconds to wait for incoming data before timing out.
     """
-    TYPE: ClassVar[Literal['tuya']] = 'tuya'
-    type: Literal['tuya'] = 'tuya'
+    TYPE: ClassVar[Literal['tuya_cloud']] = 'tuya_cloud'
+    type: Literal['tuya_cloud'] = 'tuya_cloud'
 
     access_id: str
     access_secret: str
@@ -212,6 +224,8 @@ class TuyaConnection(BaseModel):
     calibration_factor: float = 1.0
     cache_duration: float = 300
     include_accumulated_energy: bool = False
+    connect_timeout: float = Field(default=5.0, gt=0, allow_inf_nan=False)
+    read_timeout: float = Field(default=10.0, gt=0, allow_inf_nan=False)
 
     @field_validator('calibration_factor')
     @classmethod
@@ -232,6 +246,7 @@ class TuyaLocalConnection(BaseModel):
         version: Tuya protocol version.
         calibration_factor: Multiplier correcting measured current and power.
         timeout: Socket timeout in seconds.
+        cache_duration: Lifetime of a cached LAN status response in seconds.
     """
     TYPE: ClassVar[Literal['tuya_local']] = 'tuya_local'
     type: Literal['tuya_local'] = 'tuya_local'
@@ -242,6 +257,7 @@ class TuyaLocalConnection(BaseModel):
     version: float = 3.5
     calibration_factor: float = 1.0
     timeout: float = 5.0
+    cache_duration: float = Field(default=0.1, ge=0, allow_inf_nan=False)
 
     @field_validator('calibration_factor')
     @classmethod
@@ -262,7 +278,9 @@ class MatterConnection(BaseModel):
         endpoint_id: Endpoint containing the power consumer.
         token: Optional bearer token for server authentication.
         secure: Whether to use a TLS-protected WebSocket.
-        timeout: Server request timeout in seconds.
+        timeout: Seconds allowed for WebSocket setup, sending the command, and
+            receiving its matching reply after acquiring the request lock.
+        cache_duration: How long to reuse node attributes, in seconds.
     """
     TYPE: ClassVar[Literal['matter']] = 'matter'
     type: Literal['matter'] = 'matter'
@@ -274,6 +292,7 @@ class MatterConnection(BaseModel):
     token: str | None = None
     secure: bool = False
     timeout: float = 30
+    cache_duration: float = Field(default=0.1, ge=0, allow_inf_nan=False)
 
 
 class OpenMeteoConnection(BaseModel):
@@ -305,13 +324,30 @@ class OpenMeteoConnection(BaseModel):
 
 class DatabaseConnection(BaseModel):
     """
-    Configure PostgreSQL connection credentials and server details.
+    Configure PostgreSQL connection credentials, server details, and pool sizes.
+
+    Attributes:
+        role: Database username.
+        password: Database password.
+        host: Database server hostname or IP address.
+        port: Database server port.
+        database_name: Database name.
+        min_pool_size: Minimum number of pooled connections.
+        max_pool_size: Maximum number of pooled connections.
     """
     role: str
     password: str
     host: str = DEFAULT_DB_HOST
     port: int = DEFAULT_DB_PORT
     database_name: str = DEFAULT_DB_NAME
+    min_pool_size: int = Field(default=2, ge=0)
+    max_pool_size: int = Field(default=8, gt=0)
+
+    @model_validator(mode='after')
+    def _validate_pool_sizes(self) -> Self:
+        if self.max_pool_size < self.min_pool_size:
+            raise ValueError('max_pool_size must be at least min_pool_size')
+        return self
 
 
 # =====================================================================================
@@ -329,7 +365,7 @@ type PricerConnection = Annotated[
 ]
 
 type ConsumerConnection = Annotated[
-    DummyConsumerConnection | TeslaWallConnectorConnection | TuyaConnection | TuyaLocalConnection | MatterConnection,
+    DummyConsumerConnection | TeslaWallConnectorConnection | TuyaCloudConnection | TuyaLocalConnection | MatterConnection,
     Field(discriminator='type')
 ]
 
@@ -344,7 +380,7 @@ class Settings(BaseModel):
     Hold delegate connections, operating modes, policies, and control settings.
 
     Optional connection fields identify configured services. Policy thresholds
-    and register logging settings control the behaviour of the control loop.
+    control the behaviour of the control loop.
     """
 
     controller: ControllerConnection | None = None
@@ -364,5 +400,3 @@ class Settings(BaseModel):
     enable_export_price_threshold: float | None = Field(default=None, allow_inf_nan=False)
     start_charge_price_threshold: float | None = Field(default=None, allow_inf_nan=False)
     stop_charge_price_threshold: float | None = Field(default=None, allow_inf_nan=False)
-
-    registers_to_log: str | None = None

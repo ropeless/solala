@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from solala.delegates.power_controller.dummy_power_controller.dummy_power_controller import DummyPowerController
 from solala.delegates.power_consumer.power_consumer import PowerConsumer
-from solala.delegates.power_consumer.tuya_power_consumer.tuya_power_consumer import TuyaPowerConsumer
+from solala.delegates.power_consumer.tuya_cloud_power_consumer.tuya_cloud_power_consumer import TuyaCloudPowerConsumer
 
 
 class DelegateRegisterBankTestCase(unittest.IsolatedAsyncioTestCase):
@@ -25,7 +25,7 @@ class DelegateRegisterBankTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIs(await controller.get_registers(), bank)
 
     async def test_tuya_concurrent_discovery_reuses_one_bank(self) -> None:
-        consumer = object.__new__(TuyaPowerConsumer)
+        consumer = object.__new__(TuyaCloudPowerConsumer)
         PowerConsumer.__init__(consumer, can_switch=True)
         consumer._register_bank = None
         consumer._register_bank_lock = asyncio.Lock()
@@ -41,7 +41,7 @@ class DelegateRegisterBankTestCase(unittest.IsolatedAsyncioTestCase):
             yield 'cur_power', float
             yield 'switch_1', bool
 
-        with patch.object(TuyaPowerConsumer, '_get_register_keys', discover):
+        with patch.object(TuyaCloudPowerConsumer, '_get_register_keys', discover):
             first = asyncio.create_task(consumer.get_registers())
             await asyncio.wait_for(started.wait(), timeout=1)
             second = asyncio.create_task(consumer.get_registers())

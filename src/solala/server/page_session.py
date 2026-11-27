@@ -4,8 +4,8 @@ from collections.abc import Awaitable, Callable
 from datetime import date
 from typing import Any, Protocol, Coroutine
 
-from solala.control_loop import control_loop
-from solala.control_loop.loop_listener import LoopListener
+from solala.control import control_loop
+from solala.control.loop_listener import LoopListener
 from solala.logger import LOGGER
 from solala.server.css_colours import Colours
 

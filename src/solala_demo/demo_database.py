@@ -4,12 +4,15 @@ import selectors
 from datetime import datetime
 
 from solala.utils.local_config_help import config
-from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
+from solala.control.modes_and_policies import BatteryMode, BatteryPolicy, InverterMode, InverterPolicy
 from solala.database.measurement import Measurement
 from solala.database.solala_database import SolalaDatabase
 from solala.database.solala_database_connections import SolalaDatabaseConnections
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
 from solala.utils.json_extras import to_json
+
+
+INSERT_INTO_DB: bool = False
 
 
 async def insert_measurement(db: SolalaDatabase) -> None:
@@ -64,7 +67,8 @@ async def main() -> None:
         database_name=config.DATABASE_NAME,
     ) as pool:
         async with pool.reserve_database() as db:
-            await insert_measurement(db)
+            if INSERT_INTO_DB:
+                await insert_measurement(db)
             got: Measurement | None = await db.get_latest_measurement()
 
             if got is not None:

@@ -22,14 +22,18 @@ class _BaseMicroCache:
         Args:
             cache_duration: Number of seconds for which a refreshed value remains valid.
         """
-        self._cache_time: float = cache_duration
+        self._cache_duration: float = cache_duration
         self._cache_timestamp: float = float('-inf')
+
+    @property
+    def cache_duration(self) -> float:
+        return self._cache_duration
 
     def _is_expired(self) -> bool:
         return monotonic() >= self._cache_timestamp
 
     def _update_timestamp(self) -> None:
-        self._cache_timestamp = monotonic() + self._cache_time
+        self._cache_timestamp = monotonic() + self._cache_duration
 
 
 class MicroCache[T](_BaseMicroCache):

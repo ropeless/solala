@@ -2,10 +2,14 @@ from enum import Enum, auto
 from functools import partial
 
 from solala.delegates.power_controller.power_controller import PowerController, PowerStatus
-from solala.register import CallRegister
+from solala.register import CallRegister, RegisterValue, check_value
 from solala.register_bank import RegisterBank
+from solala.utils.json_extras import JSONDict
 from solala.utils.time_extras import now
-from solala.utils.dummy_failure import DummyFailure, FailureLocation as BaseFailureLocation, maybe_inject_failure, async_maybe_inject_failure
+from solala.utils.dummy_failure import (
+    DummyFailure, FailureLocation as BaseFailureLocation, async_maybe_inject_failure, get_dummy_failure_info,
+    maybe_inject_failure,
+)
 
 
 class BatteryMode(Enum):
@@ -116,7 +120,7 @@ class DummyPowerController(PowerController):
 
         self.registers = RegisterBank({
             key: CallRegister(partial(self._get_connection_value, key))
-            for key in self.get_connection_info().keys()
+            for key in self._connection_values()
         })
 
         self.update_status()
@@ -126,8 +130,11 @@ class DummyPowerController(PowerController):
         await async_maybe_inject_failure(FailureLocation.get_inverter_limit, self.failure)
         return self.inverter_limit
 
-    def get_connection_info(self) -> dict[str, int | float | str]:
+    def get_connection_info(self) -> JSONDict:
         maybe_inject_failure(FailureLocation.get_connection_info, self.failure)
+        return {**self._connection_values(), 'failure': get_dummy_failure_info(self.failure)}
+
+    def _connection_values(self) -> dict[str, int | float | str]:
         return {
             'connection': self.__class__.__name__,
             'battery_mode': self.battery_mode.name,
@@ -143,8 +150,8 @@ class DummyPowerController(PowerController):
             'max_discharge_param': self.max_discharge_param,
         }
 
-    def _get_connection_value(self, key: str) -> int | float | str:
-        return self.get_connection_info()[key]
+    def _get_connection_value(self, key: str) -> RegisterValue:
+        return check_value(self.get_connection_info()[key])
 
     async def get_registers(self) -> RegisterBank:
         await async_maybe_inject_failure(FailureLocation.get_registers, self.failure)

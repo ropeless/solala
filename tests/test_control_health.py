@@ -1,13 +1,50 @@
-import importlib
 import unittest
-from datetime import datetime, timezone
-from unittest.mock import patch
 from dataclasses import FrozenInstanceError
+from datetime import datetime, timezone
+from logging import ERROR, INFO
+from unittest.mock import Mock, call, patch
 
-from solala.control_loop.control_health import ControlHealth, Severity
+from solala.control import control_loop
+from solala.control.control_health import ControlHealth, Severity
 
 
 class ControlHealthTestCase(unittest.TestCase):
+
+    def test_reports_only_meaningful_log_transitions(self) -> None:
+        log_event = Mock()
+        health = ControlHealth(log_event=log_event)
+        self.assertTrue(health.report_failure(
+            'consumer', Severity.CAUTION, 'Consumer unavailable',
+            log_message='Network connection failed',
+        ))
+        self.assertFalse(health.report_failure(
+            'consumer', Severity.CAUTION, 'Consumer unavailable',
+            log_message='Network connection failed again',
+        ))
+        self.assertTrue(health.report_failure(
+            'consumer', Severity.WARNING, 'Consumer failure escalated',
+            log_message='Unexpected failure', traceback=True,
+        ))
+        severity, issues = health.snapshot()
+        self.assertEqual(severity, Severity.WARNING)
+        self.assertEqual(issues[0].message, 'Consumer failure escalated')
+        self.assertEqual(issues[0].occurrences, 3)
+        self.assertTrue(health.report_success('consumer', log_message='Consumer recovered'))
+        self.assertFalse(health.report_success('consumer', log_message='Consumer recovered'))
+        self.assertEqual(log_event.call_args_list, [
+            call(ERROR, 'Network connection failed', False),
+            call(ERROR, 'Unexpected failure', True),
+            call(INFO, 'Consumer recovered', False),
+        ])
+        self.assertEqual(health.snapshot(), (Severity.LIVE, ()))
+
+    def test_logger_failure_does_not_prevent_issue_updates(self) -> None:
+        log_event = Mock(side_effect=RuntimeError('logger failed'))
+        health = ControlHealth(log_event=log_event)
+        self.assertTrue(health.report_failure('device', Severity.CAUTION, 'Offline', log_message='Read failed'))
+        self.assertEqual(health.snapshot()[0], Severity.CAUTION)
+        self.assertTrue(health.report_success('device', log_message='Device recovered'))
+        self.assertEqual(health.snapshot(), (Severity.LIVE, ()))
 
     def test_initial_state_is_live(self):
         health = ControlHealth()
@@ -47,7 +84,7 @@ class ControlHealthTestCase(unittest.TestCase):
 
     def test_equal_severity_issues_are_ordered_by_time_then_key(self):
         health = ControlHealth()
-        with patch('solala.control_loop.control_health.datetime') as clock:
+        with patch('solala.control.control_health.datetime') as clock:
             clock.now.return_value = datetime(2026, 1, 1, tzinfo=timezone.utc)
             health.report_failure('z', Severity.WARNING, 'Z failed')
             health.report_failure('a', Severity.WARNING, 'A failed')
@@ -91,14 +128,12 @@ class ControlHealthTestCase(unittest.TestCase):
                     health.report_failure(key, severity, message)
 
 
-
 class ControlHealthAccessTestCase(unittest.TestCase):
     """
     Verify that the GUI-facing health snapshot is independent of later changes.
     """
 
     def test_snapshot_reports_severity_and_immutable_issues(self):
-        control_loop = importlib.import_module('solala.control_loop.control_loop')
         state = control_loop._ControlState()
         state.health.report_failure('consumer', Severity.CAUTION, 'Consumer unavailable')
         state.health.report_failure('inverter_command', Severity.WARNING, 'Command uncertain')
@@ -119,7 +154,6 @@ class ControlHealthAccessTestCase(unittest.TestCase):
             self.assertEqual(tuple(issue.key for issue in new_issues), ('consumer',))
 
 
-
 class OneShotCommandTestCase(unittest.IsolatedAsyncioTestCase):
     """
     Verify one-shot failure reporting, retry suppression, and recovery.
@@ -127,9 +161,8 @@ class OneShotCommandTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_battery_failure_requires_explicit_retry(self):
         from unittest.mock import AsyncMock
-        from solala.control_loop.modes_and_policies import BatteryMode, BatteryPolicy
+        from solala.control.modes_and_policies import BatteryMode, BatteryPolicy
 
-        control_loop = importlib.import_module('solala.control_loop.control_loop')
         state = control_loop._ControlState()
         controller = AsyncMock()
         controller.disable_battery.side_effect = TimeoutError('simulated failure')
@@ -166,9 +199,8 @@ class OneShotCommandTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_inverter_enable_failure_reports_unknown_then_recovers(self):
         from unittest.mock import AsyncMock
-        from solala.control_loop.modes_and_policies import InverterMode
+        from solala.control.modes_and_policies import InverterMode
 
-        control_loop = importlib.import_module('solala.control_loop.control_loop')
         state = control_loop._ControlState()
         controller = AsyncMock()
         controller.enable_inverter.side_effect = TimeoutError('simulated failure')

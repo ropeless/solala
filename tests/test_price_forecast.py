@@ -8,7 +8,7 @@ from solala.logger import LOGGER
 from solala.delegates.power_pricer.price import Price
 from solala.utils.lifecycle_cache import ErrorReturn, ObjectReturn
 
-control_loop = importlib.import_module('solala.control_loop.control_loop')
+control_loop = importlib.import_module('solala.control.control_loop')
 
 
 class PriceForecastTestCase(unittest.IsolatedAsyncioTestCase):
