@@ -27,14 +27,14 @@ APIs. To introduce another implementation:
    electricity prices, `SolarForecaster` for solar predictions, or
    `PowerConsumer` for monitored electrical loads.
 2. Implement the interface's methods, including asynchronous operations,
-   connection information and resource cleanup. Follow an existing dummy
+   connection information and resource clean-up. Follow an existing dummy
    or concrete implementation as a reference.
 3. Add the corresponding connection configuration and delegate construction
    to the settings and connection-handling code, so the control loop can
    select the implementation. Follow the [connection settings and reporting
    policies](architecture.md#connection-settings-and-reporting) when adding
    constructor arguments, defaults, or connection report fields.
-4. Add tests for normal operation, failures and cleanup. Test with dummy
+4. Add tests for normal operation, failures and clean-up. Test with dummy
    dependencies before connecting real equipment.
 
 The interfaces and their method docstrings define the expected behaviour.

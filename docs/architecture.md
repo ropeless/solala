@@ -30,11 +30,47 @@ used to implement them. The main components are:
 - **Web interface** (`src/solala/server/`): Uses NiceGUI to display live power
   flows, forecasts, charts, controls, status, registers and logs. Tab-specific
   updater objects subscribe to control-loop or database notifications.
-  `PageSession` owns the listeners, tasks, timers and cleanup callbacks for
+  `PageSession` owns the listeners, tasks, timers and clean-up callbacks for
   the currently displayed tab.
 
 - **Configuration** (`src/solala/settings.py`): Defines typed connection and
   application settings, including the selected delegate implementations.
+
+### Conceptual units and information flow
+
+![Solala information flow between the browser, GUI server, control loop,
+delegates, database loop, and master alarm](images/solala-information-flow.png)
+
+The browser is the operator's entry point. Through the GUI server, the operator
+can view system data and select battery and inverter modes and policies. A mode
+specifies the requested operating state. A policy determines whether the
+operator selects that state manually or Solala selects it automatically. On
+each control step, the loop evaluates the configured policies and sends battery
+and inverter commands through the power controller. The current buy and feed-in
+prices drive the automatic policies shown here.
+See [Control modes and policies](control.md) for more details.
+
+Delegates give Solala a common interface to networked devices and services.
+The power controller provides battery and inverter telemetry, the power pricer
+provides current and forecast prices, the solar forecaster provides weather-based
+solar forecasts, and each named power consumer represents a monitored load.
+The GUI draws on these sources for live status, forecasts, and register views.
+The database loop periodically records measurements in PostgreSQL when logging
+is enabled, and the GUI retrieves those measurements for historical views.
+
+The arrows summarise information flow. The GUI fetches data through the control
+API, including database history, and loop notifications prompt subscribed views
+to refresh. Register values are read on demand. Each stored measurement combines
+power readings, current prices, the previous control mode and policies, and
+selected solar forecast data. The forecast views use separate requests for
+price and solar forecasts.
+
+The health monitoring and master alarm boxes describe responsibilities. The
+master alarm is part of the GUI and uses active health issues and the age of the
+control-step completion heartbeat. The browser can also detect that its server
+connection has dropped. These signals describe what Solala can observe. Actual
+equipment behaviour depends on device capabilities and configuration.
+See [Error handling and recovery](error_handling.md#system-health-and-master-alarm) for more details.
 
 ### Connection settings and reporting
 
@@ -96,7 +132,7 @@ lifespan stops and awaits it before Uvicorn replays the termination signal.
 If Uvicorn exits before lifespan shutdown, the server cancels and awaits the
 control-loop task before the event loop closes.
 Normal shutdown shares a ten-second grace period across the HTTP server,
-the current control-loop iteration, and delegate cleanup. Close outcomes
+the current control-loop iteration, and delegate clean-up. Close outcomes
 are logged as they occur. If the budget expires, Solala requests cancellation
 and logs any closes it is still waiting for. Blocking I/O in a worker thread
 can outlive this deadline. Tuya LAN limits each request to one connection
@@ -106,18 +142,6 @@ to reduce shutdown drain time.
 Startup defers settings writes until a complete configuration succeeds. If
 applying saved settings fails and fallback settings are available, startup
 closes the open connections before applying the fallback.
-
-```text
-  Fronius / Modbus ── PowerController ──┐
-  Amber API ───────── PowerPricer ──────┤
-  Open-Meteo ──────── SolarForecaster ──┼── Control loop / policies
-  Monitored loads ─── PowerConsumer ────┘            │
-                                                     ├── Device commands
-                                                     ├── PostgreSQL history
-                                                     └── NiceGUI listeners
-                                                               │
-                                                          Web browser
-```
 
 ### Design principles
 
