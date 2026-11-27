@@ -29,29 +29,34 @@ class _SessionListener:
     def __init__(self, listener: LoopListener) -> None:
         self._listener = listener
         self._closed = False
-        self._tasks: set[asyncio.Task[Any]] = set()
+        self._task: asyncio.Task[Any] | None = None
+        self._pending = False
 
     async def update(self) -> None:
         if self._closed:
             return
-
-        task = asyncio.current_task()
-        assert task is not None
-        self._tasks.add(task)
+        if self._task is not None:
+            self._pending = True
+            return
+        self._task = asyncio.current_task()
         try:
-            if not self._closed:
-                await self._listener.update()
+            self._pending = True
+            while self._pending and not self._closed:
+                self._pending = False
+                try:
+                    await self._listener.update()
+                except Exception:
+                    LOGGER.exception('Page listener %s refresh failed', type(self._listener).__name__)
         finally:
-            self._tasks.discard(task)
+            self._task = None
 
     async def close(self) -> None:
         # Mark closed before yielding, including for already captured snapshots.
         self._closed = True
-        tasks = tuple(self._tasks)
-        for task in tasks:
+        task = self._task
+        if task is not None:
             task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(task, return_exceptions=True)
 
 
 class PageSession:
@@ -94,6 +99,7 @@ class PageSession:
         self.on_legend_change = on_legend_change
         self.register_filter = register_filter
         self.on_register_filter_change = on_register_filter_change
+        self._listeners: dict[LoopListener, _SessionListener] = {}
         self._cleanup: list[Callable[[], Awaitable[None] | None]] = []
         self._closed: bool = False
         self._colours: Colours = colours
@@ -140,7 +146,7 @@ class PageSession:
         if self._closed:
             raise RuntimeError('Cannot add resources to a closed page session')
 
-        wrapped = _SessionListener(listener)
+        wrapped = self._get_listener(listener)
         registration = asyncio.create_task(register(wrapped))
         try:
             await asyncio.shield(registration)
@@ -168,6 +174,29 @@ class PageSession:
             raise RuntimeError('Cannot add resources to a closed page session')
 
         self.add_cleanup(cleanup)
+
+    def _get_listener(self, listener: LoopListener) -> _SessionListener:
+        """
+        Return the adapter shared by all refresh requests for this updater.
+        """
+        wrapped = self._listeners.get(listener)
+        if wrapped is None:
+            wrapped = _SessionListener(listener)
+            self.add_cleanup(wrapped.close)
+            self._listeners[listener] = wrapped
+        return wrapped
+
+    def refresh(self, listener: LoopListener) -> asyncio.Task[None]:
+        """
+        Schedule a refresh through the same listener used by loop notifications.
+
+        Args:
+            listener: Page updater to refresh.
+        Returns:
+            The task that handles this request. If a refresh is already running,
+            the task queues a rerun and can finish before the rerun starts.
+        """
+        return asyncio.create_task(self._get_listener(listener).update())
 
     async def add_control_listener(self, listener: LoopListener) -> None:
         """

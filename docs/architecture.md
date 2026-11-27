@@ -33,6 +33,18 @@ used to implement them. The main components are:
   `PageSession` owns the listeners, tasks, timers and clean-up callbacks for
   the currently displayed tab.
 
+  Initial loads, loop notifications and date selections share one listener
+  adapter per updater. It runs one refresh at a time and coalesces overlapping
+  requests into one pending refresh. Closing the page cancels and drains the
+  active refresh and discards pending work, including notifications from stale
+  listener snapshots.
+
+  Date-driven updaters discard results superseded by a newer selection.
+  The date navigator assigns dates to the carousel slides before awaiting
+  browser state persistence. Each slide schedules its refresh with its page session.
+  Listener failures are logged as refresh errors. A later notification can
+  retry, and the control and database loops continue independently.
+
 - **Configuration** (`src/solala/settings.py`): Defines typed connection and
   application settings, including the selected delegate implementations.
 

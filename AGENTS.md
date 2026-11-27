@@ -16,17 +16,18 @@ provide a separate approval choice for each, such as **Approve (i) · Approve (i
 
 ## Python style
 
-Follow the conventions in [doc/python-style.md](doc/python-style.md) when  editing Python code in this project.
+Follow the conventions in [docs/python-style.md](docs/python-style.md) when editing Python code in this project.
 
 ## Testing
 
-Follow the [testing protocol](doc/testing-protocol.md) when writing or  updating unit tests.
+Follow the [testing protocol](docs/testing-protocol.md) when writing or updating unit tests.
 
 ## Project design decisions
 
-Consult the [project design log](doc/project-design.md) when making changes
-that may affect existing design decisions. Update the log when you make a new
-design decision or revise an existing one.
+Consult the [architecture guide](docs/architecture.md) and the relevant
+topic-specific documentation in [docs/](docs/) before changing an existing
+design decision. Record new or revised decisions in the existing document
+that covers the affected area.
 
 ## PyCharm inspections
 

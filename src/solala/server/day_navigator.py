@@ -1,7 +1,6 @@
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import date, timedelta
-from typing import Coroutine, Any
 
 from nicegui import ui, events
 from nicegui.element import Element
@@ -10,7 +9,7 @@ from solala.constants import GUI_DATE_FORMAT
 
 _ONE_DAY = timedelta(days=1)
 
-type Updater = Callable[[date], Awaitable[None]]
+type Updater = Callable[[date], None]
 
 _SENTINEL_DATE: date = date(year=1901, month=12, day=31)  # a valid date but not near today.
 
@@ -21,8 +20,8 @@ class DayNavigator:
     """
     Navigate dated content using three reusable carousel slides.
 
-    The user provides each slide with an asynchronous updater that populates the slide's
-    content for the selected, previous, or next day. The carousel supports date-picker,
+    Each slide has a callback that assigns its date and schedules a content refresh.
+    The carousel supports date-picker,
     button, swipe, and keyboard navigation.
     """
 
@@ -34,7 +33,6 @@ class DayNavigator:
             enable_swipe_navigator: bool = True,
             enable_arrow_keys: bool = True,
             on_day_change: Callable[[date], Awaitable[None]] | None = None,
-            track_task: Callable[[asyncio.Task[None]], None] | None = None,
     ) -> None:
         """
         Create a carousel of infinite cards, where each card represents a date.
@@ -58,12 +56,10 @@ class DayNavigator:
             enable_arrow_keys: Enable left arrow, right arrow, and home key navigation.
             title: Optional heading above the date navigator.
             on_day_change: Callback invoked when the selected date changes.
-            track_task: Optional callback to register background tasks for clean-up.
         """
 
         self._day: date = _SENTINEL_DATE
         self._on_day_change = on_day_change
-        self._track_task = track_task
         self._focus_slide: int = 0
         self._updaters: Sequence[Updater] = ()  # mapping from slide number to `updater`
         self._touch_start_x: float | None = None  # for our own swipe detection
@@ -198,7 +194,7 @@ class DayNavigator:
 
     def set_listeners(self, *listeners: Updater) -> None:
         """
-        Register one asynchronous updater for each slide content element.
+        Register one date assignment callback for each slide content element.
 
         Args:
             listeners: Three callbacks coindexed with `get_elements()`.
@@ -225,7 +221,7 @@ class DayNavigator:
         Select a date and refresh the required carousel slides.
 
         Adjacent dates reuse the existing slides; larger jumps refresh all
-        three. Neighbouring slide refreshes are scheduled asynchronously.
+        three. Assign all slide dates before awaiting persistence.
 
         Args:
             day: Date to display.
@@ -241,8 +237,6 @@ class DayNavigator:
         # Update the navigator state
         self._day = day
         self.refresh_day_label()
-        if day_shift != 0 and self._on_day_change is not None:
-            await self._on_day_change(day)
 
         # Update the carousel state
 
@@ -258,30 +252,22 @@ class DayNavigator:
         if day_shift == -1:
             self._focus_slide = self._left_slide()
             self._set_display_slide(self._focus_slide)
-            self._schedule_update(self._update_element(self._left_slide(), day - _ONE_DAY))
+            self._update_element(self._left_slide(), day - _ONE_DAY)
 
         elif day_shift == 1:
             self._focus_slide = self._right_slide()
             self._set_display_slide(self._focus_slide)
-            self._schedule_update(self._update_element(self._right_slide(), day + _ONE_DAY))
+            self._update_element(self._right_slide(), day + _ONE_DAY)
 
         else:
-            # Just recreate all three slides
-            await self._update_element(self._focus_slide, day)
-            self._schedule_update(self._update_element(self._right_slide(), day + _ONE_DAY))
-            self._schedule_update(self._update_element(self._left_slide(), day - _ONE_DAY))
+            # Reassign all slides and restore focus if a swipe is still pending.
+            self._update_element(self._focus_slide, day)
+            self._update_element(self._right_slide(), day + _ONE_DAY)
+            self._update_element(self._left_slide(), day - _ONE_DAY)
+            self._set_display_slide(self._focus_slide)
 
-    def _schedule_update(self, update: Coroutine[Any, Any, None]) -> None:
-        """
-        Schedule a neighbouring slide update with optional lifecycle tracking.
-        """
-        task = asyncio.create_task(update)
-        if self._track_task is not None:
-            try:
-                self._track_task(task)
-            except BaseException:
-                task.cancel()
-                raise
+        if self._on_day_change is not None:
+            await self._on_day_change(day)
 
     def refresh_day_label(self) -> None:
         """
@@ -356,7 +342,7 @@ class DayNavigator:
         """
         return (self._focus_slide + 1) % 3
 
-    async def _update_element(self, slide_number: int, day: date) -> None:
+    def _update_element(self, slide_number: int, day: date) -> None:
         """
         Invoke the registered updater for a slide, if available.
 
@@ -368,7 +354,7 @@ class DayNavigator:
             # updaters not yet set
             return
         updater: Updater = self._updaters[slide_number]
-        await updater(day)
+        updater(day)
 
     async def _on_slide_change(self) -> None:
         """

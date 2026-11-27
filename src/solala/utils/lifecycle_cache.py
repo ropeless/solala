@@ -1,5 +1,6 @@
 import asyncio
 from asyncio import Task
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import datetime, UTC
 from enum import Enum, auto
@@ -10,6 +11,26 @@ from typing import Callable, Coroutine, Any, ClassVar, Literal
 from solala.utils.sentinel import Sentinel
 
 NO_VALUE = Sentinel('NO_VALUE')
+
+
+async def read_cache_for_refresh[T](read: Callable[[], Awaitable[T]], invalidation_message: str) -> T:
+    """
+    Read a cache while distinguishing invalidation from caller cancellation.
+
+    Args:
+        read: Cache read that raises CancelledError if its shared refresh is invalidated.
+        invalidation_message: Error message for an invalidated read.
+    Raises:
+        RuntimeError: The cache read was invalidated while the caller was still active.
+        asyncio.CancelledError: The caller was cancelled.
+    """
+    try:
+        return await read()
+    except asyncio.CancelledError as exc:
+        task = asyncio.current_task()
+        if task is None or task.cancelling():
+            raise
+        raise RuntimeError(invalidation_message) from exc
 
 
 class LifecycleState(Enum):

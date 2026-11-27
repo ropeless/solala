@@ -1,7 +1,29 @@
 import asyncio
 import unittest
+from collections.abc import Awaitable, Callable
+from unittest.mock import patch
 
-from solala.server.page_session import PageSession, _SessionListener
+from solala.server.page_session import PageSession
+
+# Exercise the adapter directly to control the order of listener notifications.
+# noinspection PyProtectedMember
+from solala.server.page_session import _SessionListener
+
+
+class _TestListener:
+    def __init__(self, refresh: Callable[[int], Awaitable[None]]) -> None:
+        """
+        Set up a listener that passes its update count to the test callback.
+        """
+        self._refresh = refresh
+        self.calls = 0
+
+    async def update(self) -> None:
+        """
+        Count the update before invoking the scripted refresh.
+        """
+        self.calls += 1
+        await self._refresh(self.calls)
 
 
 class _BlockingListener:
@@ -43,7 +65,10 @@ class SessionListenerTestCase(unittest.IsolatedAsyncioTestCase):
         await wrapped.update()
         self.assertEqual(listener.calls, 0)
 
-    async def test_multiple_running_updates_are_cancelled(self) -> None:
+    async def test_close_cancels_active_update_and_discards_pending_updates(self) -> None:
+        """
+        Verify closure cancels the active update and skips the queued rerun.
+        """
         listener = _BlockingListener()
         wrapped = _SessionListener(listener)
         tasks = [asyncio.create_task(wrapped.update()) for _ in range(3)]
@@ -51,21 +76,74 @@ class SessionListenerTestCase(unittest.IsolatedAsyncioTestCase):
 
         await wrapped.close()
 
-        self.assertEqual(listener.calls, 3)
-        self.assertTrue(all(task.cancelled() for task in tasks))
+        self.assertEqual(listener.calls, 1)
+        self.assertTrue(tasks[0].cancelled())
+        self.assertTrue(all(task.done() and not task.cancelled() for task in tasks[1:]))
+
+    async def test_overlapping_notifications_coalesce(self) -> None:
+        """
+        Verify overlapping notifications produce just one rerun.
+        """
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def refresh(_call: int) -> None:
+            """
+            Hold updates until the test releases them.
+            """
+            started.set()
+            await release.wait()
+
+        listener = _TestListener(refresh)
+        wrapped = _SessionListener(listener)
+        first = asyncio.create_task(wrapped.update())
+        await started.wait()
+        pending = [asyncio.create_task(wrapped.update()) for _ in range(2)]
+        try:
+            await asyncio.sleep(0)
+            self.assertEqual(listener.calls, 1)
+        finally:
+            release.set()
+            await asyncio.gather(first, *pending)
+        self.assertEqual(listener.calls, 2)
+
+    async def test_failure_is_logged_and_later_notification_retries(self) -> None:
+        """
+        Verify a later notification retries after a logged refresh failure.
+        """
+        async def refresh(call: int) -> None:
+            """
+            Fail only the first invocation.
+            """
+            if call == 1:
+                raise ValueError('refresh failed')
+
+        listener = _TestListener(refresh)
+        wrapped = _SessionListener(listener)
+        with patch('solala.server.page_session.LOGGER') as logger:
+            await wrapped.update()
+            await wrapped.update()
+        logger.exception.assert_called_once()
+        self.assertEqual(listener.calls, 2)
 
     async def test_registration_completing_after_session_close_is_cleaned_up(self) -> None:
         registration_started = asyncio.Event()
         allow_registration = asyncio.Event()
         registered: list[object] = []
 
-        async def register(listener: object) -> None:
+        async def register(adapter: object) -> None:
+            """
+            Pause registration so the session can close first.
+            """
             registration_started.set()
             await allow_registration.wait()
-            registered.append(listener)
+            registered.append(adapter)
 
-        async def unregister(listener: object) -> None:
-            registered.remove(listener)
+        async def unregister(adapter: object) -> None:
+            """
+            Record removal of the adapter registered after session closure.
+            """
+            registered.remove(adapter)
 
         async def select_tab(_name: str) -> None:
             pass
@@ -82,7 +160,6 @@ class SessionListenerTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, 'closed page session'):
             await registration_task
         self.assertEqual(registered, [])
-
 
     async def test_task_added_after_close_is_cancelled(self) -> None:
         async def select_tab(_name: str) -> None:
@@ -108,5 +185,7 @@ class SessionListenerTestCase(unittest.IsolatedAsyncioTestCase):
 
         updater = object.__new__(RegistersUpdater)
         updater._session = session
-        updater.set_filter('valid*')
-        await updater.update()
+        with patch('solala.server.page_updaters.compile_register_filter') as compile_filter:
+            updater.set_filter('valid*')
+            await updater.update()
+        self.assertFalse(compile_filter.called)

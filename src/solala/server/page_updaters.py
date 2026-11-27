@@ -18,7 +18,6 @@ from solala.constants import GUI_DATE_FORMAT, GUI_TIME_FORMAT, Units, Constants
 from solala.control import control_loop
 from solala.control.loop_listener import LoopListener
 from solala.control.modes_and_policies import InverterMode, InverterPolicy, BatteryMode, BatteryPolicy, ControlMode
-from solala.database.measurement import Measurement
 from solala.delegates.power_pricer.price import Price
 from solala.delegates.solar_forecaster.solar_forecast import DailySolarForecast, SolarForecast
 from solala.delegates.solar_forecaster.weather_code import WeatherCode
@@ -32,6 +31,7 @@ from solala.server.page_session import PageSession
 from solala.server.register_filter import compile_register_filter
 from solala.server.units_lookup import STATUS_UNITS
 from solala.utils.json_extras import JSONDict, render_json
+from solala.utils.lifecycle_cache import read_cache_for_refresh
 from solala.utils.time_extras import now
 
 
@@ -346,30 +346,42 @@ class RegistersUpdater(LoopListener):
         self._registers_element.set_visibility(True)
 
 
+async def _fetch_price_forecast() -> Sequence[Price]:
+    """
+    Read the forecast while preserving cancellation of the calling task.
+
+    Raises:
+        RuntimeError: The shared price forecast cache refresh was invalidated.
+    """
+    return await read_cache_for_refresh(
+        control_loop.get_price_forecast, 'Price forecast cache was invalidated during refresh',
+    )
+
+
 class PriceForecastUpdater(LoopListener):
     """
     Render a price forecast table with demand-window row highlighting.
 
-    The table is rebuilt when the forecast sequence object changes.
+    Rebuild the table when the forecast object or the demand window changes.
     """
 
     def __init__(self, element: ui.element) -> None:
         super().__init__()
         self._prev: Sequence[Price] | None = None
+        self._prev_demand_window: tuple[datetime, datetime] | None = None
         self._element = element
 
     @final
     async def update(self) -> None:
-        price_forecast: Sequence[Price]
-        demand_window: tuple[datetime, datetime] | None
-
-        price_forecast, demand_window = await asyncio.gather(
-            control_loop.get_price_forecast(),
-            control_loop.get_demand_window(date.today())
-        )
-        if self._prev is not price_forecast:
-            self._prev = price_forecast
+        async with asyncio.TaskGroup() as group:
+            prices = group.create_task(_fetch_price_forecast())
+            demand = group.create_task(control_loop.get_demand_window(date.today()))
+        price_forecast = prices.result()
+        demand_window = demand.result()
+        if self._prev is not price_forecast or self._prev_demand_window != demand_window:
             self._update(price_forecast, demand_window)
+            self._prev = price_forecast
+            self._prev_demand_window = demand_window
 
     def _update(self, price_forecast: Sequence[Price], demand_window: tuple[datetime, datetime] | None) -> None:
 
@@ -439,21 +451,26 @@ class SolarForecastUpdater(LoopListener):
         self._session = session
         self._prev: DailySolarForecast | None = None
         self._day: date = date.today()
+        # Discard in-flight results after any new day selection, even if it returns to the same date.
+        self._day_revision = 0
         self._element: ui.element = element
         self._show_loading()
 
     @final
     async def update(self) -> None:
+        revision = self._day_revision
         solar_forecast: DailySolarForecast = await control_loop.get_solar_forecast(self._day)
+        if revision != self._day_revision:
+            return
         if self._prev is not solar_forecast:
-            self._prev = solar_forecast
             self._update(solar_forecast)
+            self._prev = solar_forecast
 
     @property
     def day(self) -> date:
         return self._day
 
-    async def set_day(self, day: date) -> None:
+    def set_day(self, day: date) -> None:
         """
         Select a forecast date and schedule a refresh of its table.
 
@@ -462,7 +479,9 @@ class SolarForecastUpdater(LoopListener):
         """
         self._show_loading()
         self._day = day
-        self._session.add_task(asyncio.create_task(self.update()))
+        self._day_revision += 1
+        self._prev = None
+        self._session.refresh(self)
 
     def _show_loading(self) -> None:
         self._element.clear()
@@ -550,6 +569,7 @@ class ChartUpdater(LoopListener):
         self._session = session
         self._prev: DailySolarForecast | None = None
         self._day: date = date.today()
+        self._day_revision = 0
 
         with element:
             self._loading = ui.label('loading graphs...').classes('text-center italic').set_visibility(True)
@@ -565,7 +585,7 @@ class ChartUpdater(LoopListener):
                     session.colours, session.graph_series.get('Energy'), self._legend_changed,
                 )
 
-        self._session.add_task(asyncio.create_task(self.update()))
+        self._session.refresh(self)
 
     async def _legend_changed(self, chart: str, selected: dict[str, bool]) -> None:
         """
@@ -590,7 +610,7 @@ class ChartUpdater(LoopListener):
     def day(self) -> date:
         return self._day
 
-    async def set_day(self, day: date) -> None:
+    def set_day(self, day: date) -> None:
         """
         Select a chart date and schedule a refresh of the graphs.
 
@@ -599,26 +619,26 @@ class ChartUpdater(LoopListener):
         """
         self._show_loading()
         self._day = day
-        self._session.add_task(asyncio.create_task(self.update()))
+        self._day_revision += 1
+        self._session.refresh(self)
 
     @final
     async def update(self) -> None:
+        revision = self._day_revision
         graph_interpolator = await self._get_data()
-        self._update(graph_interpolator)
+        if revision == self._day_revision:
+            self._update(graph_interpolator)
 
     async def _get_data(self) -> GraphingInterpolator:
         day = self._day
-        measurements: Sequence[Measurement]
-        price_forecast: Sequence[Price]
-        solar_forecast: DailySolarForecast
-        demand_window: tuple[datetime, datetime] | None
-        measurements, price_forecast, demand_window, solar_forecast = await asyncio.gather(
-            control_loop.solala_database_measurements(day),
-            control_loop.get_price_forecast(),
-            control_loop.get_demand_window(day),
-            control_loop.get_solar_forecast(day),
+        async with asyncio.TaskGroup() as group:
+            measurements = group.create_task(control_loop.solala_database_measurements(day))
+            prices = group.create_task(_fetch_price_forecast())
+            demand_window = group.create_task(control_loop.get_demand_window(day))
+            solar_forecast = group.create_task(control_loop.get_solar_forecast(day))
+        return GraphingInterpolator(
+            day, measurements.result(), prices.result(), solar_forecast.result(), demand_window.result(),
         )
-        return GraphingInterpolator(day, measurements, price_forecast, solar_forecast, demand_window)
 
     def _show_loading(self) -> None:
         self._graphs.set_visibility(False)

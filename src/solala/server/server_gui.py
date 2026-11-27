@@ -128,11 +128,13 @@ async def _ui_control_buttons(session: PageSession) -> None:
             button.classes('wide')
 
         updater = BatteryButtonUpdater(battery_mode_buttons, battery_policy_buttons)
-        await updater.update()  # call synchronously to avoid flicker
+        # Wait for the initial button state before subscribing to loop updates.
+        await session.refresh(updater)
         await session.add_control_listener(updater)
 
         updater = InverterButtonUpdater(inverter_mode_buttons, inverter_policy_buttons)
-        await updater.update()  # call synchronously to avoid flicker
+        # Wait for the initial button state before subscribing to loop updates.
+        await session.refresh(updater)
         await session.add_control_listener(updater)
 
 
@@ -189,7 +191,7 @@ async def _build_power_page(container: Element, session: PageSession) -> None:
                     js_handler="(e) => emit(e.target.closest('rect')?.id)",
                 )
                 updater = InfographicUpdater(infographic_element=infographic_element)
-                session.add_task(asyncio.create_task(updater.update()))
+                session.refresh(updater)
                 await session.add_control_listener(updater)
 
         if Constants.CONTROLS_ENABLED:
@@ -205,7 +207,6 @@ async def _build_solar_page(container: Element, session: PageSession) -> None:
             title='Solar Forecast',
             enable_swipe_content=True,
             on_day_change=session.on_day_change,
-            track_task=session.add_task,
         )
         updaters = [
             SolarForecastUpdater(element, session)
@@ -231,7 +232,7 @@ async def _build_price_page(container: Element, session: PageSession) -> None:
             element = ui.element('div')
 
         updater = PriceForecastUpdater(element=element)
-        session.add_task(asyncio.create_task(updater.update()))
+        session.refresh(updater)
         await session.add_control_listener(updater)
 
 
@@ -245,7 +246,6 @@ async def _build_graphs_page(container: Element, session: PageSession) -> None:
             navigator = DayNavigator(
                 title='Daily Graphs',
                 on_day_change=session.on_day_change,
-                track_task=session.add_task,
             )
             updaters = [
                 ChartUpdater(element, session=session)
@@ -278,7 +278,7 @@ async def _build_status_page(container: Element, session: PageSession) -> None:
             updater = StatusUpdater(
                 status_element=ui.code(language='nothing').classes('text-sm w-full grow')
             )
-            session.add_task(asyncio.create_task(updater.update()))
+            session.refresh(updater)
             await session.add_control_listener(updater)
 
 
@@ -334,7 +334,7 @@ async def _build_registers_page(container: Element, session: PageSession) -> Non
                 on_filter_change=session.on_register_filter_change,
             )
             await session.add_control_listener(updater)
-            await updater.update()
+            await session.refresh(updater)
 
 
 async def _build_log_page(container: Element, session: PageSession) -> None:

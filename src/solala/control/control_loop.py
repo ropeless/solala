@@ -49,7 +49,7 @@ from solala.settings import Settings, AmberPricerConnection, ModbusControllerCon
     DummyConsumerConnection, ForecasterConnection, OpenMeteoConnection, DummySolarForecasterConnection, \
     DatabaseConnection, TuyaCloudConnection, TuyaLocalConnection, MatterConnection
 from solala.utils.json_extras import JSONDict, JSONValue
-from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, valid
+from solala.utils.lifecycle_cache import LifecycleCache, LifecycleReturn, error, interim, read_cache_for_refresh, valid
 from solala.utils.ordered_async_rlock import OrderedAsyncRLock
 from solala.utils.string_extras import split_addresses
 from solala.utils.time_extras import now, local_time_zone
@@ -940,18 +940,16 @@ async def get_status() -> JSONDict:
     """
     Take a snapshot of the current overall status, as a JSON dictionary.
     """
-    control_mode: ControlMode
-    power_status: PowerStatus
-    price: Price
-    consumers_status: dict[str, ConsumerStatus]
+    async with asyncio.TaskGroup() as group:
+        control = group.create_task(get_control_mode())
+        power = group.create_task(get_power_status())
+        price = group.create_task(read_cache_for_refresh(
+            get_price_now, 'Current-price cache was invalidated during status refresh',
+        ))
+        consumers = group.create_task(get_consumers_status())
 
-    control_mode, power_status, price, consumers_status = await asyncio.gather(
-        get_control_mode(),
-        get_power_status(),
-        get_price_now(),
-        get_consumers_status(),
-    )
-
+    power_status = power.result()
+    consumers_status = consumers.result()
     power_json: JSONDict = power_status.to_json()
     if len(consumers_status) > 0:
         power_json: dict[str, JSONValue] = dict(power_json)
@@ -965,9 +963,9 @@ async def get_status() -> JSONDict:
         power_json['consumer_remaining'] = house_power - total
 
     return {
-        'control': control_mode.to_json(),
+        'control': control.result().to_json(),
         'power': power_json,
-        'price': price.to_json(datetime_format=GUI_TIMESTAMP_FORMAT, include_time=False),
+        'price': price.result().to_json(datetime_format=GUI_TIMESTAMP_FORMAT, include_time=False),
     }
 
 
@@ -2464,7 +2462,17 @@ def _update_listeners(listeners: Iterable[LoopListener]) -> None:
           as listeners may need to acquire it themselves.
     """
     for listener in listeners:
-        asyncio.create_task(listener.update())
+        asyncio.create_task(_update_listener(listener))
+
+
+async def _update_listener(listener: LoopListener) -> None:
+    """
+    Run a loop listener and log failures without interrupting dispatch.
+    """
+    try:
+        await listener.update()
+    except Exception:
+        LOGGER.exception('Loop listener %s refresh failed', type(listener).__name__)
 
 
 def _get_settings(state: _ControlState) -> Settings:
