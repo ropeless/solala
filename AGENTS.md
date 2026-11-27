@@ -1,6 +1,6 @@
 ## Review workflow
 
-For reviews with Barry, rank recommendations by bang-for-buck. Put small changes with substantial benefits first.
+For reviews with the developer, rank recommendations by bang-for-buck. Put small changes with substantial benefits first.
 
 For each batch of issues from a review, first list the issues by number and headline.
 
@@ -33,5 +33,5 @@ that covers the affected area.
 
 Check PyCharm's inspection results after changing Python code, including warnings
 and weak warnings. Fix straightforward errors and warnings directly, then rerun
-the inspection. Ask Barry for approval before proceeding if an attempted fix
+the inspection. Ask the developer for approval before proceeding if an attempted fix
 leaves a finding unresolved, introduces another finding, or requires refactoring.
