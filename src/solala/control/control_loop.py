@@ -300,10 +300,10 @@ class _SettingsPersistenceState:
     """
     Hold the settings file path and serialize settings persistence.
 
-    Lock order: connections (10) -> persistence (15) -> control (20) -> cache (30).
+    The connections lock protects changes to the queue and settings path.
     """
-    lock: OrderedAsyncRLock = field(default_factory=lambda: OrderedAsyncRLock(15))
     path: Path | None = None
+    last_save: asyncio.Task[None] | None = None
 
 
 @dataclass
@@ -326,7 +326,6 @@ class _ControlState:
 
     # Internal control loop tracking variables.
     control_loop_running: bool = True
-    shutdown_deadline: float | None = None
     control_changed: asyncio.Event = field(default_factory=asyncio.Event)
     database_write: bool = True
     iteration_start: datetime = field(default_factory=now)  # used for control-loop scheduling
@@ -531,7 +530,6 @@ async def control_loop(
 
     # Prepare to run the control loop.
     _CONTROL_STATE.control_loop_running = True
-    _CONTROL_STATE.shutdown_deadline = None
     _CONTROL_STATE.database_write = database_write
     _CONTROL_STATE.settings_persistence.path = None
     path = Path(settings_path) if settings_path is not None else None
@@ -543,7 +541,7 @@ async def control_loop(
         database_task = asyncio.create_task(_database_loop())
         await _control_loop()
     finally:
-        await _await_connection_close(asyncio.create_task(_shutdown_control_loop(database_task)))
+        await _await_task_completion(asyncio.create_task(_shutdown_control_loop(database_task)))
 
 
 # =============================================================================
@@ -567,18 +565,10 @@ def loop_check_overdue() -> float:
     )
 
 
-def exit_control_loop(*, deadline: float | None = None) -> None:
+def exit_control_loop() -> None:
     """
-    Request control-loop shutdown within the shared shutdown budget.
-
-    Args:
-        deadline: Optional deadline on the current event loop's clock.
-            Defaults to the application shutdown budget starting now.
+    Request control-loop shutdown and wake the control loop.
     """
-    if deadline is None:
-        deadline = asyncio.get_running_loop().time() + Constants.MAX_SHUTDOWN_TIMEOUT.total_seconds()
-    existing_deadline = _CONTROL_STATE.shutdown_deadline
-    _CONTROL_STATE.shutdown_deadline = deadline if existing_deadline is None else min(existing_deadline, deadline)
     _CONTROL_STATE.control_loop_running = False
     _CONTROL_STATE.control_changed.set()
 
@@ -1106,7 +1096,7 @@ async def set_control(
         if threshold is not None and not math.isfinite(threshold):
             raise ControlLoopError(f'{name} must be finite')
 
-    async with _connections_state():
+    async with _persist_settings_change():
         async with _control_settings_state() as state:
             control_mode = state.control_mode
 
@@ -1145,10 +1135,7 @@ async def set_control(
         # Wake the loop promptly; the next step will copy the settings.
         _CONTROL_STATE.control_changed.set()
 
-        # Saving takes the connections lock before the control-settings lock.
-        # Do not call it while already holding the latter.
-        await _save_settings()
-        log_info(f'Control: {json.dumps(control_json)}')
+    log_info(f'Control: {json.dumps(control_json)}')
 
 
 # =============================================================================
@@ -1212,7 +1199,8 @@ async def connect_controller(controller_connection: ControllerConnection) -> Non
         ControlLoopError: If the power controller cannot be connected.
     """
     with _report_connection_errors('connect', 'power controller'):
-        async with _connections_state() as connections:
+        replacement_error: Exception | asyncio.CancelledError | None = None
+        async with _persist_settings_change() as connections:
             _require_connection_setup(connections)
             controller: PowerController
 
@@ -1228,13 +1216,26 @@ async def connect_controller(controller_connection: ControllerConnection) -> Non
                     errors={'type': controller_connection.type}
                 )
 
-            async with _prepare_delegate(controller.close):
-                connection_info = json.dumps(controller.get_connection_info())
-                if connections.controller is not None:
-                    await disconnect_controller()
-                await _REGISTERS.update_controller(controller)
-            await _CONTROL_STATE.reset_controller(controller, controller_connection)
-            await _save_settings()
+            previous_detached = False
+            try:
+                async with _prepare_delegate(controller.close):
+                    connection_info = json.dumps(controller.get_connection_info())
+                    previous_controller = connections.controller
+                    if previous_controller is not None:
+                        await previous_controller.close()
+                        await _CONTROL_STATE.reset_controller(None, None)
+                        previous_detached = True
+                        await _REGISTERS.update_controller(None)
+                    await _REGISTERS.update_controller(controller)
+            except (Exception, asyncio.CancelledError) as err:
+                if not previous_detached:
+                    raise
+                # Save the disconnected state before reporting the replacement failure.
+                replacement_error = err
+            else:
+                await _CONTROL_STATE.reset_controller(controller, controller_connection)
+        if replacement_error is not None:
+            raise replacement_error
         _log_connection_outcome(f'Power controller connection: {connection_info}')
 
 
@@ -1249,12 +1250,11 @@ async def disconnect_controller() -> None:
         ControlLoopError: If the power controller cannot be disconnected.
     """
     with _report_connection_errors('disconnect', 'power controller'):
-        async with _connections_state() as connections:
+        async with _persist_settings_change() as connections:
             controller = connections.controller
             if controller is not None:
                 await controller.close()
                 await _CONTROL_STATE.reset_controller(None, None)
-            await _save_settings()
             await _REGISTERS.update_controller(None)
         _log_connection_outcome(
             'Power controller disconnected' if controller is not None else 'Power controller already disconnected',
@@ -1274,7 +1274,7 @@ async def connect_pricer(pricer_connection: PricerConnection) -> None:
         ControlLoopError: If the power pricer cannot be connected.
     """
     with _report_connection_errors('connect', 'power pricer'):
-        async with _connections_state() as connections:
+        async with _persist_settings_change() as connections:
             _require_connection_setup(connections)
             pricer: PowerPricer
 
@@ -1289,10 +1289,10 @@ async def connect_pricer(pricer_connection: PricerConnection) -> None:
 
             async with _prepare_delegate(pricer.close):
                 connection_info = json.dumps(pricer.get_connection_info())
-                if connections.pricer is not None:
-                    await disconnect_pricer()
+                previous_pricer = connections.pricer
+                if previous_pricer is not None:
+                    await previous_pricer.close()
             await _CONTROL_STATE.reset_pricer(pricer, pricer_connection)
-            await _save_settings()
         _log_connection_outcome(f'Power pricer connection: {connection_info}')
 
 
@@ -1307,12 +1307,11 @@ async def disconnect_pricer() -> None:
         ControlLoopError: If the power pricer cannot be disconnected.
     """
     with _report_connection_errors('disconnect', 'power pricer'):
-        async with _connections_state() as connections:
+        async with _persist_settings_change() as connections:
             pricer = connections.pricer
             if pricer is not None:
                 await pricer.close()
                 await _CONTROL_STATE.reset_pricer(None, None)
-            await _save_settings()
         _log_connection_outcome('Power pricer disconnected' if pricer is not None else 'Power pricer already disconnected')
 
 
@@ -1362,30 +1361,33 @@ async def connect_consumer(name: str, consumer_connection: ConsumerConnection) -
             )
 
         close_prepared = consumer.close
+        connections_released = asyncio.Event()
+        save: asyncio.Task[None] | None = None
         async with _prepare_delegate(lambda: close_prepared()):
             connection_info = json.dumps(consumer.get_connection_info())
             async with _connections_state() as connections:
                 _require_vacant_consumer_name(connections, name)
-                async with state.settings_persistence.lock:
-                    settings_path = state.settings_persistence.path
-                    settings: Settings | None = None
-                    if settings_path is not None:
-                        async with _control_settings_state():
-                            consumer_settings = connections.consumers_settings | {name: consumer_connection}
-                            settings = _get_settings(state).model_copy(update={'consumers': consumer_settings})
+                settings_path = state.settings_persistence.path
+                settings: Settings | None = None
+                if settings_path is not None:
+                    async with _control_settings_state():
+                        consumer_settings = connections.consumers_settings | {name: consumer_connection}
+                        proposed = _get_settings(state).model_copy(update={'consumers': consumer_settings})
+                        settings = proposed.model_copy(deep=True)
 
-                    # Once started, the manager owns the worker and delegate.
-                    new_manager = PowerConsumerManager(consumer, on_read_complete=partial(state.report_consumer_read, name))
-                    close_prepared = new_manager.close
-                    _REGISTERS.update_consumers(connections.consumers | {name: new_manager})
-                    state.reset_consumer(name, new_manager, consumer_connection)
+                # Once started, the manager owns the worker and delegate.
+                new_manager = PowerConsumerManager(consumer, on_read_complete=partial(state.report_consumer_read, name))
+                close_prepared = new_manager.close
+                _REGISTERS.update_consumers(connections.consumers | {name: new_manager})
+                state.reset_consumer(name, new_manager, consumer_connection)
 
-                    # A persistence failure does not undo registration.
-                    try:
-                        if settings_path is not None and settings is not None:
-                            _write_settings(settings_path, settings)
-                    except Exception:
-                        pass
+                if settings_path is not None and settings is not None:
+                    save = _queue_settings_write(state.settings_persistence, settings_path, settings, connections_released)
+
+        # Registration now owns the manager, even if saving fails or is cancelled.
+        connections_released.set()
+        if save is not None:
+            await _await_task_completion(save)
         _log_connection_outcome(f'Power consumer {name!r} connection: {connection_info}')
 
 
@@ -1427,7 +1429,7 @@ async def disconnect_consumer(name: str) -> None:
         if closing is None:
             _log_connection_outcome(f'Power consumer {name!r} is already disconnected')
             return
-        await _await_connection_close(closing)
+        await _await_task_completion(closing)
         _log_connection_outcome(f'Power consumer {name!r} disconnected')
 
 
@@ -1451,7 +1453,9 @@ async def _finish_consumer_disconnect(name: str, consumer: PowerConsumerManager,
     try:
         try:
             if save_settings:
-                await _save_settings()
+                async with _persist_settings_change():
+                    # Detachment already updated the settings under the connections lock.
+                    pass
         finally:
             await consumer.close()
     finally:
@@ -1472,7 +1476,7 @@ async def connect_forecaster(forecaster_connection: ForecasterConnection) -> Non
         ControlLoopError: If the solar forecaster cannot be connected.
     """
     with _report_connection_errors('connect', 'solar forecaster'):
-        async with _connections_state() as connections:
+        async with _persist_settings_change() as connections:
             _require_connection_setup(connections)
             forecaster: SolarForecaster
 
@@ -1490,10 +1494,10 @@ async def connect_forecaster(forecaster_connection: ForecasterConnection) -> Non
 
             async with _prepare_delegate(forecaster.close):
                 connection_info = json.dumps(forecaster.get_connection_info())
-                if connections.forecaster is not None:
-                    await disconnect_forecaster()
+                previous_forecaster = connections.forecaster
+                if previous_forecaster is not None:
+                    await previous_forecaster.close()
             await _CONTROL_STATE.reset_forecaster(forecaster, forecaster_connection)
-            await _save_settings()
         _log_connection_outcome(f'Solar forecaster connection: {connection_info}')
 
 
@@ -1508,12 +1512,11 @@ async def disconnect_forecaster() -> None:
         ControlLoopError: If the solar forecaster cannot be disconnected.
     """
     with _report_connection_errors('disconnect', 'solar forecaster'):
-        async with _connections_state() as connections:
+        async with _persist_settings_change() as connections:
             forecaster = connections.forecaster
             if forecaster is not None:
                 await forecaster.close()
                 await _CONTROL_STATE.reset_forecaster(None, None)
-            await _save_settings()
         _log_connection_outcome(
             'Solar forecaster disconnected' if forecaster is not None else 'Solar forecaster already disconnected',
         )
@@ -1526,7 +1529,9 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
     Args:
         database_connection: Database connection configuration.
     """
-    async with _CONTROL_STATE.database_lifecycle_lock:
+    state = _CONTROL_STATE
+    connections_released = asyncio.Event()
+    async with state.database_lifecycle_lock:
         async with _connections_state() as connections:
             _require_connection_setup(connections)
         database_connections = SolalaDatabaseConnections(
@@ -1542,36 +1547,46 @@ async def connect_database(database_connection: DatabaseConnection) -> None:
             old_pool = connections.database_connections
             if old_pool is not None:
                 old_pool.begin_close()
-            _CONTROL_STATE.reset_database(None, None)
+            state.reset_database(None, None)
 
         if old_pool is not None:
             await _close_database_pool(old_pool)
 
         async with _connections_state():
-            _CONTROL_STATE.reset_database(database_connections, database_connection)
+            state.reset_database(database_connections, database_connection)
             connection_info = database_connections.get_connection_info()
             _log_connection_outcome(f'Database connection: {json.dumps(connection_info)}')
-            await _save_settings()
-            # no need to _reconfigure_registers(state)
+            save = await _queue_current_settings_write(state, connections_released)
+
+    connections_released.set()
+    if save is not None:
+        await _await_task_completion(save)
 
 
 async def disconnect_database() -> None:
     """
     Close the database pool without blocking the connections lock during drain.
     """
-    async with _CONTROL_STATE.database_lifecycle_lock:
+    state = _CONTROL_STATE
+    connections_released = asyncio.Event()
+    async with state.database_lifecycle_lock:
         async with _connections_state() as connections:
             old_pool = connections.database_connections
             if old_pool is not None:
                 old_pool.begin_close()
-                _CONTROL_STATE.reset_database(None, None)
+                state.reset_database(None, None)
 
         if old_pool is not None:
             await _close_database_pool(old_pool)
-            _log_connection_outcome('Database disconnected')
 
-        await _save_settings()
-        # no need to _reconfigure_registers(state)
+        async with _connections_state():
+            save = await _queue_current_settings_write(state, connections_released)
+
+    connections_released.set()
+    if old_pool is not None:
+        _log_connection_outcome('Database disconnected')
+    if save is not None:
+        await _await_task_completion(save)
 
 
 # =============================================================================
@@ -1594,18 +1609,21 @@ async def _shutdown_control_loop(database_task: asyncio.Task[None] | None) -> No
     _CONTROL_STATE.control_loop_running = False
     _log_connection_outcome('Starting control-loop shutdown')
     budget = Constants.MAX_SHUTDOWN_TIMEOUT.total_seconds()
-    deadline = _CONTROL_STATE.shutdown_deadline
-    if deadline is None:
-        deadline = asyncio.get_running_loop().time() + budget
-    timeout = asyncio.timeout_at(deadline)
-    try:
-        async with timeout:
-            await _close_control_loop_resources('control-loop shutdown', database_task)
-    except TimeoutError:
-        if not timeout.expired():
-            raise
-        _log_connection_outcome(f'Control-loop shutdown exceeded the {budget:g}-second budget', failed=True)
-    else:
+
+    # This budget applies only to closing delegate connections and stopping
+    # database logging. Control-loop housekeeping, including acquiring the
+    # connections lock and detaching delegates, happens before the timer starts.
+    # Pending settings writes are drained outside the timeout.
+    async with _prepare_control_loop_cleanup(database_task) as closes:
+        timeout = asyncio.timeout(budget)
+        try:
+            async with timeout:
+                await _report_connection_closes(closes, 'control-loop shutdown')
+        except TimeoutError:
+            if not timeout.expired():
+                raise
+            _log_connection_outcome(f'Control-loop shutdown exceeded the {budget:g}-second budget', failed=True)
+    if not timeout.expired():
         _log_connection_outcome('Finished control-loop shutdown')
 
 
@@ -1613,19 +1631,34 @@ async def _close_control_loop_resources(reason: str, database_task: asyncio.Task
     """
     Drain runtime resources during shutdown or before retrying startup.
     """
+    async with _prepare_control_loop_cleanup(database_task) as closes:
+        await _report_connection_closes(closes, reason)
+
+
+@asynccontextmanager
+async def _prepare_control_loop_cleanup(
+        database_task: asyncio.Task[None] | None,
+) -> AsyncIterator[Mapping[str, Awaitable[None]]]:
+    """
+    Detach resources for cleanup and drain settings writes before exiting.
+
+    Yields:
+        Resource names and their cleanup awaitables. The caller awaits them
+        inside the context. Pending settings writes are drained on exit.
+    """
     state = _CONTROL_STATE
     async with _connections_state() as connections:
         connections.shutting_down = True
 
+    connections_released = asyncio.Event()
+    settings_save: asyncio.Task[None] | None = None
     try:
         closes: dict[str, Awaitable[None]] = {}
         if database_task is not None:
             database_task.cancel()
+
         async with _connections_state() as connections:
-            # Persist any explicit consumer removals that are already in progress
-            # before clearing runtime state. Shutdown removals stay off disk.
-            if connections.closing_consumers:
-                await _save_settings()
+            settings_save = await _prepare_shutdown_settings_save(state, connections_released)
             if connections.consumers:
                 for name in tuple(connections.consumers):
                     _start_consumer_disconnect(connections, name, save_settings=False)
@@ -1633,10 +1666,6 @@ async def _close_control_loop_resources(reason: str, database_task: asyncio.Task
             closes.update({
                 f'power consumer {name!r}': task for name, task in connections.closing_consumers.items()
             })
-
-        async with _connections_state() as connections:
-            # Stop settings writes before detaching the remaining connections.
-            state.settings_persistence.path = None
             connections.consumers_settings.clear()
             controller, pricer, forecaster = connections.controller, connections.pricer, connections.forecaster
             # A replacement may have temporarily detached the pool.
@@ -1649,6 +1678,7 @@ async def _close_control_loop_resources(reason: str, database_task: asyncio.Task
             if forecaster is not None:
                 await state.reset_forecaster(None, None)
 
+        connections_released.set()
         resources = {
             'power controller': controller, 'power pricer': pricer, 'solar forecaster': forecaster,
         }
@@ -1659,10 +1689,17 @@ async def _close_control_loop_resources(reason: str, database_task: asyncio.Task
             closes['database pool'] = _shutdown_database_pool(state)
         if database_task is not None:
             closes['database logging'] = _stop_database_logging(database_task)
-        await _report_connection_closes(closes, reason)
+        yield closes
     finally:
-        async with _connections_state() as connections:
-            connections.shutting_down = False
+        # If detachment was interrupted after queuing the snapshot, the
+        # connections lock has still been released and the save can proceed.
+        connections_released.set()
+        try:
+            if settings_save is not None:
+                await _await_task_completion(settings_save)
+        finally:
+            async with _connections_state() as connections:
+                connections.shutting_down = False
 
 
 async def _shutdown_database_pool(state: _ControlState) -> None:
@@ -1727,27 +1764,27 @@ async def _close_database_pool(pool: SolalaDatabaseConnections) -> None:
     Cancellation is propagated after the pool has finished closing, so the
     database lifecycle lock remains held throughout the transition.
     """
-    await _await_connection_close(asyncio.create_task(pool.close()))
+    await _await_task_completion(asyncio.create_task(pool.close()))
 
 
-async def _await_connection_close(closing: asyncio.Task[None]) -> None:
+async def _await_task_completion(task: asyncio.Task[None]) -> None:
     """
-    Wait for a connection cleanup task to finish.
+    Wait for a task to finish before propagating caller cancellation.
 
-    Shield the cleanup task from cancellation of the caller. If cleanup
-    succeeds, propagate any deferred caller cancellation. If cleanup fails,
+    Shield the task from cancellation of the caller. If the task
+    succeeds, propagate any deferred caller cancellation. If the task fails,
     propagate its exception.
 
     Args:
-        closing: The task responsible for closing the connection.
+        task: The task that must finish before the caller can exit.
     """
     cancelled = False
-    while not closing.done():
+    while not task.done():
         try:
-            await asyncio.shield(closing)
+            await asyncio.shield(task)
         except asyncio.CancelledError:
             cancelled = True
-    await closing
+    await task
     if cancelled:
         raise asyncio.CancelledError
 
@@ -2465,32 +2502,102 @@ def _get_settings(state: _ControlState) -> Settings:
     )
 
 
-async def _save_settings() -> None:
-    """
-    Persist settings across restarts.
-
-    Acquire the connections lock before the persistence lock, as callers may
-    already hold the connections lock. Serialize snapshots and writes so an
-    older save cannot overwrite newer settings.
-    """
-    async with _connections_state():
-        async with _CONTROL_STATE.settings_persistence.lock:
-            settings_path = _CONTROL_STATE.settings_persistence.path
-            if settings_path is None:
-                return
-
-            async with _control_settings_state():
-                settings = _get_settings(_CONTROL_STATE)
-
-            _write_settings(settings_path, settings)
+def _write_settings_file(settings_path: Path, settings: Settings) -> None:
+    with open(settings_path, 'w') as file:
+        print(settings.model_dump_json(), file=file)
 
 
-def _write_settings(settings_path: Path, settings: Settings) -> None:
+async def _write_settings_in_thread(settings_path: Path, settings: Settings) -> None:
     try:
-        with open(settings_path, 'w') as file:
-            print(settings.model_dump_json(), file=file)
+        await asyncio.to_thread(_write_settings_file, settings_path, settings)
     except Exception as err:
         log_error(f'Error saving settings: {err!r}')
+    else:
+        log_info('Settings file written')
+
+
+def _queue_settings_write(
+        persistence: _SettingsPersistenceState,
+        path: Path,
+        settings: Settings,
+        connections_released: asyncio.Event,
+) -> asyncio.Task[None]:
+    """
+    Append a snapshot in capture order while the connections lock is held.
+
+    Args:
+        persistence: Settings persistence state that owns the write queue.
+        path: Destination settings file.
+        settings: Snapshot to write.
+        connections_released: Event the caller must set after releasing the
+            connections lock. This write and later writes wait for the signal.
+
+    Returns:
+        Task that completes after the write attempt.
+    """
+    previous = persistence.last_save
+
+    async def write() -> None:
+        await connections_released.wait()
+        if previous is not None and not previous.done():
+            await asyncio.wait((previous,))
+        await _write_settings_in_thread(path, settings)
+
+    save = asyncio.create_task(write())
+    persistence.last_save = save
+    return save
+
+
+async def _prepare_shutdown_settings_save(
+        state: _ControlState, connections_released: asyncio.Event,
+) -> asyncio.Task[None] | None:
+    """
+    Queue any explicit removals and return the last save shutdown must drain.
+
+    The caller holds the connections lock and signals when it is released.
+    """
+    persistence = state.settings_persistence
+    path = persistence.path
+    if path is not None and state.connections.closing_consumers:
+        async with _control_settings_state():
+            settings = _get_settings(state).model_copy(deep=True)
+        _queue_settings_write(persistence, path, settings, connections_released)
+    persistence.path = None
+    return persistence.last_save
+
+
+@asynccontextmanager
+async def _persist_settings_change() -> AsyncIterator[_ConnectionsState]:
+    """
+    Hold the connections lock for a change and snapshot, then write separately.
+
+    Queue the snapshot before releasing the lock so writes stay ordered with
+    consumer registration and the final shutdown save.
+    """
+    state = _CONTROL_STATE
+    connections_released = asyncio.Event()
+    async with _connections_state() as connections:
+        yield connections
+        save = await _queue_current_settings_write(state, connections_released)
+
+    connections_released.set()
+    if save is not None:
+        await _await_task_completion(save)
+
+
+async def _queue_current_settings_write(
+        state: _ControlState, connections_released: asyncio.Event,
+) -> asyncio.Task[None] | None:
+    """
+    Capture and queue the current settings while the connections lock is held.
+    """
+    persistence = state.settings_persistence
+    path = persistence.path
+    if path is None:
+        return None
+    async with _control_settings_state():
+        settings = _get_settings(state).model_copy(deep=True)
+    return _queue_settings_write(persistence, path, settings, connections_released)
 
 
 async def _configure_startup(settings_path: Path | None, settings: Settings | None, force_settings: bool) -> None:
@@ -2508,16 +2615,19 @@ async def _configure_startup(settings_path: Path | None, settings: Settings | No
                 if settings is None:
                     raise
                 _log_connection_outcome('Closing partial startup connections before applying fallback settings')
-                await _await_connection_close(asyncio.create_task(_close_control_loop_resources('startup rollback')))
+                await _await_task_completion(asyncio.create_task(_close_control_loop_resources('startup rollback')))
             else:
                 loaded = True
 
     if not loaded and settings is not None:
         await configure_from_settings(settings)
 
-    _CONTROL_STATE.settings_persistence.path = settings_path
-    if settings_path is not None and (loaded or settings is not None):
-        await _save_settings()
+    if settings_path is None or (not loaded and settings is None):
+        _CONTROL_STATE.settings_persistence.path = settings_path
+        return
+
+    async with _persist_settings_change():
+        _CONTROL_STATE.settings_persistence.path = settings_path
 
 
 def _load_settings(settings_path: Path) -> Settings | None:

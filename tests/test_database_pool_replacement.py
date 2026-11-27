@@ -1,14 +1,12 @@
 import asyncio
-import importlib
 import unittest
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import solala.control.control_loop as control
 from solala.database.solala_database_connections import SolalaDatabaseConnections
 from solala.settings import DatabaseConnection
-
-control = importlib.import_module('solala.control.control_loop')
 
 
 class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
@@ -27,9 +25,6 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
             role='test', password='test', host='localhost',
             port=5432, database_name='solala',
         )
-        self.save_patch = patch.object(control, '_save_settings', new_callable=AsyncMock)
-        self.save_patch.start()
-        self.addCleanup(self.save_patch.stop)
         self.pools = []
 
     def _pool(self):
@@ -43,7 +38,7 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
         returned = asyncio.Event()
 
         @asynccontextmanager
-        async def connection(*, timeout=None):
+        async def connection(**_kwargs):
             acquiring.set()
             await allow_acquisition.wait()
             conn = AsyncMock()
@@ -63,8 +58,9 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
         control._CONTROL_STATE.connections.database_connections = fixture.pool
         control._CONTROL_STATE.connections.database_settings = self.settings
 
-    def _borrow(self, fixture):
-        async def operation():
+    @staticmethod
+    def _borrow(fixture: SimpleNamespace) -> asyncio.Task[None]:
+        async def operation() -> None:
             async with control._database():
                 fixture.entered.set()
                 await fixture.release.wait()
@@ -72,7 +68,7 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
         return asyncio.create_task(operation())
 
     async def _replace(self, next_pool):
-        with patch.object(control, 'SolalaDatabaseConnections', return_value=next_pool.pool):
+        with patch('solala.control.control_loop.SolalaDatabaseConnections', return_value=next_pool.pool):
             await control.connect_database(self.settings)
 
     async def test_replace_pool_with_active_request(self) -> None:
@@ -137,8 +133,8 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
         old.allow_acquisition.set()
         borrower = self._borrow(old)
         await asyncio.wait_for(old.entered.wait(), 2)
-        with patch.object(
-                control, 'SolalaDatabaseConnections',
+        with patch(
+                'solala.control.control_loop.SolalaDatabaseConnections',
                 side_effect=[first.pool, second.pool],
         ):
             replacements = [
@@ -153,7 +149,8 @@ class DatabasePoolReplacementTests(unittest.IsolatedAsyncioTestCase):
         first.pool._pool.close.assert_awaited_once()
         self.assertIs(control._CONTROL_STATE.connections.database_connections, second.pool)
 
-    async def _borrow_needing_connections_lock(self, fixture, proceed):
+    @staticmethod
+    async def _borrow_needing_connections_lock(fixture: SimpleNamespace, proceed: asyncio.Event) -> None:
         """
         Hold a reservation while waiting to reacquire the connections lock.
         """

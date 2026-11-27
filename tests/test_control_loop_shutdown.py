@@ -146,6 +146,37 @@ class ControlLoopShutdownTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIsNot(runs[0]['charger'], runs[1]['charger'])
         self.assertIsNot(runs[0]['outlet'], runs[1]['outlet'])
 
+    async def test_shutdown_housekeeping_does_not_consume_delegate_budget(self) -> None:
+        state = control_loop._ControlState()
+        started = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        original_time = loop.time
+        elapsed_housekeeping = 0.0
+
+        def record_info(message: str) -> None:
+            if message == 'Starting control-loop shutdown':
+                started.set()
+
+        with (
+            patch.object(loop, 'time', side_effect=lambda: original_time() + elapsed_housekeeping),
+            patch.object(loop, 'slow_callback_duration', 2),
+            patch.object(control_loop.Constants, 'MAX_SHUTDOWN_TIMEOUT', timedelta(milliseconds=250)),
+            patch.object(control_loop, '_CONTROL_STATE', state),
+            patch.object(control_loop, 'log_info', side_effect=record_info),
+            patch.object(control_loop, 'log_error') as error,
+            patch.object(DummySolarForecaster, 'close', autospec=True) as close_forecaster,
+        ):
+            await control_loop.connect_forecaster(DummySolarForecasterConnection())
+            async with asyncio.timeout(5), asyncio.TaskGroup() as tasks:
+                async with state.connections.lock:
+                    tasks.create_task(control_loop._shutdown_control_loop(None))
+                    await started.wait()
+                    elapsed_housekeeping = 1.0
+
+            close_forecaster.assert_awaited_once()
+            self.assertIsNone(state.connections.forecaster)
+            error.assert_not_called()
+
     async def test_shutdown_closes_forecaster_while_database_lifecycle_lock_is_held(self) -> None:
         state = control_loop._ControlState()
         pool = create_autospec(SolalaDatabaseConnections, instance=True)

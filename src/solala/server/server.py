@@ -22,7 +22,7 @@ from solala.settings import Settings
 
 class _Server(uvicorn.Server):
     """
-    Share the HTTP shutdown deadline with the application lifespan.
+    Track the HTTP deadline for requesting cancellation of the control loop.
     """
 
     shutdown_deadline: float | None = None
@@ -110,7 +110,7 @@ async def _async_run_server(
                 deadline = server.shutdown_deadline
                 if deadline is None:
                     deadline = loop.time() + Constants.MAX_SHUTDOWN_TIMEOUT.total_seconds()
-                control_loop.exit_control_loop(deadline=deadline)
+                control_loop.exit_control_loop()
                 _, pending = await asyncio.wait((control_task,), timeout=max(0, deadline - loop.time()))
                 if pending:
                     cancelled_for_shutdown = control_task.cancel()
@@ -147,8 +147,6 @@ async def _async_run_server(
         await server.serve()
     finally:
         # Startup failure and forced exit can bypass the lifespan shutdown.
-        if not control_task.done() and server.shutdown_deadline is not None:
-            control_loop.exit_control_loop(deadline=server.shutdown_deadline)
         cancelled_for_shutdown = control_task.cancel() or cancelled_for_shutdown
         await asyncio.gather(control_task, return_exceptions=True)
     if not cancelled_for_shutdown or not control_task.cancelled():

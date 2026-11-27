@@ -92,6 +92,37 @@ PostgreSQL settings default `min_pool_size` to `2` and `max_pool_size` to
 `8`. The factories pass these values explicitly, and the connection reports
 show the values in use.
 
+Control settings updates and controller, pricer, and forecaster connection
+changes capture settings under the connections and control-settings locks and
+queue each snapshot before releasing the connections lock. A queued save waits
+for earlier saves and writes the file in a worker thread. Callers wait for their
+write attempts without holding either state lock.
+Successful replacement writes the replacement once. Explicit disconnect saves
+the disconnected configuration. If replacement register discovery fails after
+the old controller is detached, the recovery path also saves the disconnected
+state through the worker thread before reporting the replacement failure.
+
+Database connection changes queue the settings snapshot after draining the old
+pool. The database lifecycle lock serializes pool changes through capture and
+queueing. It is released before the write, so shutdown can close the pool while
+the write is pending.
+
+Startup uses the same write path for its final save. It enables persistence
+after the saved or supplied configuration has been applied successfully.
+
+Consumer registration prepares its settings snapshot before publishing the
+manager, then writes it off the event loop after releasing the connections
+lock. The registered consumer owns its worker while the save is in progress.
+Explicit consumer disconnect also writes off the event loop after releasing
+the connections lock. The consumer name remains reserved through the save
+and manager close.
+
+Shutdown captures pending explicit removals before disabling persistence and
+detaching the remaining delegates. Settings writes run outside the connections
+lock and may overlap resource cleanup. The deadline limits the wait for
+resource cleanup. Shutdown waits for pending settings writes before returning,
+even if that deadline expires.
+
 ### Runtime and data flow
 
 The server runs Uvicorn/NiceGUI and the control loop concurrently on a single
@@ -131,13 +162,17 @@ The server owns the control-loop task. During graceful shutdown, the FastAPI
 lifespan stops and awaits it before Uvicorn replays the termination signal.
 If Uvicorn exits before lifespan shutdown, the server cancels and awaits the
 control-loop task before the event loop closes.
-Normal shutdown shares a ten-second grace period across the HTTP server,
-the current control-loop iteration, and delegate clean-up. Close outcomes
-are logged as they occur. If the budget expires, Solala requests cancellation
-and logs any closes it is still waiting for. Blocking I/O in a worker thread
-can outlive this deadline. Tuya LAN limits each request to one connection
-attempt, uses its configured socket timeout, and avoids resending the payload
-to reduce shutdown drain time.
+The HTTP server uses its grace period to decide when to request cancellation
+of the control-loop task. The control loop has a separate ten-second budget
+solely for closing delegate connections and stopping database logging.
+Control-loop housekeeping, including acquiring the connections lock and
+detaching delegates, happens before this timer starts. Pending settings writes
+are drained outside the budget, before the control loop returns. If the
+delegate cleanup budget expires, Solala requests cancellation and logs the
+closes that are still pending. Blocking I/O in a worker thread can outlive the
+deadline. Tuya LAN limits each request to one connection attempt, uses its
+configured socket timeout, and avoids resending the payload to reduce drain
+time.
 
 Startup defers settings writes until a complete configuration succeeds. If
 applying saved settings fails and fallback settings are available, startup
