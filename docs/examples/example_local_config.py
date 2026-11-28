@@ -1,7 +1,6 @@
-# This is an example local configuration file. It defines
-# environment variables can can be defined in the OS environment,
-# a `local_config.py` module or a mixture thereof.
-# See `solala.utils.local_config_help` for more details.
+# Copy this template to a directory on your Python path and replace the
+# sample values for your installation. The demos also read operating system
+# environment variables when a setting is absent from local_config.py.
 
 APP_NAME_POSTFIX = ' ***DEMO***'
 
@@ -36,8 +35,8 @@ POWER_POINT_ACCESS_ID = 'jfkaskdjfh87193456ka8g'
 POWER_POINT_ACCESS_SECRET = 'aflsknotarealsecretdsafjpa127859'
 
 # Tuya device via LAN
-TTUYA_LOCAL_NAME = 'outlet_charger_local'
-UYA_LOCAL_HOST = '192.168.0.50'
+TUYA_LOCAL_NAME = 'outlet_charger_local'
+TUYA_LOCAL_HOST = '192.168.0.50'
 TUYA_LOCAL_DEVICE_ID = '8943590223534598089345'
 TUYA_LOCAL_KEY = '90klm8*(OPnl)*('
 TUYA_LOCAL_VERSION = 3.5
@@ -51,7 +50,6 @@ TAPO_PASSWORD = 'rifo;jajfoie0rtj;as'
 # for Tapo model P110M via a local Mater server
 MATTER_SERVER_HOST = '192.168.0.203'
 MATTER_SERVER_PORT = 5580
-MATTER_PAIRING_CODE = '098123401-2893470128-93740981'
 MATTER_DEVICE_IDS: dict[int, str] = {1: 'plug_1'}
 
 # ============================== End of Delegates

@@ -5,7 +5,7 @@ Getting Started
 
 Solala requires **Python 3.13 or later**. The repository uses Poetry to manage
 dependencies (see `pyproject.toml`); Poetry is configured for dependency
-management rather than packaging the project as an installable distribution.
+management but not for packaging the project as an installable distribution.
 
 Clone the repository and install its dependencies:
 
@@ -15,56 +15,70 @@ cd solala
 poetry install
 ```
 
-The demonstration modules are under `src/`. Include that directory in
+The demonstration scripts are under `src/`. Include that directory in
 `PYTHONPATH` when running them from the repository checkout.
-
-### Configure the demos
-
-Copy `src/solala_demo/_example_local_config.py` to a file named
-`local_config.py` in a directory on your Python path, and edit the values
-for your environment. The demo scripts import this configuration through
-`solala.utils.local_config_help`.
-
-At a minimum, check `SERVER_HOST`, `SERVER_PORT`, `OUT`,
-`DUMMY_SETTINGS_PATH`, `PANEL_CAPACITY` and `INVERTER_LIMIT` before
-running the dummy demo. Set `DUMMY_SETTINGS_PATH` to a writable location
-and ensure its parent directory exists.
-
-The example file also contains placeholder inverter addresses, API tokens,
-device credentials and database settings for the real-hardware demo.
-**Do not commit a populated `local_config.py` containing credentials.**
 
 ### Run without hardware
 
-The dummy server uses simulated controller, pricing, consumer and solar
-forecast implementations. It does not require an inverter or an Amber
-account, and it disables database writes.
+The dummy server simulates an inverter, electricity prices, a power consumer,
+and a solar forecast. It runs without hardware, service credentials, or a database.
 
-With `src/` and the directory containing `local_config.py` on
-`PYTHONPATH`, run:
+1. Save this example as `local_config.py` in the checkout root, next to
+   `pyproject.toml`. Back up any existing `local_config.py` before replacing it.
+   Keep your local configuration out of version control.
 
-```sh
-poetry run python -m solala_demo.demo_dummy_server
-```
+   ```python
+   from secrets import token_hex
 
-Then open the address configured by `SERVER_HOST` and `SERVER_PORT`
-(for example, `http://localhost:8080/`).
+   SERVER_HOST = '127.0.0.1'
+   SERVER_PORT = 8080
+   SOLALA_STORAGE_SECRET = token_hex(32)
 
-The demo loads an existing dummy settings file when available. Set
-`FORCE_SETTINGS = True` in `local_config.py` to apply the demo's
-initial dummy connections instead of previously saved settings.
+   PANEL_CAPACITY = 9360
+   INVERTER_LIMIT = 8000
+
+   DUMMY_SETTINGS_PATH = None
+   FORCE_SETTINGS = False
+
+   APP_LOG_LEVEL = 'INFO'
+   DEMO_LOG_FORMAT = '%(levelname)s: %(message)s'
+   ```
+
+   The example disables settings persistence and generates a fresh storage
+   secret each time the server starts.
+
+2. Start the server from the checkout root.
+
+   **PowerShell**
+
+   ```powershell
+   $env:PYTHONPATH = 'src'
+   poetry run python -m solala_demo.demo_dummy_server
+   ```
+
+   **POSIX shell**
+
+   ```sh
+   PYTHONPATH=src poetry run python -m solala_demo.demo_dummy_server
+   ```
+
+3. Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/) in your browser.
+   Press Ctrl+C in the terminal to stop the server.
 
 ### Run with real hardware and services
 
-The real-hardware demonstration is
-`src/solala_demo/demo_server.py`. Its sample configuration connects to
+A real-hardware demonstration is provided by `src/solala_demo/demo_server.py`.
+Its sample configuration connects to
 Fronius inverters over Modbus, Amber for electricity pricing, Open-Meteo
 for solar forecasting, Tesla, Tuya and Matter power consumers, and
 PostgreSQL for historical data.
 
-Configure the corresponding values in `local_config.py`, including
-inverter addresses, the Amber API token and NMI, solar installation
-parameters, and any consumer or database credentials. Edit
+Copy the [full configuration template](examples/example_local_config.py) to a directory
+on your Python path as `local_config.py`. Replace the sample values with your
+inverter addresses, Amber API token and NMI, solar installation parameters,
+and any consumer or database credentials. The demos also read environment
+variables for settings absent from `local_config.py`.
+Keep your populated configuration out of version control. Edit
 `demo_server.py` if your system does not use all of these integrations.
 
 For Matter devices, run a compatible Matter Server separately and commission
@@ -78,10 +92,6 @@ MATTER_SERVER_HOST = '192.168.0.203'
 MATTER_SERVER_PORT = 5580
 MATTER_DEVICE_IDS = {1: 'plug_1'}
 ```
-
-The Matter pairing code is used during commissioning, not by Solala when
-connecting to an already commissioned device. The default Matter endpoint ID
-is `1`; other connection options can be configured through `MatterConnection`.
 
 Run it from the repository checkout:
 

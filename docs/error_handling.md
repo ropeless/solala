@@ -4,12 +4,14 @@ Error Handling and Recovery Policy
 Status
 ------
 
-This document describes Solala's implemented error-handling and recovery
-mechanisms and the safety requirements governing them. The control loop,
-`ControlHealth`, lifecycle caches and persistent master alarm implement the
-mechanisms described below. Requirements concerning hardware command
-verification and reconciliation remain obligations of each delegate; the
-master alarm does not independently establish hardware safety.
+The control loop isolates handled failures, and `ControlHealth` tracks the
+operational issues that callers report. Lifecycle caches manage refresh
+failures, and the master alarm displays the status derived from health
+reports, heartbeat freshness and browser connectivity.
+
+Each hardware delegate must verify command outcomes and reconcile uncertain
+device state when required by its command contract. The master alarm reflects
+the evidence available to Solala.
 
 Purpose and principles
 ----------------------
@@ -133,6 +135,9 @@ record, including traceback context for unexpected exceptions.
 
 System health and master alarm
 ------------------------------
+
+To observe alarm conditions and recovery without hardware, run one of the
+[failure demos](README_failing_demos.md).
 
 Operation code reports outcomes with a stable issue key, severity, and
 user-facing message. `ControlHealth` tracks active issues, logs new or changed

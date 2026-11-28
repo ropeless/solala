@@ -1,9 +1,9 @@
-# Python style decisions
+# Python style policy
 
 ## IDE inspections
 
-Follow the [PyCharm inspection workflow](../AGENTS.md#pycharm-inspections)
-when checking Python changes.
+Clear IDE warnings before pushing code to the master branch. Use a
+suppression directive only after confirming that the warning is a false positive.
 
 ## Public function and method annotations
 
@@ -30,21 +30,3 @@ Use Google-style docstrings. Put the summary on its own line between opening
 and closing triple double quotes, even when the summary is the entire
 docstring. Add sections such as `Args:`, `Returns:`, and `Raises:` when they
 provide information the reader needs.
-
-```python
-class AppConfig:
-    @classmethod
-    def load(cls, path: Path) -> Self:
-        """
-        Load the application configuration from a TOML file.
-
-        Args:
-            path: Path to the application configuration file.
-
-        Returns:
-            The validated application configuration.
-
-        Raises:
-            ValueError: A configuration setting is invalid.
-        """
-```

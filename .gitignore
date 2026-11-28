@@ -4,6 +4,8 @@ private/
 # development output files
 out/
 log/
+src/solala_demo/.nicegui
+
 
 # IntelliJ and Pycharm project files
 *.iml
@@ -37,13 +39,67 @@ MANIFEST
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/
 
+# Local application configuration
+local_config.py
+
 # Environments
-.env
-.envrc
+.env*
 .venv*
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
-src/solala_demo/.nicegui
+
+# AI coding assistant configuration and local state
+AGENTS.md
+.agents/
+.codex/
+.junie/
+
+# Claude Code, Cursor, and MCP
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+*.claude-output.md
+.cursor/
+.cursorrules
+.cursorignore
+.cursorindexingignore
+.cursor-chat-history/
+.mcp.json
+.vscode/mcp.json
+
+# GitHub Copilot
+.github/copilot-instructions.md
+.github/instructions/*.instructions.md
+.github/instructions/**/*.instructions.md
+.github/prompts/
+.github/agents/
+.github/skills/
+
+# Other AI coding assistants
+.aider*
+.gemini/
+GEMINI.md
+.antigravity/
+.agent/
+.windsurf/
+.windsurfrules
+.continue/
+.clinerules
+.clineignore
+.roo/
+.roomodes
+.roorules*
+.rooignore
+.opencode/
+opencode.json
+opencode.jsonc
+.amazonq/
+.zed/ai/
+.openclaw/
+.hermes/
+
+# Scratch & Temporary Prompts
+prompts/scratch/

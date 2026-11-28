@@ -4,13 +4,17 @@ Development and Testing
 Solala's source code is under `src/solala/`, demonstration entry points are
 under `src/solala_demo/`, and tests are under `tests/`.
 
+When contributing, follow the [Python style policy](python-style.md) and
+the [testing protocol](testing-protocol.md).
+
 ### Run the tests
 
-The tests use Python's built-in `unittest` framework. From the repository
-root, with `src/` on `PYTHONPATH` and the project dependencies installed:
+The tests use Python's built-in `unittest` framework. Follow the
+[test setup instructions](testing-protocol.md#running-the-suite), then run
+the full suite from the repository root:
 
 ```sh
-poetry run python -m unittest discover -s tests
+python -m tests.all_tests
 ```
 
 Some integrations communicate with external hardware or services. Use the

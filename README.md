@@ -47,17 +47,9 @@ cd solala
 poetry install
 ```
 
-To try the web app without solar hardware, prepare a `local_config.py` from
-`src/solala_demo/_example_local_config.py`, set the required local paths,
-and make `src/` and the configuration directory available on `PYTHONPATH`.
-Then run:
-
-```sh
-poetry run python -m solala_demo.demo_dummy_server
-```
-
-See the [Getting Started guide](docs/getting_started.md) for configuration,
-step-by-step instructions and running with real hardware.
+Try the web app with the [dummy server walkthrough](docs/getting_started.md#run-without-hardware).
+For a hardware installation, see the [setup guide](docs/getting_started.md#run-with-real-hardware-and-services)
+and the [full configuration template](docs/examples/example_local_config.py).
 
 Documentation
 =============

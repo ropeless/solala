@@ -3,31 +3,28 @@
 ## Framework and layout
 
 - Write unit tests with Python's standard-library `unittest` package.
-- Place test modules under `tests/`. Use subfolders when they make the suite
-  easier to navigate.
+- Place test modules under `tests/`. Use subfolders when they make the
+  tests easier to understand.
 - Name each module `test_XXXX.py`, where `XXXX` identifies the package,
   module, or other unit under test.
 
 ## Test-driven development
 
 Prefer test-driven development (TDD). Before changing behaviour, write and run
-a test for the intended result. For a bug fix, confirm the regression test
-fails for the expected reason, then implement the fix and rerun the test.
-
-To be specific. When a bug is suspected: (1) write a failing regressions test,
-(2) run the regression test and see it fail, (3) correct the bug, (4) run the
-regression test and see it pass. If at step (2) an AI agent sees the regression
-test pass, then do not continue but start a discussion.
+a test for the intended result. For a bug fix, confirm that the regression test
+fails for the expected reason before implementing the fix. If the test passes
+before the fix, investigate why and discuss the result before proceeding.
+After applying the fix, rerun the test and confirm that it passes.
 
 ## Test isolation
 
-- Keep every project's test input and fixture under `src/` or `tests/`,
-  including temporary files created by tests. Keep generated fixtures in a
-  temporary directory under `tests/` and clean them up after the test.
-- Never read or write files under `data/` or `private/` in a unit test.
+- Keep test inputs and fixtures under `src/` or `tests/`.
+- Keep generated fixtures in a temporary directory under `tests/` and clean them up after the test.
+- Never read or write files to any other directory in a unit test.
 - Unit tests and the code they exercise must neither write to stdout or
-  stderr nor require input from stdin. The test runner may report results.
+  stderr nor require input from stdin. The one exception is that the test runner may report results.
 - Unit tests must run without network operations.
+- Unit tests should never depend on files covered by `.gitignore`.
 
 ## Running the suite
 

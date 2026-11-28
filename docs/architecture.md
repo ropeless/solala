@@ -144,6 +144,8 @@ A separate database loop records measurements and notifies listeners that
 display historical data. The browser communicates with NiceGUI; it does not
 connect directly to the inverter or the database.
 
+#### Register reads
+
 The GUI reads register values on demand for display. The control loop
 does not collect register history.
 The Registers page explicitly requests consumer register discovery.
@@ -154,6 +156,8 @@ When a consumer has no status reading available, its status registers raise
 values or tracebacks. Consumer health reporting logs completed device
 failures and recoveries.
 
+#### Consumer workers
+
 Each power consumer manager runs one worker for status reads and register
 discovery. The worker waits for client demand and coalesces requests for
 the same operation while a read is pending. Callers receive available
@@ -161,19 +165,31 @@ results immediately while the worker handles delegate I/O.
 Consumer health is updated when a current worker completes a status or
 discovery attempt. Pending reads do not raise a health issue. Operational
 failures and recovery are logged per consumer and operation.
+
 Disconnecting a consumer removes it from the active connections before
 waiting for its worker to close. The wait happens outside the shared
 connections lock. Connecting with an active or closing name fails. The
 client must wait for disconnect to complete before reusing a name.
+
+#### Startup
+
+Startup defers settings writes until a complete configuration succeeds. If
+applying saved settings fails and fallback settings are available, startup
+closes the open connections before applying the fallback.
+
+#### Shutdown
+
 Control-loop shutdown stops the database logging task, closes consumer workers
 concurrently, and waits for any disconnects already in progress. It also closes
 the controller, pricer, forecaster, and database pool. The pool stops accepting
 new borrows and drains existing ones. Shutdown logs each close outcome and
 keeps the saved configuration for the next run.
+
 The server owns the control-loop task. During graceful shutdown, the FastAPI
 lifespan stops and awaits it before Uvicorn replays the termination signal.
 If Uvicorn exits before lifespan shutdown, the server cancels and awaits the
 control-loop task before the event loop closes.
+
 The HTTP server uses its grace period to decide when to request cancellation
 of the control-loop task. The control loop has a separate ten-second budget
 solely for closing delegate connections and stopping database logging.
@@ -185,10 +201,6 @@ closes that are still pending. Blocking I/O in a worker thread can outlive the
 deadline. Tuya LAN limits each request to one connection attempt, uses its
 configured socket timeout, and avoids resending the payload to reduce drain
 time.
-
-Startup defers settings writes until a complete configuration succeeds. If
-applying saved settings fails and fallback settings are available, startup
-closes the open connections before applying the fallback.
 
 ### Design principles
 
@@ -213,7 +225,9 @@ Tuya Cloud HTTP requests use explicit connect and read timeouts. Matter
 applies one deadline to connection setup and the full command exchange,
 including time spent processing unrelated events.
 
-The intended policy for failure isolation, safe control retries, operational
-health and master alarms is documented in [Error Handling and Recovery](error_handling.md).
-These behaviours are being implemented incrementally; the policy describes
-the target design rather than asserting complete implementation.
+The control loop isolates handled failures and reports operational issues
+through `ControlHealth`. The master alarm uses those reports, the control-loop
+heartbeat and the browser's connection status. Each hardware integration
+must verify command outcomes and reconcile uncertain device state before
+retrying when necessary. See [Error Handling and Recovery](error_handling.md)
+for the current behaviour and integration requirements.
